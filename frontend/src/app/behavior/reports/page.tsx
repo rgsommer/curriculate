@@ -11,15 +11,30 @@ import { api, getToken, loginHref } from "../_lib/api";
 type Stats = {
   months: number;
   triggerCount: number;
-  totals: { incidents: number; notices: number; noticesSent: number; students: number; atOrNearThreshold: number; interactions: number };
-  monthly: Array<{ month: string; incidents: number; notices: number }>;
+  totals: { incidents: number; positives: number; consequences: number; notices: number; noticesSent: number; students: number; atOrNearThreshold: number; interactions: number };
+  monthly: Array<{ month: string; incidents: number; positives: number; notices: number; consequences: number }>;
   topTypes: Array<{ type: string; count: number }>;
   classCounts: Array<{ class: string; count: number }>;
   modePie: Array<{ name: string; value: number }>;
   strikeBuckets: Array<{ strikes: string; students: number }>;
 };
 
-const PIE_COLORS = ["#0f172a", "#f97316", "#22c55e"];
+// Validated categorical palette (dataviz reference, light surface): blue,
+// orange, aqua, yellow, magenta, green, violet, red — safe adjacent contrast.
+const PALETTE = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
+const PIE_COLORS = ["#2a78d6", "#eb6834", "#008300"];
+
+// Long behaviour names overflow and collide on the y-axis. Render each tick on a
+// single line, truncated with an ellipsis; the full name still shows in the tooltip.
+function BehaviourTick({ x, y, payload }: any) {
+  const s = String(payload?.value ?? "");
+  const label = s.length > 26 ? s.slice(0, 25) + "…" : s;
+  return (
+    <text x={x} y={y} dy={4} textAnchor="end" fontSize={11} fill="#52514e">
+      {label}
+    </text>
+  );
+}
 
 export default function ReportsPage() {
   const [months, setMonths] = useState(12);
@@ -53,14 +68,16 @@ export default function ReportsPage() {
 
       {/* Totals */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <Stat label="Incidents" value={t.incidents} />
+        <Stat label="Total logged" value={t.incidents} />
+        <Stat label="Encouragements" value={t.positives} />
+        <Stat label="Consequences" value={t.consequences} />
         <Stat label="Interactions (no note)" value={t.interactions} />
         <Stat label="Notices home" value={`${t.noticesSent}/${t.notices}`} />
         <Stat label="Active students" value={t.students} />
         <Stat label={`At / near ${data.triggerCount}-strike`} value={t.atOrNearThreshold} accent={t.atOrNearThreshold > 0} />
       </div>
 
-      <ChartCard title="Incidents & notices over time">
+      <ChartCard title="Activity over time (incidents, encouragements, consequences, notices)">
         <ResponsiveContainer width="100%" height={240}>
           <LineChart data={data.monthly} margin={{ left: -20, right: 8, top: 8 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -68,8 +85,10 @@ export default function ReportsPage() {
             <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
             <Tooltip />
             <Legend />
-            <Line type="monotone" dataKey="incidents" stroke="#0f172a" strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="notices" stroke="#f97316" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="incidents" stroke="#2a78d6" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="positives" name="encouragements" stroke="#008300" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="notices" stroke="#eb6834" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="consequences" stroke="#4a3aa7" strokeWidth={2} dot={false} />
           </LineChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -78,9 +97,11 @@ export default function ReportsPage() {
         <ResponsiveContainer width="100%" height={Math.max(160, data.topTypes.length * 30)}>
           <BarChart data={data.topTypes} layout="vertical" margin={{ left: 40, right: 16 }}>
             <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
-            <YAxis type="category" dataKey="type" tick={{ fontSize: 11 }} width={120} />
+            <YAxis type="category" dataKey="type" tick={<BehaviourTick />} width={170} tickLine={false} />
             <Tooltip />
-            <Bar dataKey="count" fill="#0f172a" radius={[0, 3, 3, 0]} />
+            <Bar dataKey="count" radius={[0, 3, 3, 0]}>
+              {data.topTypes.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -93,7 +114,9 @@ export default function ReportsPage() {
               <XAxis dataKey="class" tick={{ fontSize: 11 }} />
               <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
               <Tooltip />
-              <Bar dataKey="count" fill="#0f172a" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="count" radius={[3, 3, 0, 0]}>
+                {data.classCounts.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -118,7 +141,7 @@ export default function ReportsPage() {
             <XAxis dataKey="strikes" tick={{ fontSize: 11 }} />
             <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
             <Tooltip />
-            <Bar dataKey="students" fill="#f97316" radius={[3, 3, 0, 0]} />
+            <Bar dataKey="students" fill="#eb6834" radius={[3, 3, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>

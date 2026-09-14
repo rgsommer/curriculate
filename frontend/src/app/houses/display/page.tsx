@@ -27,7 +27,20 @@ export default function HousesDisplay() {
   const [updated, setUpdated] = useState<Date | null>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => { setCode(localStorage.getItem(KEY) || ""); }, []);
+  useEffect(() => {
+    let initial = "";
+    try {
+      const url = new URL(window.location.href);
+      const q = (url.searchParams.get("code") || "").trim();
+      if (/^\d{3,6}$/.test(q)) initial = q;
+      if (url.searchParams.has("code")) {
+        url.searchParams.delete("code");
+        window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+      }
+    } catch { /* ignore */ }
+    if (!initial) initial = localStorage.getItem(KEY) || "";
+    if (initial) { localStorage.setItem(KEY, initial); setCode(initial); }
+  }, []);
 
   useEffect(() => {
     if (!code) return;
@@ -37,7 +50,11 @@ export default function HousesDisplay() {
         const r = await fetch(`${API_BASE}/api/behavior/public/houses?code=${encodeURIComponent(code)}`);
         const d = await r.json();
         if (!alive) return;
-        if (!d.ok) { setErr(d.error || "Could not load"); return; }
+        if (!d.ok) {
+          setErr(d.error || "Could not load");
+          if (/no school/i.test(d.error || "")) { localStorage.removeItem(KEY); setCode(""); }
+          return;
+        }
         setErr("");
         setBoard({ schoolName: d.schoolName || "", houses: d.houses || [], dailyTopStudent: d.dailyTopStudent || null, dailyTopHouse: d.dailyTopHouse || null, topStudents: d.topStudents || [], rewards: d.rewards || [] });
         setUpdated(new Date());

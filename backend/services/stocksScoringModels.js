@@ -82,9 +82,16 @@ export const SCORING_MODELS = {
     description: "Real EPS/revenue revision-driven. Requires a real revision baseline (not price-target proxy). Missing → INSUFFICIENT_DATA.",
   },
 
-  // ─── D — GARP + REVISIONS + MOMENTUM ───────────────────────
+  // ─── D — QUALITY + GROWTH + REVISIONS + MOMENTUM ───────────
+  // P4 audit (2026-09-11): Model D was labeled "GARP" but the OQ
+  // factor bundle has NO explicit valuation factor (no forward
+  // P/E-vs-growth, PEG, EV/EBITDA/growth, or FCF-yield-vs-growth
+  // measure). Renamed to reflect what it actually tests — do not
+  // claim GARP without a valuation factor to anchor the "R" in the
+  // acronym. If a defensible PIT valuation factor is added later,
+  // that creates a NEW model version (P4 spec §3, §16).
   D: {
-    id: "D", label: "GARP + revisions + momentum",
+    id: "D", label: "Quality + growth + revisions + momentum (NO explicit valuation factor)",
     opportunityWeights: {
       fundamentals: 0.25, growth: 0.25, revisions: 0.20,
       relativeStrength: 0.15, insider: 0.05, industryStrength: 0.10,
@@ -95,7 +102,7 @@ export const SCORING_MODELS = {
     },
     combineWeights: { opportunity: 0.60, entry: 0.40 },
     criticalFactors: ["fundamentals", "growth"],
-    description: "Growth-at-a-reasonable-price + revisions + momentum. Fundamentals AND growth both critical.",
+    description: "Quality + growth + revisions + momentum. Fundamentals AND growth both critical. NOT true GARP — no explicit valuation-vs-growth factor. Rename honest per P4 spec §3.",
   },
 
   // ─── E — POST-EARNINGS DRIFT / CATALYST (P2.5 rebuilt) ─────
@@ -142,12 +149,87 @@ export const SCORING_MODELS = {
   },
 };
 
-export const CHAMPION_MODEL_ID = "A";
-export const ALL_MODEL_IDS = ["A", "B", "C", "D", "E", "F"];
+// ─── G — PASSIVE CONTROL (P4) ────────────────────────────────
+// Not a scoring model. A named do-nothing baseline the P4
+// experiment persists so every leaderboard reports both a
+// zero-effort control AND the challenger models under the same
+// forward-horizon rules. G's "picks" are the passive tickers held
+// for the horizon; alpha vs itself is 0 by construction.
+SCORING_MODELS.G = {
+  id: "G", label: "Passive control (XEQT/VTI/XIC/SPY)",
+  opportunityWeights: null, entryWeights: null, combineWeights: null,
+  criticalFactors: [],
+  passiveTickers: ["XEQT.TO", "XIC.TO", "SPY", "VTI"],
+  description: "Named passive control. Never scores individual stocks. Used to ask: could Richard have beaten a naive passive allocation?",
+};
 
-// Validate that weight bundles sum to ~1.0 at import time.
+export const CHAMPION_MODEL_ID = "A";
+export const ALL_MODEL_IDS = ["A", "B", "C", "D", "E", "F"];        // scoring models
+export const ALL_P4_MODEL_IDS = ["A", "B", "C", "D", "E", "F", "G"]; // P4 leaderboard incl. passive control
+
+// P4 nomination lanes — each lane independently proposes candidates;
+// the union enters Stage-2 scoring. Persisted with every pick record
+// so we can measure lane effectiveness downstream (spec §4).
+export const P4_NOMINATION_LANES = [
+  "TECHNICAL",         // legacy technical rank (chart / breakout / RS)
+  "REVISION",          // real EPS/revenue revision movers
+  "QUALITY_GROWTH",    // top-quintile fundamentals + growth accelerating
+  "RELATIVE_STRENGTH", // 3m/6m RS vs benchmark (raw)
+  "INDUSTRY_LEADER",   // top-quartile industry group + leader within it
+  "POST_EARNINGS",     // recent surprise + post-earnings drift signal
+  "CATALYST",          // material catalyst (structured, not sentiment)
+];
+
+// P4 funnel widths — reuse the P2.6 tournament variants; NARROW is
+// production, MEDIUM/WIDE are shadow. Named here so the frozen
+// experiment definition and the pick records agree on the enum.
+export const P4_FUNNEL_VARIANTS = ["NARROW", "MEDIUM", "WIDE"];
+
+// P4 exit-rule variants (shadow positions ONLY). Real trading is
+// unchanged until an experiment result triggers a policy change.
+export const P4_EXIT_RULES = [
+  { id: "TRAIL_08", trailPct: 8,  method: "PCT_TRAIL" },
+  { id: "TRAIL_10", trailPct: 10, method: "PCT_TRAIL" },
+  { id: "TRAIL_12", trailPct: 12, method: "PCT_TRAIL" },  // production default
+  { id: "TRAIL_15", trailPct: 15, method: "PCT_TRAIL" },
+  { id: "ATR_2X",   method: "ATR_MULTIPLE", atrMultiple: 2 },
+  { id: "THESIS_ONLY", method: "THESIS_INVALIDATION_ONLY" },
+  { id: "TIME_20D", method: "FIXED_TIME", daysHeld: 20 },
+];
+
+// P4 shadow-portfolio rules — identical across A-F so a model can't
+// win merely by taking more risk or holding more names.
+export const P4_SHADOW_PORTFOLIO_RULES = {
+  startingCapitalCad: 100_000,
+  maxPositions: 15,
+  maxPositionWeight: 0.15,
+  cashDragBenchmark: "XEQT.TO",
+  transactionCostBps: 10,        // 10bps per side, symmetric
+  fxAssumption: "spot-at-fill",
+  sleeveBudget: { CORE: 0.50, INCOME: 0.15, SWING: 0.25, SPEC: 0.10 },
+};
+
+// Preregistered promotion criteria — reviewed BEFORE outcomes arrive
+// so we don't p-hack the finish line. Every threshold is deliberately
+// conservative so a burst of luck can't promote a challenger.
+export const P4_PROMOTION_CRITERIA = {
+  minQualifiedObservations: 30,
+  minMature20dObservations: 20,
+  minPositiveMedianAlpha20dPp: 0.5,   // beats zero, not just noise
+  minPositiveMeanAlpha20dPp: 0.5,
+  mustBeatChampionMedianPp: 1.0,      // ≥ 1pp better than A at same horizon
+  mustBeatPassiveMedianPp: 0.5,       // ≥ 0.5pp better than XEQT
+  maxDrawdownPct: 15,
+  robustWithoutTopWinner: true,       // ranking survives removing best pick
+  minSectorsCovered: 2,
+  minRegimesCovered: 1,               // relaxed while we accumulate history
+};
+
+// Validate that weight bundles sum to ~1.0 at import time. Model G
+// (passive control) is exempt — it has no weights by design.
 function validate() {
   for (const [id, m] of Object.entries(SCORING_MODELS)) {
+    if (!m.opportunityWeights || !m.entryWeights || !m.combineWeights) continue;
     const owSum = Object.values(m.opportunityWeights).reduce((a, b) => a + b, 0);
     const ewSum = Object.values(m.entryWeights).reduce((a, b) => a + b, 0);
     const cwSum = m.combineWeights.opportunity + m.combineWeights.entry;

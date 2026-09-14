@@ -115,6 +115,11 @@ function guddStatus(incidents, config) {
 }
 
 // Immediate white slip: record it as a consequence and email the logging teacher
+// School-local timezone for rendering dates/times in server-sent emails. The
+// server runs in UTC, so without this a 3:34pm occurrence prints as "7:34pm".
+// Override per deployment with SCHOOL_TZ; defaults to Ontario.
+const SCHOOL_TZ = process.env.SCHOOL_TZ || "America/Toronto";
+
 // (CC the VP) — "White Slip: reason, teacher, date". Never sent to a parent.
 async function fireWhiteSlip({ req, student, config, behaviorName, detailText, at, relatedIncidentId = null }) {
   const studentName = `${student.preferredName || student.firstName} ${student.lastName}`.trim();
@@ -140,7 +145,7 @@ async function fireWhiteSlip({ req, student, config, behaviorName, detailText, a
       text:
         `WHITE SLIP\n\nStudent: ${studentName}${student.classGroup ? ` (${student.classGroup})` : ""}\n` +
         `Reason: ${behaviorName}${detailText ? `\nDetail: ${detailText}` : ""}\n` +
-        `Teacher: ${teacherName}\nDate: ${when.toLocaleString("en-CA")}\n\n— Behaviours`,
+        `Teacher: ${teacherName}\nDate: ${when.toLocaleString("en-CA", { timeZone: SCHOOL_TZ })}\n\n— Behaviours`,
       html: emailShell({
         title: "White Slip",
         schoolName: config?.branding?.schoolName || "Behaviours",
@@ -151,7 +156,7 @@ async function fireWhiteSlip({ req, student, config, behaviorName, detailText, a
           `<tr><td style="padding:4px 0;color:#64748b">Reason</td><td style="padding:4px 0">${escapeHtml(behaviorName)}</td></tr>` +
           (detailText ? `<tr><td style="padding:4px 0;color:#64748b">Detail</td><td style="padding:4px 0">${escapeHtml(detailText)}</td></tr>` : "") +
           `<tr><td style="padding:4px 0;color:#64748b">Teacher</td><td style="padding:4px 0">${escapeHtml(teacherName)}</td></tr>` +
-          `<tr><td style="padding:4px 0;color:#64748b">Date</td><td style="padding:4px 0">${escapeHtml(when.toLocaleString("en-CA"))}</td></tr>` +
+          `<tr><td style="padding:4px 0;color:#64748b">Date</td><td style="padding:4px 0">${escapeHtml(when.toLocaleString("en-CA", { timeZone: SCHOOL_TZ }))}</td></tr>` +
           `</table>`,
       }),
     });
@@ -292,6 +297,25 @@ router.post("/setup", authAny, async (req, res, next) => {
   try {
     const existing = await BehaviorTeacher.findOne({ userId: req.userId }).lean();
     if (existing) return res.status(409).json({ ok: false, error: "Account already belongs to a Behaviours school" });
+
+    // If this person was invited to an existing school, JOIN that school rather
+    // than creating a parallel one. Without this, an invited teacher who reaches
+    // the first-run setup screen (e.g. before clicking their invite link) spins
+    // up a duplicate empty school and gets stranded on its "import roster" page.
+    const myEmail = String(req.user?.email || "").toLowerCase();
+    const pendingInvite = myEmail
+      ? await BehaviorInvite.findOne({ email: myEmail, status: "pending" }).lean()
+      : null;
+    if (pendingInvite) {
+      await BehaviorTeacher.findOneAndUpdate(
+        { schoolId: pendingInvite.schoolId, userId: req.userId },
+        { $set: { email: myEmail, name: req.user.name || "", role: pendingInvite.role, status: "accepted" } },
+        { upsert: true }
+      );
+      await BehaviorInvite.updateOne({ _id: pendingInvite._id }, { $set: { status: "accepted" } });
+      await audit(pendingInvite.schoolId, "invite.accepted", req, { meta: { email: myEmail, role: pendingInvite.role, via: "setup" } });
+      return res.json({ ok: true, schoolId: pendingInvite.schoolId, joined: true });
+    }
 
     const schoolName = String(req.body?.schoolName || "").trim();
     if (!schoolName) return res.status(400).json({ ok: false, error: "schoolName required" });
@@ -618,12 +642,12 @@ router.post("/test-email", authAny, loadMembership, requireAdmin, async (req, re
         from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
         to,
         subject: "Behaviours — test email ✓",
-        text: `This is a test from Behaviours. If you received it, email delivery is working.\n\nSent ${new Date().toLocaleString()}.`,
+        text: `This is a test from Behaviours. If you received it, email delivery is working.\n\nSent ${new Date().toLocaleString("en-CA", { timeZone: SCHOOL_TZ })}.`,
         html: emailShell({
           title: "Email delivery is working ✓",
           contentHtml:
             `<p style="margin:0 0 10px;color:#334155;line-height:1.6">This is a test from Behaviours. If you can read this, your email delivery is set up correctly.</p>` +
-            `<p style="margin:0;color:#94a3b8;font-size:13px">Sent ${escapeHtml(new Date().toLocaleString())}.</p>`,
+            `<p style="margin:0;color:#94a3b8;font-size:13px">Sent ${escapeHtml(new Date().toLocaleString("en-CA", { timeZone: SCHOOL_TZ }))}.</p>`,
         }),
       });
       await audit(req.schoolId, "email.test_sent", req, { meta: { to } });
@@ -1486,7 +1510,7 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
     // Sorted grade → class → name so the client can group by grade directly.
     // Returns the whole roster when there's no query (for the grouped picker).
     const students = await BehaviorStudent.find(filter)
-      .select("lastName firstName preferredName classGroup grade active houseId houseGroup houseCaptain behaviourConcern sportsSkilled academic noticesHomeCount")
+      .select("lastName firstName preferredName classGroup grade gender active houseId houseGroup houseCaptain behaviourConcern sportsSkilled academic noticesHomeCount")
       .sort({ grade: 1, classGroup: 1, lastName: 1, firstName: 1 })
       .limit(q ? 50 : 2000)
       .lean();
@@ -2928,7 +2952,7 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
     const tDocs = await BehaviorTeacher.find({ _id: { $in: tIds } }).select("name").lean();
     const tName = Object.fromEntries(tDocs.map((t) => [String(t._id), t.name]));
     const lines = incidents.map((i) => {
-      const d = new Date(i.timestamp).toLocaleString("en-CA");
+      const d = new Date(i.timestamp).toLocaleString("en-CA", { timeZone: SCHOOL_TZ });
       const notes = (i.teacherNotes || []).map((n) => `    • teacher note (${n.name || "teacher"}): ${n.text}`).join("\n");
       const w = i.weight && i.weight !== 1 ? ` [intensity ×${i.weight}]` : "";
       return `- ${d} — ${i.behaviorSnapshot?.name || ""}${i.detailText ? `: ${i.detailText}` : ""}${w} [logged by ${tName[String(i.teacherId)] || "teacher"}]${notes ? `\n${notes}` : ""}`;
@@ -2972,7 +2996,7 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
     // exist only as notices home, so the note text is the record of what
     // happened. For "current", a brief line is enough.
     const noticeLines = notices.map((n) => {
-      const date = new Date(n.sentAt || n.createdAt).toLocaleDateString("en-CA");
+      const date = new Date(n.sentAt || n.createdAt).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ });
       const to = describeRecipients(n);
       const toLabel = to.length ? ` → emailed ${to.join(" + ")}` : "";
       if (scope !== "all") return `- ${date}: notice #${n.sequenceNo} (${n.reason}, ${n.status})${toLabel}`;
@@ -2988,7 +3012,7 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
       ...notices.map((n) => new Date(n.sentAt || n.createdAt).getTime()),
     ].filter((t) => t && !isNaN(t)).sort((a, b) => a - b);
     const span = allTs.length
-      ? `${new Date(allTs[0]).toLocaleDateString("en-CA")} to ${new Date(allTs[allTs.length - 1]).toLocaleDateString("en-CA")}`
+      ? `${new Date(allTs[0]).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ })} to ${new Date(allTs[allTs.length - 1]).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ })}`
       : "—";
 
     // How staff have MANAGED this student — the diligence record. This summary
@@ -3105,7 +3129,7 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
       practiceText +
       `\n${scope === "current" ? "CURRENT trigger incidents" : "FULL incident history"} (incl. private teacher notes):\n${lines.join("\n") || "(none)"}\n\n` +
       (consequencesLogged.length
-        ? `Consequences applied & documented by staff:\n${consequencesLogged.map((c) => `- ${new Date(c.at).toLocaleDateString("en-CA")} — ${c.type}${c.detail ? `: ${c.detail}` : ""}${c.byName ? ` [by ${c.byName}]` : ""}`).join("\n")}\n\n`
+        ? `Consequences applied & documented by staff:\n${consequencesLogged.map((c) => `- ${new Date(c.at).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ })} — ${c.type}${c.detail ? `: ${c.detail}` : ""}${c.byName ? ` [by ${c.byName}]` : ""}`).join("\n")}\n\n`
         : "") +
       `Notices home${scope === "all" ? " (full content = the record of earlier offences)" : ""}:\n${noticeLines.join("\n") || "(none)"}`;
     const prompt =
@@ -3267,7 +3291,7 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
     }).sort({ timestamp: 1 }).select("timestamp").lean();
     const positivesNew = !firstPositive || Date.now() - new Date(firstPositive.timestamp).getTime() < 90 * DAY_MS;
     const positiveNote = positivesNew
-      ? `\nNOTE: positive-behaviour recognition was only recently introduced${firstPositive ? ` (first positive logged ${new Date(firstPositive.timestamp).toLocaleDateString("en-CA")})` : ""}. The small number of positive events (${positiveCount}) reflects that it is NEW — do NOT characterise the teacher/division as unbalanced, lacking positives, or skewed toward discipline; if anything, note that positive tracking is just getting underway.`
+      ? `\nNOTE: positive-behaviour recognition was only recently introduced${firstPositive ? ` (first positive logged ${new Date(firstPositive.timestamp).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ })})` : ""}. The small number of positive events (${positiveCount}) reflects that it is NEW — do NOT characterise the teacher/division as unbalanced, lacking positives, or skewed toward discipline; if anything, note that positive tracking is just getting underway.`
       : "";
 
     const who = scope === "me" ? (req.membership.name || "this teacher") : "all teachers (division-wide)";
@@ -3355,7 +3379,7 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
       (legacyOffences ? " — these include the historical notices already counted in the offence total above, not additional events." : ".") + `\n` +
       `Consequence follow-through: ${fuResolved} of ${fuTotal} resolved (${fuResolvedPct}%), ${fu.not_done} missed, ${fu.open} still open.\n` +
       `Current strike load (division): ${atThreshold} student(s) at or one away from the ${triggerCount}-strike trigger.` +
-      (positivesNew ? `\n\nNote: positive-behaviour recognition was only recently introduced${firstPositive ? ` (first positive logged ${new Date(firstPositive.timestamp).toLocaleDateString("en-CA")})` : ""}, so the small number of positives simply reflects that it's just getting underway.` : "");
+      (positivesNew ? `\n\nNote: positive-behaviour recognition was only recently introduced${firstPositive ? ` (first positive logged ${new Date(firstPositive.timestamp).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ })})` : ""}, so the small number of positives simply reflects that it's just getting underway.` : "");
 
     let summary = `Executive summary — ${who} (last ${months} months)\n\n${fallbackText}`;
     let aiUsed = false;
@@ -3431,24 +3455,38 @@ router.get("/stats", authAny, loadMembership, async (req, res, next) => {
     const pad = (n) => String(n).padStart(2, "0");
 
     const incidents = await BehaviorIncident.find({ schoolId: req.schoolId, timestamp: { $gt: cutoff } })
-      .select("behaviorSnapshot.name behaviorSnapshot.triggerMode timestamp studentId")
+      .select("behaviorSnapshot.name behaviorSnapshot.triggerMode behaviorSnapshot.kind behaviorSnapshot.points timestamp studentId")
       .lean();
     const studentsAll = await BehaviorStudent.find({ schoolId: req.schoolId }).select("classGroup").lean();
     const classById = Object.fromEntries(studentsAll.map((s) => [String(s._id), s.classGroup || "—"]));
 
     const incByMonth = {};
+    const posByMonth = {};
     const byType = {};
     const byClass = {};
     const byMode = { THRESHOLD: 0, IMMEDIATE: 0, INTERACTION: 0 };
+    let posCount = 0;
     for (const i of incidents) {
       const mk = new Date(i.timestamp).toISOString().slice(0, 7);
       incByMonth[mk] = (incByMonth[mk] || 0) + 1;
+      if (i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0) {
+        posByMonth[mk] = (posByMonth[mk] || 0) + 1;
+        posCount += 1;
+      }
       const nm = i.behaviorSnapshot?.name || "Other";
       byType[nm] = (byType[nm] || 0) + 1;
       const cls = classById[String(i.studentId)] || "—";
       byClass[cls] = (byClass[cls] || 0) + 1;
       const mode = i.behaviorSnapshot?.triggerMode || "THRESHOLD";
       byMode[mode] = (byMode[mode] || 0) + 1;
+    }
+
+    // Consequences (white slips, detentions, calls home, …) by month.
+    const consequences = await BehaviorConsequence.find({ schoolId: req.schoolId, at: { $gt: cutoff } }).select("at").lean();
+    const consByMonth = {};
+    for (const c of consequences) {
+      const mk = new Date(c.at).toISOString().slice(0, 7);
+      consByMonth[mk] = (consByMonth[mk] || 0) + 1;
     }
 
     const notices = await BehaviorNotice.find({ schoolId: req.schoolId, createdAt: { $gt: cutoff } }).select("createdAt status").lean();
@@ -3467,7 +3505,13 @@ router.get("/stats", authAny, loadMembership, async (req, res, next) => {
       axis.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}`);
       d.setMonth(d.getMonth() + 1);
     }
-    const monthly = axis.map((mk) => ({ month: mk, incidents: incByMonth[mk] || 0, notices: notByMonth[mk] || 0 }));
+    const monthly = axis.map((mk) => ({
+      month: mk,
+      incidents: incByMonth[mk] || 0,
+      positives: posByMonth[mk] || 0,
+      notices: notByMonth[mk] || 0,
+      consequences: consByMonth[mk] || 0,
+    }));
 
     // Current strike load (shared count).
     const agg = await BehaviorIncident.aggregate([
@@ -3489,6 +3533,8 @@ router.get("/stats", authAny, loadMembership, async (req, res, next) => {
       triggerCount,
       totals: {
         incidents: incidents.length,
+        positives: posCount,
+        consequences: consequences.length,
         notices: notices.length,
         noticesSent,
         students: activeStudents,
@@ -3717,7 +3763,7 @@ router.post("/students/:id/white-slip", authAny, loadMembership, canLog, async (
     const greeting = parentNames.length === 1 ? `Dear ${parentNames[0]},`
       : parentNames.length >= 2 ? `Dear ${parentNames[0]} and ${parentNames[1]},`
       : "Dear Parent/Guardian,";
-    const reasonLines = reasons.map((i) => `  • ${new Date(i.timestamp).toLocaleDateString("en-CA")}: ${i.behaviorSnapshot?.name}${i.detailText ? ` — ${i.detailText}` : ""}`).join("\n");
+    const reasonLines = reasons.map((i) => `  • ${new Date(i.timestamp).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ })}: ${i.behaviorSnapshot?.name}${i.detailText ? ` — ${i.detailText}` : ""}`).join("\n");
     const note =
       `${greeting}\n\n` +
       `I'm writing to let you know that a white slip is being recommended for ${first} in light of the following behavioural matters:\n\n${reasonLines}\n\n` +
@@ -3748,7 +3794,9 @@ async function buildSchoolInsights(schoolId, config) {
   const now = Date.now();
   const fadeCutoff = now - fadeDays * DAY_MS;
   const d180 = new Date(now - 180 * DAY_MS);
-  const d90 = now - 90 * DAY_MS;
+  const d60 = now - 60 * DAY_MS; // rolling window for most-logged / by-class /
+  // staff-support stats: tighter than 90d so a new term's counts aren't inflated
+  // by last term's logs (the summer gap separates the terms cleanly)
   const d14 = now - 14 * DAY_MS;
   const d28 = now - 28 * DAY_MS;
 
@@ -3786,10 +3834,10 @@ async function buildSchoolInsights(schoolId, config) {
     .map((sid) => ({ studentId: sid, name: nameOf(sById[sid]), classGroup: sById[sid].classGroup || "—", grade: sById[sid].grade || "—", strikes: strikes[sid], triggerCount, lastAt: new Date(lastStrike[sid]) }))
     .sort((a, b) => b.strikes - a.strikes || b.lastAt - a.lastAt);
 
-  // Most-logged (90d) + per-class counts (90d).
+  // Most-logged (60d) + per-class counts (60d).
   const count90 = {}; const last90 = {}; const classCounts = {};
   for (const i of incs) {
-    if (new Date(i.timestamp).getTime() <= d90) continue;
+    if (new Date(i.timestamp).getTime() <= d60) continue;
     const sid = String(i.studentId);
     count90[sid] = (count90[sid] || 0) + 1;
     const t = new Date(i.timestamp).getTime();
@@ -3804,10 +3852,10 @@ async function buildSchoolInsights(schoolId, config) {
     .sort((a, b) => b.count - a.count || a.classGroup.localeCompare(b.classGroup));
 
   // Teachers who may welcome support: high offence volume + low positive share
-  // (90d). Objective counts, framed supportively — not a performance verdict.
+  // (60d). Objective counts, framed supportively — not a performance verdict.
   const tStats = {};
   for (const i of incs) {
-    if (new Date(i.timestamp).getTime() <= d90) continue;
+    if (new Date(i.timestamp).getTime() <= d60) continue;
     const t = String(i.teacherId);
     (tStats[t] ||= { neg: 0, pos: 0, students: new Set() });
     tStats[t].students.add(String(i.studentId));
@@ -3916,12 +3964,40 @@ async function composeAdminDigest(schoolId, config) {
   }
   const wkNotices = await BehaviorNotice.countDocuments({ schoolId, sentAt: { $gt: since7 }, status: "sent" });
 
+  // Consequences issued (white slips, detentions, calls home, …) in the last 7
+  // days. These aren't incident-threshold events, so they'd otherwise never show
+  // in this digest — an admin should still see them.
+  const consRows = await BehaviorConsequence.find({ schoolId, at: { $gt: since7 } })
+    .select("type detail byName studentId at").sort({ at: -1 }).lean();
+  const consStudents = consRows.length
+    ? await BehaviorStudent.find({ _id: { $in: consRows.map((c) => c.studentId) } })
+        .select("firstName preferredName lastName classGroup").lean()
+    : [];
+  const cName = Object.fromEntries(consStudents.map((s) =>
+    [String(s._id), `${s.preferredName || s.firstName} ${s.lastName || ""}`.trim() + (s.classGroup ? ` (${s.classGroup})` : "")]));
+  const wkWhiteSlips = consRows.filter((c) => /white slip/i.test(c.type || "")).length;
+
+  // Positive recognitions logged in the last 7 days — celebrate the good, by name.
+  const posIncs = await BehaviorIncident.find({
+    schoolId, timestamp: { $gt: since7 },
+    $or: [{ "behaviorSnapshot.kind": "positive" }, { "behaviorSnapshot.points": { $gt: 0 } }],
+  }).select("behaviorSnapshot.name studentId teacherId timestamp").sort({ timestamp: -1 }).lean();
+  const posStudents = posIncs.length
+    ? await BehaviorStudent.find({ _id: { $in: posIncs.map((i) => i.studentId) } }).select("firstName preferredName lastName classGroup").lean()
+    : [];
+  const pName = Object.fromEntries(posStudents.map((s) =>
+    [String(s._id), `${s.preferredName || s.firstName} ${s.lastName || ""}`.trim() + (s.classGroup ? ` (${s.classGroup})` : "")]));
+  const posTeachers = posIncs.length
+    ? await BehaviorTeacher.find({ _id: { $in: [...new Set(posIncs.map((i) => String(i.teacherId)))] } }).select("name").lean()
+    : [];
+  const ptName = Object.fromEntries(posTeachers.map((t) => [String(t._id), t.name]));
+
   const li = (s) => `<li style="margin:3px 0">${s}</li>`;
   const section = (title, inner) => `<h3 style="margin:18px 0 6px;font-size:15px;color:#0f172a">${title}</h3>${inner}`;
   const flagged = insights.teachers.filter((t) => t.flag);
   const suggestions = flagged.length
     ? `<ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6">` +
-        flagged.map((t) => li(`<strong>${escapeHtml(t.name)}</strong> logged ${t.negatives} offence(s) and only ${t.positives} positive(s) this term — a supportive check-in or co-planning may help, and encourage logging the good too.`)).join("") +
+        flagged.map((t) => li(`<strong>${escapeHtml(t.name)}</strong> logged ${t.negatives} incident(s) and only ${t.positives} encouragement(s) in the last 60 days — a supportive check-in or co-planning may help, and encourage logging the good too.`)).join("") +
       `</ul>`
     : `<p style="margin:0;color:#64748b">No staff stand out as needing support this week. 👍</p>`;
 
@@ -3929,25 +4005,35 @@ async function composeAdminDigest(schoolId, config) {
 
   const contentHtml =
     `<p style="margin:0 0 4px;color:#334155">Week in review for <strong>${escapeHtml(school?.name || "your school")}</strong>.</p>` +
-    `<p style="margin:0 0 12px;color:#64748b;font-size:13px">${wkNeg} offence(s) · ${wkPos} positive(s) · ${wkInt} documented interaction(s) · ${wkNotices} notice(s) sent home (last 7 days).</p>` +
+    `<p style="margin:0 0 12px;color:#64748b;font-size:13px">${wkNeg} incident(s) · ${wkPos} encouragement(s) · ${wkInt} documented interaction(s) · ${wkWhiteSlips} white slip(s) · ${wkNotices} notice(s) sent home (last 7 days).</p>` +
     section("At or near a notice", top(insights.atThreshold, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.strikes}/${r.triggerCount} strikes`)) +
+    section("Consequences issued / recommended (last 7 days)",
+      consRows.length
+        ? `<ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6">${consRows.slice(0, 15).map((c) => li(`<strong>${escapeHtml(cName[String(c.studentId)] || "—")}</strong> — ${escapeHtml(c.type || "consequence")}${c.detail ? `: ${escapeHtml(c.detail)}` : ""} <span style="color:#94a3b8">· ${escapeHtml(c.byName || "")}</span>`)).join("")}</ul>`
+        : `<p style="margin:0;color:#64748b">None.</p>`) +
+    section("Encouragements (last 7 days)",
+      posIncs.length
+        ? `<ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6">${posIncs.slice(0, 15).map((i) => li(`<strong>${escapeHtml(pName[String(i.studentId)] || "—")}</strong> — ${escapeHtml(i.behaviorSnapshot?.name || "Encouragement")}${ptName[String(i.teacherId)] ? ` <span style="color:#94a3b8">· ${escapeHtml(ptName[String(i.teacherId)])}</span>` : ""}`)).join("")}</ul>`
+        : `<p style="margin:0;color:#64748b">None logged — encourage staff to catch the good too.</p>`) +
     section("Students to get ahead of (rising lately)", top(insights.proactive, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.recent} in 2 weeks${r.prior ? ` (was ${r.prior})` : ""}`)) +
-    section("Most-logged (90 days)", top(insights.topRepeat, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.count}`)) +
+    section("Most-logged (60 days)", top(insights.topRepeat, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.count}`)) +
     section("Suggested support for staff", suggestions) +
     `<hr style="border:none;border-top:1px solid #e2e8f0;margin:18px 0">` +
     `<p style="margin:0;font-size:13px;color:#64748b">Open the dashboard → <strong>School insights</strong> for trends, the full staff view, and to act on any of the above.</p>`;
 
   const text =
     `Week in review for ${school?.name || "your school"}.\n` +
-    `${wkNeg} offences · ${wkPos} positives · ${wkInt} interactions · ${wkNotices} notices sent (last 7 days).\n\n` +
+    `${wkNeg} incidents · ${wkPos} encouragements · ${wkInt} interactions · ${wkWhiteSlips} white slips · ${wkNotices} notices sent (last 7 days).\n\n` +
     `At/near a notice: ${insights.atThreshold.slice(0, 6).map((r) => `${r.name} (${r.strikes}/${r.triggerCount})`).join(", ") || "none"}.\n` +
+    `Consequences issued / recommended: ${consRows.slice(0, 8).map((c) => `${cName[String(c.studentId)] || "—"} — ${c.type}`).join("; ") || "none"}.\n` +
+    `Encouragements: ${posIncs.slice(0, 8).map((i) => `${pName[String(i.studentId)] || "—"} — ${i.behaviorSnapshot?.name || "Encouragement"}`).join("; ") || "none"}.\n` +
     `Rising lately: ${insights.proactive.slice(0, 6).map((r) => `${r.name} (${r.recent}/2wk)`).join(", ") || "none"}.\n` +
     `Staff who may welcome support: ${flagged.map((t) => t.name).join(", ") || "none"}.\n\n` +
     `Open the dashboard → School insights for the full picture.`;
 
   return {
     subject: `Behaviours weekly digest — ${school?.name || "your school"}`,
-    html: emailShell({ title: "Weekly behaviour digest", schoolName: school?.name || "Behaviours", preheader: `${wkNeg} offences · ${wkPos} positives · ${wkNotices} notices this week`, contentHtml }),
+    html: emailShell({ title: "Weekly behaviour digest", schoolName: school?.name || "Behaviours", preheader: `${wkNeg} incidents · ${wkPos} encouragements · ${wkNotices} notices this week`, contentHtml }),
     text,
   };
 }
@@ -3998,7 +4084,10 @@ router.post("/admin-digest", authAny, loadMembership, requireAdmin, async (req, 
 // student's positive and negative contributions are each capped (0 = unlimited);
 // house-level awards (no studentId — e.g. house events) are never capped.
 async function houseTotals(schoolId, cfg) {
-  const match = { schoolId };
+  // Points earned by students no longer on the roster (graduated/withdrawn) drop
+  // out of the standings; whole-house awards (no studentId) always count.
+  const activeIds = (await BehaviorStudent.find({ schoolId, active: true }).select("_id").lean()).map((s) => s._id);
+  const match = { schoolId, $or: [{ studentId: null }, { studentId: { $in: activeIds } }] };
   if (cfg?.housePointsResetAt) match.at = { $gt: new Date(cfg.housePointsResetAt) };
   const posCap = Number(cfg?.houseCaps?.positive) || 0;
   const negCap = Number(cfg?.houseCaps?.negative) || 0;
@@ -4769,6 +4858,14 @@ router.get("/public/houses", async (req, res, next) => {
     const pointMatch = { schoolId: sid };
     if (config.housePointsResetAt) pointMatch.at = { $gt: new Date(config.housePointsResetAt) };
     const totalById = await houseTotals(sid, config);
+    // Only currently-enrolled students appear in the per-student displays —
+    // graduated/withdrawn (deactivated) students keep their history but drop off
+    // the leaderboards. Also track each active student's CURRENT house so points
+    // earned before a (re)assignment resolve to the right house today.
+    const activeStudents = await BehaviorStudent.find({ schoolId: sid, active: true }).select("_id houseId").lean();
+    const activeIds = activeStudents.map((s) => s._id);
+    const activeIdSet = new Set(activeIds.map((id) => String(id)));
+    const houseByStudent = Object.fromEntries(activeStudents.map((s) => [String(s._id), s.houseId ? String(s.houseId) : null]));
     const members = await BehaviorStudent.aggregate([
       { $match: { schoolId: sid, active: true, houseId: { $ne: null } } },
       { $group: { _id: "$houseId", n: { $sum: 1 } } },
@@ -4806,21 +4903,29 @@ router.get("/public/houses", async (req, res, next) => {
     }));
 
     // Recent point activity — last ~12 POSITIVE awards (no deductions, no names).
-    const recent = await HousePointEvent.find({ ...pointMatch, points: { $gt: 0 } }).sort({ at: -1 }).limit(12).select("houseId points reason at").lean();
-    const activity = recent.map((e) => ({
-      house: houseById[String(e.houseId)]?.name || "",
-      color: houseById[String(e.houseId)]?.color || "#0f172a",
-      points: e.points,
-      reason: e.reason || "",
-      at: e.at,
-    }));
+    // Exclude awards to students no longer on the roster (graduated students'
+    // canned reasons looked like duplicates of current students'), and resolve
+    // each award's house from the student's CURRENT assignment when the stored
+    // one is stale (e.g. points earned before a house (re)assignment).
+    const recentRaw = await HousePointEvent.find({ ...pointMatch, points: { $gt: 0 } })
+      .sort({ at: -1 }).limit(40).select("houseId studentId points reason at").lean();
+    const activity = [];
+    for (const e of recentRaw) {
+      if (e.studentId && !activeIdSet.has(String(e.studentId))) continue; // not on the roster
+      let hid = e.houseId && houseById[String(e.houseId)] ? String(e.houseId) : null;
+      if (!hid && e.studentId) { const cur = houseByStudent[String(e.studentId)]; if (cur && houseById[cur]) hid = cur; }
+      if (!hid) continue;
+      const h = houseById[hid];
+      activity.push({ house: h.name, color: h.color || "#0f172a", points: e.points, reason: e.reason || "", at: e.at });
+      if (activity.length >= 12) break;
+    }
 
     // Daily winners (today): student who earned the most positive points, and the
     // house that earned the most net points since local midnight.
     const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
     const [topStuAgg, topHouseAgg] = await Promise.all([
       HousePointEvent.aggregate([
-        { $match: { schoolId: sid, studentId: { $ne: null }, points: { $gt: 0 }, at: { $gt: dayStart } } },
+        { $match: { schoolId: sid, studentId: { $in: activeIds }, points: { $gt: 0 }, at: { $gt: dayStart } } },
         { $group: { _id: "$studentId", pts: { $sum: "$points" } } },
         { $sort: { pts: -1 } }, { $limit: 1 },
       ]),
@@ -4847,7 +4952,7 @@ router.get("/public/houses", async (req, res, next) => {
 
     // Top 3 students overall (positive points earned since the reset).
     const topStuOverall = await HousePointEvent.aggregate([
-      { $match: { ...pointMatch, studentId: { $ne: null }, points: { $gt: 0 } } },
+      { $match: { ...pointMatch, studentId: { $in: activeIds }, points: { $gt: 0 } } },
       { $group: { _id: "$studentId", pts: { $sum: "$points" } } },
       { $sort: { pts: -1 } }, { $limit: 3 },
     ]);
@@ -5224,7 +5329,7 @@ router.post("/homework/outstanding/post", authAny, loadMembership, canLog, async
       for (const it of o.items) {
         const k = `${it.subject || "—"} ${it.type === "work" ? "(class work)" : ""}`.trim();
         (groups[k] ||= { grade: it.categoryGrade, lines: [] });
-        groups[k].lines.push(`  • ${new Date(it.date).toLocaleDateString("en-CA")} — ${it.description || "(no description)"}`);
+        groups[k].lines.push(`  • ${new Date(it.date).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ })} — ${it.description || "(no description)"}`);
       }
       const blocks = Object.entries(groups).map(([k, g]) =>
         `${k}${g.grade != null ? ` — current grade ${g.grade}/10` : ""}:\n${g.lines.join("\n")}`

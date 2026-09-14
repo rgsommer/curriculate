@@ -49,6 +49,8 @@ export default function SiteHeader() {
   if (pathname?.startsWith("/campfirelive")) return null;
   // Behaviours has its own header too — keep the app clean (footer stays).
   if (pathname?.startsWith("/behavior")) return null;
+  // Student-facing House portal / wall display — no marketing chrome.
+  if (pathname?.startsWith("/houses")) return null;
   // Paid-traffic landing pages stay distraction-free (single CTA, no top nav).
   if (
     pathname?.startsWith("/play") ||
