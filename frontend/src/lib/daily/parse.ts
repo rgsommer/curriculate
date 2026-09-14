@@ -38,6 +38,7 @@ export type Points = {
   entered: boolean | null;
   writing: string[]; // classes owed a corrective writing assignment
   writingNote: string; // how that was worked out, for ?debug=1
+  note: string; // what the Setup rows held, for ?debug=1
 };
 
 export type Setup = {
@@ -1085,7 +1086,7 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
       if (!meta.feature || meta.feature === url) meta.feature = "";
     }
   }
-  const points: Points = { numbers: null, percents: null, entered: null, ...writingOwed(inp.pointsGrid || [], inp.pointsRow3 || []) };
+  const points: Points = { numbers: null, percents: null, entered: null, note: "", ...writingOwed(inp.pointsGrid || [], inp.pointsRow3 || []) };
   // The cells the sheet builds its own plans line from carry the total and the
   // percentage side by side, so the board takes them from there rather than
   // reading whichever of the two the line happened to be showing at the moment
@@ -1142,9 +1143,17 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
   // Whatever the line was showing when it was read, the paired cells are the
   // better answer: both numbers at once, for the classes that exist this year.
   if (classPoints.length) {
-    if (classPoints.some((c) => c.total != null)) points.numbers = classPoints.map((c) => c.total ?? 0);
-    if (classPoints.some((c) => c.percent != null)) points.percents = classPoints.map((c) => c.percent ?? 0);
+    // A class with no figure stays empty rather than becoming a nought — the
+    // strip shows a dash for it, which is the truth, where a nought reads as a
+    // class that scored nothing.
+    if (classPoints.some((c) => c.total != null)) points.numbers = classPoints.map((c) => c.total);
+    if (classPoints.some((c) => c.percent != null)) points.percents = classPoints.map((c) => c.percent);
   }
+  // What those cells actually held, for ?debug=1 — the difference between the
+  // board reading the wrong place and the sheet genuinely saying nought.
+  points.note = classPoints.length
+    ? classPoints.map((c) => `${c.name || "?"}=${c.total ?? "—"}/${c.percent ?? "—"}%`).join("  ")
+    : "Setup rows 35-40 gave nothing; using the plans line";
 
   // ---- period rows ----
   const lessons = parseLessons(inp.lessons || [], inp.lessonFormulas || [], inp.lessonLinkRuns || [], cellImages);
@@ -1295,13 +1304,14 @@ export type Sources = {
   pointsClasses: PointsClass[]; // for the D-column status rule
   pointsLabels: string[]; // Points row 3 — the classes taught this year, in order
   cellImages: CellImages; // the pictures the API cannot see, by cell
+  plansCells: string[][]; // Setup rows 35 to 40, columns F, K and L, raw, for ?debug=1
 };
 
 export const EMPTY_SOURCES: Sources = {
   windowStart: null, windowEnd: null, offsetHours: 0, b7: false, d7: false, a9: null, a11: null,
   poemRow: [], poemF3: "", poemF3Formula: "", poemGrid: [], poemGridFormulas: [],
   verticalRow: [], slots: [], riddle: "",
-  verses: [], verseWeek: null, pointsClasses: [], pointsLabels: [], book: {}, cellImages: {},
+  verses: [], verseWeek: null, pointsClasses: [], pointsLabels: [], book: {}, cellImages: {}, plansCells: [],
 };
 
 const truthy = (s: string) => /^(TRUE|1|YES)$/i.test(String(s || "").trim());
@@ -1564,6 +1574,12 @@ export function buildSources(inp: RawInputs): Sources {
     })(),
     book: buildBook(inp),
     cellImages: buildCellImages(inp.cellImages || []),
+    // Exactly what those six rows hold, untouched, so a wrong answer can be told
+    // from a wrong place to look.
+    plansCells: Array.from({ length: 6 }, (_, i) => {
+      const row = (inp.setup || [])[34 + i] || [];
+      return [String(row[5] ?? ""), String(row[10] ?? ""), String(row[11] ?? "")];
+    }),
   };
 }
 
