@@ -188,10 +188,14 @@ export const FIXTURE: RawInputs = {
     ["", "", "", "", "", "", '=IMAGE("https://example.com/history.png")', "", ""],
     [],
   ],
+  // Column B: the row above a course's first lesson carries its deck for the
+  // year, and the class heading links to it.
+  lessonsB: [["https://example.org/math-deck-2026"], [], [], []],
+  // The runs grid is read from B, so E is index 3 and F index 4.
   lessonLinkRuns: [
     [],
     [],
-    [[], [{ text: "Due Dates handout", url: "https://example.org/due-dates.pdf" }]],
+    [[], [], [], [], [{ text: "Due Dates handout", url: "https://example.org/due-dates.pdf" }]],
     [],
   ],
   // Vertical!A1:J200 — column A the period times, F to J the day's plan. The

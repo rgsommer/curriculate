@@ -101,7 +101,10 @@ export async function GET(req: Request) {
       // What the sheet's own script recorded for the pictures the API cannot
       // see: cell address, then a durable address for the picture in it.
       "BoardImages!A2:B200", // 21
-      ...(waitingRange ? [waitingRange] : []), // 22
+      // Column B of Lessons: the row above a course's first lesson carries the
+      // link to that course's deck for the year, which the heading points at.
+      "Lessons!B1:B400",     // 22
+      ...(waitingRange ? [waitingRange] : []), // 23
       // And whatever the slot rules themselves asked for last time round: the
       // list of pictures a rule indexes into can live on a tab of its own, and
       // a rule that reaches past what the board holds throws and falls back to
@@ -116,6 +119,7 @@ export async function GET(req: Request) {
       "DisplayAI!E1",       // 4
       "Poems!F1:J3",        // 5
       "Lessons!C1:K400",    // 6 an =IMAGE() or =HYPERLINK() in the picture and video columns
+      "Lessons!B1:B400",    // 7 a HYPERLINK() to a course's deck
     ];
 
     const [values, formulas, grid, lessonGrid] = await Promise.all([
@@ -126,7 +130,9 @@ export async function GET(req: Request) {
       // the page or homework cell, which the values API cannot see.
       // E and F for the handouts, I to K because a picture or a video can be a
       // link attached to the cell's text, which no value or formula shows.
-      readGridLinks("Lessons!E1:K400").catch(() => ({ first: [], runs: [] })),
+      // B as well as E to K: the deck link above a course's first lesson is
+      // often attached to that cell's text, which no value or formula shows.
+      readGridLinks("Lessons!B1:K400").catch(() => ({ first: [], runs: [] })),
     ]);
 
     const display = values[0] || [];
@@ -134,8 +140,8 @@ export async function GET(req: Request) {
     const slotBlock = values[2] || [];
     const setupMessages = values[3] || [];
     const feature = (values[4]?.[0]?.[0]) || (values[5]?.[0]?.[0]) || "";
-    const waiting = waitingRange ? (values[22] || []) : [];
-    const extraAt = waitingRange ? 23 : 22;
+    const waiting = waitingRange ? (values[23] || []) : [];
+    const extraAt = waitingRange ? 24 : 23;
     const extraGrids = cachedExtra.map((range, i) => ({ range, values: values[extraAt + i] || [] }));
 
     const displayD = formulas[0] || [];
@@ -202,6 +208,8 @@ export async function GET(req: Request) {
       master: values[9] || [],
       lessons: values[13] || [],
       lessonFormulas: formulas[6] || [],
+      lessonsB: values[22] || [],
+      lessonsBFormulas: formulas[7] || [],
       lessonLinkRuns: lessonGrid.runs || [],
       verses: values[10] || [],
       // Vertical!B4 lives inside the block above, so it costs no extra range.
