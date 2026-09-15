@@ -27,6 +27,10 @@ const CACHE_MAX_AGE_MS = 120_000;
 const MIN_REFRESH_MS = 20_000;
 // How long to sit out after a 429 before asking again.
 const QUOTA_BACKOFF_MS = 90_000;
+// How long a refresh may hold the "one at a time" marker before another may
+// start. Longer than any read should take, short enough that a frozen instance
+// does not wedge the board on an old copy.
+const REFRESH_GIVE_UP_MS = 60_000;
 // A ceiling on the ranges taken from the rules, so a formula naming half the
 // spreadsheet cannot turn one refresh into a long read.
 const MAX_EXTRA_RANGES = 8;
@@ -49,7 +53,12 @@ export async function GET(req: Request) {
   // A dirty copy is re-read, but not more often than MIN_REFRESH_MS.
   const stale = age >= CACHE_MAX_AGE_MS || (c.dirty && age >= MIN_REFRESH_MS);
   const held = Date.now() < c.blockedUntil;
-  if (c.body && ((!stale && !forced) || held)) {
+  // A copy in hand is served straight away and the sheet re-read behind it.
+  // Waiting for the read made every third or fourth poll take as long as the
+  // slowest thing Google did that minute, and on the board that is a screen
+  // that sits there. Only a cold instance with nothing to show waits.
+  if (c.body && !forced) {
+    if (stale && !held) refreshSoon();
     return json({
       ...c.body,
       version: c.version,
@@ -58,6 +67,39 @@ export async function GET(req: Request) {
     });
   }
 
+  try {
+    return json({ ...(await refreshSoon()), version: c.version, cachedFor: 0 });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Sheet read failed";
+    if (c.body) return json({ ...c.body, version: c.version, stale: true, error: message });
+    return NextResponse.json({ error: message }, { status: 502 });
+  }
+}
+
+/**
+ * One read at a time, whoever asked for it.
+ *
+ * The board polls every ten seconds and the refresh runs behind the response,
+ * so without this a slow read would have another started on top of it. The
+ * marker is given up after REFRESH_GIVE_UP_MS as well as on settling: this runs
+ * on a serverless instance that may be frozen the moment the response is sent,
+ * and a promise that never resumes would otherwise block every later refresh.
+ */
+function refreshSoon(): Promise<Payload> {
+  const now = Date.now();
+  if (inFlight && now - inFlightAt < REFRESH_GIVE_UP_MS) return inFlight;
+  inFlightAt = now;
+  inFlight = refresh().finally(() => { inFlight = null; });
+  // A background refresh must not take the process down with it.
+  inFlight.catch(() => {});
+  return inFlight;
+}
+
+let inFlight: Promise<Payload> | null = null;
+let inFlightAt = 0;
+
+async function refresh(): Promise<Payload> {
+  const c = dailyCache;
   try {
     // Everything the board needs in three requests: one values batch, one
     // formula batch, one grid read. It used to be a dozen or more, which put a
@@ -120,6 +162,10 @@ export async function GET(req: Request) {
       "Poems!F1:J3",        // 5
       "Lessons!C1:K400",    // 6 an =IMAGE() or =HYPERLINK() in the picture and video columns
       "Lessons!B1:B400",    // 7 a HYPERLINK() to a course's deck
+      // The same ranges the rules named, as formulas: a cell on one of those
+      // tabs may hold =IMAGE("…") and no text value at all, which is exactly
+      // the case the picture lists are written in.
+      ...cachedExtra,       // 8 onwards
     ];
 
     const [values, formulas, grid, lessonGrid] = await Promise.all([
@@ -142,7 +188,11 @@ export async function GET(req: Request) {
     const feature = (values[4]?.[0]?.[0]) || (values[5]?.[0]?.[0]) || "";
     const waiting = waitingRange ? (values[23] || []) : [];
     const extraAt = waitingRange ? 24 : 23;
-    const extraGrids = cachedExtra.map((range, i) => ({ range, values: values[extraAt + i] || [] }));
+    const extraGrids = cachedExtra.map((range, i) => ({
+      range,
+      values: values[extraAt + i] || [],
+      formulas: formulas[8 + i] || [],
+    }));
 
     const displayD = formulas[0] || [];
     const displayC = formulas[1] || [];
@@ -160,8 +210,12 @@ export async function GET(req: Request) {
     let featureFormula = (formulas[3]?.[0]?.[0]) || (formulas[4]?.[0]?.[0]) || "";
 
     // `=IMAGE(Setup!Z4)` or `=Setup!Z4` keeps the URL one cell away: follow it once.
+    // Only when the board does not already hold that cell: the ranges the rules
+    // name are read with everything else now, and two extra round trips on
+    // every refresh is two more chances for the board to sit there waiting.
     const ref = refFromFormula(featureFormula);
-    if (ref && !urlFromFormula(featureFormula)) {
+    const haveRef = !!ref && [...VALUES, ...cachedExtra].some((have) => rangeCovers(have, ref.includes("!") ? ref : `Setup!${ref}`));
+    if (ref && !haveRef && !urlFromFormula(featureFormula)) {
       try {
         const [refValue, refFormula] = await Promise.all([
           readRanges([ref]),
@@ -192,8 +246,13 @@ export async function GET(req: Request) {
       const fresh = wanted.slice(0, Math.max(0, MAX_EXTRA_RANGES - cachedExtra.length));
       c.extraRanges = [...cachedExtra, ...fresh].slice(0, MAX_EXTRA_RANGES);
       try {
-        const more = await readRangesSafe(fresh);
-        fresh.forEach((range, i) => extraGrids.push({ range, values: more[i] || [] }));
+        const [more, moreFormulas] = await Promise.all([
+          readRangesSafe(fresh),
+          readRangesSafe(fresh, "FORMULA"),
+        ]);
+        fresh.forEach((range, i) => extraGrids.push({
+          range, values: more[i] || [], formulas: moreFormulas[i] || [],
+        }));
       } catch {
         /* the tabs those rules name could not be read; the rules fall back */
       }
@@ -239,17 +298,13 @@ export async function GET(req: Request) {
     c.dirty = false;
     c.blockedUntil = 0;
     c.version += 1;
-    return json({ ...body, version: c.version, cachedFor: 0 });
+    return body;
   } catch (e) {
     const message = e instanceof Error ? e.message : "Sheet read failed";
     // 429 means the read quota is spent: stop asking for a while rather than
     // retrying on every poll and keeping it spent.
     if (/Sheets API 429|Quota exceeded/i.test(message)) c.blockedUntil = Date.now() + QUOTA_BACKOFF_MS;
-    // Serve the last good copy if we have one, flagged as stale.
-    if (c.body) {
-      return json({ ...c.body, version: c.version, stale: true, error: message });
-    }
-    return NextResponse.json({ error: message }, { status: 502 });
+    throw e;
   }
 }
 
