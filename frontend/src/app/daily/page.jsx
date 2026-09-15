@@ -33,6 +33,7 @@ const FAIL_QUIET = 3;
 // enough to look through the afternoon and talk about it: the old 45 s took
 // the screen back mid-sentence.
 const SCRUB_RESET_MS = 300_000;
+const LAST_COPY_KEY = "daily:last";
 // The bottom bar holds one line, so the verse is shortened to about the length
 // the sheet's own A5 uses — but at a word boundary.
 const VERSE_MAX = 85;
@@ -405,6 +406,26 @@ export default function DailyPage() {
   const debugRef = useRef(null);
   const seenVersion = useRef(null);
 
+  // The last copy this browser saw, shown at once if it is from today.
+  //
+  // A cold serverless instance plus a sheet read is several seconds, and the
+  // board opens on a projector at the start of a lesson — "Contacting the
+  // sheet…" is the wrong thing to have on the wall. Yesterday's copy is not
+  // shown: it would put yesterday's lesson on the screen.
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(LAST_COPY_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      const when = new Date(saved.fetchedAt || 0);
+      if (new Date().toDateString() !== when.toDateString()) return;
+      setData((d) => d || saved);
+      if (saved.points) setPoints((p) => ({ ...p, ...saved.points }));
+    } catch {
+      /* private window, cleared storage, a copy too big to keep — no matter */
+    }
+  }, []);
+
   // URL options (client only)
   useEffect(() => {
     const u = new URLSearchParams(window.location.search);
@@ -459,6 +480,12 @@ export default function DailyPage() {
         if (j.version != null && j.version !== seenVersion.current) {
           seenVersion.current = j.version;
           setBadImages((b) => (Object.keys(b).length ? {} : b));
+          // Kept for the next time this board is opened, not for this page.
+          try {
+            window.localStorage.setItem(LAST_COPY_KEY, JSON.stringify(j));
+          } catch {
+            /* over the quota, or storage turned off — the board does not care */
+          }
         }
       } catch (e) {
         if (alive) fail(e.name === "AbortError" ? "The sheet took too long to answer." : e.message || "Could not reach the sheet");
@@ -1150,14 +1177,19 @@ export default function DailyPage() {
         {header({ title: "Dismissal", chips: null, when: `From ${fmt(endOfDayAt)}`, leftHtml: <b>Day complete</b>, pct: 100 })}
         <div className={`main pic-right endofday${featureImage ? " pic-feature" : ""}`}>
           <div>
+            {/* The goodbye, then the blessing — the verse has had the bottom
+                bar all day and the last word of it belongs to the blessing —
+                then the standing-ready note, and last what to take home. */}
             <p className="script">Well done, {(greeting.match(/,\s*(.*?)!?$/) || [, "everyone"])[1]}.</p>
-            {verse ? <p className="question">{verse}</p> : null}
+            {meta.blessing
+              ? <p className="question blessing">{meta.blessing}</p>
+              : verse ? <p className="question">{verse}</p> : null}
+            <p className="summary">Tidy your area, tuck your chair in and stand behind it, ready for your homeroom teacher.</p>
             {meta.headout.length > 0 && (
               <div className="block alert" style={{ textAlign: "left", display: "inline-block" }}>
                 <h3>Before you head out</h3>{list(meta.headout)}
               </div>
             )}
-            {meta.blessing ? <p className="summary blessing">{meta.blessing}</p> : null}
           </div>
           {featureImage ? bigPicture(featureImage, "On screen now", "") : dismissalPanel(false)}
         </div>

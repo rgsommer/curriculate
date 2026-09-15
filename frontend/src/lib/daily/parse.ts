@@ -1107,7 +1107,7 @@ export type RawInputs = {
   // list a rule indexes into can live on any tab, and one the board does not
   // hold makes the rule throw and fall back to the sheet's own value — which,
   // for a picture, is nothing at all.
-  extraGrids?: { range: string; values: string[][] }[];
+  extraGrids?: { range: string; values: string[][]; formulas?: string[][] }[];
 };
 
 const isErr = (s: string) => /^#(N\/A|REF!|VALUE!|ERROR!|DIV\/0!|NAME\?)/.test(s.trim());
@@ -1584,6 +1584,7 @@ function buildBook(inp: RawInputs): Book {
       width: at.right - at.left + 1,
       height: at.bottom - at.top + 1,
       values: extra.values || [],
+      formulas: extra.formulas || [],
     });
   }
   return book;

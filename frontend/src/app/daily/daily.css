@@ -199,13 +199,20 @@ a.subj.deck:hover { text-decoration-color: currentColor; }
 .block ol.waiting li { margin: .3vh 0; font-size: calc(clamp(14px, 2.4vh, 26px) * var(--fit)); }
 /* The end-of-day package carries four blocks, so it is set a size down and
    never allowed to push past the bottom of the screen. */
-/* The dismissal screen carries more than any other: the goodbye, the verse of
-   the day, the head-out list and the blessing all have to fit one viewport. */
+/* The dismissal screen carries more than any other: the goodbye, the blessing,
+   the standing-ready note and the head-out list all in one viewport. */
 .main.endofday > div:first-child { display: flex; flex-direction: column; gap: 1vh; min-height: 0; }
 .main.endofday .script { font-size: calc(clamp(26px, 5.5vh, 66px) * var(--fit)); }
 .main.endofday .question { font-size: calc(clamp(15px, 2.7vh, 29px) * var(--fit)); margin: 0; }
 .main.endofday .block li { font-size: calc(clamp(14px, 2.4vh, 26px) * var(--fit)); }
-.main.endofday .summary.blessing { font-size: calc(clamp(13px, 2.1vh, 22px) * var(--fit)); margin: 0; }
+.main.endofday .summary { font-size: calc(clamp(13px, 2.2vh, 24px) * var(--fit)); margin: 0; }
+/* The blessing takes the place the verse held: serif, italic, and the size of
+   the line it replaces rather than a footnote under the list. */
+.main.endofday .question.blessing {
+  font-family: var(--font-merriweather), Georgia, serif;
+  font-style: italic;
+  margin: 0;
+}
 .panel.dismissalpanel { gap: 1.4vh; }
 /* The one instruction the room has to act on before the bell. */
 .panel.dismissalpanel .block.ready { border: 2px solid var(--alert); }
