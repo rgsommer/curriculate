@@ -43,6 +43,9 @@ import { getOptionsMetrics, formatOptionsLine } from "../services/stocksOptionsM
 import { monitorPositionStops, formatPositionStopBlock } from "../services/stocksPositionStopMonitor.js";
 import { computeSleeveBalance, formatSleeveBalanceBlock, classifyPosition } from "../services/stocksSleeveEnforcer.js";
 import { buildDecisions, ACTION as DECISION_ACTION } from "../services/stocksDecisionEngine.js";
+import { resolveTrailStopReview, ACTION as TSR_ACTION } from "../services/stocksTrailStopResolver.js";
+import { buildDecisionCard } from "../services/stocksDecisionCard.js";
+import { classifyPriceFreshness } from "../services/stocksPriceFreshness.js";
 import { renderDecisionCard, serializeDecisionsForAi } from "../services/stocksDecisionRenderer.js";
 import { getEstimateRevisions } from "../services/stocksGrowthRevisions.js";
 import { validateRecs, buildValidatorContext, fetchLivePricesForRecs, computeUserExpectancy, fetchLiquidityForRecs } from "../services/stocksRecValidator.js";
@@ -236,6 +239,19 @@ export async function monitorOpenRecs(email) {
   const openRecs = await StocksAdviceRec.find({ email, status: "open" }).lean();
   if (openRecs.length === 0) return { alerts: [], hits: 0, inRange: 0 };
 
+  // P4.3 phantom-XLU fix: any "SELL the position at market" clause
+  // must be gated on the ticker being currently held. Load the
+  // portfolio once and derive a base-ticker set so recs on
+  // non-held tickers render as CLOSED REC OUTCOMEs rather than
+  // ghost SELL instructions.
+  let p43HeldBaseSet = new Set();
+  try {
+    const portDoc = await StocksPortfolio.findOne({ email }).lean();
+    for (const p of (portDoc?.positions || [])) {
+      if (p?.ticker && p.qty > 0) p43HeldBaseSet.add(baseTicker(p.ticker));
+    }
+  } catch { /* fail-open — if the portfolio fetch dies we keep the old wording */ }
+
   // De-dupe and fetch one price per resolved exchange symbol — a CAD rec
   // (entryCurrency "CAD") must be checked on its TSX listing (ENB → ENB.TO),
   // not the US ADR, or target/stop alerts fire on the wrong market.
@@ -345,9 +361,18 @@ export async function monitorOpenRecs(email) {
       const isBuy = rec.action === "BUY";
       const isExitOnLong = ["SELL", "EXIT", "TRIM"].includes(String(rec.action).toUpperCase());
       const isShortOpen = ["SELL_SHORT", "OPEN_SHORT", "SHORT"].includes(String(rec.action).toUpperCase());
+      // P4.3: only emit "SELL the position at market" when the ticker
+      // is currently held. A stop-hit on an old BUY rec for a ticker
+      // Richard never bought (or already sold) is a HISTORICAL
+      // OUTCOME, not an actionable SELL. Rendering it as SELL is a
+      // phantom-ticker bug and shows up in the WHAT DO I DO card too.
+      const recBase = baseTicker(rec.ticker);
+      const isHeldNow = p43HeldBaseSet.has(recBase);
       let exit;
-      if (isBuy) {
+      if (isBuy && isHeldNow) {
         exit = `Thesis invalidated. **SELL the position** at market unless you have a high-conviction reason to override.`;
+      } else if (isBuy && !isHeldNow) {
+        exit = `**CLOSED REC OUTCOME** — prior BUY recommendation hit its stop; no current holding. No action required.`;
       } else if (isShortOpen) {
         exit = `Position is moving against you. **Cover / re-evaluate the SHORT thesis** now.`;
       } else if (isExitOnLong) {
@@ -1862,6 +1887,13 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
     };
   };
   const chunks = [];
+
+  // P4.3: collect every deterministic decision-card entry as we go
+  // (resolved trail-stop reviews, hard-stop-hit SELLs, DECISION DEFERRED
+  // notes). At return time we render a "WHAT DO I DO TODAY?" block at
+  // the very top so Richard can read the action-only version in ~10s.
+  const decisionCardEntries = [];
+  const decisionDeferredNotes = [];
   const m = (v) => `$${Math.round(v).toLocaleString()} CAD`;
   const IMPLAUSIBLE_LOSS_PCT = -50;
   const CORE_LOCK_GAP_PP = 10; // if CORE is >10pp under target, block new non-CORE buys
@@ -2453,14 +2485,67 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
     // framing (dividend/valuation angle, no forced EXIT/TIGHTEN
     // decision); SWING/SPEC gets the DJT-style tactical decision
     // review. CORE was already filtered out above.
-    if (r.sleeve === "income") {
+    // P4.3: resolve the trail-stop review to a concrete deterministic
+    // action instead of asking Richard to decide. resolveTrailStopReview()
+    // returns SELL / TRIM / HOLD / TIGHTEN / DEFERRED with reason codes
+    // and evidence — no "decide today" homework. HOLDs disappear from
+    // §1 MANDATORY (they belong in the WHAT DO I DO card / §A2 evidence)
+    // per spec §7. DEFERRED renders honestly instead of guessing.
+    const resolved = resolveTrailStopReview({
+      ticker: r.ticker, sleeve: r.sleeve, currency: r.currency,
+      position: { qty: r.qty, account: r.account, currency: r.currency },
+      currentPrice: r.last, trailStopPrice: r.trailStop, peakPrice: r.high60d,
+      drawdownFromPeakPct: r.drawdownPct,
+      hardStopHit: false,
+      evidence: r.incomeEvidence || {},
+    });
+    r.resolvedDecision = resolved;
+    // Push a decision-card entry regardless of action so the top card
+    // shows the resolved state for EVERY reviewed ticker — including
+    // HOLDs — so Richard sees "the system already thought about this".
+    decisionCardEntries.push({
+      ticker: r.ticker,
+      account: r.account || "?",
+      qty: r.qty,
+      action: resolved.action,
+      sizingHint: resolved.sizingHint,
+      nextReviewDate: resolved.nextReviewDate,
+      deferredReason: resolved.deferredReason,
+    });
+    if (resolved.action === TSR_ACTION.DEFERRED && resolved.deferredReason) {
+      decisionDeferredNotes.push(`${r.ticker}: ${resolved.deferredReason}`);
+    }
+    if (resolved.action === TSR_ACTION.HOLD) {
+      // A resolved HOLD is not a MANDATORY ACTION per spec §7 — it
+      // surfaces in the WHAT DO I DO card only, so this section stays
+      // executable-only.
+      continue;
+    }
+    if (resolved.action === TSR_ACTION.DEFERRED) {
       mandatory.push(
-        `**TRAIL STOP REVIEW (INCOME)** — **${r.ticker}**. Current price below the 60d-peak-minus-2.5×ATR trailing stop (${trailStopStr}). 60d high: ${highStr}. Drawdown from peak: ${drawdownStr}. **INCOME framing — review the dividend/thesis, not an automatic exit:** (1) is the payout still safe (payout ratio, coverage)? (2) has the valuation multiple compressed structurally? (3) is the sector view intact? Document ONE of: **HOLD — thesis and yield intact**, **TRIM to reduce single-name weight**, or **EXIT — thesis broken**. HOLD requires a specific yield/coverage number and a review date, not "long-term dividend payer".`
+        `**DECISION DEFERRED — ${r.ticker}**. ${resolved.deferredReason || "Required evidence unavailable."} Drawdown from peak: ${drawdownStr}. No trade authorized until refreshed.`
       );
-    } else {
+      continue;
+    }
+    if (resolved.action === TSR_ACTION.TIGHTEN) {
       mandatory.push(
-        `**TRAIL STOP REVIEW** — **${r.ticker}**. Current price is below the 60d-peak-minus-2.5×ATR trailing stop (${trailStopStr}). 60d high: ${highStr}. Drawdown from peak: ${drawdownStr}. **Decide today and record ONE of:** (1) **EXIT** — lock in the remaining gain or cut the drawdown; (2) **TIGHTEN** — move hard stop to break-even or 1×ATR below current; (3) **HOLD with documented reason** — must include a concrete new-evidence trigger AND a new review date. No fourth option. "Hold through earnings" or "thesis intact" alone are NOT acceptable — write out the specific trigger.`
+        `**TIGHTEN STOP** — **${r.ticker}** in **${r.account || "?"}**. Trail stop ${trailStopStr}; last ${r.last != null ? `$${r.last.toFixed(2)} ${r.currency}` : "n/a"}. Move hard stop to break-even or 1×ATR below current. Invalidation: ${resolved.invalidationTrigger}. Review ${resolved.nextReviewDate}. Reason: ${resolved.reasonCodes.join(", ")} (confidence ${resolved.confidence}).`
       );
+      continue;
+    }
+    if (resolved.action === TSR_ACTION.TRIM) {
+      const trimQty = resolved.sizingHint?.qty || Math.floor((r.qty || 0) / 3);
+      mandatory.push(
+        `**TRIM** — Sell ${trimQty} sh **${r.ticker}** in **${r.account || "?"}** at market. Drawdown ${drawdownStr}. Reason: ${resolved.reasonCodes.join(", ")}. Confidence ${resolved.confidence}. Invalidation: ${resolved.invalidationTrigger}.`
+      );
+      // fall through — the paired REDEPLOY ticket below still applies
+    }
+    if (resolved.action === TSR_ACTION.SELL) {
+      const sellQty = resolved.sizingHint?.qty || r.qty;
+      mandatory.push(
+        `**SELL** — Sell ${sellQty} sh **${r.ticker}** in **${r.account || "?"}** at market. Trail stop ${trailStopStr}; last ${r.last != null ? `$${r.last.toFixed(2)} ${r.currency}` : "n/a"}. Drawdown ${drawdownStr}. Reason: ${resolved.reasonCodes.join(", ")}. Confidence ${resolved.confidence}.`
+      );
+      // fall through — the paired REDEPLOY ticket below still applies
     }
     // Paired IF-EXIT REDEPLOY hint. TRAIL STOP REVIEW is a decision
     // mandate (three options) so no forced SELL — but if the operator
@@ -3049,11 +3134,21 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
     chunks.push("");
   }
 
+  // P4.3 spec §6 — WHAT DO I DO TODAY? card at the very top so the
+  // reader can act in ~10 seconds. Detailed evidence stays below.
+  const newBuyCount = (dailyPicks || []).filter(p => p && p.ticker && !p.blockedReason).length;
+  const card = buildDecisionCard({
+    resolvedReviews: decisionCardEntries,
+    hardStopSells: [],   // hard-stop-hit rows land here via the confirmedStops path — see stopMonitor block above
+    newBuyCount,
+    deferredNotes: decisionDeferredNotes,
+  });
   return {
-    md: chunks.join("\n").trim(),
+    md: [card.markdown, "", chunks.join("\n").trim()].join("\n"),
     concentrationMandates,
     mandateRecs,
     trailSoftTickers: [...trailSoftTickers],
+    decisionCard: card,
   };
 }
 
