@@ -57,7 +57,32 @@ body:has(.daily-root) .site-footer { display: none !important; }
 
 /* time scrubber: a slim strip along the bottom edge; quiet until used */
 .scrub { display: flex; align-items: center; gap: 1.2vw; padding: .4vh 3vw .8vh; border-top: 1px solid var(--line); font-size: clamp(13px, 2vh, 24px); color: var(--muted); }
-.scrub input[type="range"] { flex: 1; height: 1.2vh; accent-color: var(--muted); cursor: pointer; margin: 0; }
+.scrub input[type="range"] { width: 100%; height: 1.2vh; accent-color: var(--muted); cursor: pointer; margin: 0; display: block; }
+
+/* The line carries a dot for every class, so the afternoon is one press away
+   rather than a careful drag. */
+.scrub-track { position: relative; flex: 1; }
+
+.scrub-marks { position: absolute; inset: 0; pointer-events: none; }
+
+.scrub-mark {
+  position: absolute;
+  top: 50%;
+  width: 1.6vh;
+  height: 1.6vh;
+  margin: -0.8vh 0 0 -0.8vh;
+  padding: 0;
+  border: 2px solid var(--bg, #fff);
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.55;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.scrub-mark:hover, .scrub-mark.on { opacity: 1; transform: scale(1.25); }
+
+.scrub-mark:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .scrub.active { color: var(--sun-ink); background: var(--sun-fill); }
 .scrub.active input[type="range"] { accent-color: var(--sun-ink); }
 .scrub-label { white-space: nowrap; min-width: 14ch; font-variant-numeric: tabular-nums; }
@@ -68,6 +93,18 @@ body:has(.daily-root) .site-footer { display: none !important; }
 .top { display: grid; grid-template-columns: 1fr auto auto; align-items: end; gap: 2vw; padding: 2vh 3vw 1.2vh; }
 .top .title { display: flex; align-items: center; gap: 1vw; flex-wrap: wrap; }
 .top .subj { font-size: clamp(28px, 6.5vh, 80px); font-weight: 500; line-height: 1; }
+
+/* The course name is the link to its deck. It should not look like a link from
+   the back of the room — a faint underline that firms up under the pointer. */
+a.subj.deck {
+  text-decoration: underline;
+  text-decoration-thickness: 0.06em;
+  text-underline-offset: 0.12em;
+  text-decoration-color: color-mix(in srgb, currentColor 25%, transparent);
+  cursor: pointer;
+}
+
+a.subj.deck:hover { text-decoration-color: currentColor; }
 .chip { font-size: clamp(11px, 1.7vh, 16px); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); background: var(--chip); padding: .5vh 1vw; border-radius: 999px; font-weight: 400; white-space: nowrap; }
 .top .title .chip { background: color-mix(in srgb, var(--subj) 14%, transparent); color: var(--subj-deep); }
 .chip.on { background: var(--ok-fill); color: var(--ok); font-weight: 600; }
@@ -286,7 +323,26 @@ body:has(.daily-root) .site-footer { display: none !important; }
 .prayrow .vid.big { width: auto; }
 
 .debug { padding: 4vh 5vw; overflow: auto; font-size: 15px; }
-.debug h1 { font-size: 24px; font-weight: 500; margin: 0 0 2vh; }
+.debug h1 {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 24px;
+  font-weight: 500;
+  margin: 0 0 2vh;
+}
+
+.debug .copydiag {
+  font: inherit;
+  font-size: 14px;
+  padding: 4px 12px;
+  border: 1px solid var(--line, #cbd5e1);
+  border-radius: 999px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.debug .copydiag:hover { background: #f1f5f9; }
 .debug table { border-collapse: collapse; width: 100%; max-width: 100ch; }
 .debug th, .debug td { text-align: left; padding: 6px 12px; border-bottom: 1px solid var(--line); vertical-align: top; word-break: break-word; }
 .debug th { width: 22ch; color: var(--muted); font-weight: 500; white-space: nowrap; }

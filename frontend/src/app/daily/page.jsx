@@ -16,7 +16,7 @@
 // picture and any image the sheet puts in the feature cell E1).
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
+import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, firstClassStart, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
 
 const CLASS_LABELS = ["7A", "7B", "7C", "8A", "8B", "8C"];
 // The Setup slot table's own columns, for ?debug=1.
@@ -29,7 +29,10 @@ const FETCH_TIMEOUT_MS = 25_000;
 // it has failed this many times running (a minute or so of real trouble).
 const MAX_POLL_MS = 60_000;
 const FAIL_QUIET = 3;
-const SCRUB_RESET_MS = 45_000;
+// How long a scrubbed preview holds before the board snaps back to now. Long
+// enough to look through the afternoon and talk about it: the old 45 s took
+// the screen back mid-sentence.
+const SCRUB_RESET_MS = 300_000;
 // The bottom bar holds one line, so the verse is shortened to about the length
 // the sheet's own A5 uses — but at a word boundary.
 const VERSE_MAX = 85;
@@ -346,20 +349,39 @@ function PointsStrip({ points, labels, currentSec, showPercent }) {
 }
 
 /* The slim time scrubber along the bottom. */
-function Scrub({ min, max, value, live, onChange, onLive }) {
+function Scrub({ min, max, value, live, marks, onChange, onLive }) {
   const active = value != null;
+  const span = Math.max(1, max - min);
   return (
     <div className={`scrub${active ? " active" : ""}`}>
       <span className="scrub-label">{active ? `Previewing ${fmt(value)}` : "Look ahead or back"}</span>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={1}
-        value={active ? value : Math.round(live)}
-        aria-label="Preview another time of day"
-        onChange={(e) => onChange(parseInt(e.target.value, 10))}
-      />
+      {/* Each class is a dot on the line, and pressing one goes to the minute
+          that class begins — finding 1:40 PM by dragging a slider across a
+          school day is a poor way to look at the afternoon. */}
+      <div className="scrub-track">
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={1}
+          value={active ? value : Math.round(live)}
+          aria-label="Preview another time of day"
+          onChange={(e) => onChange(parseInt(e.target.value, 10))}
+        />
+        <div className="scrub-marks">
+          {(marks || []).map((m) => (
+            <button
+              key={`${m.at}-${m.label}`}
+              type="button"
+              className={`scrub-mark${value != null && value === m.at ? " on" : ""}`}
+              style={{ left: `${((m.at - min) / span) * 100}%` }}
+              title={`${m.label} · ${fmt(m.at)}`}
+              aria-label={`Go to ${m.label} at ${fmt(m.at)}`}
+              onClick={() => onChange(m.at)}
+            />
+          ))}
+        </div>
+      </div>
       <button type="button" className="scrub-live" onClick={onLive} disabled={!active}>{active ? "Back to now" : "Live"}</button>
     </div>
   );
@@ -378,7 +400,9 @@ export default function DailyPage() {
   const [scrub, setScrub] = useState(null);
   const [badImages, setBadImages] = useState({});
   const [prayBig, setPrayBig] = useState(false);
+  const [copied, setCopied] = useState("");
   const scrubTouched = useRef(0);
+  const debugRef = useRef(null);
   const seenVersion = useRef(null);
 
   // URL options (client only)
@@ -517,6 +541,15 @@ export default function DailyPage() {
       }
       kept.push({ ...p });
     }
+    // A class is not under way while the room is standing for the anthem. The
+    // day's first teaching period therefore begins when the opening is over —
+    // at the first bell in Vertical column A at or after it (9:05 in the
+    // sheet), not at whatever earlier time its own row carries.
+    const openEnd = data.setup && data.setup.blankTo != null
+      ? data.setup.blankTo + (data.setup.anthemMin || 0)
+      : null;
+    const first = kept.find((p) => !p.duty && !p.empty);
+    if (first) first.start = firstClassStart(first.start, first.end, openEnd, bell, MIN_PERIOD_MIN);
     const classes = kept.filter((p) => !p.duty && !p.empty);
     let cur = null;
     for (const p of kept) if (t >= p.start && t < p.end) { cur = p; break; }
@@ -733,7 +766,15 @@ export default function DailyPage() {
     <>
       <div className="top">
         <div>
-          <div className="title"><span className="subj">{title}</span>{chips}</div>
+          {/* The course's deck for the year hangs off its own name: it is the
+              thing most often wanted at the start of a lesson, and it sits in
+              the sheet a row above the course's first lesson. */}
+          <div className="title">
+            {period && period.deck
+              ? <a className="subj deck" href={period.deck} target="_blank" rel="noreferrer" title="Open this course's deck">{title}</a>
+              : <span className="subj">{title}</span>}
+            {chips}
+          </div>
           {period && (
             <Chips
               period={period}
@@ -823,6 +864,7 @@ export default function DailyPage() {
         max={dayMax}
         value={scrub}
         live={opts.t != null ? opts.t : live}
+        marks={classes.map((c) => ({ at: c.start, label: c.subj || c.sec || "Class" }))}
         onChange={(v) => { scrubTouched.current = Date.now(); setScrub(v); }}
         onLive={() => setScrub(null)}
       />
@@ -932,8 +974,25 @@ export default function DailyPage() {
     );
     return (
       <div className="board">
-        <div className="debug">
-          <h1>What the board sees</h1>
+        <div className="debug" ref={debugRef}>
+          <h1>
+            What the board sees
+            {/* Every one of these lines has been read back to me off a
+                photograph of the screen. One button beats six screenshots. */}
+            <button
+              type="button"
+              className="copydiag"
+              onClick={() => {
+                const text = debugRef.current ? debugRef.current.innerText : "";
+                if (navigator.clipboard) navigator.clipboard.writeText(text).then(
+                  () => setCopied("Copied"),
+                  () => setCopied("Select and copy by hand — the browser said no")
+                );
+                else setCopied("This browser will not copy for me");
+                setTimeout(() => setCopied(""), 4000);
+              }}
+            >{copied || "Copy all of this"}</button>
+          </h1>
           <table>
             <tbody>
               {row("fetched", data.fetchedAt)}
@@ -1017,7 +1076,14 @@ export default function DailyPage() {
           </table>
 
           <div className="shots">
-            {[["E1 picture", evaluated.image || meta.featureImage], ["Lesson picture", data.picture && data.picture.url]]
+            {[
+              ["E1 picture", evaluated.image || meta.featureImage],
+              ["Lesson picture", data.picture && data.picture.url],
+              ["O Canada flag", anthem.image],
+              // Every class's own picture, so "no pictures at all" can be told
+              // from "today's class has none".
+              ...classes.filter((c) => c.image).map((c) => [`${c.subj || c.sec || "class"} picture`, c.image]),
+            ]
               .filter(([, url]) => url)
               .map(([label, url]) => (
                 <figure key={label}>
@@ -1025,7 +1091,9 @@ export default function DailyPage() {
                   <figcaption>{label} — {badImages[url] ? "did NOT load" : "loaded"}</figcaption>
                 </figure>
               ))}
-            {!evaluated.image && !meta.featureImage && !(data.picture && data.picture.url) && <p>No picture URL came back from the sheet.</p>}
+            {!evaluated.image && !meta.featureImage && !anthem.image && !(data.picture && data.picture.url)
+              && !classes.some((c) => c.image)
+              && <p>No picture address came back from the sheet at all — not for E1, not for the flag, not for any class.</p>}
           </div>
           <p>A picture reaches this page only as an address in the cell —
             <code>=IMAGE(&quot;https://…&quot;)</code>, a link, or the address written out.

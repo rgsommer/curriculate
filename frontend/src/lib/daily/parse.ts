@@ -29,6 +29,7 @@ export type Period = {
   links: LessonLink[]; // handouts and forms named in the lesson text, and on Lessons
   page: string; // Lessons E — the starting page reference
   homework: string; // Lessons F
+  deck: string; // the course's deck for the year, linked from the class heading
   image: string; // Lessons I — the lesson picture
 };
 
@@ -220,6 +221,7 @@ export type Lesson = {
   homework: string;
   image: string;
   video: string;
+  deck: string; // the course's deck for the year — column B, above its first lesson
   links: LessonLink[];
 };
 
@@ -234,14 +236,21 @@ export function parseLessons(
   values: string[][],
   formulas: string[][] = [],
   linkRuns: { text: string; url: string }[][][] = [],
-  images: CellImages = {}
+  images: CellImages = {},
+  // Column B, row for row with the others: the row above a course's first
+  // lesson carries the link to that course's deck for the year.
+  deckValues: string[][] = [],
+  deckFormulas: string[][] = []
 ): Record<string, Lesson> {
   const out: Record<string, Lesson> = {};
+  const rowOfCourse: Record<string, number> = {};
   (values || []).forEach((row, r) => {
     const raw = ((row || [])[0] || "").trim(); // C
     if (!LESSON_CODE.test(raw)) return;
     const code = normalizeCode(raw);
     if (out[code]) return; // first row for a code wins
+    const course = (code.match(/^[A-Za-z]+/) || [""])[0].toUpperCase();
+    if (course && rowOfCourse[course] === undefined) rowOfCourse[course] = r;
     const f = formulas[r] || [];
     const cell = (i: number) => String((row || [])[i] || "").trim();
     const formula = (i: number) => String(f[i] || "").trim();
@@ -257,7 +266,8 @@ export function parseLessons(
     // formula to read. This is what lets a column be inserted or removed there
     // without the board showing a video where a picture should be.
     const runOf = (i: number) => (((linkRuns[r] || [])[i] || [])[0] || {}).url || "";
-    const urlsAt = (i: number) => [urlFromFormula(formula(i)), ...(cell(i).match(URL_RE) || []), runOf(i - 2)]
+    // The values start at C and the grid at B, so a value column i is grid i+1.
+    const urlsAt = (i: number) => [urlFromFormula(formula(i)), ...(cell(i).match(URL_RE) || []), runOf(i + 1)]
       .filter(Boolean) as string[];
     const tail: string[] = [];
     for (let i = 6; i <= 8; i += 1) tail.push(...urlsAt(i)); // I to K
@@ -282,8 +292,8 @@ export function parseLessons(
     };
     extractLinks(homework).links.forEach(add);
     extractLinks(page).links.forEach(add);
-    ((linkRuns[r] || [])[0] || []).forEach((l) => add({ label: l.text || "Handout", url: l.url })); // E
-    ((linkRuns[r] || [])[1] || []).forEach((l) => add({ label: l.text || "Handout", url: l.url })); // F
+    ((linkRuns[r] || [])[3] || []).forEach((l) => add({ label: l.text || "Handout", url: l.url })); // E
+    ((linkRuns[r] || [])[4] || []).forEach((l) => add({ label: l.text || "Handout", url: l.url })); // F
 
     out[code] = {
       code,
@@ -291,9 +301,28 @@ export function parseLessons(
       homework: extractLinks(homework).clean,
       image: image ? normalizeImageUrl(image) : "",
       video,
+      deck: "",
       links: links.filter((l) => !isVideoUrl(l.url)),
     };
   });
+
+  // The deck for a course sits one row above its first lesson, in column B —
+  // written out, in a HYPERLINK(), or attached to whatever that cell says. Every
+  // lesson of that course carries it, so the class heading can link to it.
+  const deckOf: Record<string, string> = {};
+  for (const [course, r] of Object.entries(rowOfCourse)) {
+    const above = r - 1;
+    if (above < 0) continue;
+    const value = String(((deckValues || [])[above] || [])[0] || "").trim();
+    const formula = String(((deckFormulas || [])[above] || [])[0] || "").trim();
+    const run = (((linkRuns[above] || [])[0] || [])[0] || {}).url || "";
+    const url = [urlFromFormula(formula), (value.match(URL_RE) || [])[0], run].find(Boolean) || "";
+    if (url) deckOf[course] = url;
+  }
+  for (const lesson of Object.values(out)) {
+    const course = (lesson.code.match(/^[A-Za-z]+/) || [""])[0].toUpperCase();
+    if (course && deckOf[course]) lesson.deck = deckOf[course];
+  }
   return out;
 }
 
@@ -309,7 +338,7 @@ export function parseLessons(
 export type DayClass = {
   subj: string; room: string; code: string; today: string; q: string;
   plan: string[]; assign: string[]; remind: string;
-  links: LessonLink[]; page: string; homework: string; image: string; video: string;
+  links: LessonLink[]; page: string; homework: string; image: string; video: string; deck: string;
   start: number | null; // from Vertical column A, when the row carries a time
 };
 
@@ -334,6 +363,7 @@ function withLesson<T extends { code: string; links: LessonLink[] }>(c: T, lesso
     homework: l ? l.homework : "",
     image: l ? l.image : "",
     video: l ? l.video : "",
+    deck: l ? l.deck : "",
   };
 }
 
@@ -937,6 +967,29 @@ export function parseWaiting(rows: string[][]): string[] {
  * that breaks that run ends the schedule. A stray value must never become a
  * bell, because a bell cuts a class short.
  */
+/**
+ * The day's first teaching period starts when the opening is over.
+ *
+ * The room is standing through the announcements and O Canada, so a class whose
+ * row carries an earlier time is not under way — it begins at the first bell in
+ * Vertical column A at or after the anthem ends (9:05 in the sheet), or at the
+ * anthem's end if the column has no bell there. A period that finishes before
+ * the opening does, or that would be left with nothing but a sliver, is left
+ * alone.
+ */
+export function firstClassStart(
+  start: number,
+  end: number,
+  openEnd: number | null,
+  bells: number[],
+  minPeriod = 10
+): number {
+  if (openEnd == null || start >= openEnd) return start;
+  if (end <= openEnd + minPeriod) return start;
+  const bell = (bells || []).find((b) => b >= openEnd && b < end);
+  return bell ?? openEnd;
+}
+
 export function bellSchedule(rows: string[][]): number[] {
   const out: number[] = [];
   for (const r of rows || []) {
@@ -1036,7 +1089,9 @@ export type RawInputs = {
   verticalTimes?: string[][]; // Vertical!A1:J200 — column A the period times
   lessons?: string[][]; // Lessons!C1:K400 values — the teacher's own material by code
   lessonFormulas?: string[][]; // Lessons!C1:K400 formulas
-  lessonLinkRuns?: { text: string; url: string }[][][]; // links inside Lessons E to K
+  lessonLinkRuns?: { text: string; url: string }[][][]; // links inside Lessons B to K
+  lessonsB?: string[][]; // Lessons B1:B400 — the course decks sit above the first lesson
+  lessonsBFormulas?: string[][];
   verses?: string[][]; // Verses!A1:A400 — the source A5 picks the day's verse from
   verseWeek?: string[][]; // Vertical!B4 — the week number A5 indexes with
   // The tabs the Setup slot rules reach into, so the board can run them itself.
@@ -1161,7 +1216,8 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
     : "Setup rows 35-40 gave nothing; using the plans line";
 
   // ---- period rows ----
-  const lessons = parseLessons(inp.lessons || [], inp.lessonFormulas || [], inp.lessonLinkRuns || [], cellImages);
+  const lessons = parseLessons(inp.lessons || [], inp.lessonFormulas || [], inp.lessonLinkRuns || [], cellImages,
+    inp.lessonsB || [], inp.lessonsBFormulas || []);
   const periods: Period[] = [];
   for (let i = firstTimeRow; i >= 0 && i < rows.length; i++) {
     const r = rows[i] || [];
@@ -1227,6 +1283,7 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
       page: withMat.page,
       homework: withMat.homework,
       image: withMat.image,
+      deck: withMat.deck,
     });
   }
 

@@ -379,7 +379,8 @@ const lessonRows = [
   ["not a code", "", "x", "y", "", "", "", "", ""],
 ];
 const lessonForms = [[], [], ["", "", "", "", "", "", '=IMAGE("https://example.com/history.png")', "", ""], []];
-const lessonRuns = [[], [], [[], [{ text: "Due Dates handout", url: "https://example.org/due.pdf" }]], []];
+// The runs grid starts at B, so E is index 3 and F index 4.
+const lessonRuns = [[], [], [[], [], [], [], [{ text: "Due Dates handout", url: "https://example.org/due.pdf" }]], []];
 const L = P.parseLessons(lessonRows, lessonForms, lessonRuns);
 check("lessons: keyed by code without the tilde", !!L.J003 && !!L.H001 && Object.keys(L).length === 2, Object.keys(L));
 check("lessons: page and homework", L.J003.page === "p. 7" && L.J003.homework.startsWith("Complete NS7-3"), L.J003);
@@ -642,6 +643,54 @@ check("setup: the other labels still read", P.parseSetup([["", "Change time to r
     P.anthemOfDay(poems, rule, 3).image === "", P.anthemOfDay(poems, rule, 3));
 }
 
+// ---- The course deck: column B, the row above the course's first lesson ----
+{
+  //        C          D   E        F
+  const rows = [
+    ["", "", "", ""],                         // row 1 — above History
+    ["~H001", "", "p. 2", "Read p2"],         // row 2
+    ["~H002", "", "p. 9", ""],                // row 3
+    ["", "", "", ""],                         // row 4 — above Math
+    ["~J001", "", "p. 1", ""],                // row 5
+  ];
+  const b = [];
+  b[0] = ["https://example.org/history-deck"];       // written out
+  b[3] = [""];                                       // Math's is a link on the text
+  const bF = [];
+  const runs = [];
+  runs[3] = [[{ text: "Math deck", url: "https://example.org/math-deck" }]]; // column B
+  const L = P.parseLessons(rows, [], runs, {}, b, bF);
+  check("deck: the row above the first lesson gives the course its deck",
+    L.H001.deck === "https://example.org/history-deck", L.H001);
+  check("deck: every lesson of that course carries it",
+    L.H002.deck === "https://example.org/history-deck", L.H002);
+  check("deck: a link attached to that cell's text counts too",
+    L.J001.deck === "https://example.org/math-deck", L.J001);
+  const bHyper = [];
+  bHyper[0] = ['=HYPERLINK("https://example.org/from-a-formula", "History deck")'];
+  const H = P.parseLessons(rows, [], [], {}, [], bHyper);
+  check("deck: a HYPERLINK() in that cell counts", H.H001.deck === "https://example.org/from-a-formula", H.H001);
+  check("deck: a course with nothing above it has none", P.parseLessons(rows, [], [], {}, [], []).H001.deck === "");
+}
+
+// ---- The day's first class waits for the anthem ----
+{
+  const bells = [8 * 60 + 45, 9 * 60 + 5, 10 * 60, 11 * 60];
+  const open = 9 * 60 + 5; // announcements to 9:00, O Canada five minutes
+  check("first class: a class timed through the opening starts at the next bell",
+    P.firstClassStart(8 * 60 + 45, 10 * 60, open, bells) === open);
+  check("first class: with no bell at the opening's end, it starts there anyway",
+    P.firstClassStart(8 * 60 + 45, 10 * 60, open, [8 * 60 + 45]) === open);
+  check("first class: one that starts after the opening is left alone",
+    P.firstClassStart(10 * 60, 11 * 60, open, bells) === 10 * 60);
+  check("first class: one that ends before the opening does is left alone",
+    P.firstClassStart(8 * 60, 8 * 60 + 40, open, bells) === 8 * 60);
+  check("first class: and one the opening would leave a sliver of",
+    P.firstClassStart(8 * 60 + 45, 9 * 60 + 10, open, bells) === 8 * 60 + 45);
+  check("first class: without an opening time nothing moves",
+    P.firstClassStart(8 * 60 + 45, 10 * 60, null, bells) === 8 * 60 + 45);
+}
+
 // ---- The ranges a rule names, so the board reads what the rule reaches for ----
 {
   const named = F.referencedRanges([
@@ -682,7 +731,7 @@ check("setup: the other labels still read", P.parseSetup([["", "Change time to r
   rows[1] = ["~J002", "", "", "", "", "", "", "", ""];
   rows[2] = ["~B004", "", "", "", "", "", "", "https://example.org/mirrored.png", "https://youtu.be/ce"];
   const runs = [];
-  runs[1] = []; runs[1][4] = [{ text: "the diagram", url: "https://example.org/diagram.png" }];
+  runs[1] = []; runs[1][7] = [{ text: "the diagram", url: "https://example.org/diagram.png" }]; // I, B-based
   const L = P.parseLessons(rows, [], runs);
   check("lesson picture: a Drive open?id link is the picture",
     L.H001.image === "https://lh3.googleusercontent.com/d/ABC123", L.H001);
