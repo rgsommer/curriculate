@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import BatchGrading from "./BatchGrading";
 import HomeworkCheck from "./HomeworkCheck";
+import NewYearReset from "./NewYearReset";
 import VideoGrading from "./VideoGrading";
 import AudioGrading from "./AudioGrading";
 import QuestWidget, { GRADING_QUESTS, completeQuest } from "../../components/QuestWidget";
@@ -3805,6 +3806,17 @@ export default function GradingPage() {
                 </span>
               )}
             </div>
+            {/* Start-of-year housekeeping: clear last year's published results
+                so a new cohort doesn't share a progress portal with the last. */}
+            {teacherEmail && (
+              <div style={{ marginTop: 6 }}>
+                <NewYearReset
+                  backendBase={backendBase}
+                  teacherEmail={teacherEmail}
+                  onDone={() => { setSessionItems([]); setRefCode(""); }}
+                />
+              </div>
+            )}
           </label>
         )}
 

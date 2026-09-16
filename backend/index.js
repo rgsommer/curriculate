@@ -26,6 +26,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import fielddayRouter from "./fieldday/index.js";
 import gradingFeedbackRouter from "./routes/gradingFeedback.js";
 import homeworkCheckRouter from "./routes/homeworkCheck.js";
+import gradingResetRouter from "./routes/gradingReset.js";
 import pulseBetaRouter, { isActiveBetaCode } from "./routes/pulseBeta.js";
 import cardsRouter from "./routes/cards.js";
 import avgsRouter from "./routes/avgs.js";
@@ -630,6 +631,8 @@ app.use("/class-roster", classRosterRouter);
 // completeness/correctness table. Photo-heavy, so it owns its own resumable
 // upload store and background job map (see the router).
 app.use("/homework", homeworkCheckRouter);
+// "Start a new school year" — two-step, token-gated reset of published results.
+app.use("/grading/reset", gradingResetRouter);
 app.use("/student-scavenger-progress", studentScavengerProgressRouter);
 app.use("/student-contact", studentContactRouter);
 app.use("/student-progress", studentProgressRouter);
