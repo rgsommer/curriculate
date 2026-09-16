@@ -516,7 +516,7 @@ function buildBatchPayloadText(result, refCode, gradeBandForKita) {
   // Saved captures (image links from S3)
   const imgLinks = Array.isArray(a.assignment_images) ? a.assignment_images : [];
   if (imgLinks.length) {
-    lines.push("Saved captures (30-day links):");
+    lines.push("Saved captures:");
     imgLinks.forEach((img) => lines.push(`Photo ${img.index}: ${img.url}`));
     lines.push("");
   }

@@ -1029,7 +1029,7 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "", gradeBandForKit
 
   // (Optional) keep links in portal payload too
   if (links.length) {
-    lines.push("Saved captures (30-day links):");
+    lines.push("Saved captures:");
     links.forEach((img) => lines.push(`Photo ${img.index}: ${img.url}`));
     lines.push("");
   }
@@ -3524,7 +3524,7 @@ export default function GradingPage() {
           <div style="margin-top:10px; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
             <b>Saved captures</b>
             <div style="font-size:12px; opacity:0.85; margin-bottom:6px;">
-              These links work for ~30 days.
+              These links work for about 90 days.
             </div>
             <ul style="margin:0 0 0 18px; padding:0;">
               ${htmlLinks.map(img => `
@@ -5792,7 +5792,7 @@ export default function GradingPage() {
                     <>
                       <div style={styles.gradingSectionTitle}>Saved captures</div>
                       <div style={{ fontSize: 13, opacity: 0.9, marginBottom: 6 }}>
-                        These links work for ~30 days.
+                        These links work for about 90 days.
                       </div>
                       <ul style={styles.gradingUl}>
                         {getAssignmentImagesFromAssessment(assessment).map((img) => (

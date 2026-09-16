@@ -139,7 +139,8 @@ function parseTeacherBlock(payloadText) {
     "Sections:",
     "Achievement Categories (KITA):",
     "Achievement Categories:",
-    "Saved captures (30-day links):",
+    "Saved captures (30-day links):",   // legacy — still in already-published payloads
+    "Saved captures:",
     "Transcript:",
     "Per-student grades:",
   ]);
@@ -154,7 +155,8 @@ function parseTeacherBlock(payloadText) {
     "Sections:": "sections",
     "Achievement Categories (KITA):": "sections",
     "Achievement Categories:": "achievementSummary",
-    "Saved captures (30-day links):": "savedCaptures",
+    "Saved captures (30-day links):": "savedCaptures",  // legacy
+    "Saved captures:": "savedCaptures",
     "Transcript:": "transcript",
     "Per-student grades:": "perStudent",
   };
@@ -215,7 +217,7 @@ function parseTeacherBlock(payloadText) {
     }
 
     // Links / evidence: and Saved captures: are list-ish
-    if (current === "Links / evidence:" || current === "Saved captures (30-day links):") {
+    if (current === "Links / evidence:" || current === "Saved captures (30-day links):" || current === "Saved captures:") {
       const t = ln.trim();
       if (!t) continue;
       out[bucket[current]].push(t);
