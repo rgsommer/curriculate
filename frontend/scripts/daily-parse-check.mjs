@@ -863,30 +863,51 @@ check("setup: the other labels still read", P.parseSetup([["", "Change time to r
 }
 
 // ---- the corrective writing assignment ----
-const pgrid = (() => {
-  const g = [];
-  for (let r = 0; r < 46; r += 1) g[r] = [];
-  const cols = [4, 17, 30, 43, 56];
-  ["7A", "7B", "7C", "8A", "8B"].forEach((n, i) => { g[2][cols[i] - 1] = n; });
-  // Six days: only the last five count, so 7A's poor day outside the window
-  // must not add to its tally — it has one inside, which is not enough.
-  [[2, 7, 6, 8, 8], [2, 8, 7, 8, 7], [8, 6, 8, 3, 6], [8, 7, 7, 7, 8], [7, 8, 6, 4, 5], [9, 9, 9, 9, 9]]
-    .forEach((row, d) => { row.forEach((v, i) => { g[3 + d][cols[i] - 1] = String(v); }); });
+// The real layout: name in row 3, days-a-week three on, then a week per row
+// from row 6 with Monday to Friday side by side and the sheet's own Total
+// beside them.
+const pointsSheet = (weeks, opts = {}) => {
+  const g = Array.from({ length: 46 }, () => Array.from({ length: 74 }, () => ""));
+  const bases = [4, 17, 30, 43, 56];
+  ["7A", "7B", "7C", "8A", "8B"].forEach((n, i) => {
+    g[2][bases[i] - 1] = n;
+    g[1][bases[i] + 2] = "MTWRF"; // row 2, the days-a-week cell
+  });
+  weeks.forEach((week, w) => {
+    g[5 + w][0] = String(w + 1); // column A — the week number
+    week.forEach((days, i) => {
+      days.forEach((v, d) => { g[5 + w][bases[i] + d - 1] = String(v); });
+      // The Total the sheet computes, which is what the rule used to lock onto.
+      g[5 + w][bases[i] + 5 - 1] = opts.total ?? "0";
+    });
+  });
   return g;
-})();
-const owed = P.writingOwed(pgrid, pgrid[2]);
-check("writing: two poor days in the last five", owed.writing.join() === "8A", owed);
-check("writing: the note says which columns it read", /8A=AQ/.test(owed.writingNote), owed.writingNote);
-check("writing: an empty grid says so", P.writingOwed([], []).writing.length === 0);
-// A year not yet played: the score rows are still noughts, and a nought is not
-// a poor day — it is a day that has not happened.
+};
 {
-  const g = [];
-  for (let r = 0; r < 46; r += 1) g[r] = [];
-  const cols = [4, 17, 30, 43, 56];
-  ["7A", "7B", "7C", "8A", "8B"].forEach((n, i) => { g[2][cols[i] - 1] = n; });
-  [[8, 7, 6, 9, 8], [7, 8, 7, 8, 7]].forEach((row, d) => { row.forEach((v, i) => { g[3 + d][cols[i] - 1] = String(v); }); });
-  for (let r = 5; r < 45; r += 1) cols.forEach((c) => { g[r][c - 1] = "0"; });
+  // 8A: 8, 7, 7, 4, 5 in its last five — two poor days. 7A has one poor day in
+  // the window and another outside it, which is not enough.
+  const g = pointsSheet([
+    [[2, 7, 6, 8, 8], [8, 8, 8, 8, 8], [8, 8, 8, 8, 8], [8, 7, 7, 7, 8], [8, 8, 8, 8, 8]],
+    [[8, 6, 8, 3, 6], [8, 8, 8, 8, 8], [8, 8, 8, 8, 8], [8, 7, 7, 4, 5], [8, 8, 8, 8, 8]],
+  ]);
+  const owed = P.writingOwed(g, g[2]);
+  check("writing: two poor days in the last five", owed.writing.join() === "8A", owed);
+  check("writing: the note gives the five days it weighed", /8A=8,7,7,4,5/.test(owed.writingNote), owed.writingNote);
+  check("writing: a poor day outside the window does not count", !owed.writing.includes("7A"), owed);
+}
+check("writing: an empty grid says so", P.writingOwed([], []).writing.length === 0);
+{
+  // The Total column beside the days is forty rows of noughts. The rule used to
+  // pick it — more numbers in it than in the day cells — and then watched a
+  // column that could never show a poor day.
+  const g = pointsSheet([[[4, 4, 8, 8, 8], [8, 8, 8, 8, 8], [8, 8, 8, 8, 8], [8, 8, 8, 8, 8], [8, 8, 8, 8, 8]]]);
+  for (let r = 7; r < 46; r += 1) { g[r][0] = ""; [4, 17, 30, 43, 56].forEach((b) => { g[r][b + 4] = "0"; }); }
+  const owed = P.writingOwed(g, g[2]);
+  check("writing: the Total column is not mistaken for the days", owed.writing.join() === "7A", owed);
+}
+{
+  // A year not yet played: no day cell carries a score, so nobody is owed one.
+  const g = pointsSheet([[[ "x", "-", "", "", ""], ["x", "-", "", "", ""], ["x", "", "", "", ""], ["", "", "", "", ""], ["", "", "", "", ""]]]);
   const owed = P.writingOwed(g, g[2]);
   check("writing: unplayed days do not count as poor ones", owed.writing.length === 0, owed);
 }
