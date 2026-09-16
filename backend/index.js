@@ -27,6 +27,7 @@ import fielddayRouter from "./fieldday/index.js";
 import gradingFeedbackRouter from "./routes/gradingFeedback.js";
 import homeworkCheckRouter from "./routes/homeworkCheck.js";
 import gradingResetRouter from "./routes/gradingReset.js";
+import { RESULT_RETENTION_DAYS } from "./utils/retention.js";
 import pulseBetaRouter, { isActiveBetaCode } from "./routes/pulseBeta.js";
 import cardsRouter from "./routes/cards.js";
 import avgsRouter from "./routes/avgs.js";
@@ -202,7 +203,11 @@ const GradingCapture = mongoose.models.GradingCapture || mongoose.model(
     {
       submissionId: { type: String, unique: true, index: true, required: true },
       keys: { type: [String], default: [] }, // S3 object keys
-      createdAt: { type: Date, default: Date.now, expires: 60 * 60 * 24 * 30 }, // 30 days TTL
+      // Kept in step with RESULT_RETENTION_DAYS. This record is what maps a
+      // submission to its S3 objects, so if it expires first the result text
+      // outlives its own photos and the "saved captures" links 404 while the
+      // page around them still works.
+      createdAt: { type: Date, default: Date.now, expires: RESULT_RETENTION_DAYS * 24 * 60 * 60 },
     },
     { timestamps: false }
   )

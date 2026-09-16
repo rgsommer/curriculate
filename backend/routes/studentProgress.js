@@ -5,6 +5,7 @@ import jwt from "jsonwebtoken";
 import StudentAccount from "../models/StudentAccount.js";
 import ClassRoster from "../models/ClassRoster.js";
 import PublishedResult from "../models/PublishedResult.js";
+import { resultExpiryDate } from "../utils/retention.js";
 import { sendWeeklyDigests } from "../email/gradeNotification.js";
 
 const router = express.Router();
@@ -507,7 +508,7 @@ router.get("/results", studentAuth, async (req, res) => {
     // Keep-alive: extend expiry on all this student's results by 30 days.
     // Any login (student or parent) refreshes the TTL.
     if (results.length > 0) {
-      const newExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      const newExpiry = resultExpiryDate();
       const resultIds = results.map((r) => r._id);
       PublishedResult.updateMany(
         { _id: { $in: resultIds }, expiresAt: { $lt: newExpiry } },

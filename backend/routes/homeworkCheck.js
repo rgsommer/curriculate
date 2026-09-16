@@ -45,6 +45,7 @@ import HomeworkCheckBatch from "../models/HomeworkCheckBatch.js";
 import ClassRoster from "../models/ClassRoster.js";
 import PublishedResult from "../models/PublishedResult.js";
 import { genAA123 } from "../utils/refCode.js";
+import { resultExpiryDate } from "../utils/retention.js";
 import { notifyNewGrade } from "../email/gradeNotification.js";
 
 const router = express.Router();
@@ -1727,7 +1728,7 @@ async function publishBatchToPortal(batch) {
     (r) => (r.studentId || r.edsbyId) && !r.noPageFound && !r.superseded && !r.unmatched && r.completeness != null
   );
 
-  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  const expiresAt = resultExpiryDate();
   const batchId = String(batch._id);
   let created = 0;
   let updated = 0;

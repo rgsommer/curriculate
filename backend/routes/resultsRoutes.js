@@ -6,6 +6,7 @@ import FeedbackMessage from "../models/FeedbackMessage.js";
 import { genAA123, normalizeCode } from "../utils/refCode.js";
 import { sendSystemEmail } from "../email/shareInviteEmailer.js";
 import { notifyNewGrade } from "../email/gradeNotification.js";
+import { resultExpiryDate } from "../utils/retention.js";
 
 const router = express.Router();
 
@@ -75,7 +76,7 @@ router.post("/", createLimiter, async (req, res) => {
     const { payload, meta, teacherId, sessionId } = req.body || {};
     if (payload == null) return res.status(400).json({ error: "Missing payload." });
 
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const expiresAt = resultExpiryDate();
 
     // ─── Dedup by pdfName + same student (collapses re-grades on /progress) ───
     // Prior behavior: required studentId + pdfName both set; the prior record
