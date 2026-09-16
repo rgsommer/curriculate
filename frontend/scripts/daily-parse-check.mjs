@@ -643,6 +643,31 @@ check("setup: the other labels still read", P.parseSetup([["", "Change time to r
     P.anthemOfDay(poems, rule, 3).image === "", P.anthemOfDay(poems, rule, 3));
 }
 
+// ---- The head-out cell, however the sheet writes it ----
+{
+  const shapes = [
+    "Before you head out today, please: - Tidy your desk. - Say sorry if you wronged someone. And as you go, receive this blessing: Go in peace.",
+    "Before you go today, please: - Tidy your desk. - Say sorry if you wronged someone. And as you go, receive this blessing: Go in peace.",
+    "Make sure ... - Tidy your desk. - Say sorry if you wronged someone.",
+  ];
+  for (const text of shapes) {
+    check(`head-out: recognised — ${text.slice(0, 22)}…`, P.HEADOUT_CELL.test(text));
+    const out = P.splitHeadout(text);
+    check(`head-out: two items out of it — ${text.slice(0, 22)}…`, out.items.length === 2, out);
+  }
+  check("head-out: an ordinary lesson is not one", !P.HEADOUT_CELL.test("Math 7A (23) 202 Today we practise..."));
+  // An unrecognised shape does not just lose the list: that row carries a time,
+  // so it turned into a period of its own in the middle of the timetable.
+  const rows = [
+    ["9:00 AM", "", "Math 7A (23) 202 (J003) Today we practise. Why? - Do p.7", "", "", ""],
+    ["1:00 AM", "", shapes[1], "", "", ""],
+  ];
+  const paid = P.buildPayload({ display: rows, displayD: [], displayC: [], setup: [], slots: [], master: [] });
+  check("head-out: its row does not become a period",
+    paid.periods.length === 1 && paid.periods[0].start === 9 * 60, paid.periods.map((p) => p.start));
+  check("head-out: and the list reaches the board", paid.meta.headout.length === 2, paid.meta.headout);
+}
+
 // ---- The course deck: column B, the row above the course's first lesson ----
 {
   //        C          D   E        F
