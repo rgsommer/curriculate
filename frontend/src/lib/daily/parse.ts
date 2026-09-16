@@ -901,6 +901,9 @@ function num(s: string, d: number): number {
  * and the blessing are wanted in different places on the board, so they are
  * split apart here.
  */
+/** The shapes the head-out cell is written in. */
+export const HEADOUT_CELL = /^(?:before you (?:head out|go)\b|make sure\s*\.\.\.)/i;
+
 export function splitHeadout(text: string): { items: string[]; blessing: string } {
   const body = String(text || "").replace(/^[^:]{0,80}?:\s*/, "").trim();
   const marker = body.match(/(?:and as you go,?\s*)?(?:receive this blessing:|before you go today[.\s]*)/i);
@@ -1224,7 +1227,12 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
     const start = parseTime(r[0] || "");
     if (start === null) continue;
     const text = (r[2] || "").trim();
-    if (/^Before you head out/i.test(text) || /^Make sure\s*\.\.\./i.test(text)) {
+    // "Before you head out today…", "Before you go today, please:", "Make sure…".
+    // The sheet writes this cell more than one way, and an unrecognised one does
+    // not merely lose the list: the row has a time in column A, so it became a
+    // period of its own — "1:00 AM · Before you go today, please: …" sitting in
+    // the middle of the day's timetable.
+    if (HEADOUT_CELL.test(text)) {
       const parsed = splitHeadout(text);
       meta.headout = parsed.items;
       meta.blessing = parsed.blessing;

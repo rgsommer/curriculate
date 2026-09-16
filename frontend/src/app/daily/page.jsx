@@ -1088,7 +1088,9 @@ export default function DailyPage() {
               {(data.slotBlock || []).map((rowVals, r) => (
                 <tr key={r}>
                   <th>{r + 1}</th>
-                  {["T", "U", "V", "W", "X", "Y", "Z", "AA"].map((col, c) => {
+                  {/* The block is read from S, so the first cell is S — it was
+                      labelled T, and the last two columns were not shown. */}
+                  {["S", "T", "U", "V", "W", "X", "Y", "Z", "AA", "AB"].map((col, c) => {
                     const formula = ((data.slotBlockFormulas || [])[r] || [])[c] || "";
                     const value = (rowVals || [])[c] || "";
                     return (
@@ -1127,12 +1129,19 @@ export default function DailyPage() {
             A picture <em>put into</em> the cell (Insert &rsaquo; Image, either kind) cannot
             be read at all: the Sheets API has no image field anywhere in it, so such a
             cell has neither a value nor a formula and always shows as empty here.</p>
-          <p>The fix is in the sheet, not on this page.
+          <p>Two ways round it, both in the sheet rather than on this page.
+            The quick one, for a handful of cells: write the address in instead of
+            inserting the picture — <code>=IMAGE(&quot;https://…&quot;)</code> looks the
+            same in the sheet and the board can read it.</p>
+          <p>The general one, for pictures you go on pasting in:
             <code>frontend/src/app/daily/apps-script/mirror-cell-images.gs</code> in the
-            repository is an Apps Script that turns every in-cell picture into an
-            <code>=IMAGE()</code> formula pointing at the same picture — the sheet looks
-            the same afterwards, and the board can then see it. Paste it into
-            Extensions &rsaquo; Apps Script, run it once, and give it an hourly trigger.</p>
+            repository. It finds the cells holding a picture, copies the bytes to a
+            Drive folder shared with anyone who has the link, and records the durable
+            address on a hidden <b>BoardImages</b> tab — <em>your cells are left exactly
+            as they are</em>. The board reads that tab and uses it wherever the picture
+            itself cannot be seen. Paste it into Extensions &rsaquo; Apps Script, run
+            <code>recordCellImagesForBoard</code> once, and give it an hourly trigger.
+            Until it has run, the <b>recorded pictures</b> line above says so.</p>
         </div>
       </div>
     );
