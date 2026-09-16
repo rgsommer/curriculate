@@ -898,6 +898,7 @@ export function pointsFromSetup(setup: string[][], pointsGrid: string[][]): Clas
  */
 const POINTS_BLOCKS = [4, 17, 30, 43, 56, 69]; // D, Q, AD, AQ, BD, BQ — the name
 const POINTS_FIRST_WEEK_ROW = 6;
+const NAME_ROW = 3;
 const POINTS_LAST_WEEK_ROW = 46;
 
 export function pointsFromGrid(grid: string[][]): ClassPoints[] {
@@ -1778,45 +1779,44 @@ export function writingOwed(grid: string[][], row3: string[]): { writing: string
     const n = parseFloat(v);
     return n >= 0 && n <= 20 ? n : null;
   };
-  // The day rows are the ones between the heading and the flags that carry a
-  // score for any class at all; the last five of those are the week in question.
-  const NAME_ROW = 3;
-  const FLAG_ROW = 46;
-  const cols = POINTS_NAME_COLS.filter((c) => at(NAME_ROW, c));
-  if (!cols.length) return { writing: [], writingNote: "no class names in row 3" };
+  // Each class block on the Points tab: the name in row 3, the days-a-week cell
+  // three columns on, then a week per row from row 6 with Monday to Friday side
+  // by side. The Total sits beside those five and is not a day.
+  //
+  // That distinction is the whole of this. The rule used to go looking for
+  // "the column in this block that reads like daily scores", and what it found
+  // was the Total column — forty-odd rows of it, every one a nought, against
+  // three real day cells. So it watched a column of zeros and the brown chip
+  // could never appear.
+  const classes = POINTS_BLOCKS
+    .map((base) => ({ name: at(NAME_ROW, base), base }))
+    .filter((c) => c.name && at(2, c.base + 3));
+  if (!classes.length) return { writing: [], writingNote: "no class taught this year has a name in row 3" };
 
-  const pick = (base: number): number => {
-    let best = 0;
-    let bestCol = 0;
-    for (let off = 0; off <= 8; off += 1) {
-      let n = 0;
-      for (let r = NAME_ROW + 1; r < FLAG_ROW; r += 1) if (score(r, base + off) !== null) n += 1;
-      // The class's own column wins any tie, so a block of equally plausible
-      // columns does not come down to the order they happen to sit in.
-      if (n > best || (off === 0 && n === best && n > 0)) { best = n; bestCol = base + off; }
+  // A day counts once it has been scored. An unplayed one is blank, or the "x"
+  // and "-" that mark a day the class does not meet; a nought is treated the
+  // same way, since the rows waiting for the rest of the year read as noughts
+  // and a chip that accuses a class should not rest on one.
+  const daysOf = (base: number): number[] => {
+    const out: number[] = [];
+    for (let r = POINTS_FIRST_WEEK_ROW; r <= POINTS_LAST_WEEK_ROW; r += 1) {
+      if (!at(r, 1)) break; // past the last week row
+      for (let c = base; c < base + 5; c += 1) {
+        const n = score(r, c);
+        if (n !== null && n > 0) out.push(n);
+      }
     }
-    return best >= 3 ? bestCol : 0;
+    return out;
   };
 
-  const picked = cols.map((base) => ({ name: at(NAME_ROW, base), base, col: pick(base) }));
-  const scored = picked.filter((p) => p.col);
-  if (!scored.length) return { writing: [], writingNote: "no column in any class block reads as daily scores" };
-
-  // A day counts only once it has actually been scored. Rows waiting for the
-  // rest of the year read as a column of noughts, and counting those made every
-  // class look like it had had a run of poor days before the year began.
-  const dayRows: number[] = [];
-  for (let r = NAME_ROW + 1; r < FLAG_ROW; r += 1) {
-    if (scored.some((p) => (score(r, p.col) ?? 0) > 0)) dayRows.push(r);
-  }
-  const week = dayRows.slice(-5);
   const writing: string[] = [];
-  for (const p of scored) {
-    const poor = week.filter((r) => { const n = score(r, p.col); return n !== null && n <= 5; }).length;
-    if (poor > 1) writing.push(p.name);
+  const notes: string[] = [];
+  for (const c of classes) {
+    const week = daysOf(c.base).slice(-5);
+    notes.push(`${c.name}=${week.join(",") || "—"}`);
+    if (week.filter((n) => n <= 5).length > 1) writing.push(c.name);
   }
-  const where = scored.map((p) => `${p.name}=${columnName(p.col)}`).join(" ");
-  return { writing, writingNote: `rows ${week[0] ?? "—"}-${week[week.length - 1] ?? "—"} | ${where}` };
+  return { writing, writingNote: `last five scored days — ${notes.join("  ")}` };
 }
 
 /** 1-based column number to its letters, for the debug view. */
