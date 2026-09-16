@@ -25,6 +25,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 // Field Day backend module (ESM router)
 import fielddayRouter from "./fieldday/index.js";
 import gradingFeedbackRouter from "./routes/gradingFeedback.js";
+import homeworkCheckRouter from "./routes/homeworkCheck.js";
 import pulseBetaRouter, { isActiveBetaCode } from "./routes/pulseBeta.js";
 import cardsRouter from "./routes/cards.js";
 import avgsRouter from "./routes/avgs.js";
@@ -625,6 +626,10 @@ startResearchWorker();
 
 // Class roster management (Edsby CSV upload, student lookup)
 app.use("/class-roster", classRosterRouter);
+// Homework Check: assignment page → capture lap → name-delimited grouping →
+// completeness/correctness table. Photo-heavy, so it owns its own resumable
+// upload store and background job map (see the router).
+app.use("/homework", homeworkCheckRouter);
 app.use("/student-scavenger-progress", studentScavengerProgressRouter);
 app.use("/student-contact", studentContactRouter);
 app.use("/student-progress", studentProgressRouter);

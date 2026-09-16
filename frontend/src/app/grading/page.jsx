@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import BatchGrading from "./BatchGrading";
+import HomeworkCheck from "./HomeworkCheck";
 import VideoGrading from "./VideoGrading";
 import AudioGrading from "./AudioGrading";
 import QuestWidget, { GRADING_QUESTS, completeQuest } from "../../components/QuestWidget";
@@ -3844,7 +3845,7 @@ export default function GradingPage() {
         <style>{`
           @media (min-width: 820px) {
             .grading-grid {
-              grid-template-columns: ${(inputMode === "batch" || inputMode === "video" || inputMode === "audio") ? "1fr" : "1fr 1fr"} !important;
+              grid-template-columns: ${(inputMode === "batch" || inputMode === "video" || inputMode === "audio" || inputMode === "homework") ? "1fr" : "1fr 1fr"} !important;
             }
             .grading-grid > .grading-submit-card {
               position: sticky;
@@ -3888,6 +3889,8 @@ export default function GradingPage() {
                   },
                   { mode: "paste", label: "Paste", onClick: () => setInputMode("paste") },
                   { mode: "batch", label: "Batch", onClick: () => setInputMode("batch"), ref: tourTargetBatchRef },
+                  { mode: "homework", label: "Homework", onClick: () => setInputMode("homework"),
+                    title: "Check who did the homework — completeness and correctness from a printed workbook" },
                   { mode: "video", label: "Video", onClick: () => setInputMode("video") },
                   { mode: "audio", label: "Audio", onClick: () => setInputMode("audio") },
                 ].map(({ mode, label, onClick, title, ref: btnRef }) => {
@@ -3974,6 +3977,13 @@ export default function GradingPage() {
               setTeacherEmail={setTeacherEmail}
               rosterClasses={rosterClasses}
               setRosterClasses={setRosterClasses}
+              onClose={() => setInputMode("photo")}
+            />
+          ) : inputMode === "homework" ? (
+            <HomeworkCheck
+              gradingUrl={gradingUrl}
+              teacherEmail={teacherEmail}
+              rosterClasses={rosterClasses}
               onClose={() => setInputMode("photo")}
             />
           ) : (
@@ -4728,7 +4738,7 @@ export default function GradingPage() {
           </div>
 
           {/* SUBMIT + RESPONSE CARD — hidden in batch/video/audio mode */}
-          <div className="grading-submit-card" style={{ ...styles.card, ...((inputMode === "batch" || inputMode === "video" || inputMode === "audio") ? { display: "none" } : {}) }}>
+          <div className="grading-submit-card" style={{ ...styles.card, ...((inputMode === "batch" || inputMode === "video" || inputMode === "audio" || inputMode === "homework") ? { display: "none" } : {}) }}>
             <div style={styles.cardTitle}>Submit</div>
 
             <div style={styles.btnRow}>
