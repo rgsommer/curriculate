@@ -43,6 +43,9 @@ import OpenAI from "openai";
 import HomeworkAnswerKey from "../models/HomeworkAnswerKey.js";
 import HomeworkCheckBatch from "../models/HomeworkCheckBatch.js";
 import ClassRoster from "../models/ClassRoster.js";
+import PublishedResult from "../models/PublishedResult.js";
+import { genAA123 } from "../utils/refCode.js";
+import { notifyNewGrade } from "../email/gradeNotification.js";
 
 const router = express.Router();
 
@@ -1625,6 +1628,180 @@ router.get("/student-history", async (req, res) => {
 });
 
 // ===========================================================================
+// Publishing to /results → /progress
+//
+// Homework Check results reach the student portal the same way every other
+// grading mode does: one PublishedResult per student, keyed by
+// meta.studentId, which is what studentProgress.js queries.
+//
+// The difference is WHEN. Other modes publish as they grade. Homework Check
+// publishes only on Release, because the whole point of the gate is that
+// nothing appears on /progress until the teacher has checked the flags.
+// Un-releasing deletes the published copies again.
+// ===========================================================================
+
+// The plain-text body the student reads at /results/{code}. Headings match the
+// ones the results page parser already understands ("Next Steps:",
+// "Overall Comment:"), so this renders without touching that page.
+//
+// This function is the student-facing boundary: anything the student must
+// never see has to be absent HERE, not merely hidden in the UI.
+function buildStudentPayloadText(batch, r, code) {
+  const lines = [];
+
+  // Completeness is the mark that posts to the gradebook, and the regex in
+  // resultsRoutes' notifier reads "n / m" off this line.
+  if (r.completeness != null) lines.push(`Grade: ${r.completeness} / 10`);
+  else lines.push("Homework check");
+  lines.push("");
+
+  const label = [batch.lessonCode, batch.assignment?.pageLabel].filter(Boolean).join(" · ");
+  if (label) { lines.push(`Assignment: ${label}`); lines.push(""); }
+
+  // Counts, never percentages — "you finished 4 of 6", not "67%".
+  lines.push(`You finished ${r.attemptedCount} of ${r.assignedCount} questions.`);
+  if (batch.correctnessAvailable && r.keyedAttemptedCount > 0) {
+    lines.push(`Of the ${r.keyedAttemptedCount} I could check, ${r.correctCount} were right.`);
+  }
+  lines.push("");
+
+  // Per-question next steps. Only questions with something to act on carry a
+  // studentNote — correct answers, samples and unreadable work are all blank
+  // by construction upstream, so nothing leaks here.
+  const actionable = (r.questions || []).filter((q) => q.studentNote);
+  if (actionable.length) {
+    lines.push("Next Steps:");
+    for (const q of actionable) lines.push(`- ${q.q}: ${q.studentNote}`);
+    lines.push("");
+  }
+
+  // Correct answers only once the teacher has flipped the second toggle, so
+  // the page is somewhere to try again before it's somewhere to copy.
+  if (batch.answersReleased && Array.isArray(batch._answerLookup) && batch._answerLookup.length) {
+    const wanted = new Set(
+      (r.questions || [])
+        .filter((q) => q.correct === "incorrect" || q.work === "not_attempted")
+        .map((q) => String(q.q).toLowerCase())
+    );
+    const shown = batch._answerLookup.filter((k) => wanted.has(String(k.q).toLowerCase()));
+    if (shown.length) {
+      lines.push("Answers:");
+      for (const k of shown) lines.push(`- ${k.q}: ${k.answer}`);
+      lines.push("");
+    }
+  }
+
+  lines.push("Overall Comment:");
+  if (r.encouragement) lines.push(r.encouragement);
+  const toRevisit = actionable.length;
+  lines.push(
+    toRevisit
+      ? `There ${toRevisit === 1 ? "is 1 question" : `are ${toRevisit} questions`} to look at again above.`
+      : "Nothing to revisit on this one."
+  );
+  lines.push("");
+  lines.push(`View this online: www.curriculate.net/results/${code}`);
+
+  return lines.join("\n");
+}
+
+// Create one PublishedResult per eligible student. Idempotent: a second
+// release updates the existing rows rather than duplicating them.
+async function publishBatchToPortal(batch) {
+  // Answers are only needed when the teacher has released them.
+  let answerLookup = [];
+  if (batch.answersReleased && batch.lessonCode) {
+    const keyDoc = await HomeworkAnswerKey.findOne({
+      teacherEmail: batch.teacherEmail,
+      lessonCode: batch.lessonCode,
+      ...(batch.bookName ? { bookName: batch.bookName } : {}),
+    }).lean();
+    answerLookup = keyDoc?.questions || [];
+  }
+  const ctx = { ...batch, _answerLookup: answerLookup };
+
+  // A student only gets a portal entry if we know who they are and there is
+  // something to show. No page found / superseded retakes / unmatched pages
+  // are teacher-side concerns and never become a student result.
+  const eligible = (batch.results || []).filter(
+    (r) => (r.studentId || r.edsbyId) && !r.noPageFound && !r.superseded && !r.unmatched && r.completeness != null
+  );
+
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  const batchId = String(batch._id);
+  let created = 0;
+  let updated = 0;
+
+  for (const r of eligible) {
+    const studentId = r.studentId || r.edsbyId;
+    const meta = {
+      source: "homework-check",
+      homeworkBatchId: batchId,
+      studentId,
+      studentName: r.studentName,
+      className: batch.className || "",
+      teacherEmail: batch.teacherEmail,
+      title: `Homework ${batch.lessonCode || batch.assignment?.pageLabel || ""}`.trim(),
+      subject: batch.assignment?.subjectGuess || "",
+      assessmentType: "Homework",
+      score: r.completeness,
+      outOf: 10,
+    };
+
+    // One row per (batch, student) — re-release updates in place.
+    const existing = await PublishedResult.findOne({
+      "meta.homeworkBatchId": batchId,
+      "meta.studentId": studentId,
+    });
+
+    if (existing) {
+      existing.payload = buildStudentPayloadText(ctx, r, existing.code);
+      existing.meta = meta;
+      existing.expiresAt = expiresAt;
+      await existing.save();
+      updated += 1;
+      continue;
+    }
+
+    // Fresh code, retrying on the (rare) unique-index collision.
+    let saved = null;
+    for (let attempt = 0; attempt < 5 && !saved; attempt++) {
+      const code = genAA123();
+      try {
+        saved = await PublishedResult.create({
+          code,
+          payload: buildStudentPayloadText(ctx, r, code),
+          meta,
+          sessionId: `homework-${batchId}`,
+          expiresAt,
+        });
+      } catch (err) {
+        if (err?.code !== 11000) throw err; // not a duplicate-code clash
+      }
+    }
+    if (saved) {
+      created += 1;
+      // Same notification path every other grading mode uses.
+      notifyNewGrade(studentId, {
+        title: meta.title,
+        subject: meta.subject,
+        code: saved.code,
+        scoreText: `${r.completeness}/10`,
+      }).catch((e) => console.warn("[homework/publish] notify failed:", e?.message || e));
+    }
+  }
+
+  console.log(`[homework/publish] batch ${batchId}: ${created} created, ${updated} updated of ${eligible.length} eligible`);
+  return { created, updated, eligible: eligible.length };
+}
+
+async function unpublishBatch(batchId) {
+  const r = await PublishedResult.deleteMany({ "meta.homeworkBatchId": String(batchId) });
+  console.log(`[homework/publish] batch ${batchId}: removed ${r.deletedCount || 0} portal entries`);
+  return r.deletedCount || 0;
+}
+
+// ===========================================================================
 // TEACHER RELEASE GATE
 //
 // Nothing reaches the student portal automatically. The teacher reviews the
@@ -1647,8 +1824,25 @@ router.post("/batches/:id/release", async (req, res) => {
     ).lean();
     if (!doc) return res.status(404).json({ ok: false, error: "Batch not found." });
 
+    // This is the moment the results actually reach the student portal — one
+    // PublishedResult per student, exactly like every other grading mode.
+    let portal = null;
+    try {
+      portal = release ? await publishBatchToPortal(doc) : { removed: await unpublishBatch(doc._id) };
+    } catch (pubErr) {
+      // The release itself stands; we just couldn't push to the portal. Say so
+      // rather than reporting a clean success the teacher would trust.
+      console.error("[homework/release] portal publish failed:", pubErr?.message || pubErr);
+      return res.json({
+        ok: true,
+        released: doc.released,
+        releasedAt: doc.releasedAt,
+        portalError: "The batch was released, but publishing to the student portal failed. Press Release again to retry.",
+      });
+    }
+
     console.log(`[homework/release] ${teacherEmail} ${release ? "released" : "un-released"} batch ${req.params.id}`);
-    return res.json({ ok: true, released: doc.released, releasedAt: doc.releasedAt });
+    return res.json({ ok: true, released: doc.released, releasedAt: doc.releasedAt, portal });
   } catch (err) {
     console.error("[homework/release]", err?.message || err);
     return res.status(500).json({ ok: false, error: "Release failed." });
@@ -1669,6 +1863,13 @@ router.post("/batches/:id/release-answers", async (req, res) => {
       { new: true }
     ).lean();
     if (!doc) return res.status(404).json({ ok: false, error: "Batch not found." });
+
+    // Already-published payloads have to be rewritten, or the toggle would
+    // only affect students who hadn't looked yet.
+    if (doc.released) {
+      try { await publishBatchToPortal(doc); }
+      catch (e) { console.error("[homework/release-answers] republish failed:", e?.message || e); }
+    }
     return res.json({ ok: true, answersReleased: doc.answersReleased });
   } catch (err) {
     console.error("[homework/release-answers]", err?.message || err);
@@ -1775,7 +1976,10 @@ router.delete("/batches/:id", async (req, res) => {
     const teacherEmail = String(req.query.teacherEmail || "").trim().toLowerCase();
     if (!teacherEmail) return res.status(400).json({ ok: false, error: "teacherEmail is required." });
     const r = await HomeworkCheckBatch.deleteOne({ _id: req.params.id, teacherEmail });
-    return res.json({ ok: true, deleted: r.deletedCount || 0 });
+    // Don't leave orphaned entries on students' progress pages pointing at a
+    // batch that no longer exists.
+    const removed = await unpublishBatch(req.params.id);
+    return res.json({ ok: true, deleted: r.deletedCount || 0, portalRemoved: removed });
   } catch (err) {
     console.error("[homework/batches delete]", err?.message || err);
     return res.status(500).json({ ok: false, error: "Delete failed." });

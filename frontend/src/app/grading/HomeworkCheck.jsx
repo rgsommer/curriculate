@@ -1295,6 +1295,7 @@ function ResultsTable({ result, onExportCsv, onExportEdsby, hwUrl, teacherEmail 
   const [answersReleased, setAnswersReleased] = useState(!!result.answersReleased);
   const [releaseBusy, setReleaseBusy] = useState(false);
   const [releaseError, setReleaseError] = useState("");
+  const [portalMsg, setPortalMsg] = useState("");
 
   async function toggleRelease(next) {
     if (!result.batchId) {
@@ -1312,6 +1313,16 @@ function ResultsTable({ result, onExportCsv, onExportEdsby, hwUrl, teacherEmail 
       const data = await res.json();
       if (!res.ok || !data?.ok) throw new Error(data?.error || `Server error ${res.status}`);
       setReleased(!!data.released);
+      if (data.portalError) {
+        setReleaseError(data.portalError);
+      } else if (data.portal) {
+        const p = data.portal;
+        setPortalMsg(
+          next
+            ? `${(p.created || 0) + (p.updated || 0)} of ${p.eligible ?? 0} students now have this on their progress page.`
+            : `Removed ${p.removed || 0} entries from student progress pages.`
+        );
+      }
     } catch (err) {
       setReleaseError(err?.message || "Release failed.");
     } finally {
@@ -1392,6 +1403,7 @@ function ResultsTable({ result, onExportCsv, onExportEdsby, hwUrl, teacherEmail 
             </span>
           </label>
         )}
+        {portalMsg && <div style={{ ...S.tdSub, marginTop: 8, fontWeight: 700 }}>{portalMsg}</div>}
         {releaseError && <div style={S.error}>{releaseError}</div>}
       </div>
 
