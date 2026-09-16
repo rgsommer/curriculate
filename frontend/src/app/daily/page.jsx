@@ -1080,6 +1080,11 @@ export default function DailyPage() {
               {row("points", `${(points.numbers || []).join(", ") || "—"} | ${(points.percents || []).join(", ") || "—"} | entered: ${points.entered}`)}
               {row("points source", points.note || "—")}
               {row("Setup rows 35-40 (F, K, L)", (sources.plansCells || []).map((r) => `${r[0] || "·"} | ${r[1] || "·"} | ${r[2] || "·"}`).join("    ") || "—")}
+              {/* The Points tab itself, every cell of it that holds anything.
+                  Whether the strip reads the wrong cells or the sheet is
+                  genuinely empty is not a thing to answer from a photograph. */}
+              {row(`Points!A1:BV46 — ${(sources.pointsCells || []).length} cells with something in them`,
+                (sources.pointsCells || []).join("  ") || "the whole block is empty")}
             </tbody>
           </table>
           <h2>Setup!T1:AA8 — the cells that decide E1</h2>

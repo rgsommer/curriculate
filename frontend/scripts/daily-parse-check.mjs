@@ -643,6 +643,75 @@ check("setup: the other labels still read", P.parseSetup([["", "Change time to r
     P.anthemOfDay(poems, rule, 3).image === "", P.anthemOfDay(poems, rule, 3));
 }
 
+// ---- Adding the Points tab up when the sheet's own totals have broken ----
+{
+  // The real layout, from the sheet: name in row 3 at D/Q/AD/AQ/BD/BQ, the
+  // target two on, the days-a-week cell one further, then a week per row from
+  // row 6 — Mon to Fri, then a Total the sheet computes (and which is broken).
+  const g = Array.from({ length: 46 }, () => Array.from({ length: 74 }, () => ""));
+  const put = (r, c, v) => { g[r - 1][c - 1] = v; };
+  const blocks = [
+    [4, "7A", 240, "MWR", ["-", "x", 10, 10, 10]],
+    [17, "7B", 320, "MTRF", ["-", 10, "x", 10, 10]],
+    [30, "7C", 160, "MT", ["-", 10, "x", "x", "x"]],
+    [43, "8A", 400, "MTWRF", [10, 9, 10, 10, "-"]],
+    [56, "8B", 160, "WF", ["x", "x", 9, "x", 10]],
+    [69, "8C", 0, "", ["x", "x", "x", "x", "x"]],
+  ];
+  put(4, 1, "Wk");
+  put(6, 1, "1"); put(6, 2, "Sep 7");
+  for (const [base, name, target, days, week1] of blocks) {
+    put(2, base + 3, days);
+    put(3, base, name); put(3, base + 2, String(target));
+    week1.forEach((v, i) => put(6, base + i, String(v)));
+    put(5, base, "#REF!");     // the broken row
+    put(6, base + 5, "0");     // the Total the sheet computes — nought
+  }
+  const got = P.pointsFromGrid(g);
+  check("points tab: only the classes taught this year", got.map((c) => c.name).join(",") === "7A,7B,7C,8A,8B", got);
+  check("points tab: the days are added up, dashes and crosses ignored",
+    got.map((c) => c.total).join(",") === "30,30,10,39,19", got.map((c) => c.total));
+  check("points tab: the percentage is against the class's own target",
+    got.map((c) => c.percent).join(",") === "13,9,6,10,12", got.map((c) => c.percent));
+
+  // And the payload uses it only when Setup's own cells have gone to nought.
+  const setupZero = Array.from({ length: 40 }, () => Array.from({ length: 16 }, () => ""));
+  for (let r = 35; r <= 40; r += 1) { setupZero[r - 1][10] = "0"; setupZero[r - 1][11] = "0%"; }
+  const broken = P.buildPayload({ display: [], displayD: [], displayC: [], setup: setupZero, slots: [], master: [], pointsGrid: g });
+  check("points: the tab stands in when Setup reads nought",
+    (broken.points.numbers || []).join(",") === "30,30,10,39,19", broken.points.numbers);
+  check("points: and the debug line says where the figures came from",
+    /added up from the Points tab/.test(broken.points.note), broken.points.note);
+
+  const setupReal = Array.from({ length: 40 }, () => Array.from({ length: 16 }, () => ""));
+  for (let r = 35; r <= 40; r += 1) { setupReal[r - 1][10] = "660"; setupReal[r - 1][11] = "44%"; }
+  const fine = P.buildPayload({ display: [], displayD: [], displayC: [], setup: setupReal, slots: [], master: [], pointsGrid: g });
+  check("points: the sheet's own cells win when they carry figures",
+    (fine.points.numbers || [])[0] === 660 && /Setup rows 35-40:/.test(fine.points.note), fine.points.note);
+}
+
+// ---- The Points tab, printed as it stands ----
+{
+  const grid = [];
+  grid[0] = ["", "", "", "", "", "", "G1 flag"];
+  grid[2] = [];
+  grid[2][3] = "7A";
+  grid[4] = [];
+  grid[4][8] = "8";       // I5
+  grid[4][21] = "";       // V5 empty
+  grid[45] = [];
+  grid[45][7] = "1";      // H46
+  const cells = P.nonEmptyCells(grid);
+  check("points dump: a cell is named by its own address", cells.includes("I5=8"), cells);
+  check("points dump: columns past Z keep their letters", P.nonEmptyCells([[], [], [], [], [], []].concat([])).length === 0);
+  check("points dump: row 46 and column H", cells.includes("H46=1"), cells);
+  check("points dump: empties are left out", !cells.some((c) => c.startsWith("V5")), cells);
+  const wide = [Array.from({ length: 61 }, (_, i) => (i === 60 ? "x" : ""))];
+  check("points dump: BI is BI", P.nonEmptyCells(wide)[0] === "BI1=x", P.nonEmptyCells(wide));
+  const many = [Array.from({ length: 50 }, () => "v")];
+  check("points dump: a full block is capped", P.nonEmptyCells(many, 10).length === 11, P.nonEmptyCells(many, 10).length);
+}
+
 // ---- The head-out cell, however the sheet writes it ----
 {
   const shapes = [
