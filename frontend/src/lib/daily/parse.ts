@@ -2,7 +2,7 @@
 // with plain node. Input is the raw cell grid of the DisplayAI tab (plus a few
 // Setup cells); output is the JSON the page renders from.
 
-import { evaluateOr, parseA1, type Book } from "./formula";
+import { columnLetters, evaluateOr, parseA1, type Book } from "./formula";
 
 /** A handout, form or reference linked from a lesson cell. */
 export type LessonLink = { label: string; url: string };
@@ -880,6 +880,58 @@ export function pointsFromSetup(setup: string[][], pointsGrid: string[][]): Clas
 }
 
 /**
+ * The points worked out from the Points tab itself.
+ *
+ * Each class has a block on that tab: its name in row 3, its target two columns
+ * on, the days it meets one further on again, and then a row per week from row
+ * 6 down — Monday to Friday, and a Total column the sheet computes.
+ *
+ * That Total column is what Setup rows 35 to 40 are built from, and when it
+ * breaks everything downstream reads nought: the sheet's own plans line, and
+ * the strip along the foot of the board. It did break — row 5 of the tab went
+ * to #REF!, the weekly totals went to 0 while the day cells still held 10, 10,
+ * 10 — and the room saw five classes on 0%.
+ *
+ * So the days are added up here instead, and the percentage taken against the
+ * class's own target. It is a fallback, not a replacement: when the sheet's own
+ * cells carry figures again they are what shows.
+ */
+const POINTS_BLOCKS = [4, 17, 30, 43, 56, 69]; // D, Q, AD, AQ, BD, BQ — the name
+const POINTS_FIRST_WEEK_ROW = 6;
+const POINTS_LAST_WEEK_ROW = 46;
+
+export function pointsFromGrid(grid: string[][]): ClassPoints[] {
+  const at = (row: number, col: number) => String(((grid || [])[row - 1] || [])[col - 1] ?? "").trim();
+  const num = (s: string) => {
+    const n = parseFloat(s.replace(/[^\d.-]/g, ""));
+    return Number.isFinite(n) ? n : null;
+  };
+  const out: ClassPoints[] = [];
+  for (const base of POINTS_BLOCKS) {
+    if (!at(2, base + 3)) continue; // the days-a-week cell: no such class this year
+    const name = at(3, base);
+    const target = num(at(3, base + 2));
+    let total = 0;
+    let scored = false;
+    for (let r = POINTS_FIRST_WEEK_ROW; r <= POINTS_LAST_WEEK_ROW; r += 1) {
+      if (!at(r, 1)) break; // past the last week row
+      for (let c = base; c < base + 5; c += 1) {
+        const v = num(at(r, c));
+        // "-" and "x" mark days the class does not meet; only figures count.
+        if (v != null && /\d/.test(at(r, c))) { total += v; scored = true; }
+      }
+    }
+    if (!name && !scored) continue;
+    out.push({
+      name,
+      total: scored ? total : null,
+      percent: scored && target ? Math.round((total / target) * 100) : null,
+    });
+  }
+  return out;
+}
+
+/**
  * The class names from Points row 3, left to right — the order the plans line
  * writes its values in. Reading them from the sheet is what lets the strip
  * name the sections actually taught this year rather than a fixed 7A…8C list,
@@ -1205,17 +1257,27 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
 
   // Whatever the line was showing when it was read, the paired cells are the
   // better answer: both numbers at once, for the classes that exist this year.
-  if (classPoints.length) {
+  //
+  // Unless they have gone to nought. Those cells are built from the Points
+  // tab's weekly Total columns, and when those break — row 5 of that tab is
+  // #REF! today, and every Total reads 0 while the day cells still hold 10, 10,
+  // 10 — the sheet's own plans line and the strip both show five classes on
+  // nothing. So the days are added up from the tab itself instead.
+  const useful = (list: ClassPoints[]) => list.some((c) => (c.total ?? 0) > 0 || (c.percent ?? 0) > 0);
+  const fromGrid = useful(classPoints) ? [] : pointsFromGrid(inp.pointsGrid || []);
+  const chosen = useful(classPoints) ? classPoints : (useful(fromGrid) ? fromGrid : classPoints);
+  if (chosen.length) {
     // A class with no figure stays empty rather than becoming a nought — the
     // strip shows a dash for it, which is the truth, where a nought reads as a
     // class that scored nothing.
-    if (classPoints.some((c) => c.total != null)) points.numbers = classPoints.map((c) => c.total);
-    if (classPoints.some((c) => c.percent != null)) points.percents = classPoints.map((c) => c.percent);
+    if (chosen.some((c) => c.total != null)) points.numbers = chosen.map((c) => c.total);
+    if (chosen.some((c) => c.percent != null)) points.percents = chosen.map((c) => c.percent);
   }
   // What those cells actually held, for ?debug=1 — the difference between the
   // board reading the wrong place and the sheet genuinely saying nought.
-  points.note = classPoints.length
-    ? classPoints.map((c) => `${c.name || "?"}=${c.total ?? "—"}/${c.percent ?? "—"}%`).join("  ")
+  const where = chosen === fromGrid ? "added up from the Points tab (Setup rows 35-40 were nought)" : "Setup rows 35-40";
+  points.note = chosen.length
+    ? `${where}: ${chosen.map((c) => `${c.name || "?"}=${c.total ?? "—"}/${c.percent ?? "—"}%`).join("  ")}`
     : "Setup rows 35-40 gave nothing; using the plans line";
 
   // ---- period rows ----
@@ -1376,13 +1438,14 @@ export type Sources = {
   pointsLabels: string[]; // Points row 3 — the classes taught this year, in order
   cellImages: CellImages; // the pictures the API cannot see, by cell
   plansCells: string[][]; // Setup rows 35 to 40, columns F, K and L, raw, for ?debug=1
+  pointsCells: string[]; // every cell of Points!A1:BV46 that holds something, "I5=8"
 };
 
 export const EMPTY_SOURCES: Sources = {
   windowStart: null, windowEnd: null, offsetHours: 0, b7: false, d7: false, a9: null, a11: null,
   poemRow: [], poemF3: "", poemF3Formula: "", poemGrid: [], poemGridFormulas: [],
   verticalRow: [], slots: [], riddle: "",
-  verses: [], verseWeek: null, pointsClasses: [], pointsLabels: [], book: {}, cellImages: {}, plansCells: [],
+  verses: [], verseWeek: null, pointsClasses: [], pointsLabels: [], book: {}, cellImages: {}, plansCells: [], pointsCells: [],
 };
 
 const truthy = (s: string) => /^(TRUE|1|YES)$/i.test(String(s || "").trim());
@@ -1670,6 +1733,10 @@ export function buildSources(inp: RawInputs): Sources {
       const row = (inp.setup || [])[34 + i] || [];
       return [String(row[5] ?? ""), String(row[10] ?? ""), String(row[11] ?? "")];
     }),
+    // And the Points tab as it actually stands. Whether the strip is reading
+    // the wrong cells or the sheet is genuinely empty is not a thing anyone
+    // should have to answer from a photograph of a projector.
+    pointsCells: nonEmptyCells(inp.pointsGrid || []),
   };
 }
 
@@ -1846,6 +1913,27 @@ export function anthemOfDay(
     if (text) lines.push(text);
   }
   return { image, lines };
+}
+
+/**
+ * Every cell of a grid that holds something, as "I5=8".
+ *
+ * A sparse 46 by 74 block prints in a few lines; a full one is capped. It is
+ * the whole answer to "is the board reading the wrong place, or is the sheet
+ * saying nought", and it costs nothing — the grid is already read.
+ */
+export function nonEmptyCells(grid: string[][], max = 1200): string[] {
+  const out: string[] = [];
+  for (let r = 0; r < (grid || []).length; r += 1) {
+    const row = grid[r] || [];
+    for (let c = 0; c < row.length; c += 1) {
+      const v = String(row[c] ?? "").trim();
+      if (!v) continue;
+      if (out.length >= max) return [...out, `…${max} shown, more not listed`];
+      out.push(`${columnLetters(c + 1)}${r + 1}=${v.length > 40 ? `${v.slice(0, 40)}…` : v}`);
+    }
+  }
+  return out;
 }
 
 /** Points row 3 holds the class names; row 46 holds four flags per class. */
