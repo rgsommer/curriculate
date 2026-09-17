@@ -150,6 +150,10 @@ async function refresh(quick: boolean): Promise<Payload> {
       // Column B of Lessons: the row above a course's first lesson carries the
       // link to that course's deck for the year, which the heading points at.
       "Lessons!B1:B400",     // 22
+      // The reward thresholds, one row per benefit: how many points, over how
+      // many days, how many times. The board only computes the last of them,
+      // the writing penalty, but it should do so from the sheet's own numbers.
+      "Setup!D52:AE56",      // 23 — row 52 is the header the columns are read by
       ...(waitingRange ? [waitingRange] : []), // 23
       // And whatever the slot rules themselves asked for last time round: the
       // list of pictures a rule indexes into can live on a tab of its own, and
@@ -191,8 +195,8 @@ async function refresh(quick: boolean): Promise<Payload> {
     const slotBlock = values[2] || [];
     const setupMessages = values[3] || [];
     const feature = (values[4]?.[0]?.[0]) || (values[5]?.[0]?.[0]) || "";
-    const waiting = waitingRange ? (values[23] || []) : [];
-    const extraAt = waitingRange ? 24 : 23;
+    const waiting = waitingRange ? (values[24] || []) : [];
+    const extraAt = waitingRange ? 25 : 24;
     const extraGrids = cachedExtra.map((range, i) => ({
       range,
       values: values[extraAt + i] || [],
@@ -290,6 +294,7 @@ async function refresh(quick: boolean): Promise<Payload> {
       pointsGrid: values[12] || [],
       pointsRow3: (values[12] || [])[2] || [],
       pointsRow46: (values[12] || [])[45] || [],
+      rewardRules: values[23] || [],
       displayLinks: grid.first || [],
       displayCRuns: (grid.runs || []).map((row) => (row || [])[2] || []),
       setupMessages,

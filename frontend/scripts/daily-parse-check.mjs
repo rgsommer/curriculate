@@ -891,8 +891,8 @@ const pointsSheet = (weeks, opts = {}) => {
     [[8, 6, 8, 3, 6], [8, 8, 8, 8, 8], [8, 8, 8, 8, 8], [8, 7, 7, 4, 5], [8, 8, 8, 8, 8]],
   ]);
   const owed = P.writingOwed(g, g[2]);
-  check("writing: two poor days in the last five", owed.writing.join() === "8A", owed);
-  check("writing: the note gives the five days it weighed", /8A=8,7,7,4,5/.test(owed.writingNote), owed.writingNote);
+  check("writing: two poor days running", owed.writing.join() === "8A", owed);
+  check("writing: the note gives the days it weighed", /8A=4,5/.test(owed.writingNote), owed.writingNote);
   check("writing: a poor day outside the window does not count", !owed.writing.includes("7A"), owed);
 }
 check("writing: an empty grid says so", P.writingOwed([], []).writing.length === 0);
@@ -900,7 +900,7 @@ check("writing: an empty grid says so", P.writingOwed([], []).writing.length ===
   // The Total column beside the days is forty rows of noughts. The rule used to
   // pick it — more numbers in it than in the day cells — and then watched a
   // column that could never show a poor day.
-  const g = pointsSheet([[[4, 4, 8, 8, 8], [8, 8, 8, 8, 8], [8, 8, 8, 8, 8], [8, 8, 8, 8, 8], [8, 8, 8, 8, 8]]]);
+  const g = pointsSheet([[[8, 8, 8, 4, 4], [8, 8, 8, 8, 8], [8, 8, 8, 8, 8], [8, 8, 8, 8, 8], [8, 8, 8, 8, 8]]]);
   for (let r = 7; r < 46; r += 1) { g[r][0] = ""; [4, 17, 30, 43, 56].forEach((b) => { g[r][b + 4] = "0"; }); }
   const owed = P.writingOwed(g, g[2]);
   check("writing: the Total column is not mistaken for the days", owed.writing.join() === "7A", owed);
@@ -912,6 +912,49 @@ check("writing: an empty grid says so", P.writingOwed([], []).writing.length ===
   check("writing: unplayed days do not count as poor ones", owed.writing.length === 0, owed);
 }
 check("column letters", P.columnName(4) === "D" && P.columnName(43) === "AQ" && P.columnName(74) === "BV");
+
+// ---- the reward thresholds, from Setup D52:AE56 ----
+{
+  // The block as the sheet holds it: a header row, then a row per benefit with
+  // the rule in words on the left and the numbers on the right. The blanks are
+  // hidden columns.
+  const block = [
+    ["Bonus of 2 can be earned by being perfect the entire class.", "", "", "", "Pnts", "Days", "", "fd", "none", "only"],
+    ['x days in a row with this number of points earns Benefit 1 eg. "Sit Anywhere" (SA), eat a snack (B1)', "", "", "", "9", "5", "", "", "5", "B1"],
+    ['x days in a row with this number of points earns a "Washroom Pass" (B2)', "", "", "", "9", "2", "", "", "2", "B2"],
+    ["Extra Formal Discussion if you have a week (at least x days) average of this or greater.", "", "", "", "8.5", "4", "", "", "4", "B3"],
+    ["Writing assignment penalty if below x points z times in previous y days", "", "", "", "6", "2", "", "1", "2", "C1"],
+  ];
+  const r = P.parseRewardRules(block);
+  check("thresholds: one rule per label", Object.keys(r).sort().join() === "B1,B2,B3,C1", Object.keys(r));
+  check("thresholds: B1 is nine points over five days", r.B1.points === 9 && r.B1.days === 5, r.B1);
+  check("thresholds: B3 keeps its half point", r.B3.points === 8.5 && r.B3.days === 4, r.B3);
+  check("thresholds: C1 is below six, twice, in two days", r.C1.points === 6 && r.C1.days === 2 && r.C1.times === 2, r.C1);
+  check("thresholds: the old W1 label is still read", P.parseRewardRules([
+    ["Writing assignment penalty", "", "", "", "Pnts", "Days", "", "fd", "none", "only"],
+    ["Writing assignment penalty", "", "", "", "6", "2", "", "1", "2", "W1"],
+  ]).W1.days === 2);
+  check("thresholds: the sentence describing the rule is not read as a number",
+    r.C1.points === 6, r.C1);
+
+  // A hidden column revealed moves every number one place along; the header is
+  // what the numbers are found by, so the answer does not change.
+  const shifted = block.map((row) => [row[0], "", "", "", "", ...row.slice(4)]);
+  const r2 = P.parseRewardRules(shifted);
+  check("thresholds: an inserted column does not shift the reading",
+    r2.C1.points === 6 && r2.C1.days === 2 && r2.B1.days === 5, r2);
+
+  // And the writing rule follows them rather than a number written in here.
+  const g = pointsSheet([[[8, 8, 8, 4, 4], [8, 8, 8, 8, 8], [8, 8, 8, 8, 8], [8, 8, 8, 8, 8], [8, 8, 8, 8, 8]]]);
+  check("thresholds: two poor days running, with the sheet's own numbers",
+    P.writingOwed(g, g[2], r.C1).writing.join() === "7A", P.writingOwed(g, g[2], r.C1));
+  const g2 = pointsSheet([[[8, 8, 4, 8, 4], [8, 8, 8, 8, 8], [8, 8, 8, 8, 8], [8, 8, 8, 8, 8], [8, 8, 8, 8, 8]]]);
+  check("thresholds: two poor days apart are not two in a row",
+    P.writingOwed(g2, g2[2], r.C1).writing.length === 0, P.writingOwed(g2, g2[2], r.C1));
+  check("thresholds: the note says what it weighed",
+    /below 6 2× in the last 2 scored days/.test(P.writingOwed(g, g[2], r.C1).writingNote),
+    P.writingOwed(g, g[2], r.C1).writingNote);
+}
 
 // ---- the privilege code, in words ----
 check("status words: a pair", P.statusWords("AB1 & B2").words === "Free seat + Free pass", P.statusWords("AB1 & B2"));
