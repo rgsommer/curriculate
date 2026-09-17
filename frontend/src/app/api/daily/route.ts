@@ -51,7 +51,7 @@ export async function GET(req: Request) {
   const age = c.body ? Date.now() - c.at : Infinity;
   const forced = searchParams.has("nocache");
   // A dirty copy is re-read, but not more often than MIN_REFRESH_MS.
-  const stale = age >= CACHE_MAX_AGE_MS || (c.dirty && age >= MIN_REFRESH_MS);
+  const stale = age >= CACHE_MAX_AGE_MS || c.partial || (c.dirty && age >= MIN_REFRESH_MS);
   const held = Date.now() < c.blockedUntil;
   // A copy in hand is served straight away and the sheet re-read behind it.
   // Waiting for the read made every third or fourth poll take as long as the
@@ -68,7 +68,11 @@ export async function GET(req: Request) {
   }
 
   try {
-    return json({ ...(await refreshSoon()), version: c.version, cachedFor: 0 });
+    // Nothing to show at all — a cold instance. That read skips the two grid
+    // reads and the discovery of any new range: they are the slow half, and
+    // they carry handout links, not the lesson. The copy is marked partial so
+    // the next poll fills it in.
+    return json({ ...(await refreshSoon(true)), version: c.version, cachedFor: 0 });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Sheet read failed";
     if (c.body) return json({ ...c.body, version: c.version, stale: true, error: message });
@@ -85,11 +89,11 @@ export async function GET(req: Request) {
  * on a serverless instance that may be frozen the moment the response is sent,
  * and a promise that never resumes would otherwise block every later refresh.
  */
-function refreshSoon(): Promise<Payload> {
+function refreshSoon(quick = false): Promise<Payload> {
   const now = Date.now();
   if (inFlight && now - inFlightAt < REFRESH_GIVE_UP_MS) return inFlight;
   inFlightAt = now;
-  inFlight = refresh().finally(() => { inFlight = null; });
+  inFlight = refresh(quick).finally(() => { inFlight = null; });
   // A background refresh must not take the process down with it.
   inFlight.catch(() => {});
   return inFlight;
@@ -98,7 +102,7 @@ function refreshSoon(): Promise<Payload> {
 let inFlight: Promise<Payload> | null = null;
 let inFlightAt = 0;
 
-async function refresh(): Promise<Payload> {
+async function refresh(quick: boolean): Promise<Payload> {
   const c = dailyCache;
   try {
     // Everything the board needs in three requests: one values batch, one
@@ -168,17 +172,18 @@ async function refresh(): Promise<Payload> {
       ...cachedExtra,       // 8 onwards
     ];
 
+    const none = { first: [] as string[][], runs: [] as { text: string; url: string }[][][] };
     const [values, formulas, grid, lessonGrid] = await Promise.all([
       readRangesSafe(VALUES),
       readRangesSafe(FORMULAS, "FORMULA"),
-      readGridLinks("DisplayAI!A1:F40").catch(() => ({ first: [], runs: [] })),
+      quick ? none : readGridLinks("DisplayAI!A1:F40").catch(() => none),
       // Handouts on the Lessons rows are often a link attached to a phrase in
       // the page or homework cell, which the values API cannot see.
       // E and F for the handouts, I to K because a picture or a video can be a
       // link attached to the cell's text, which no value or formula shows.
       // B as well as E to K: the deck link above a course's first lesson is
       // often attached to that cell's text, which no value or formula shows.
-      readGridLinks("Lessons!B1:K400").catch(() => ({ first: [], runs: [] })),
+      quick ? none : readGridLinks("Lessons!B1:K400").catch(() => none),
     ]);
 
     const display = values[0] || [];
@@ -242,7 +247,7 @@ async function refresh(): Promise<Payload> {
     const wanted = mergeRanges(
       named.filter((r) => ![...VALUES, ...cachedExtra].some((have) => rangeCovers(have, r)))
     );
-    if (wanted.length) {
+    if (wanted.length && !quick) {
       const fresh = wanted.slice(0, Math.max(0, MAX_EXTRA_RANGES - cachedExtra.length));
       c.extraRanges = [...cachedExtra, ...fresh].slice(0, MAX_EXTRA_RANGES);
       try {
@@ -295,6 +300,7 @@ async function refresh(): Promise<Payload> {
     });
     c.body = body;
     c.at = Date.now();
+    c.partial = quick;
     c.dirty = false;
     c.blockedUntil = 0;
     c.version += 1;
