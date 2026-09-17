@@ -18,6 +18,10 @@ export const dailyCache: {
   // formulas on one read and folded into the values batch from then on, so
   // finding them costs one extra request once rather than one every refresh.
   extraRanges: string[];
+  // True when the copy came from the cold-instance read, which skips the grid
+  // reads — the handout links and the course decks are not in it yet. The next
+  // poll fills it in rather than waiting the usual two minutes.
+  partial: boolean;
 } = {
   body: null,
   at: 0,
@@ -25,4 +29,5 @@ export const dailyCache: {
   version: 0,
   blockedUntil: 0,
   extraRanges: [],
+  partial: false,
 };

@@ -34,6 +34,8 @@ const FAIL_QUIET = 3;
 // the screen back mid-sentence.
 const SCRUB_RESET_MS = 300_000;
 const LAST_COPY_KEY = "daily:last";
+// How old what is on screen has to be before the board says anything about it.
+const STALE_AFTER_MS = 600_000;
 // The bottom bar holds one line, so the verse is shortened to about the length
 // the sheet's own A5 uses — but at a word boundary.
 const VERSE_MAX = 85;
@@ -404,6 +406,8 @@ export default function DailyPage() {
   const [copied, setCopied] = useState("");
   const scrubTouched = useRef(0);
   const debugRef = useRef(null);
+  // When what is on screen was read from the sheet — not when it was fetched.
+  const lastGood = useRef(0);
   const seenVersion = useRef(null);
 
   // The last copy this browser saw, shown at once if it is from today.
@@ -419,6 +423,7 @@ export default function DailyPage() {
       const saved = JSON.parse(raw);
       const when = new Date(saved.fetchedAt || 0);
       if (new Date().toDateString() !== when.toDateString()) return;
+      lastGood.current = when.getTime();
       setData((d) => d || saved);
       if (saved.points) setPoints((p) => ({ ...p, ...saved.points }));
     } catch {
@@ -464,6 +469,9 @@ export default function DailyPage() {
         if (!alive) return;
         if (!res.ok || !j.periods) { fail(j.error || `HTTP ${res.status}`); return; }
         failures = 0;
+        // How old what is on screen actually is: the server may itself be
+        // serving a copy it read a while ago.
+        lastGood.current = Date.now() - (Number(j.cachedFor) || 0) * 1000;
         setData(j);
         setError(j.stale ? `Showing the last good copy. ${j.error || ""}` : "");
         setPoints((p) => ({
@@ -495,12 +503,18 @@ export default function DailyPage() {
         if (alive) timer = setTimeout(load, nextDelay());
       }
     };
-    // A failure is kept to itself until it has happened FAIL_QUIET times
-    // running; the copy on screen is still today's, and a single missed read
-    // says nothing about it.
+    // A failed read is not itself news. What the room needs to know is whether
+    // what is on the screen has stopped being true — so the dot waits for the
+    // copy on screen to be genuinely old, not merely for a fetch to have
+    // failed. A cold instance behind the sheet can take half a minute to
+    // answer while the board carries a copy from ten seconds ago; that is a
+    // mark on a projector for nothing.
     const fail = (message) => {
       failures += 1;
-      setError(failures >= FAIL_QUIET ? message : "");
+      const stale = Date.now() - lastGood.current;
+      if (failures < FAIL_QUIET || stale < STALE_AFTER_MS) return;
+      const mins = Math.round(stale / 60000);
+      setError(`${message} Nothing new for ${mins} minute${mins === 1 ? "" : "s"}.`);
     };
     const nextDelay = () => (failures
       ? Math.min(POLL_MS * 2 ** failures, MAX_POLL_MS)
