@@ -1135,7 +1135,8 @@ export type RawInputs = {
   master?: string[][]; // Master!B1:B2 values
   pointsGrid?: string[][]; // Points!A1:BV46 — row 3 the class names, row 46 the flags, the days in between
   pointsRow3?: string[]; // Points row 3 — class names
-  pointsRow46?: string[]; // Points row 46 — four flags per class
+  pointsRow46?: string[];
+  rewardRules?: string[][]; // Setup!D52:AE56 — the header row, then B1, B2, B3, W1
   slotBlock?: string[][]; // Setup!S1:AB8 values — the whole block, S2 included
   slotBlockFormulas?: string[][]; // Setup!S1:AB8 formulas — what the board evaluates itself
   displayLinks?: string[][]; // DisplayAI!A1:F40 cell links (rich text and HYPERLINK alike)
@@ -1202,7 +1203,11 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
       if (!meta.feature || meta.feature === url) meta.feature = "";
     }
   }
-  const points: Points = { numbers: null, percents: null, entered: null, note: "", ...writingOwed(inp.pointsGrid || [], inp.pointsRow3 || []) };
+  const rewards = parseRewardRules(inp.rewardRules || []);
+  const points: Points = {
+    numbers: null, percents: null, entered: null, note: "",
+    ...writingOwed(inp.pointsGrid || [], inp.pointsRow3 || [], rewards.C1 || rewards.W1),
+  };
   // The cells the sheet builds its own plans line from carry the total and the
   // percentage side by side, so the board takes them from there rather than
   // reading whichever of the two the line happened to be showing at the moment
@@ -1440,13 +1445,14 @@ export type Sources = {
   cellImages: CellImages; // the pictures the API cannot see, by cell
   plansCells: string[][]; // Setup rows 35 to 40, columns F, K and L, raw, for ?debug=1
   pointsCells: string[]; // every cell of Points!A1:BV46 that holds something, "I5=8"
+  rewards: Record<string, RewardRule>; // Setup!D52:AE56 — the thresholds, by label
 };
 
 export const EMPTY_SOURCES: Sources = {
   windowStart: null, windowEnd: null, offsetHours: 0, b7: false, d7: false, a9: null, a11: null,
   poemRow: [], poemF3: "", poemF3Formula: "", poemGrid: [], poemGridFormulas: [],
   verticalRow: [], slots: [], riddle: "",
-  verses: [], verseWeek: null, pointsClasses: [], pointsLabels: [], book: {}, cellImages: {}, plansCells: [], pointsCells: [],
+  verses: [], verseWeek: null, pointsClasses: [], pointsLabels: [], book: {}, cellImages: {}, plansCells: [], pointsCells: [], rewards: {},
 };
 
 const truthy = (s: string) => /^(TRUE|1|YES)$/i.test(String(s || "").trim());
@@ -1738,6 +1744,7 @@ export function buildSources(inp: RawInputs): Sources {
     // the wrong cells or the sheet is genuinely empty is not a thing anyone
     // should have to answer from a photograph of a projector.
     pointsCells: nonEmptyCells(inp.pointsGrid || []),
+    rewards: parseRewardRules(inp.rewardRules || []),
   };
 }
 
@@ -1769,7 +1776,66 @@ export const POINTS_NAME_COLS = [4, 17, 30, 43, 56];
  * block actually carries a day's worth of small numbers. `writingNote` says what
  * it settled on, which is what ?debug=1 prints when the answer looks wrong.
  */
-export function writingOwed(grid: string[][], row3: string[]): { writing: string[]; writingNote: string } {
+/**
+ * The reward thresholds, from `Setup!D53:AE56`.
+ *
+ * One row per benefit, each ending in its own label. The sheet spells the rule
+ * out in words at the left and carries the numbers at the right:
+ *
+ *   B1  Sit Anywhere / snack      9 points, 5 days in a row
+ *   B2  Washroom pass             9 points, 2 days in a row
+ *   B3  Extra Formal Discussion   an average of 8.5 over at least 4 days
+ *   C1  Writing assignment        below 6 points, twice, in the previous 2 days
+ *
+ * The first three the sheet works out for itself and writes into Points row 46;
+ * the board only reads them. The last it does not, so the board does — and now
+ * from these numbers rather than from a rule repeated by hand.
+ *
+ * A row is found by its label, and its numbers by the header above them
+ * ("Pnts", "Days") rather than by how far along they sit — the block has hidden
+ * columns in it, and revealing one moved every number a place to the right.
+ */
+export type RewardRule = { points: number; days: number; times: number };
+
+export function parseRewardRules(rows: string[][]): Record<string, RewardRule> {
+  const out: Record<string, RewardRule> = {};
+  const clean = (row: string[]) => (row || []).map((c) => String(c ?? "").trim());
+  // The header row names the columns — "Pnts", "Days" — so a hidden column
+  // revealed, or a new one inserted, does not silently shift the numbers along.
+  let pntsAt = -1;
+  let daysAt = -1;
+  for (const row of rows || []) {
+    const cells = clean(row);
+    const p = cells.findIndex((c) => /^p(oi)?nts?$/i.test(c));
+    const d = cells.findIndex((c) => /^days?$/i.test(c));
+    if (p >= 0 && d >= 0) { pntsAt = p; daysAt = d; break; }
+  }
+
+  for (const row of rows || []) {
+    const cells = clean(row);
+    const label = cells.filter(Boolean).pop() || "";
+    // C1 today, W1 before it was renamed — "W" was already taken elsewhere.
+    if (!/^(B[123]|[WC]1)$/i.test(label)) continue;
+    const numberAt = (i: number) => (i >= 0 && /^-?\d+(?:\.\d+)?$/.test(cells[i] || "") ? parseFloat(cells[i]) : null);
+    const numbers = cells.filter((c) => /^-?\d+(?:\.\d+)?$/.test(c)).map((c) => parseFloat(c));
+    if (numbers.length < 2) continue;
+    const points = numberAt(pntsAt) ?? numbers[0];
+    const days = numberAt(daysAt) ?? numbers[1];
+    // How many of those days it takes. The sheet carries it in the last column
+    // of the row, where it has so far always matched the span — "five days in a
+    // row at nine", "two days in a row below six" — so the one stands in for
+    // the other when the row is short.
+    const times = numbers.length > 2 ? numbers[numbers.length - 1] : days;
+    out[label.toUpperCase()] = { points, days, times };
+  }
+  return out;
+}
+
+export function writingOwed(
+  grid: string[][],
+  row3: string[],
+  rule: RewardRule = { points: 6, days: 2, times: 2 }
+): { writing: string[]; writingNote: string } {
   const rows = grid || [];
   if (rows.length < 10) return { writing: [], writingNote: "no Points grid" };
   const at = (r: number, c1: number) => String(((rows[r - 1] || [])[c1 - 1] ?? "")).trim();
@@ -1809,14 +1875,18 @@ export function writingOwed(grid: string[][], row3: string[]): { writing: string
     return out;
   };
 
+  const span = Math.max(1, Math.round(rule.days));
   const writing: string[] = [];
   const notes: string[] = [];
   for (const c of classes) {
-    const week = daysOf(c.base).slice(-5);
+    const week = daysOf(c.base).slice(-span);
     notes.push(`${c.name}=${week.join(",") || "—"}`);
-    if (week.filter((n) => n <= 5).length > 1) writing.push(c.name);
+    if (week.filter((n) => n < rule.points).length >= rule.times) writing.push(c.name);
   }
-  return { writing, writingNote: `last five scored days — ${notes.join("  ")}` };
+  return {
+    writing,
+    writingNote: `below ${rule.points} ${rule.times}× in the last ${span} scored days — ${notes.join("  ")}`,
+  };
 }
 
 /** 1-based column number to its letters, for the debug view. */

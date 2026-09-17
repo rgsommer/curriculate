@@ -1060,6 +1060,8 @@ export default function DailyPage() {
               {row("ranges the rules named", (sources.extraRanges || []).join(", ") || "none beyond the fixed reads")}
               {row("lesson picture", cur ? `${cur.image || "—"}  ·  shows for the first ${Math.round(setup.picSeconds / 60)} min, ${Math.round(cur.elapsed)} min in${cur.image && badImages[cur.image] ? "  ·  DID NOT LOAD" : ""}` : "—")}
               {row("lesson video", (cur && cur.video) || "—")}
+              {row("reward thresholds (Setup D53:AE56)",
+                Object.entries(sources.rewards || {}).map(([k, v]) => `${k}: ${v.points} pts · ${v.days} days · ${v.times}×`).join("   ") || "none read — using below 6, twice, in the last 7")}
               {row("writing owed", `${(points.writing || []).join(", ") || "none"}  ·  ${points.writingNote || "—"}`)}
               {(sources.slots || []).map((sl, i) => (sl.name || sl.formula || sl.content ? (
                 <Fragment key={`slot${i}`}>
