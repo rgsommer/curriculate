@@ -1460,13 +1460,15 @@ export type Sources = {
   pointsCells: string[]; // every cell of Points!A1:BV46 that holds something, "I5=8"
   rewards: Record<string, RewardRule>; // Setup!D52:AE56 — the thresholds, by label
   impromptu: string[][]; // Impromptu!L1:M30 — the Formal Discussion topics
+  memoryVerse: string; // the week's memory verse, from MemoryCards column H
+  poem: string; // the week's poem or hymn, from Poems A (or B when Setup C19 is on)
 };
 
 export const EMPTY_SOURCES: Sources = {
   windowStart: null, windowEnd: null, offsetHours: 0, b7: false, d7: false, a9: null, a11: null,
   poemRow: [], poemF3: "", poemF3Formula: "", poemGrid: [], poemGridFormulas: [],
   verticalRow: [], slots: [], riddle: "",
-  verses: [], verseWeek: null, pointsClasses: [], pointsLabels: [], book: {}, cellImages: {}, plansCells: [], pointsCells: [], rewards: {}, impromptu: [], notice: "", noticeFormula: "",
+  verses: [], verseWeek: null, pointsClasses: [], pointsLabels: [], book: {}, cellImages: {}, plansCells: [], pointsCells: [], rewards: {}, impromptu: [], memoryVerse: "", poem: "", notice: "", noticeFormula: "",
 };
 
 const truthy = (s: string) => /^(TRUE|1|YES)$/i.test(String(s || "").trim());
@@ -1760,6 +1762,8 @@ export function buildSources(inp: RawInputs): Sources {
     pointsCells: nonEmptyCells(inp.pointsGrid || []),
     rewards: parseRewardRules(inp.rewardRules || []),
     impromptu: inp.impromptu || [],
+    memoryVerse: memoryVerse(inp.memoryCards || []),
+    poem: poemOfWeek(inp.poemsAB || [], week, truthy(String(((inp.setup || [])[18] || [])[2] ?? ""))),
     notice: String(((inp.display || [])[1] || [])[0] || "").trim(),
     noticeFormula: String(inp.noticeFormula || "").trim(),
   };
@@ -2039,6 +2043,43 @@ export function evaluateNotice(src: Sources, at?: Date): string {
   return (evaluateOr(rule, src.notice, { book: src.book, now: at, sheet: "DisplayAI", images: src.cellImages }) || "").trim();
 }
 
+/**
+ * The week's memory verse and the week's poem or hymn, which the class opens on.
+ *
+ * The sheet builds one line out of both for the E1 slot; the board wants them
+ * apart, a column each, so it takes them from the same cells the slot rule
+ * does: the memory verse joined from MemoryCards column H, and the poem indexed
+ * out of Poems by the week number — column B rather than A when Setup C19 says
+ * so.
+ */
+export function memoryVerse(cards: string[][]): string {
+  return (cards || [])
+    .map((r) => String((r || [])[0] ?? "").trim())
+    .filter(Boolean)
+    .join(" ")
+    .split("@@@@").join(" Make sure you review our last verse: ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function poemOfWeek(poems: string[][], week: number | null, alternate: boolean): string {
+  if (!week || week < 1) return "";
+  const row = (poems || [])[week - 1] || [];
+  return String(row[alternate ? 1 : 0] ?? "").trim();
+}
+
+/**
+ * The day the week's memory verse is tested on: the last teaching day of the
+ * week — Friday as a rule, Thursday when Friday is off. The verse is not put on
+ * the screen that day, because that is the day they are asked for it.
+ */
+export function testWeekday(plan: Record<number, unknown[]>): number | null {
+  for (let weekday = 6; weekday >= 2; weekday -= 1) {
+    if (((plan || {})[weekday] || []).length) return weekday;
+  }
+  return null;
+}
+
 /* ------------------------------------------------------------------ *
  * The Formal Discussion
  *
@@ -2105,6 +2146,10 @@ export function formalDiscussion(opts: {
   subj: string;
   at: Date;
   plan: Record<number, { subj: string }[]>;
+  // The group's classes today, in the order they run. The discussion happens in
+  // whatever subject the group has: the History or Geography period when there
+  // is one that day, and otherwise the last class of theirs on the day.
+  todaysSubjects?: string[];
   impromptu: string[][];
   earnedExtra: boolean;
   extraAlreadyHad: boolean;
@@ -2113,9 +2158,17 @@ export function formalDiscussion(opts: {
   if (!sec) return null;
   const slot = fdSlotForSection(plan, sec);
   if (!slot) return null;
-  // The right day of the week, and the right class on it.
+  // The right day of the week — the one the group's last History or Geography
+  // of the week falls on.
   if (at.getDay() + 1 !== slot.weekday) return null;
-  if (String(subj || "").trim() !== slot.subj) return null;
+  // And the right period on it. The subject is not a condition, only a
+  // preference: a group whose day carries no History or Geography still has
+  // its discussion, in the last class of theirs that day.
+  const today = (opts.todaysSubjects || []).map((x) => String(x || "").trim()).filter(Boolean);
+  const target = today.length
+    ? (today.includes(slot.subj) ? slot.subj : today[today.length - 1])
+    : slot.subj;
+  if (String(subj || "").trim() !== target) return null;
 
   const month = at.getMonth() + 1;
   const week = weekOfMonth(at);
