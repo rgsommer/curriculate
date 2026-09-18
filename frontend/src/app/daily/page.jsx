@@ -16,7 +16,7 @@
 // picture and any image the sheet puts in the feature cell E1).
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, evaluateNotice, firstClassStart, formalDiscussion, testWeekday, birthdaysToday, birthdaysForSection, joinNames, specialDays, calendarEvents, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
+import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, evaluateNotice, firstClassStart, formalDiscussion, testWeekday, birthdaysToday, birthdaysForSection, joinNames, specialDays, calendarEvents, columnName, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
 
 const CLASS_LABELS = ["7A", "7B", "7C", "8A", "8B", "8C"];
 // The Setup slot table's own columns, for ?debug=1.
@@ -1233,6 +1233,14 @@ export default function DailyPage() {
               {row("ranges the rules named", (sources.extraRanges || []).join(", ") || "none beyond the fixed reads")}
               {row("lesson picture", cur ? `${cur.image || "—"}  ·  shows for the first ${Math.round(setup.picSeconds / 60)} min, ${Math.round(cur.elapsed)} min in${cur.image && badImages[cur.image] ? "  ·  DID NOT LOAD" : ""}` : "—")}
               {row("lesson video", (cur && cur.video) || "—")}
+              {row("SchoolCalendar rows read",
+                (() => {
+                  const grids = ((sources.book || {}).schoolcalendar || []);
+                  if (!grids.length) return "the tab was not read at all";
+                  return grids
+                    .map((g) => `${(g.values || []).filter((r) => (r || []).some((c) => String(c ?? "").trim())).length} rows with something in them, from ${columnName(g.left)}${g.top}`)
+                    .join("   ·   ");
+                })())}
               {row("special days (SchoolCalendar)",
                 [["today", special.today], ...(special.ahead || []).map((x) => [x.when.toLowerCase(), x.events])]
                   .map(([when, list]) => `${when}: ${(list || []).map((e) => `${e.label}${e.noSchool ? " (no school)" : ""}`).join(", ") || "nothing for the room"}`)
@@ -1243,6 +1251,16 @@ export default function DailyPage() {
                     .filter((e) => e.staffOnly)
                     .map((e) => `${n === 0 ? "today" : `+${n}`}: ${e.label}`))
                   .join("   ·   ") || "none in the next week")}
+              {/* "nothing today" and "the tab never arrived" look the same on a
+                  projector, so say which. */}
+              {row("BDays rows read",
+                (() => {
+                  const grids = ((sources.book || {}).bdays || []);
+                  if (!grids.length) return "the tab was not read at all";
+                  return grids
+                    .map((g) => `${(g.values || []).filter((r) => (r || []).some((c) => String(c ?? "").trim())).length} rows with something in them, from ${columnName(g.left)}${g.top}`)
+                    .join("   ·   ");
+                })())}
               {row("birthdays today",
                 (birthdays || []).map((b) => `${b.name || "?"} (grade ${b.grade || "not found in the row"})${b.note ? ` — ${b.note}` : ""}`).join("   ")
                   || "nothing in the BDays rows for today")}

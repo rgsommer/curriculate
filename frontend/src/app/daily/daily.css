@@ -38,12 +38,26 @@ body:has(.daily-root) .site-footer { display: none !important; }
      one still fits without scrolling. */
   --fit: 1;
   height: 100vh; height: 100dvh;
-  /* The column track has to be pinned: left to size itself it grows to the
-     content's max-content width, the board overflows its own width, and
-     everything inside is laid out for a screen wider than the screen. */
-  display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto 1fr auto auto auto;
+  /* A column of content-sized rows with the lesson area taking whatever is
+     left. It was a grid with the spare space pinned to the third row, which
+     only worked while the screen had exactly the rows it was written for: the
+     calendar banner and the birthday band each add one, and on the dismissal
+     screen the third row became the banner — a hand's width of pale yellow
+     across the projector with one line of text at the top of it. Which row
+     grows should not depend on how many rows there happen to be. */
+  display: flex; flex-direction: column;
   background: var(--surface); overflow: hidden; position: relative;
 }
+
+/* Nothing in the column is stretched by its neighbours, and a long word cannot
+   push the column wider than the screen. */
+.board > * { flex: 0 0 auto; min-width: 0; }
+
+/* The lesson area is the one that grows — and the one that gives way when the
+   day's screen has more on it than fits, since the bottom bar and the points
+   strip must stay on the screen. */
+.board > .main { flex: 1 1 auto; min-height: 0; }
+
 /* A wash of the subject's colour behind the heading: enough for the room to
    register the change of class, not enough to fight the text. */
 .top {
