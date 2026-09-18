@@ -8,9 +8,9 @@ import type { RawInputs } from "./parse";
 export const FIXTURE: RawInputs = {
   display: [
     ["Good morning, Thursday workers!", "", "", "0"],
-    [" Tomorrow: MAPS Roster Due"],
+    ["Happy birthday to Mia Nguyen!\nTest 2, Community Night / Meet the Teacher\nTomorrow: Cross-country meet"],
     ["Week 1                       Brampton Christian School                      38 weeks left!"],
-    [],
+    [" Tomorrow: MAPS Roster Due"],
     ['Two short verses to remember for life. This is what He promises His followers: ~"God is our refuge and strength, a very present help in trouble." Psalm 46:1'],
     ["", "", "Pray for Albania"],
     ["", "FALSE", "UNSCRAMBLE for a treat: TNOMISNEPEO ___ ___ ___ ___ ___ ___ ___ ___ ___ ___ ___", "FALSE"],
@@ -178,7 +178,9 @@ export const FIXTURE: RawInputs = {
   // an =IMAGE() into, K the video.
   lessons: [
     ["Code", "", "Page", "Homework", "", "", "Picture", "Mirror", "Video"],
-    ["~J003", "", "p. 7", "Complete NS7-3 p.7 and the Unit 1 review sheet: https://example.org/unit1-review.pdf", "", "", "", "", "https://youtu.be/lessonvideo1"],
+    // I the picture, J the video — the Lessons layout as it stands today, with
+    // the mirror column deleted again.
+    ["~J003", "", "p. 7", "Complete NS7-3 p.7 and the Unit 1 review sheet: https://example.org/unit1-review.pdf", "", "", "https://example.com/math-equations.png", "https://youtu.be/lessonvideo1", ""],
     ["~H001", "", "p. 2", "Written task \u201cHistorical Perspective\u201d, due Thu Sep 17", "", "", "https://example.com/history.png", "", ""],
     ["G002", "", "p. 18-23", "Finish the Chapter 1 term list", "", "", "", "", ""],
   ],

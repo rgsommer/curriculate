@@ -170,10 +170,14 @@ async function refresh(quick: boolean): Promise<Payload> {
       "Poems!F1:J3",        // 5
       "Lessons!C1:K400",    // 6 an =IMAGE() or =HYPERLINK() in the picture and video columns
       "Lessons!B1:B400",    // 7 a HYPERLINK() to a course's deck
+      // A2 is the day's notices, and its rule turns over at noon — today's
+      // events before, tomorrow's after — so the board runs it at its own clock
+      // like the rest. A1 to A5 comes as one range.
+      "DisplayAI!A1:A5",    // 8
       // The same ranges the rules named, as formulas: a cell on one of those
       // tabs may hold =IMAGE("…") and no text value at all, which is exactly
       // the case the picture lists are written in.
-      ...cachedExtra,       // 8 onwards
+      ...cachedExtra,       // 9 onwards
     ];
 
     const none = { first: [] as string[][], runs: [] as { text: string; url: string }[][][] };
@@ -200,12 +204,13 @@ async function refresh(quick: boolean): Promise<Payload> {
     const extraGrids = cachedExtra.map((range, i) => ({
       range,
       values: values[extraAt + i] || [],
-      formulas: formulas[8 + i] || [],
+      formulas: formulas[9 + i] || [],
     }));
 
     const displayD = formulas[0] || [];
     const displayC = formulas[1] || [];
     const slotBlockFormulas = formulas[2] || [];
+    const noticeFormula = ((formulas[8] || [])[1] || [])[0] || ""; // DisplayAI!A2
 
     // The block is read from S so the picture in S2 — what the CE rule shows on
     // the last teaching day of the week — comes with it, and out to AB. The E1
@@ -244,6 +249,9 @@ async function refresh(quick: boolean): Promise<Payload> {
     const named = referencedRanges([
       ...slotBlockFormulas.flatMap((r) => (r || []).map((cell) => String(cell || ""))),
       featureFormula,
+      // A2 reaches into Bdays and SchoolCalendar; naming them here is what gets
+      // them read, which is what lets the rule be run at all.
+      noticeFormula,
     ]);
     // Each reference is checked on its own before they are merged: the rules
     // reach all over Setup, and one box round the lot of them would look like a
@@ -276,6 +284,7 @@ async function refresh(quick: boolean): Promise<Payload> {
       master: values[9] || [],
       lessons: values[13] || [],
       lessonFormulas: formulas[6] || [],
+      noticeFormula,
       lessonsB: values[22] || [],
       lessonsBFormulas: formulas[7] || [],
       lessonLinkRuns: lessonGrid.runs || [],

@@ -834,6 +834,12 @@ check("setup: the other labels still read", P.parseSetup([["", "Change time to r
   check("lesson row: page and homework still read", L.H001.page === "p. 12" && L.H001.homework === "Read p12-18");
   check("lesson video: comes from K, not from the mirror column",
     L.H001.video === "https://youtu.be/hist" && L.B004.video === "https://youtu.be/ce", [L.H001.video, L.B004.video]);
+  // His layout today, with the mirror column deleted again: I the picture,
+  // J the video, K empty.
+  const plain = [["~M001", "", "p. 3", "Read p3", "", "", "https://example.org/map.png", "https://youtu.be/lesson", ""]];
+  const P2 = P.parseLessons(plain, [], []);
+  check("lesson row: I the picture and J the video, with K empty",
+    P2.M001.image === "https://example.org/map.png" && P2.M001.video === "https://youtu.be/lesson", P2.M001);
   check("lesson picture: the mirror column counts when I is empty",
     L.B004.image === "https://example.org/mirrored.png", L.B004);
 

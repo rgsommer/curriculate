@@ -204,6 +204,9 @@ a.subj.deck:hover { text-decoration-color: currentColor; }
 .main.endofday > div:first-child { display: flex; flex-direction: column; gap: 1vh; min-height: 0; }
 .main.endofday .script { font-size: calc(clamp(26px, 5.5vh, 66px) * var(--fit)); }
 .main.endofday .question { font-size: calc(clamp(15px, 2.7vh, 29px) * var(--fit)); margin: 0; }
+/* The day's joke: the question in the ordinary voice, the answer picked out. */
+.main.endofday .question.joke { font-family: inherit; font-style: normal; }
+.main.endofday .question.joke b { color: var(--subj-deep); font-weight: 600; }
 .main.endofday .block li { font-size: calc(clamp(14px, 2.4vh, 26px) * var(--fit)); }
 .main.endofday .summary { font-size: calc(clamp(13px, 2.2vh, 24px) * var(--fit)); margin: 0; }
 /* The blessing takes the place the verse held: serif, italic, and the size of
@@ -275,8 +278,18 @@ a.subj.deck:hover { text-decoration-color: currentColor; }
 .entered.no { color: var(--alert); }
 
 .bottom { display: flex; justify-content: space-between; align-items: center; gap: 1.4vw; padding: .9vh 3vw 1.3vh; font-size: clamp(15px, 2.6vh, 34px); color: var(--ink); }
-.daychip { display: inline-block; padding: .2vh .8vw; border-radius: 4px; margin-right: .8vw;
-  color: #22303F; font-weight: 600; font-size: clamp(11px, 1.7vh, 16px); }
+.daychip {
+  display: inline-block;
+  padding: .4vh 1vw;
+  border-radius: 6px;
+  margin-right: 1vw;
+  /* Twice the size it was: it is the one word on the board that says which day
+     the room is looking at, and it was the smallest thing on the screen. */
+  font-size: calc(clamp(18px, 3vh, 34px) * var(--fit));
+  font-weight: 600;
+  letter-spacing: .02em;
+  vertical-align: middle;
+}
 .bottom .verse { font-family: var(--font-merriweather), Georgia, serif; font-style: italic; color: var(--ink); }
 .bottom .puzzle { background: var(--sun-fill); color: var(--sun-ink); padding: .6vh 1vw; border-radius: 4px; white-space: nowrap; }
 .bottom .puzzle b { letter-spacing: .14em; font-weight: 600; }

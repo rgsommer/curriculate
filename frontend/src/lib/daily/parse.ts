@@ -80,6 +80,7 @@ export type Payload = {
     blessing: string;
     tomorrow: string;
     riddle: string;
+    notices: string; // DisplayAI!A2 — birthdays, what is on today, what is on tomorrow
     feature: string;
     featureImage: string;
     pray: { text: string; url: string } | null;
@@ -1124,6 +1125,7 @@ export type RawInputs = {
   setup: string[][]; // Setup!A1:F20 values
   slots: string[][]; // Setup!U1:AB8 values
   slotFormulas: string[][]; // Setup!U4:AB4 formulas
+  noticeFormula?: string; // DisplayAI!A2 as a formula — its rule turns over at noon
   feature: string; // Display!E1 (or DisplayAI!E1) formatted value
   featureFormula?: string; // the same cell as a formula — an =IMAGE() has no text value
   // Ingredients for the sheet's own display rules, so the board can evaluate
@@ -1181,6 +1183,7 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
     blessing: "",
     tomorrow: "",
     riddle: "",
+    notices: "",
     feature: isErr(inp.feature || "") ? "" : (inp.feature || "").trim(),
     featureImage: "",
     pray: null as null | { text: string; url: string },
@@ -1248,6 +1251,13 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
     else if (!meta.line && /^Week\s*\d+/i.test(a)) meta.line = a.split(/\s{2,}/).join(" · ");
     else if (!meta.verse && a.length > 40 && !/^Q:/.test(a)) meta.verse = a;
     else if (!meta.riddle && /^Q:/.test(a)) meta.riddle = a;
+    // A2: the day's notices — whose birthday it is, what is on at school today
+    // and, past noon, what is on tomorrow. Nothing else claimed it and nothing
+    // showed it, so it never reached the room. It is taken by position rather
+    // than by pattern because it has no shape of its own: it is whatever the
+    // calendar says. Row 1 is the greeting and row 3 the week line, both of
+    // which are claimed above, so only a genuinely unclaimed A2 lands here.
+    else if (!meta.notices && i === 1 && a && !/^Tomorrow\s*:/i.test(a)) meta.notices = a;
     if (/UNSCRAMBLE/i.test(c)) meta.puzzle = c.replace(/\s*(_\s*)+$/g, "").trim();
     // Past four o'clock the same cell says "That's it for …" instead.
     if (/^(Plans|That's it) for/i.test(c)) {
@@ -1437,6 +1447,8 @@ export type Sources = {
   slots: Slot[]; // Setup!U1:AB4
   book: Book; // the grids a Setup formula may reach, for evaluating it here
   extraRanges?: string[]; // the ranges of those the rules themselves named
+  notice: string; // DisplayAI!A2 as read
+  noticeFormula: string; // and as a rule, to be run at the board's clock
   riddle: string; // Riddles!D at the week in Master!B2
   verses: string[]; // Verses!A — the whole column, indexed the way A5 indexes it
   verseWeek: number | null; // Vertical!B4
@@ -1452,7 +1464,7 @@ export const EMPTY_SOURCES: Sources = {
   windowStart: null, windowEnd: null, offsetHours: 0, b7: false, d7: false, a9: null, a11: null,
   poemRow: [], poemF3: "", poemF3Formula: "", poemGrid: [], poemGridFormulas: [],
   verticalRow: [], slots: [], riddle: "",
-  verses: [], verseWeek: null, pointsClasses: [], pointsLabels: [], book: {}, cellImages: {}, plansCells: [], pointsCells: [], rewards: {},
+  verses: [], verseWeek: null, pointsClasses: [], pointsLabels: [], book: {}, cellImages: {}, plansCells: [], pointsCells: [], rewards: {}, notice: "", noticeFormula: "",
 };
 
 const truthy = (s: string) => /^(TRUE|1|YES)$/i.test(String(s || "").trim());
@@ -1745,6 +1757,8 @@ export function buildSources(inp: RawInputs): Sources {
     // should have to answer from a photograph of a projector.
     pointsCells: nonEmptyCells(inp.pointsGrid || []),
     rewards: parseRewardRules(inp.rewardRules || []),
+    notice: String(((inp.display || [])[1] || [])[0] || "").trim(),
+    noticeFormula: String(inp.noticeFormula || "").trim(),
   };
 }
 
@@ -2004,6 +2018,22 @@ export function nonEmptyCells(grid: string[][], max = 1200): string[] {
     }
   }
   return out;
+}
+
+/**
+ * The day's notices (DisplayAI!A2), run at the board's clock.
+ *
+ * Whose birthday it is, what is on at school today, and — past noon — what is
+ * on tomorrow instead. That switch is inside the cell's own rule, so reading
+ * the value freezes it to the moment of the read and the scrubber cannot move
+ * it. The rule reaches into Bdays and SchoolCalendar, which the board reads
+ * because the rule names them; if it cannot be followed, the value the sheet
+ * computed stands, which is what was wanted in the first place.
+ */
+export function evaluateNotice(src: Sources, at?: Date): string {
+  const rule = src.noticeFormula;
+  if (!rule.startsWith("=") || !at || !src.book || !Object.keys(src.book).length) return src.notice;
+  return (evaluateOr(rule, src.notice, { book: src.book, now: at, sheet: "DisplayAI", images: src.cellImages }) || "").trim();
 }
 
 /** Points row 3 holds the class names; row 46 holds four flags per class. */
