@@ -919,6 +919,62 @@ check("writing: an empty grid says so", P.writingOwed([], []).writing.length ===
 }
 check("column letters", P.columnName(4) === "D" && P.columnName(43) === "AQ" && P.columnName(74) === "BV");
 
+// ---- the Formal Discussion ----
+{
+  // September 2026: the 7th is the first Monday, so the second week is the 14th
+  // to the 18th. The board's weekday numbering is getDay() + 1, Monday 2.
+  const d = (day) => new Date(2026, 8, day, 11, 0);
+  check("FD week: the first Monday's week is the first", P.weekOfMonth(d(7)) === 1, P.weekOfMonth(d(7)));
+  check("FD week: the second Monday's week is the second", P.weekOfMonth(d(14)) === 2);
+  check("FD week: and so is the Friday after it", P.weekOfMonth(d(18)) === 2);
+  check("FD week: the third Monday's is the third", P.weekOfMonth(d(21)) === 3);
+  check("FD week: a week whose Monday is last month is the first",
+    P.weekOfMonth(new Date(2026, 9, 1)) === 1, P.weekOfMonth(new Date(2026, 9, 1)));
+
+  // 7A meets me on Monday (Math), Wednesday (History) and Friday (Math).
+  const plan = {
+    2: [{ subj: "Math 7A" }, { subj: "Geography 8B" }],
+    3: [{ subj: "History 7A" }],
+    4: [{ subj: "History 7A" }, { subj: "Math 7B" }],
+    6: [{ subj: "Math 7A" }],
+  };
+  check("FD slot: the last History of the week, not the last class",
+    JSON.stringify(P.fdSlotForSection(plan, "7A")) === JSON.stringify({ weekday: 4, subj: "History 7A" }),
+    P.fdSlotForSection(plan, "7A"));
+  check("FD slot: a group with neither takes its last class",
+    JSON.stringify(P.fdSlotForSection(plan, "7B")) === JSON.stringify({ weekday: 4, subj: "Math 7B" }),
+    P.fdSlotForSection(plan, "7B"));
+  check("FD slot: a group that never meets has none", P.fdSlotForSection(plan, "8C") === null);
+
+  const impromptu = Array.from({ length: 30 }, (_, i) => [`seven-${i + 1}`, `eight-${i + 1}`]);
+  const ask = (over) => P.formalDiscussion({
+    sec: "7A", subj: "History 7A", at: d(16), plan, impromptu,
+    earnedExtra: false, extraAlreadyHad: false, ...over,
+  });
+  // Wednesday the 16th is the second week, and History 7A is 7A's slot.
+  check("FD: the monthly one, in the second week, on the group's own day",
+    JSON.stringify(ask({})) === JSON.stringify({ topic: "seven-9", row: 9, extra: false, why: "month 9, second week" }), ask({}));
+  const eight = P.formalDiscussion({
+    sec: "8B", subj: "Geography 8B", at: d(14), plan, impromptu, earnedExtra: false, extraAlreadyHad: false,
+  });
+  check("FD: grade 8's topic comes from column M", eight && eight.topic === "eight-9", eight);
+  check("FD: not on another day of the week", ask({ at: d(18) }) === null, ask({ at: d(18) }));
+  check("FD: not in another class that day", ask({ subj: "Math 7A" }) === null);
+  check("FD: not in another week of the month", ask({ at: d(23) }) === null);
+
+  // The earned one: any other week, once, and from row month + 14.
+  const earned = ask({ at: d(23), earnedExtra: true });
+  check("FD: the earned one comes in another week",
+    earned && earned.extra && earned.row === 23 && earned.topic === "seven-23", earned);
+  check("FD: it does not double up with the monthly one",
+    (ask({ at: d(16), earnedExtra: true }) || {}).extra === false, ask({ at: d(16), earnedExtra: true }));
+  check("FD: once had, it does not come round again",
+    ask({ at: d(23), earnedExtra: true, extraAlreadyHad: true }) === null);
+  check("FD: not earned, no extra", ask({ at: d(23) }) === null);
+  check("FD: a row the tab has nothing in gives nothing",
+    P.formalDiscussion({ sec: "7A", subj: "History 7A", at: d(16), plan, impromptu: [], earnedExtra: false, extraAlreadyHad: false }) === null);
+}
+
 // ---- the reward thresholds, from Setup D52:AE56 ----
 {
   // The block as the sheet holds it: a header row, then a row per benefit with

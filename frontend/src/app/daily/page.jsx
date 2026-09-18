@@ -16,7 +16,7 @@
 // picture and any image the sheet puts in the feature cell E1).
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, evaluateNotice, firstClassStart, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
+import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, evaluateNotice, firstClassStart, formalDiscussion, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
 
 const CLASS_LABELS = ["7A", "7B", "7C", "8A", "8B", "8C"];
 // The Setup slot table's own columns, for ?debug=1.
@@ -34,6 +34,11 @@ const FAIL_QUIET = 3;
 // the screen back mid-sentence.
 const SCRUB_RESET_MS = 300_000;
 const LAST_COPY_KEY = "daily:last";
+// Which groups have had their earned Formal Discussion, and when. Once it has
+// been on the screen it has been had, so it does not come round again that
+// month — but it stays up for the rest of the day it appeared on rather than
+// vanishing part way through the class.
+const FD_HAD_KEY = "daily:fd-extra";
 // Vendored in public/daily — see the note at the top of that file.
 const FLAG_CA = "/daily/flag-ca.svg";
 // How old what is on screen has to be before the board says anything about it.
@@ -428,6 +433,9 @@ export default function DailyPage() {
   const [badImages, setBadImages] = useState({});
   const [prayBig, setPrayBig] = useState(false);
   const [copied, setCopied] = useState("");
+  const [fdHad, setFdHad] = useState({});
+  // What the render found on screen, for the effect above to record.
+  const fdPending = useRef("");
   const scrubTouched = useRef(0);
   const debugRef = useRef(null);
   // When what is on screen was read from the sheet — not when it was fetched.
@@ -453,6 +461,13 @@ export default function DailyPage() {
     } catch {
       /* private window, cleared storage, a copy too big to keep — no matter */
     }
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(FD_HAD_KEY);
+      if (raw) setFdHad(JSON.parse(raw) || {});
+    } catch { /* storage off; the extra may then come round twice */ }
   }, []);
 
   // URL options (client only)
@@ -689,6 +704,24 @@ export default function DailyPage() {
     } else {
       box.classList.remove("scrolling");
     }
+  });
+
+  // Once an earned Formal Discussion has been on the screen it has been had.
+  // The render decides that — it is the render that knows which class is up —
+  // and this flushes what it decided. No dependency list: it runs after each
+  // render and does nothing unless the render left a group's name behind.
+  useEffect(() => {
+    const sec = fdPending.current;
+    if (!sec) return;
+    const now = new Date();
+    const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const day = now.toDateString();
+    setFdHad((prev) => {
+      if (prev[sec] && prev[sec].month === month) return prev;
+      const next = { ...prev, [sec]: { month, day } };
+      try { window.localStorage.setItem(FD_HAD_KEY, JSON.stringify(next)); } catch { /* storage off */ }
+      return next;
+    });
   });
 
   // Shrink the video when the period changes.
@@ -980,6 +1013,39 @@ export default function DailyPage() {
     : meta.riddle ? <div className="block quiet"><h3>Riddle</h3><p>{meta.riddle.replace(/^Q:\s*/, "")}</p></div> : null);
   const dailyBlock = () => (dailyText
     ? <div className="block navy"><h3>Today</h3><p className="daily">{dailyText}</p></div> : null);
+  // The Formal Discussion for the class on screen: the monthly one in the
+  // second week, or the one the group earned with Benefit 3. Announced at the
+  // start of the class in a box of its own, and it stays up for the period.
+  const fdFor = (period) => {
+    if (!period || period.duty || period.empty || !period.sec) return null;
+    // The page's own reader: on = [Benefit 3, Benefit 1, Benefit 2].
+    const st = parseStatus(statusOf(period));
+    const had = fdHad[period.sec];
+    const month = `${clock.getFullYear()}-${String(clock.getMonth() + 1).padStart(2, "0")}`;
+    const day = clock.toDateString();
+    const fd = formalDiscussion({
+      sec: period.sec,
+      subj: period.subj,
+      at: clock,
+      plan: data.dayPlan || {},
+      impromptu: sources.impromptu || [],
+      earnedExtra: !!(st && !st.rec && st.on && st.on[0]),
+      // Had it already — unless it was today, in which case it is still today's.
+      extraAlreadyHad: !!(had && had.month === month && had.day !== day),
+    });
+    // Only the live board records one; a scrubbed preview of next week must not
+    // use up a group's extra.
+    if (fd && fd.extra && scrub == null && opts.t == null) fdPending.current = period.sec;
+    return fd;
+  };
+  const fdBlock = (fd) => (fd
+    ? (
+      <div className="block fd">
+        <h3>{fd.extra ? "Formal Discussion — earned" : "Formal Discussion"}</h3>
+        {fd.extra ? <p className="won">Well done — Benefit 3. This one is yours.</p> : null}
+        <p className="topic">{fd.topic}</p>
+      </div>
+    ) : null);
   // A2: whose birthday it is, what is on at school today and — past noon —
   // what is on tomorrow. The sheet has carried it all along and nothing on the
   // board showed it. Its rule turns over at noon, so it is run at the board's
@@ -1461,6 +1527,8 @@ export default function DailyPage() {
         }
         blocks.push(<div key="o" className="block sun"><h3>{o.h}</h3><p>{o.p}</p></div>);
       }
+      const fd = fdBlock(fdFor(cur));
+      if (fd) blocks.push(<div key="fd">{fd}</div>);
       const n = noticeBlock();
       if (n) blocks.push(<div key="n">{n}</div>);
       const f = featureBlock();

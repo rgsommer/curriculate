@@ -216,6 +216,19 @@ a.subj.deck:hover { text-decoration-color: currentColor; }
   font-style: italic;
   margin: 0;
 }
+/* The Formal Discussion: its own colour, so it is not another reminder. */
+.block.fd {
+  background: #ede9fe;
+  border-left: 4px solid #6d28d9;
+  color: #3c1a78;
+}
+.block.fd h3 { color: #5b21b6; }
+.block.fd .topic {
+  font-family: var(--font-merriweather), Georgia, serif;
+  font-size: calc(clamp(15px, 2.6vh, 28px) * var(--fit));
+}
+.block.fd .won { font-weight: 600; }
+
 .panel.dismissalpanel { gap: 1.4vh; }
 /* The one instruction the room has to act on before the bell. */
 .panel.dismissalpanel .block.ready { border: 2px solid var(--alert); }
