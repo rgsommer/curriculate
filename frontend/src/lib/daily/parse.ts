@@ -2084,9 +2084,10 @@ export function testWeekday(plan: Record<number, unknown[]>): number | null {
  * The Formal Discussion
  *
  * Once a month every class group has one, in the second week, announced at the
- * start of the class in a box of its own. It goes in History or Geography by
- * preference, at the last time that group meets me in the week — so the group
- * has had the week's lessons before it talks.
+ * start of the class in a box of its own. It goes in the group's own discussion
+ * subject — History for a grade 7 group, Geography for a grade 8 one — at the
+ * last time that subject falls in their week, so the group has had the week's
+ * lessons before it talks.
  *
  * A group that has earned Benefit 3 gets a second one. That must not land in
  * the same week as the monthly one, so it goes in any other week once they
@@ -2099,7 +2100,15 @@ export function testWeekday(plan: Record<number, unknown[]>): number | null {
 
 export type FormalDiscussion = { topic: string; row: number; extra: boolean; why: string };
 
-const FD_SUBJECTS = /^(history|geography)/i;
+/**
+ * The subject a group's discussion belongs in: History for a grade 7 group,
+ * Geography for a grade 8 one — which is how the timetable runs. Taking either
+ * for either would let a grade 7 Geography period, or a mis-read class header,
+ * choose the day.
+ */
+function fdSubjectFor(sec: string): RegExp {
+  return /^7/.test(sec) ? /^history\b/i : /^geograph/i;
+}
 const FD_EXTRA_ROW_OFFSET = 14;
 
 /**
@@ -2122,6 +2131,7 @@ export function fdSlotForSection(
   plan: Record<number, { subj: string }[]>,
   sec: string
 ): { weekday: number; subj: string } | null {
+  const wanted = fdSubjectFor(sec);
   let preferred: { weekday: number; subj: string } | null = null;
   let any: { weekday: number; subj: string } | null = null;
   for (let weekday = 2; weekday <= 6; weekday += 1) {
@@ -2129,7 +2139,7 @@ export function fdSlotForSection(
       const subj = String(c.subj || "").trim();
       if (!subj.endsWith(sec)) continue; // "History 7A" belongs to 7A
       any = { weekday, subj };
-      if (FD_SUBJECTS.test(subj)) preferred = { weekday, subj };
+      if (wanted.test(subj)) preferred = { weekday, subj };
     }
   }
   return preferred || any;
