@@ -1139,6 +1139,7 @@ export type RawInputs = {
   pointsRow3?: string[]; // Points row 3 — class names
   pointsRow46?: string[];
   rewardRules?: string[][]; // Setup!D52:AE56 — the header row, then B1, B2, B3, W1
+  impromptu?: string[][]; // Impromptu!L1:M30 — L the grade 7 topics, M the grade 8
   slotBlock?: string[][]; // Setup!S1:AB8 values — the whole block, S2 included
   slotBlockFormulas?: string[][]; // Setup!S1:AB8 formulas — what the board evaluates itself
   displayLinks?: string[][]; // DisplayAI!A1:F40 cell links (rich text and HYPERLINK alike)
@@ -1458,13 +1459,14 @@ export type Sources = {
   plansCells: string[][]; // Setup rows 35 to 40, columns F, K and L, raw, for ?debug=1
   pointsCells: string[]; // every cell of Points!A1:BV46 that holds something, "I5=8"
   rewards: Record<string, RewardRule>; // Setup!D52:AE56 — the thresholds, by label
+  impromptu: string[][]; // Impromptu!L1:M30 — the Formal Discussion topics
 };
 
 export const EMPTY_SOURCES: Sources = {
   windowStart: null, windowEnd: null, offsetHours: 0, b7: false, d7: false, a9: null, a11: null,
   poemRow: [], poemF3: "", poemF3Formula: "", poemGrid: [], poemGridFormulas: [],
   verticalRow: [], slots: [], riddle: "",
-  verses: [], verseWeek: null, pointsClasses: [], pointsLabels: [], book: {}, cellImages: {}, plansCells: [], pointsCells: [], rewards: {}, notice: "", noticeFormula: "",
+  verses: [], verseWeek: null, pointsClasses: [], pointsLabels: [], book: {}, cellImages: {}, plansCells: [], pointsCells: [], rewards: {}, impromptu: [], notice: "", noticeFormula: "",
 };
 
 const truthy = (s: string) => /^(TRUE|1|YES)$/i.test(String(s || "").trim());
@@ -1757,6 +1759,7 @@ export function buildSources(inp: RawInputs): Sources {
     // should have to answer from a photograph of a projector.
     pointsCells: nonEmptyCells(inp.pointsGrid || []),
     rewards: parseRewardRules(inp.rewardRules || []),
+    impromptu: inp.impromptu || [],
     notice: String(((inp.display || [])[1] || [])[0] || "").trim(),
     noticeFormula: String(inp.noticeFormula || "").trim(),
   };
@@ -2034,6 +2037,99 @@ export function evaluateNotice(src: Sources, at?: Date): string {
   const rule = src.noticeFormula;
   if (!rule.startsWith("=") || !at || !src.book || !Object.keys(src.book).length) return src.notice;
   return (evaluateOr(rule, src.notice, { book: src.book, now: at, sheet: "DisplayAI", images: src.cellImages }) || "").trim();
+}
+
+/* ------------------------------------------------------------------ *
+ * The Formal Discussion
+ *
+ * Once a month every class group has one, in the second week, announced at the
+ * start of the class in a box of its own. It goes in History or Geography by
+ * preference, at the last time that group meets me in the week — so the group
+ * has had the week's lessons before it talks.
+ *
+ * A group that has earned Benefit 3 gets a second one. That must not land in
+ * the same week as the monthly one, so it goes in any other week once they
+ * qualify; and once it has been on the screen it has been had.
+ *
+ * The topics are a column of the Impromptu tab — L for grade 7, M for grade 8 —
+ * taken by row: the month for the monthly one (September is row 9), and the
+ * month plus fourteen for the earned one (September is row 23).
+ * ------------------------------------------------------------------ */
+
+export type FormalDiscussion = { topic: string; row: number; extra: boolean; why: string };
+
+const FD_SUBJECTS = /^(history|geography)/i;
+const FD_EXTRA_ROW_OFFSET = 14;
+
+/**
+ * Which week of the month a date falls in, counted by Mondays: the week whose
+ * Monday is the month's second is week 2. A week whose Monday belongs to the
+ * previous month is the first.
+ */
+export function weekOfMonth(d: Date): number {
+  const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  if (monday.getMonth() !== d.getMonth()) return 1;
+  return Math.floor((monday.getDate() - 1) / 7) + 1;
+}
+
+/**
+ * The period a group's Formal Discussion belongs in: the last History or
+ * Geography of their week, else simply the last class of it.
+ */
+export function fdSlotForSection(
+  plan: Record<number, { subj: string }[]>,
+  sec: string
+): { weekday: number; subj: string } | null {
+  let preferred: { weekday: number; subj: string } | null = null;
+  let any: { weekday: number; subj: string } | null = null;
+  for (let weekday = 2; weekday <= 6; weekday += 1) {
+    for (const c of (plan || {})[weekday] || []) {
+      const subj = String(c.subj || "").trim();
+      if (!subj.endsWith(sec)) continue; // "History 7A" belongs to 7A
+      any = { weekday, subj };
+      if (FD_SUBJECTS.test(subj)) preferred = { weekday, subj };
+    }
+  }
+  return preferred || any;
+}
+
+/** The topic itself: column L for a grade 7 group, M for a grade 8 one. */
+export function impromptuTopic(grid: string[][], sec: string, row: number): string {
+  const col = /^7/.test(sec) ? 0 : 1; // the range is read as L:M
+  return String(((grid || [])[row - 1] || [])[col] || "").trim();
+}
+
+export function formalDiscussion(opts: {
+  sec: string;
+  subj: string;
+  at: Date;
+  plan: Record<number, { subj: string }[]>;
+  impromptu: string[][];
+  earnedExtra: boolean;
+  extraAlreadyHad: boolean;
+}): FormalDiscussion | null {
+  const { sec, subj, at, plan, impromptu, earnedExtra, extraAlreadyHad } = opts;
+  if (!sec) return null;
+  const slot = fdSlotForSection(plan, sec);
+  if (!slot) return null;
+  // The right day of the week, and the right class on it.
+  if (at.getDay() + 1 !== slot.weekday) return null;
+  if (String(subj || "").trim() !== slot.subj) return null;
+
+  const month = at.getMonth() + 1;
+  const week = weekOfMonth(at);
+  if (week === 2) {
+    const topic = impromptuTopic(impromptu, sec, month);
+    return topic ? { topic, row: month, extra: false, why: `month ${month}, second week` } : null;
+  }
+  // Any other week, once they have earned it and not yet had it.
+  if (earnedExtra && !extraAlreadyHad) {
+    const row = month + FD_EXTRA_ROW_OFFSET;
+    const topic = impromptuTopic(impromptu, sec, row);
+    return topic ? { topic, row, extra: true, why: `earned, week ${week}` } : null;
+  }
+  return null;
 }
 
 /** Points row 3 holds the class names; row 46 holds four flags per class. */

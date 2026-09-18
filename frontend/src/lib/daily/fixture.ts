@@ -190,6 +190,12 @@ export const FIXTURE: RawInputs = {
     ["", "", "", "", "", "", '=IMAGE("https://example.com/history.png")', "", ""],
     [],
   ],
+  // Impromptu L1:M30 — L the grade 7 topics, M the grade 8. Row = the month for
+  // the monthly Formal Discussion, month + 14 for the one a group earns.
+  impromptu: Array.from({ length: 30 }, (_, i) => [
+    `Grade 7 topic for row ${i + 1}: should students choose their own seats?`,
+    `Grade 8 topic for row ${i + 1}: is it better to be respected or liked?`,
+  ]),
   // Column B: the row above a course's first lesson carries its deck for the
   // year, and the class heading links to it.
   lessonsB: [["https://example.org/math-deck-2026"], [], [], []],

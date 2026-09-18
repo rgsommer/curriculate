@@ -154,6 +154,8 @@ async function refresh(quick: boolean): Promise<Payload> {
       // many days, how many times. The board only computes the last of them,
       // the writing penalty, but it should do so from the sheet's own numbers.
       "Setup!D52:AE56",      // 23 — row 52 is the header the columns are read by
+      // The Formal Discussion topics: L for grade 7, M for grade 8, by row.
+      "Impromptu!L1:M30",    // 24
       ...(waitingRange ? [waitingRange] : []), // 23
       // And whatever the slot rules themselves asked for last time round: the
       // list of pictures a rule indexes into can live on a tab of its own, and
@@ -199,8 +201,8 @@ async function refresh(quick: boolean): Promise<Payload> {
     const slotBlock = values[2] || [];
     const setupMessages = values[3] || [];
     const feature = (values[4]?.[0]?.[0]) || (values[5]?.[0]?.[0]) || "";
-    const waiting = waitingRange ? (values[24] || []) : [];
-    const extraAt = waitingRange ? 25 : 24;
+    const waiting = waitingRange ? (values[25] || []) : [];
+    const extraAt = waitingRange ? 26 : 25;
     const extraGrids = cachedExtra.map((range, i) => ({
       range,
       values: values[extraAt + i] || [],
@@ -304,6 +306,7 @@ async function refresh(quick: boolean): Promise<Payload> {
       pointsRow3: (values[12] || [])[2] || [],
       pointsRow46: (values[12] || [])[45] || [],
       rewardRules: values[23] || [],
+      impromptu: values[24] || [],
       displayLinks: grid.first || [],
       displayCRuns: (grid.runs || []).map((row) => (row || [])[2] || []),
       setupMessages,
