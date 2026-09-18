@@ -1141,6 +1141,7 @@ export type RawInputs = {
   rewardRules?: string[][]; // Setup!D52:AE56 — the header row, then B1, B2, B3, W1
   impromptu?: string[][]; // Impromptu!L1:M30 — L the grade 7 topics, M the grade 8
   schoolCalendar?: string[][]; // SchoolCalendar!A1:G220 — a row per event: date, "<serial> n", event, no-school, description
+  birthdays?: string[][]; // BDays!A1:AZ400 — a row per birthday, keyed "<serial> n" like the calendar
   slotBlock?: string[][]; // Setup!S1:AB8 values — the whole block, S2 included
   slotBlockFormulas?: string[][]; // Setup!S1:AB8 formulas — what the board evaluates itself
   displayLinks?: string[][]; // DisplayAI!A1:F40 cell links (rich text and HYPERLINK alike)
@@ -1668,6 +1669,10 @@ function buildBook(inp: RawInputs): Book {
     // The school's own calendar, which A2's rule reads and the banner across the
     // top of the board reads with it.
     schoolcalendar: [{ top: 1, left: 1, width: 7, height: 220, values: inp.schoolCalendar || [] }], // A1:G220
+    // And BDays, which the same rule reads and the balloons read with it. The
+    // rules may name either tab as well; those grids arrive below and are added
+    // rather than replacing these, so both answer.
+    bdays: [{ top: 1, left: 1, width: 52, height: 400, values: inp.birthdays || [] }], // A1:AZ400
   };
   // Whatever the rules asked for on top of that. A tab the book already has
   // gains another grid rather than replacing it, so the ranges read by name
@@ -2165,15 +2170,41 @@ export function joinNames(names: string[]): string {
  * to the first cell after the key that reads like words.
  * ------------------------------------------------------------------ */
 
-export type SpecialDay = { label: string; noSchool: boolean };
+export type SpecialDay = { label: string; noSchool: boolean; staffOnly: boolean };
+/** A day the banner speaks about: what to call it, and what is on. */
+export type SpecialBlock = { when: string; events: SpecialDay[] };
 
 const CAL_EVENT_COL = 3;   // C, the event
 const CAL_OFF_COL = 4;     // D, TRUE when school is closed
 const CAL_ABOUT_COL = 6;   // F, the longer description
 const CAL_MAX_PER_DAY = 3; // a projector banner, not the whole calendar
+const CAL_LOOK_AHEAD = 12; // days to walk forward for the next school day
 const NOT_A_LABEL = /^(?:true|false|\d+(?:\s+\d+)?)$/i;
 
-/** The events the calendar carries for one date. */
+/**
+ * The office's business, which is not the room's.
+ *
+ * The calendar is one list for the whole school and a good deal of it is the
+ * teacher's own diary — when marks are due, whose roster is outstanding, which
+ * colleague is out. The banner is read by thirty grade 7s, so those rows are
+ * left out of it. A day off is never left out, whatever it is called.
+ */
+const STAFF_ONLY = [
+  /\broster\b/i,
+  /\biep\b/i,
+  /\bsign[-\s]?off\b/i,
+  /\bdeadline\b/i,
+  /\breports?\s+due\b/i,
+  /\bmarks\b/i,
+  /\bspreadsheet\b/i,
+  /\bstaff\b/i,
+  /\bfor teachers\b/i,
+  /\bstudents of concern\b/i,
+  /\border\b.*\bbooks\b/i,
+  /\b[a-z]{2}\s+away\b/i, // "JM away", "SH Away (Interviews)" — a colleague out
+];
+
+/** Everything the calendar carries for one date, the office's business marked. */
 export function calendarEvents(book: Book, day: Date): SpecialDay[] {
   const grids = (book || {})["schoolcalendar"] || [];
   const midnight = new Date(day.getFullYear(), day.getMonth(), day.getDate());
@@ -2192,21 +2223,62 @@ export function calendarEvents(book: Book, day: Date): SpecialDay[] {
         || cells.slice(at + 1).find((c) => /[A-Za-z]{2}/.test(c) && !NOT_A_LABEL.test(c))
         || "";
       if (!label) continue;
-      const off = /^true$/i.test(col(CAL_OFF_COL)) || /^no school\b/i.test(col(CAL_ABOUT_COL));
       const id = label.toLowerCase();
       if (seen.has(id)) continue;
       seen.add(id);
-      out.push({ label, noSchool: off });
-      if (out.length >= CAL_MAX_PER_DAY) return out;
+      const noSchool = /^true$/i.test(col(CAL_OFF_COL)) || /^no school\b/i.test(col(CAL_ABOUT_COL));
+      out.push({ label, noSchool, staffOnly: !noSchool && STAFF_ONLY.some((re) => re.test(label)) });
     }
   }
   return out;
 }
 
-/** Today's events and tomorrow's, for the banner across the top of the board. */
-export function specialDays(book: Book, at: Date): { today: SpecialDay[]; tomorrow: SpecialDay[] } {
-  const next = new Date(at.getFullYear(), at.getMonth(), at.getDate() + 1);
-  return { today: calendarEvents(book, at), tomorrow: calendarEvents(book, next) };
+/** The ones that belong on a screen the room is reading. */
+export function forTheRoom(events: SpecialDay[]): SpecialDay[] {
+  return (events || []).filter((e) => !e.staffOnly).slice(0, CAL_MAX_PER_DAY);
+}
+
+const dayAfter = (d: Date, n = 1) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+const isWeekend = (d: Date) => d.getDay() === 0 || d.getDay() === 6;
+
+/** "Tomorrow" when it is, the weekday's name when it is not, dated if it is far off. */
+function nameOfDay(from: Date, day: Date): string {
+  const days = Math.round((day.getTime() - new Date(from.getFullYear(), from.getMonth(), from.getDate()).getTime()) / 86400000);
+  if (days <= 1) return "Tomorrow";
+  const named = weekdayColour(day.getDay() + 1);
+  const weekday = named ? named.name : day.toLocaleDateString(undefined, { weekday: "long" });
+  if (days <= 6) return weekday;
+  return `${weekday} ${day.getDate()} ${day.toLocaleDateString(undefined, { month: "short" })}`;
+}
+
+/**
+ * What the banner says: what is on today, and what is on next time the room is
+ * here — the next school day, not simply the next date, so a Friday board talks
+ * about Monday rather than about Saturday.
+ *
+ * A day off on the way there is announced in its own right, and is the more
+ * important of the two: a class wants to hear on Friday that Monday is
+ * Thanksgiving. Weekends carry nothing unless the calendar marks them off.
+ */
+export function specialDays(book: Book, at: Date): { today: SpecialDay[]; ahead: SpecialBlock[] } {
+  const today = forTheRoom(calendarEvents(book, at));
+  const ahead: SpecialBlock[] = [];
+  for (let n = 1; n <= CAL_LOOK_AHEAD; n += 1) {
+    const day = dayAfter(at, n);
+    const events = calendarEvents(book, day);
+    const off = events.some((e) => e.noSchool);
+    if (isWeekend(day) && !off) continue;
+    const mine = forTheRoom(events);
+    // A day off is worth saying even though the room is not in that day; then
+    // the walk carries on to the next day they actually are here.
+    if (off) {
+      if (mine.length) ahead.push({ when: nameOfDay(at, day), events: mine });
+      continue;
+    }
+    if (mine.length) ahead.push({ when: nameOfDay(at, day), events: mine });
+    break; // the next school day, whether or not it carries anything
+  }
+  return { today, ahead };
 }
 
 /* ------------------------------------------------------------------ *

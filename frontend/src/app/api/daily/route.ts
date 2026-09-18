@@ -110,9 +110,23 @@ async function refresh(quick: boolean): Promise<Payload> {
     // busy morning over the Sheets read quota (60 per minute per user) and left
     // the board showing a 429. The tab list is cached for an hour on top.
     const sheetTitles = await listSheetTitles().catch(() => [] as string[]);
+    // Tabs are found by name rather than spelled in: the sheet is the teacher's
+    // and a tab may be called something slightly different, and a range naming a
+    // tab that is not there costs a whole failed batch.
+    const tabNamed = (...tries: RegExp[]) => {
+      for (const want of tries) {
+        const hit = (sheetTitles || []).find((t) => want.test(t));
+        if (hit) return `'${hit.replace(/'/g, "''")}'`;
+      }
+      return "";
+    };
     // Kiss & Ride, KissRide, "Kiss & Ride 2026" — anything with both words.
-    const waitingTab = (sheetTitles || []).find((t) => /kiss\s*&?\s*ride/i.test(t)) || "";
-    const waitingRange = waitingTab ? `'${waitingTab.replace(/'/g, "''")}'!A1:H60` : "";
+    const waitingRange = ((tab) => (tab ? `${tab}!A1:H60` : ""))(tabNamed(/kiss\s*&?\s*ride/i));
+    // The school's calendar: what is on today and on the next day the room is in.
+    const calendarRange = ((tab) => (tab ? `${tab}!A1:G220` : ""))(tabNamed(/^school\s*calendar/i, /calendar/i));
+    // BDays: whose birthday it is. A2's rule reaches in here too, but the
+    // balloons should not depend on how that rule happens to be written.
+    const bdaysRange = ((tab) => (tab ? `${tab}!A1:AZ400` : ""))(tabNamed(/^b\s*-?\s*days?$/i, /birthday/i));
 
     const cachedExtra = c.extraRanges.slice(0, MAX_EXTRA_RANGES);
 
@@ -158,11 +172,13 @@ async function refresh(quick: boolean): Promise<Payload> {
       "Impromptu!L1:M30",    // 24
       // The school's calendar: the date in A, the same date as "<serial> n" in
       // B, the event in C, whether it is a day off in D, a description in F.
-      // A2's rule already reaches in here; naming it makes the read certain
-      // rather than dependent on how that rule happens to be written, and it
-      // costs nothing — a values batch is one request however many ranges.
-      "SchoolCalendar!A1:G220", // 25
-      ...(waitingRange ? [waitingRange] : []), // 26
+      // And BDays, a row per birthday keyed the same way. A2's rule reaches
+      // into both; naming them makes the read certain rather than dependent on
+      // how that rule happens to be written, and it costs nothing — a values
+      // batch is one request however many ranges it carries.
+      ...(calendarRange ? [calendarRange] : []),
+      ...(bdaysRange ? [bdaysRange] : []),
+      ...(waitingRange ? [waitingRange] : []),
       // And whatever the slot rules themselves asked for last time round: the
       // list of pictures a rule indexes into can live on a tab of its own, and
       // a rule that reaches past what the board holds throws and falls back to
@@ -207,8 +223,13 @@ async function refresh(quick: boolean): Promise<Payload> {
     const slotBlock = values[2] || [];
     const setupMessages = values[3] || [];
     const feature = (values[4]?.[0]?.[0]) || (values[5]?.[0]?.[0]) || "";
-    const waiting = waitingRange ? (values[26] || []) : [];
-    const extraAt = waitingRange ? 27 : 26;
+    // The optional ranges travel in the order they were put in the batch above.
+    let next = 25;
+    const calendarAt = calendarRange ? next++ : -1;
+    const bdaysAt = bdaysRange ? next++ : -1;
+    const waitingAt = waitingRange ? next++ : -1;
+    const extraAt = next;
+    const waiting = waitingAt < 0 ? [] : (values[waitingAt] || []);
     const extraGrids = cachedExtra.map((range, i) => ({
       range,
       values: values[extraAt + i] || [],
@@ -313,7 +334,8 @@ async function refresh(quick: boolean): Promise<Payload> {
       pointsRow46: (values[12] || [])[45] || [],
       rewardRules: values[23] || [],
       impromptu: values[24] || [],
-      schoolCalendar: values[25] || [],
+      schoolCalendar: calendarAt < 0 ? [] : (values[calendarAt] || []),
+      birthdays: bdaysAt < 0 ? [] : (values[bdaysAt] || []),
       displayLinks: grid.first || [],
       displayCRuns: (grid.runs || []).map((row) => (row || [])[2] || []),
       setupMessages,

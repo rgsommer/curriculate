@@ -16,7 +16,7 @@
 // picture and any image the sheet puts in the feature cell E1).
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, evaluateNotice, firstClassStart, formalDiscussion, testWeekday, birthdaysToday, birthdaysForSection, joinNames, specialDays, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
+import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, evaluateNotice, firstClassStart, formalDiscussion, testWeekday, birthdaysToday, birthdaysForSection, joinNames, specialDays, calendarEvents, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
 
 const CLASS_LABELS = ["7A", "7B", "7C", "8A", "8B", "8C"];
 // The Setup slot table's own columns, for ?debug=1.
@@ -1064,9 +1064,11 @@ export default function DailyPage() {
       </div>
     );
   };
-  // A banner across the top of the board for a special day: what is on today
-  // and what is on tomorrow. A day off is said in the alert colour, because it
-  // is the one the room most needs to hear the day before.
+  // A banner across the top of the board for a special day: what is on today,
+  // and what is on the next day the room is here — a day off on the way there
+  // is said in its own right, because that is the one they want to hear about
+  // on the Friday. The teacher's own diary — marks due, rosters, a colleague
+  // out — is left out of it: this is read by the class.
   const calendarLine = (list, when) => (
     <span className="cal-day">
       <b>{when}</b>
@@ -1079,14 +1081,14 @@ export default function DailyPage() {
   );
   const calendarBanner = () => {
     const today = special.today || [];
-    const tomorrow = special.tomorrow || [];
-    if (!today.length && !tomorrow.length) return null;
-    const off = [...today, ...tomorrow].some((e) => e.noSchool);
+    const ahead = special.ahead || [];
+    if (!today.length && !ahead.length) return null;
+    const off = [...today, ...ahead.flatMap((b) => b.events)].some((e) => e.noSchool);
     return (
       <div className={`calbanner${off ? " off" : ""}`}>
         <span className="cal-icon" aria-hidden="true">📅</span>
         {today.length ? calendarLine(today, "Today") : null}
-        {tomorrow.length ? calendarLine(tomorrow, "Tomorrow") : null}
+        {ahead.map((b, i) => <Fragment key={i}>{calendarLine(b.events, b.when)}</Fragment>)}
       </div>
     );
   };
@@ -1221,9 +1223,15 @@ export default function DailyPage() {
               {row("lesson picture", cur ? `${cur.image || "—"}  ·  shows for the first ${Math.round(setup.picSeconds / 60)} min, ${Math.round(cur.elapsed)} min in${cur.image && badImages[cur.image] ? "  ·  DID NOT LOAD" : ""}` : "—")}
               {row("lesson video", (cur && cur.video) || "—")}
               {row("special days (SchoolCalendar)",
-                [["today", special.today], ["tomorrow", special.tomorrow]]
-                  .map(([when, list]) => `${when}: ${(list || []).map((e) => `${e.label}${e.noSchool ? " (no school)" : ""}`).join(", ") || "nothing on the calendar"}`)
+                [["today", special.today], ...(special.ahead || []).map((x) => [x.when.toLowerCase(), x.events])]
+                  .map(([when, list]) => `${when}: ${(list || []).map((e) => `${e.label}${e.noSchool ? " (no school)" : ""}`).join(", ") || "nothing for the room"}`)
                   .join("   ·   "))}
+              {row("calendar rows left out (the teacher's own diary)",
+                [0, 1, 2, 3, 4, 5, 6, 7]
+                  .flatMap((n) => calendarEvents(sources.book || {}, new Date(clock.getFullYear(), clock.getMonth(), clock.getDate() + n))
+                    .filter((e) => e.staffOnly)
+                    .map((e) => `${n === 0 ? "today" : `+${n}`}: ${e.label}`))
+                  .join("   ·   ") || "none in the next week")}
               {row("birthdays today",
                 (birthdays || []).map((b) => `${b.name || "?"} (grade ${b.grade || "not found in the row"})`).join("   ")
                   || "nothing in the Bdays rows for today")}
