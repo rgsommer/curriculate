@@ -170,6 +170,11 @@ async function refresh(quick: boolean): Promise<Payload> {
       "Setup!D52:AE56",      // 23 — row 52 is the header the columns are read by
       // The Formal Discussion topics: L for grade 7, M for grade 8, by row.
       "Impromptu!L1:M30",    // 24
+      // The same threshold block on the Points tab, which is the copy the sheet's
+      // own B3 flag is written against — its formula reads Z55 and AA55 with no
+      // tab in front of them — and the copy that carries the days-a-week the
+      // rule assumes (AD55).
+      "Points!D52:AE56",     // 25
       // The school's calendar: the date in A, the same date as "<serial> n" in
       // B, the event in C, whether it is a day off in D, a description in F.
       // And BDays, a row per birthday keyed the same way. A2's rule reaches
@@ -224,7 +229,7 @@ async function refresh(quick: boolean): Promise<Payload> {
     const setupMessages = values[3] || [];
     const feature = (values[4]?.[0]?.[0]) || (values[5]?.[0]?.[0]) || "";
     // The optional ranges travel in the order they were put in the batch above.
-    let next = 25;
+    let next = 26;
     const calendarAt = calendarRange ? next++ : -1;
     const bdaysAt = bdaysRange ? next++ : -1;
     const waitingAt = waitingRange ? next++ : -1;
@@ -333,6 +338,7 @@ async function refresh(quick: boolean): Promise<Payload> {
       pointsRow3: (values[12] || [])[2] || [],
       pointsRow46: (values[12] || [])[45] || [],
       rewardRules: values[23] || [],
+      rewardRulesPoints: values[25] || [],
       impromptu: values[24] || [],
       schoolCalendar: calendarAt < 0 ? [] : (values[calendarAt] || []),
       birthdays: bdaysAt < 0 ? [] : (values[bdaysAt] || []),

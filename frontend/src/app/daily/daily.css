@@ -278,6 +278,17 @@ a.subj.deck:hover { text-decoration-color: currentColor; }
 
 .balloons .pops:last-child { text-align: right; direction: rtl; }
 
+/* A birthday kept on a school day rather than on the day itself: the sheet's
+   own words for why, beside the names. */
+.balloons .hbnote {
+  font-family: var(--font-lexend), system-ui, sans-serif;
+  font-style: normal;
+  font-size: clamp(11px, 1.8vh, 20px);
+  font-weight: 300;
+  color: var(--muted);
+  margin-left: .8vw;
+}
+
 .balloons .hb {
   flex: 0 0 auto;
   font-family: var(--font-caveat), var(--font-merriweather), Georgia, cursive;

@@ -425,7 +425,7 @@ export default function DailyPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [loadNote, setLoadNote] = useState("Contacting the sheet…");
-  const [points, setPoints] = useState({ numbers: null, percents: null, entered: null, writing: [], writingNote: "", note: "" });
+  const [points, setPoints] = useState({ numbers: null, percents: null, entered: null, writing: [], writingNote: "", b3: [], b3Note: "", note: "" });
   const [tick, setTick] = useState(0);
   const [vidBig, setVidBig] = useState(false);
   const [opts, setOpts] = useState({ t: null, k: "", pic: "right", debug: false });
@@ -519,6 +519,8 @@ export default function DailyPage() {
           entered: j.points && j.points.entered != null ? j.points.entered : p.entered,
           writing: (j.points && j.points.writing) || [],
           writingNote: (j.points && j.points.writingNote) || "",
+          b3: (j.points && j.points.b3) || [],
+          b3Note: (j.points && j.points.b3Note) || "",
           note: (j.points && j.points.note) || "",
         }));
         // A picture that failed once — a Drive link not yet shared, a blip —
@@ -1041,7 +1043,10 @@ export default function DailyPage() {
         .filter((c) => c.sec === period.sec)
         .map((c) => c.subj),
       impromptu: sources.impromptu || [],
-      earnedExtra: !!(st && !st.rec && st.on && st.on[0]),
+      // The privilege code carries B3 while the class is on, and the Points
+      // tab's own flag column says it whether or not a code is showing.
+      earnedExtra: !!(st && !st.rec && st.on && st.on[0])
+        || (points.b3 || []).includes(period.sec),
       // Had it already — unless it was today, in which case it is still today's.
       extraAlreadyHad: !!(had && had.month === month && had.day !== day),
     });
@@ -1056,10 +1061,16 @@ export default function DailyPage() {
     if (!period || period.duty || period.empty || !period.sec) return null;
     const mine = birthdaysForSection(birthdays, period.sec);
     if (!mine.length) return null;
+    const notes = [...new Set(mine.map((b) => (b.note || "").trim()).filter(Boolean))];
     return (
       <div className="balloons">
         <span className="pops" aria-hidden="true">{"🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈"}</span>
-        <span className="hb">Happy birthday, {joinNames(mine.map((b) => b.name))}!</span>
+        <span className="hb">
+          Happy birthday, {joinNames(mine.map((b) => b.name))}!
+          {/* A birthday over a weekend is kept on a school day, and the sheet
+              says in its own words which and why. */}
+          {notes.length ? <i className="hbnote">{notes.join(" · ")}</i> : null}
+        </span>
         <span className="pops" aria-hidden="true">{"🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈"}</span>
       </div>
     );
@@ -1233,8 +1244,10 @@ export default function DailyPage() {
                     .map((e) => `${n === 0 ? "today" : `+${n}`}: ${e.label}`))
                   .join("   ·   ") || "none in the next week")}
               {row("birthdays today",
-                (birthdays || []).map((b) => `${b.name || "?"} (grade ${b.grade || "not found in the row"})`).join("   ")
-                  || "nothing in the Bdays rows for today")}
+                (birthdays || []).map((b) => `${b.name || "?"} (grade ${b.grade || "not found in the row"})${b.note ? ` — ${b.note}` : ""}`).join("   ")
+                  || "nothing in the BDays rows for today")}
+              {row("Benefit 3 earned (the extra Formal Discussion)",
+                `${(points.b3 || []).join(", ") || "none"}  ·  ${points.b3Note || "—"}`)}
               {row("reward thresholds (Setup D53:AE56)",
                 Object.entries(sources.rewards || {}).map(([k, v]) => `${k}: ${v.points} pts · ${v.days} days · ${v.times}×`).join("   ") || "none read — using below 6, twice, in the last 7")}
               {row("writing owed", `${(points.writing || []).join(", ") || "none"}  ·  ${points.writingNote || "—"}`)}
