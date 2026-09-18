@@ -216,6 +216,46 @@ a.subj.deck:hover { text-decoration-color: currentColor; }
   font-style: italic;
   margin: 0;
 }
+/* What the school's calendar carries for today and tomorrow: one line across
+   the top of every screen, whatever the board is showing. */
+.calbanner {
+  display: flex;
+  align-items: baseline;
+  gap: 2.4vw;
+  padding: .5vh 2vw;
+  background: var(--sun-fill);
+  border-bottom: 1px solid var(--line);
+  font-size: clamp(14px, 2.4vh, 30px);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* A day off is the one the room most needs to hear about the day before. */
+.calbanner.off { background: var(--alert-fill); }
+
+.calbanner .cal-icon { flex: 0 0 auto; font-size: clamp(14px, 2.6vh, 32px); }
+
+.calbanner .cal-day {
+  display: flex;
+  align-items: baseline;
+  gap: .8vw;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.calbanner .cal-day b {
+  flex: 0 0 auto;
+  font-size: clamp(11px, 1.8vh, 20px);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.calbanner .cal-ev { color: var(--ink); }
+.calbanner .cal-ev + .cal-ev::before { content: " · "; color: var(--muted); }
+.calbanner .cal-ev.off { color: var(--alert); font-weight: 700; }
+
 /* A birthday in this class's grade: balloons across the top of their screen. */
 .balloons {
   display: flex;

@@ -220,6 +220,25 @@ export const FIXTURE: RawInputs = {
     `Grade 7 topic for row ${i + 1}: should students choose their own seats?`,
     `Grade 8 topic for row ${i + 1}: is it better to be respected or liked?`,
   ]),
+  // SchoolCalendar A1:G220 — the title row, the header, then a row per event:
+  // the date in words, the "<serial> n" key, the event, whether it is a day
+  // off, a letter of the sheet's own, and the description. Keyed to today and
+  // tomorrow so the banner shows whatever day the fixture is opened on.
+  schoolCalendar: (() => {
+    const serial = (d: Date) =>
+      Math.floor((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - Date.UTC(1899, 11, 30)) / 86400000);
+    const now = new Date();
+    const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    const row = (d: Date, n: number, event: string, off: boolean, about: string) =>
+      ["", `${serial(d)} ${n}`, event, off ? "TRUE" : "FALSE", "f", about, ""];
+    return [
+      ["School Calendar Events", "", "", "", "", "", ""],
+      ["2026", "", "Event", "No School", "", "Description", "Notes"],
+      row(now, 1, "Business Fair", false, "Business Fair"),
+      row(now, 2, "Terry Fox Run ($2)", false, "Terry Fox Run ($2)"),
+      row(next, 1, "Thanksgiving Day", true, "No School (Thanksgiving Day)"),
+    ];
+  })(),
   // Column B: the row above a course's first lesson carries its deck for the
   // year, and the class heading links to it.
   lessonsB: [["https://example.org/math-deck-2026"], [], [], []],

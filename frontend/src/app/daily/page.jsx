@@ -16,7 +16,7 @@
 // picture and any image the sheet puts in the feature cell E1).
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, evaluateNotice, firstClassStart, formalDiscussion, testWeekday, birthdaysToday, birthdaysForSection, joinNames, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
+import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, evaluateNotice, firstClassStart, formalDiscussion, testWeekday, birthdaysToday, birthdaysForSection, joinNames, specialDays, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
 
 const CLASS_LABELS = ["7A", "7B", "7C", "8A", "8B", "8C"];
 // The Setup slot table's own columns, for ?debug=1.
@@ -787,6 +787,10 @@ export default function DailyPage() {
   // over that grade's classes only. The rows come from the Bdays block the
   // sheet's own A2 rule already makes the board fetch.
   const birthdays = birthdaysToday(sources.book || {}, clock);
+  // What the school's calendar carries for today and for tomorrow — the banner
+  // across the top of every screen, so a day off or a dress-down is known about
+  // the day before rather than on the morning.
+  const special = specialDays(sources.book || {}, clock);
   // During a class the day's plan has nothing to add — that class is the screen.
   const dailyText = evaluateDailyText(sources, t, weekday, !!(cur && !cur.duty && !cur.empty));
   const peekNext = classes.find((c) => c.start >= (cur ? cur.end : t)) || null;
@@ -1060,6 +1064,32 @@ export default function DailyPage() {
       </div>
     );
   };
+  // A banner across the top of the board for a special day: what is on today
+  // and what is on tomorrow. A day off is said in the alert colour, because it
+  // is the one the room most needs to hear the day before.
+  const calendarLine = (list, when) => (
+    <span className="cal-day">
+      <b>{when}</b>
+      {list.map((e, i) => (
+        <span key={i} className={`cal-ev${e.noSchool ? " off" : ""}`}>
+          {e.noSchool ? "No school — " : ""}{e.label}
+        </span>
+      ))}
+    </span>
+  );
+  const calendarBanner = () => {
+    const today = special.today || [];
+    const tomorrow = special.tomorrow || [];
+    if (!today.length && !tomorrow.length) return null;
+    const off = [...today, ...tomorrow].some((e) => e.noSchool);
+    return (
+      <div className={`calbanner${off ? " off" : ""}`}>
+        <span className="cal-icon" aria-hidden="true">📅</span>
+        {today.length ? calendarLine(today, "Today") : null}
+        {tomorrow.length ? calendarLine(tomorrow, "Tomorrow") : null}
+      </div>
+    );
+  };
   const fdBlock = (fd) => (fd
     ? (
       <div className="block fd">
@@ -1190,6 +1220,10 @@ export default function DailyPage() {
               {row("ranges the rules named", (sources.extraRanges || []).join(", ") || "none beyond the fixed reads")}
               {row("lesson picture", cur ? `${cur.image || "—"}  ·  shows for the first ${Math.round(setup.picSeconds / 60)} min, ${Math.round(cur.elapsed)} min in${cur.image && badImages[cur.image] ? "  ·  DID NOT LOAD" : ""}` : "—")}
               {row("lesson video", (cur && cur.video) || "—")}
+              {row("special days (SchoolCalendar)",
+                [["today", special.today], ["tomorrow", special.tomorrow]]
+                  .map(([when, list]) => `${when}: ${(list || []).map((e) => `${e.label}${e.noSchool ? " (no school)" : ""}`).join(", ") || "nothing on the calendar"}`)
+                  .join("   ·   "))}
               {row("birthdays today",
                 (birthdays || []).map((b) => `${b.name || "?"} (grade ${b.grade || "not found in the row"})`).join("   ")
                   || "nothing in the Bdays rows for today")}
@@ -1308,6 +1342,7 @@ export default function DailyPage() {
     body = (
       <>
         {header({ title: "Announcements", chips: null, when: `Screen blank until ${fmt(setup.blankTo)}`, leftHtml: <b>Please listen</b>, pct: 0 })}
+        {calendarBanner()}
         {/* The flag and the words stand through the announcements as well as
             the anthem that follows them — the room is already on its feet, and
             a blank screen for those minutes helps nobody. Failing an anthem, a
@@ -1327,6 +1362,7 @@ export default function DailyPage() {
     body = (
       <>
         {header({ title: "O Canada", chips: null, when: `Until ${fmt(setup.blankTo + setup.anthemMin)}`, leftHtml: <b>Please stand</b>, pct: 0 })}
+        {calendarBanner()}
         {anthemMain()}
         {footer(false)}
       </>
@@ -1338,6 +1374,7 @@ export default function DailyPage() {
     body = (
       <>
         {header({ title: "Dismissal", chips: null, when: `From ${fmt(endOfDayAt)}`, leftHtml: <b>Day complete</b>, pct: 100 })}
+        {calendarBanner()}
         <div className={`main pic-right endofday${featureImage ? " pic-feature" : ""}`}>
           <div>
             {/* The goodbye, then the blessing — the verse has had the bottom
@@ -1381,6 +1418,7 @@ export default function DailyPage() {
     body = (
       <>
         {header({ title: greeting, chips: null, when: meta.plans, leftHtml: "", pct: 0 })}
+        {calendarBanner()}
         {withPicture(
           <div>
             <p className="script">{greeting}</p>
@@ -1416,6 +1454,7 @@ export default function DailyPage() {
     body = (
       <>
         {header({ title: greeting, chips: null, when: meta.plans, leftHtml: <>First class at <b>{fmt(classes[0].start)}</b></>, pct: 0 })}
+        {calendarBanner()}
         {withPicture(
           <div>
             <p className="script">{greeting}</p>
@@ -1454,6 +1493,7 @@ export default function DailyPage() {
           pct: cur ? ((t - cur.start) / (cur.end - cur.start)) * 100 : 0, period: cur,
           red: redState,
         })}
+        {calendarBanner()}
         {withPicture(nx ? (
           <div>
             <p className="eyebrow">Up next</p>
@@ -1608,6 +1648,7 @@ export default function DailyPage() {
           when: `${fmt(cur.start)} to ${fmt(cur.end)} · ${cur.end - cur.start} min`,
           leftHtml: <><b>{left} min</b> left</>, pct, red: redState, period: cur,
         })}
+        {calendarBanner()}
         {birthdayBand(cur)}
         {openingScreen ? openingMain : (
           <div className={`main${side ? "" : " solo"}${picOn && !endOfDaySoon ? ` pic-${opts.pic}` : ""}${featureImage && !endOfDaySoon ? " pic-feature" : ""}`}>

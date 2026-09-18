@@ -1140,6 +1140,7 @@ export type RawInputs = {
   pointsRow46?: string[];
   rewardRules?: string[][]; // Setup!D52:AE56 — the header row, then B1, B2, B3, W1
   impromptu?: string[][]; // Impromptu!L1:M30 — L the grade 7 topics, M the grade 8
+  schoolCalendar?: string[][]; // SchoolCalendar!A1:G220 — a row per event: date, "<serial> n", event, no-school, description
   slotBlock?: string[][]; // Setup!S1:AB8 values — the whole block, S2 included
   slotBlockFormulas?: string[][]; // Setup!S1:AB8 formulas — what the board evaluates itself
   displayLinks?: string[][]; // DisplayAI!A1:F40 cell links (rich text and HYPERLINK alike)
@@ -1664,6 +1665,9 @@ function buildBook(inp: RawInputs): Book {
     verticalai: [{ top: 1, left: 4, width: 7, height: 20, values: (inp.vertical || []).slice(0, 20) }],
     subjects: [{ top: 1, left: 21, width: 1, height: 40, values: inp.subjects || [] }], // U1:U40
     mathchallenge: [{ top: 1, left: 1, width: 3, height: 60, values: inp.mathChallenge || [] }], // A1:C60
+    // The school's own calendar, which A2's rule reads and the banner across the
+    // top of the board reads with it.
+    schoolcalendar: [{ top: 1, left: 1, width: 7, height: 220, values: inp.schoolCalendar || [] }], // A1:G220
   };
   // Whatever the rules asked for on top of that. A tab the book already has
   // gains another grid rather than replacing it, so the ranges read by name
@@ -2140,6 +2144,69 @@ export function joinNames(names: string[]): string {
   const list = (names || []).map((n) => String(n || "").trim()).filter(Boolean);
   if (list.length <= 1) return list[0] || "";
   return `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
+}
+
+/* ------------------------------------------------------------------ *
+ * What is on at school today, and what is on tomorrow
+ *
+ * The SchoolCalendar tab is a row per event: the date in words in column A, the
+ * same date as "<serial> n" in B — the key the sheet's own lookups match on,
+ * n telling two events on one day apart — the event in C, whether it is a day
+ * off in D, and a longer description in F.
+ *
+ * The A2 notice rule already builds a sentence out of some of this, but only
+ * for the day it is run on (and tomorrow's only after noon). The banner wants
+ * both days at once and wants to know which of them is a day off, so the rows
+ * are read here rather than the sentence.
+ *
+ * The columns are taken from the grid's own left edge, so a range the rules
+ * happened to name — SchoolCalendar!B3:C200, say — is read as B and C rather
+ * than as A and B. Where that lands outside what was read, the event falls back
+ * to the first cell after the key that reads like words.
+ * ------------------------------------------------------------------ */
+
+export type SpecialDay = { label: string; noSchool: boolean };
+
+const CAL_EVENT_COL = 3;   // C, the event
+const CAL_OFF_COL = 4;     // D, TRUE when school is closed
+const CAL_ABOUT_COL = 6;   // F, the longer description
+const CAL_MAX_PER_DAY = 3; // a projector banner, not the whole calendar
+const NOT_A_LABEL = /^(?:true|false|\d+(?:\s+\d+)?)$/i;
+
+/** The events the calendar carries for one date. */
+export function calendarEvents(book: Book, day: Date): SpecialDay[] {
+  const grids = (book || {})["schoolcalendar"] || [];
+  const midnight = new Date(day.getFullYear(), day.getMonth(), day.getDate());
+  const key = new RegExp(`^${Math.floor(toSerial(midnight))}\\s+\\d+$`);
+  const out: SpecialDay[] = [];
+  const seen = new Set<string>();
+  for (const g of grids) {
+    const left = g.left || 1;
+    for (const row of g.values || []) {
+      const cells = (row || []).map((c) => String(c ?? "").trim());
+      const at = cells.findIndex((c) => key.test(c));
+      if (at < 0) continue;
+      const col = (n: number) => (n - left >= 0 ? cells[n - left] || "" : "");
+      const label = col(CAL_EVENT_COL)
+        || col(CAL_ABOUT_COL)
+        || cells.slice(at + 1).find((c) => /[A-Za-z]{2}/.test(c) && !NOT_A_LABEL.test(c))
+        || "";
+      if (!label) continue;
+      const off = /^true$/i.test(col(CAL_OFF_COL)) || /^no school\b/i.test(col(CAL_ABOUT_COL));
+      const id = label.toLowerCase();
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push({ label, noSchool: off });
+      if (out.length >= CAL_MAX_PER_DAY) return out;
+    }
+  }
+  return out;
+}
+
+/** Today's events and tomorrow's, for the banner across the top of the board. */
+export function specialDays(book: Book, at: Date): { today: SpecialDay[]; tomorrow: SpecialDay[] } {
+  const next = new Date(at.getFullYear(), at.getMonth(), at.getDate() + 1);
+  return { today: calendarEvents(book, at), tomorrow: calendarEvents(book, next) };
 }
 
 /* ------------------------------------------------------------------ *
