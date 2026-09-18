@@ -956,6 +956,57 @@ check("column letters", P.columnName(4) === "D" && P.columnName(43) === "AQ" && 
     && P.joinNames(["Mia", "Sam", "Ana"]) === "Mia, Sam and Ana");
 }
 
+// ---- what is on at school today, and tomorrow ----
+{
+  // The SchoolCalendar tab as the sheet writes it: the date in words, the
+  // "<serial> n" key, the event, whether it is a day off, a letter of the
+  // sheet's own, then the description.
+  const day = new Date(2026, 8, 18, 11, 0);
+  const key = (d, n) => `${Math.floor(F.toSerial(d))} ${n}`;
+  const rows = [
+    ["School Calendar Events", "", "", "", "", "", ""],
+    ["2026", "", "Event", "No School", "", "Description", "Notes"],
+    ["Fri, Sep 18, 2026", key(new Date(2026, 8, 18), 1), "GUDD", "FALSE", "f", "GUDD", ""],
+    ["Fri, Sep 18, 2026", key(new Date(2026, 8, 18), 2), "Terry Fox Run ($2)", "FALSE", "", "Terry Fox Run ($2)", ""],
+    ["Sat, Sep 19, 2026", key(new Date(2026, 8, 19), 1), "Thanksgiving Day", "TRUE", "s", "No School (Thanksgiving Day)", ""],
+    ["Mon, Oct 12, 2026", key(new Date(2026, 9, 12), 1), "Elsewhere entirely", "FALSE", "", "Elsewhere entirely", ""],
+  ];
+  const book = { schoolcalendar: [{ top: 1, left: 1, width: 7, height: 220, values: rows }] };
+  const both = P.specialDays(book, day);
+  check("calendar: today's events, in the order the tab carries them",
+    both.today.map((e) => e.label).join(" | ") === "GUDD | Terry Fox Run ($2)", both.today);
+  check("calendar: and tomorrow's", both.tomorrow.map((e) => e.label).join() === "Thanksgiving Day", both.tomorrow);
+  check("calendar: a day off is marked as one",
+    both.tomorrow[0].noSchool === true && both.today.every((e) => !e.noSchool), both.tomorrow);
+  check("calendar: a date neither today nor tomorrow stays out of it",
+    JSON.stringify(both).includes("Elsewhere") === false);
+  check("calendar: a book without the tab is not an error",
+    P.calendarEvents({}, day).length === 0);
+  check("calendar: TRUE in the no-school column is what marks it, not the wording",
+    P.calendarEvents({ schoolcalendar: [{ top: 1, left: 1, width: 7, height: 4, values: [
+      ["Fri, Sep 18, 2026", key(new Date(2026, 8, 18), 1), "Edvance / PD Day", "TRUE", "f", "", ""],
+    ] }] }, day)[0].noSchool === true);
+  check("calendar: the description says it when the event column is empty",
+    P.calendarEvents({ schoolcalendar: [{ top: 1, left: 1, width: 7, height: 4, values: [
+      ["Fri, Sep 18, 2026", key(new Date(2026, 8, 18), 1), "", "TRUE", "f", "No School (PD Day)", ""],
+    ] }] }, day)[0].label === "No School (PD Day)");
+  // A range the rules happened to name starts at B, so C is the second cell of
+  // the row rather than the third. The grid's own left edge is what says so.
+  check("calendar: a grid that starts at B is still read as B and C",
+    P.calendarEvents({ schoolcalendar: [{ top: 3, left: 2, width: 6, height: 200, values: [
+      [key(new Date(2026, 8, 18), 1), "Community Night", "FALSE", "", "Community Night", ""],
+    ] }] }, day)[0].label === "Community Night");
+  check("calendar: the same event twice over is said once",
+    P.calendarEvents({ schoolcalendar: [{ top: 1, left: 1, width: 7, height: 4, values: [
+      ["", key(new Date(2026, 8, 18), 1), "GUDD", "FALSE", "", "GUDD", ""],
+      ["", key(new Date(2026, 8, 18), 2), "GUDD", "FALSE", "", "GUDD", ""],
+    ] }] }, day).length === 1);
+  check("calendar: a banner is not the whole calendar — three at most",
+    P.calendarEvents({ schoolcalendar: [{ top: 1, left: 1, width: 7, height: 9, values:
+      [1, 2, 3, 4, 5].map((n) => ["", key(new Date(2026, 8, 18), n), `Event ${n}`, "FALSE", "", "", ""]),
+    }] }, day).length === 3);
+}
+
 // ---- the Formal Discussion ----
 {
   // September 2026: the 7th is the first Monday, so the second week is the 14th

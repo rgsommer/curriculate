@@ -156,7 +156,13 @@ async function refresh(quick: boolean): Promise<Payload> {
       "Setup!D52:AE56",      // 23 — row 52 is the header the columns are read by
       // The Formal Discussion topics: L for grade 7, M for grade 8, by row.
       "Impromptu!L1:M30",    // 24
-      ...(waitingRange ? [waitingRange] : []), // 23
+      // The school's calendar: the date in A, the same date as "<serial> n" in
+      // B, the event in C, whether it is a day off in D, a description in F.
+      // A2's rule already reaches in here; naming it makes the read certain
+      // rather than dependent on how that rule happens to be written, and it
+      // costs nothing — a values batch is one request however many ranges.
+      "SchoolCalendar!A1:G220", // 25
+      ...(waitingRange ? [waitingRange] : []), // 26
       // And whatever the slot rules themselves asked for last time round: the
       // list of pictures a rule indexes into can live on a tab of its own, and
       // a rule that reaches past what the board holds throws and falls back to
@@ -201,8 +207,8 @@ async function refresh(quick: boolean): Promise<Payload> {
     const slotBlock = values[2] || [];
     const setupMessages = values[3] || [];
     const feature = (values[4]?.[0]?.[0]) || (values[5]?.[0]?.[0]) || "";
-    const waiting = waitingRange ? (values[25] || []) : [];
-    const extraAt = waitingRange ? 26 : 25;
+    const waiting = waitingRange ? (values[26] || []) : [];
+    const extraAt = waitingRange ? 27 : 26;
     const extraGrids = cachedExtra.map((range, i) => ({
       range,
       values: values[extraAt + i] || [],
@@ -307,6 +313,7 @@ async function refresh(quick: boolean): Promise<Payload> {
       pointsRow46: (values[12] || [])[45] || [],
       rewardRules: values[23] || [],
       impromptu: values[24] || [],
+      schoolCalendar: values[25] || [],
       displayLinks: grid.first || [],
       displayCRuns: (grid.runs || []).map((row) => (row || [])[2] || []),
       setupMessages,
