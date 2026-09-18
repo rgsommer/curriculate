@@ -216,6 +216,36 @@ a.subj.deck:hover { text-decoration-color: currentColor; }
   font-style: italic;
   margin: 0;
 }
+/* A birthday in this class's grade: balloons across the top of their screen. */
+.balloons {
+  display: flex;
+  align-items: center;
+  gap: 1vw;
+  padding: .6vh 2vw;
+  background: linear-gradient(90deg, #fff1f2, #fef9c3, #eff6ff);
+  border-bottom: 1px solid var(--line);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.balloons .pops {
+  flex: 1 1 auto;
+  overflow: hidden;
+  font-size: clamp(16px, 3.2vh, 40px);
+  line-height: 1;
+  letter-spacing: .4vw;
+}
+
+.balloons .pops:last-child { text-align: right; direction: rtl; }
+
+.balloons .hb {
+  flex: 0 0 auto;
+  font-family: var(--font-caveat), var(--font-merriweather), Georgia, cursive;
+  font-size: clamp(20px, 4.2vh, 52px);
+  font-weight: 600;
+  color: var(--subj-deep);
+}
+
 /* The opening minutes of a class: the week's memory verse and the week's poem,
    a column each and large enough for the room to say them together. */
 .main.opening {

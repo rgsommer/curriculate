@@ -144,6 +144,23 @@ export const FIXTURE: RawInputs = {
   ],
   // A tab no fixed read names: the board finds it because the rule above does.
   extraGrids: [
+    // Bdays N:X as the sheet's A2 rule reaches it: the "<serial> n" key, the
+    // grade, and the name ten columns along. Keyed to today so the band shows.
+    {
+    range: "Bdays!N1:X400",
+    values: (() => {
+      const now = new Date();
+      const serial = Math.floor((Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) - Date.UTC(1899, 11, 30)) / 86400000);
+      const row = (n: number, name: string, grade: string) => {
+        const r = new Array(11).fill("");
+        r[0] = `${serial} ${n}`;
+        r[4] = grade;
+        r[9] = name;
+        return r;
+      };
+      return [row(1, "Mia Nguyen", "7A"), row(2, "Daniel Okafor", "8B")];
+    })(),
+  },
     {
       range: "Flags!A1:B6",
       values: [

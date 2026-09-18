@@ -919,6 +919,43 @@ check("writing: an empty grid says so", P.writingOwed([], []).writing.length ===
 }
 check("column letters", P.columnName(4) === "D" && P.columnName(43) === "AQ" && P.columnName(74) === "BV");
 
+// ---- birthdays, and whose grade they belong to ----
+{
+  // The Bdays block as the sheet's own rule reaches it: a "<serial> n" key, the
+  // name ten columns along, and the grade somewhere in the row.
+  const day = new Date(2026, 8, 18);
+  const serial = Math.floor(F.toSerial(new Date(2026, 8, 18)));
+  const row = (n, name, grade) => {
+    const r = new Array(12).fill("");
+    r[0] = `${serial} ${n}`;
+    r[9] = name;
+    r[4] = grade;
+    return r;
+  };
+  const book = { bdays: [{ top: 1, left: 14, width: 12, height: 5, values: [
+    row(1, "Mia Nguyen", "7A"),
+    row(2, "Sam Okafor", "8"),
+    ["46000 1", "", "", "", "7B", "", "", "", "", "Yesterday's Child", "", ""],
+    [],
+  ] }] };
+  const all = P.birthdaysToday(book, day);
+  check("birthdays: today's rows only",
+    all.map((b) => b.name).join() === "Mia Nguyen,Sam Okafor", all);
+  check("birthdays: the grade comes off the row", all[0].grade === "7" && all[1].grade === "8", all);
+  check("birthdays: a grade 7 class sees the grade 7 one",
+    P.birthdaysForSection(all, "7A").map((b) => b.name).join() === "Mia Nguyen");
+  check("birthdays: and the grade 8 class the other",
+    P.birthdaysForSection(all, "8B").map((b) => b.name).join() === "Sam Okafor");
+  check("birthdays: nothing at all on a day with none",
+    P.birthdaysToday(book, new Date(2026, 8, 19)).length === 0);
+  check("birthdays: a book without the tab is not an error",
+    P.birthdaysToday({}, day).length === 0);
+  check("names: one, two and three read properly",
+    P.joinNames(["Mia"]) === "Mia"
+    && P.joinNames(["Mia", "Sam"]) === "Mia and Sam"
+    && P.joinNames(["Mia", "Sam", "Ana"]) === "Mia, Sam and Ana");
+}
+
 // ---- the Formal Discussion ----
 {
   // September 2026: the 7th is the first Monday, so the second week is the 14th

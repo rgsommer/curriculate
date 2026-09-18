@@ -16,7 +16,7 @@
 // picture and any image the sheet puts in the feature cell E1).
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, evaluateNotice, firstClassStart, formalDiscussion, testWeekday, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
+import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, evaluateNotice, firstClassStart, formalDiscussion, testWeekday, birthdaysToday, birthdaysForSection, joinNames, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
 
 const CLASS_LABELS = ["7A", "7B", "7C", "8A", "8B", "8C"];
 // The Setup slot table's own columns, for ?debug=1.
@@ -783,6 +783,10 @@ export default function DailyPage() {
   const anthem = anthemOfDay(sources.poemGrid, sources.poemGridFormulas, weekday, sources.cellImages,
     { book: sources.book, now: clock });
   const notices = evaluateNotice(sources, clock);
+  // Whose birthday it is today, and what grade they are in — the balloons go
+  // over that grade's classes only. The rows come from the Bdays block the
+  // sheet's own A2 rule already makes the board fetch.
+  const birthdays = birthdaysToday(sources.book || {}, clock);
   // During a class the day's plan has nothing to add — that class is the screen.
   const dailyText = evaluateDailyText(sources, t, weekday, !!(cur && !cur.duty && !cur.empty));
   const peekNext = classes.find((c) => c.start >= (cur ? cur.end : t)) || null;
@@ -1042,6 +1046,20 @@ export default function DailyPage() {
     if (fd && fd.extra && scrub == null && opts.t == null) fdPending.current = period.sec;
     return fd;
   };
+  // A band of balloons across the top of the class, for a birthday in that
+  // grade. Nothing at all when it is not one of theirs.
+  const birthdayBand = (period) => {
+    if (!period || period.duty || period.empty || !period.sec) return null;
+    const mine = birthdaysForSection(birthdays, period.sec);
+    if (!mine.length) return null;
+    return (
+      <div className="balloons">
+        <span className="pops" aria-hidden="true">{"🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈"}</span>
+        <span className="hb">Happy birthday, {joinNames(mine.map((b) => b.name))}!</span>
+        <span className="pops" aria-hidden="true">{"🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈"}</span>
+      </div>
+    );
+  };
   const fdBlock = (fd) => (fd
     ? (
       <div className="block fd">
@@ -1172,6 +1190,9 @@ export default function DailyPage() {
               {row("ranges the rules named", (sources.extraRanges || []).join(", ") || "none beyond the fixed reads")}
               {row("lesson picture", cur ? `${cur.image || "—"}  ·  shows for the first ${Math.round(setup.picSeconds / 60)} min, ${Math.round(cur.elapsed)} min in${cur.image && badImages[cur.image] ? "  ·  DID NOT LOAD" : ""}` : "—")}
               {row("lesson video", (cur && cur.video) || "—")}
+              {row("birthdays today",
+                (birthdays || []).map((b) => `${b.name || "?"} (grade ${b.grade || "not found in the row"})`).join("   ")
+                  || "nothing in the Bdays rows for today")}
               {row("reward thresholds (Setup D53:AE56)",
                 Object.entries(sources.rewards || {}).map(([k, v]) => `${k}: ${v.points} pts · ${v.days} days · ${v.times}×`).join("   ") || "none read — using below 6, twice, in the last 7")}
               {row("writing owed", `${(points.writing || []).join(", ") || "none"}  ·  ${points.writingNote || "—"}`)}
@@ -1587,6 +1608,7 @@ export default function DailyPage() {
           when: `${fmt(cur.start)} to ${fmt(cur.end)} · ${cur.end - cur.start} min`,
           leftHtml: <><b>{left} min</b> left</>, pct, red: redState, period: cur,
         })}
+        {birthdayBand(cur)}
         {openingScreen ? openingMain : (
           <div className={`main${side ? "" : " solo"}${picOn && !endOfDaySoon ? ` pic-${opts.pic}` : ""}${featureImage && !endOfDaySoon ? " pic-feature" : ""}`}>
             {picOn && !endOfDaySoon && opts.pic === "left" ? <>{side}{leftCol}</> : <>{leftCol}{side}</>}
