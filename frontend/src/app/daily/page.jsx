@@ -16,7 +16,7 @@
 // picture and any image the sheet puts in the feature cell E1).
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, firstClassStart, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
+import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, evaluateNotice, firstClassStart, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
 
 const CLASS_LABELS = ["7A", "7B", "7C", "8A", "8B", "8C"];
 // The Setup slot table's own columns, for ?debug=1.
@@ -34,6 +34,8 @@ const FAIL_QUIET = 3;
 // the screen back mid-sentence.
 const SCRUB_RESET_MS = 300_000;
 const LAST_COPY_KEY = "daily:last";
+// Vendored in public/daily — see the note at the top of that file.
+const FLAG_CA = "/daily/flag-ca.svg";
 // How old what is on screen has to be before the board says anything about it.
 const STALE_AFTER_MS = 600_000;
 // The bottom bar holds one line, so the verse is shortened to about the length
@@ -61,6 +63,28 @@ const HOUSE_RIDDLES = [
   "The more of me you take, the more you leave behind. What am I?",
   "What has hands but cannot clap?",
   "What gets wetter the more it dries?",
+];
+
+// A joke to end the day on, one per day of the year. Classroom-safe, groan-
+// worthy by design: the screen that says "Well done" should not end on a
+// footnote about a verse the room has already had all day.
+const HOUSE_JOKES = [
+  ["Why did the math book look so sad?", "It had too many problems."],
+  ["What do you call a fish with no eyes?", "Fsh."],
+  ["Why did the student eat his homework?", "The teacher said it was a piece of cake."],
+  ["What is a snake's favourite subject?", "Hiss-tory."],
+  ["Why was the equals sign so humble?", "It knew it was neither greater than nor less than anyone else."],
+  ["What did one wall say to the other?", "I'll meet you at the corner."],
+  ["Why did the scarecrow win an award?", "He was outstanding in his field."],
+  ["What do you call cheese that is not yours?", "Nacho cheese."],
+  ["Why can't you trust an atom?", "They make up everything."],
+  ["What is a teacher's favourite nation?", "Expla-nation."],
+  ["Why did the geography book break up with the atlas?", "It needed more space."],
+  ["What did the triangle say to the circle?", "You're pointless."],
+  ["Why did the music teacher need a ladder?", "To reach the high notes."],
+  ["What do you call a dinosaur with an extensive vocabulary?", "A thesaurus."],
+  ["Why was the calendar nervous?", "Its days were numbered."],
+  ["What is the king of all school supplies?", "The ruler."],
 ];
 
 function fmt(m) {
@@ -725,6 +749,7 @@ export default function DailyPage() {
   // The anthem's own column of Poems: the flag and the words for today.
   const anthem = anthemOfDay(sources.poemGrid, sources.poemGridFormulas, weekday, sources.cellImages,
     { book: sources.book, now: clock });
+  const notices = evaluateNotice(sources, clock);
   // During a class the day's plan has nothing to add — that class is the screen.
   const dailyText = evaluateDailyText(sources, t, weekday, !!(cur && !cur.duty && !cur.empty));
   const peekNext = classes.find((c) => c.start >= (cur ? cur.end : t)) || null;
@@ -866,6 +891,10 @@ export default function DailyPage() {
   };
   // At the end of the day the verse is already large on the screen, so the bar
   // carries the unscramble if the sheet has one and a riddle otherwise.
+  const jokeOfDay = () => {
+    const d = new Date();
+    return HOUSE_JOKES[(d.getFullYear() * 372 + d.getMonth() * 31 + d.getDate()) % HOUSE_JOKES.length];
+  };
   const riddleOfDay = () => {
     const own = (meta.riddle || "").replace(/^Q:\s*/, "").trim();
     if (own && own !== (featureText || "").replace(/^Q:\s*/, "").trim()) return own;
@@ -951,6 +980,16 @@ export default function DailyPage() {
     : meta.riddle ? <div className="block quiet"><h3>Riddle</h3><p>{meta.riddle.replace(/^Q:\s*/, "")}</p></div> : null);
   const dailyBlock = () => (dailyText
     ? <div className="block navy"><h3>Today</h3><p className="daily">{dailyText}</p></div> : null);
+  // A2: whose birthday it is, what is on at school today and — past noon —
+  // what is on tomorrow. The sheet has carried it all along and nothing on the
+  // board showed it. Its rule turns over at noon, so it is run at the board's
+  // clock rather than read (evaluateNotice), and the scrubber moves it.
+  const noticeBlock = () => (notices
+    ? (
+      <div className="block sun notices">
+        {notices.split("\n").map((l, i) => l.trim() && <p key={i}>{l.trim()}</p>)}
+      </div>
+    ) : null);
   // The end-of-day package that takes over the feature side: what is on
   // tomorrow, the head-out list, and the Kiss & Ride names waiting outside.
   const dismissalPanel = (withHeadout, readyAt) => (
@@ -994,11 +1033,14 @@ export default function DailyPage() {
   // The anthem screen: the words on one side, the flag on the other. Shown
   // through the announcements as well as the anthem itself.
   const anthemMain = () => (
-    <div className={`main anthem${anthem.image && anthem.lines.length ? " pic-right" : " solo"}`}>
+    <div className={`main anthem${anthem.lines.length ? " pic-right" : " solo"}`}>
       {anthem.lines.length ? (
         <div className="words">{anthem.lines.map((l, i) => <p key={i}>{l}</p>)}</div>
       ) : null}
-      {anthem.image && usable(anthem.image) ? bigPicture(anthem.image, "", "", "fill") : null}
+      {/* The sheet's flag if it has one, otherwise the board's own. Canada's
+          flag does not change, and the room should not be short of one because
+          a picture was pasted into a cell the API cannot see. */}
+      {bigPicture(anthem.image && usable(anthem.image) ? anthem.image : FLAG_CA, "", "", "fill")}
     </div>
   );
   // Between classes and before school there is no lesson column, so the picture
@@ -1213,7 +1255,13 @@ export default function DailyPage() {
             <p className="script">Well done, {(greeting.match(/,\s*(.*?)!?$/) || [, "everyone"])[1]}.</p>
             {meta.blessing
               ? <p className="question blessing">{meta.blessing}</p>
-              : verse ? <p className="question">{verse}</p> : null}
+              : (() => {
+                // A joke rather than the verse, which has had the bottom bar all
+                // day. The day's own, picked by the date so the room gets the
+                // same one all afternoon and a different one tomorrow.
+                const [q, a] = jokeOfDay();
+                return <p className="question joke"><span>{q}</span> <b>{a}</b></p>;
+              })()}
             <p className="summary">Tidy your area, tuck your chair in and stand behind it, ready for your homeroom teacher.</p>
             {meta.headout.length > 0 && (
               <div className="block alert" style={{ textAlign: "left", display: "inline-block" }}>
@@ -1283,6 +1331,7 @@ export default function DailyPage() {
             <p className="question">{verse}</p>
             {agenda()}
             {linkChips(dayLinks, "Materials to print today")}
+            {noticeBlock()}
             {featureImage ? null : featureBlock()}
             {dailyBlock()}
           </div>
@@ -1412,6 +1461,8 @@ export default function DailyPage() {
         }
         blocks.push(<div key="o" className="block sun"><h3>{o.h}</h3><p>{o.p}</p></div>);
       }
+      const n = noticeBlock();
+      if (n) blocks.push(<div key="n">{n}</div>);
       const f = featureBlock();
       if (f) blocks.push(<div key="f">{f}</div>);
       const d = dailyBlock();
