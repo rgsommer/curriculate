@@ -2,7 +2,7 @@
 // with plain node. Input is the raw cell grid of the DisplayAI tab (plus a few
 // Setup cells); output is the JSON the page renders from.
 
-import { columnLetters, evaluateOr, parseA1, type Book } from "./formula";
+import { columnLetters, evaluateOr, parseA1, toSerial, type Book } from "./formula";
 
 /** A handout, form or reference linked from a lesson cell. */
 export type LessonLink = { label: string; url: string };
@@ -2078,6 +2078,68 @@ export function testWeekday(plan: Record<number, unknown[]>): number | null {
     if (((plan || {})[weekday] || []).length) return weekday;
   }
   return null;
+}
+
+/* ------------------------------------------------------------------ *
+ * Birthdays
+ *
+ * The board already fetches the Bdays block, because A2's own rule names it —
+ * that rule looks today's date up as "<serial> 1", "<serial> 2", "<serial> 3"
+ * and pulls out the names. The notice it builds says whose birthday it is but
+ * not what grade they are in, and the balloons want the grade: a grade 7
+ * birthday belongs over the grade 7 classes.
+ *
+ * So the rows are read here instead of the sentence. The name is taken from the
+ * column the sheet's own lookup takes it from — the tenth of the block — and
+ * the grade is looked for rather than assumed: a cell reading 7, 8, 7A or 8B
+ * anywhere in the row. A row with no grade in it still gives its name, and the
+ * board simply does not know whose class to put the balloons over.
+ * ------------------------------------------------------------------ */
+
+export type Birthday = { name: string; grade: string };
+
+const BDAY_NAME_OFFSET = 9; // the tenth column of the block, as the rule uses
+const GRADE_CELL = /^([78])\s*[A-C]?$/;
+
+export function birthdaysToday(book: Book, at: Date): Birthday[] {
+  const grids = (book || {})["bdays"] || [];
+  const midnight = new Date(at.getFullYear(), at.getMonth(), at.getDate());
+  const serial = Math.floor(toSerial(midnight));
+  const key = new RegExp(`^${serial}\\s+\\d+$`);
+  const out: Birthday[] = [];
+  const seen = new Set<string>();
+  for (const g of grids) {
+    for (const row of g.values || []) {
+      const cells = (row || []).map((c) => String(c ?? "").trim());
+      const at0 = cells.findIndex((c) => key.test(c));
+      if (at0 < 0) continue;
+      const name = (cells[at0 + BDAY_NAME_OFFSET] || "")
+        || cells.slice(at0 + 1).find((c) => /[A-Za-z]{2}/.test(c) && !GRADE_CELL.test(c))
+        || "";
+      if (!name) continue;
+      const gradeCell = cells.find((c) => GRADE_CELL.test(c)) || "";
+      const grade = (gradeCell.match(GRADE_CELL) || [, ""])[1] || "";
+      const id = `${name}|${grade}`;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push({ name, grade });
+    }
+  }
+  return out;
+}
+
+/** The ones whose grade matches a class group ("7A" is grade 7). */
+export function birthdaysForSection(all: Birthday[], sec: string): Birthday[] {
+  const grade = String(sec || "").trim().charAt(0);
+  if (!grade) return [];
+  return (all || []).filter((b) => b.grade === grade);
+}
+
+/** "Mia", "Mia and Sam", "Mia, Sam and Ana". */
+export function joinNames(names: string[]): string {
+  const list = (names || []).map((n) => String(n || "").trim()).filter(Boolean);
+  if (list.length <= 1) return list[0] || "";
+  return `${list.slice(0, -1).join(", ")} and ${list[list.length - 1]}`;
 }
 
 /* ------------------------------------------------------------------ *
