@@ -39,6 +39,8 @@ export type Points = {
   entered: boolean | null;
   writing: string[]; // classes owed a corrective writing assignment
   writingNote: string; // how that was worked out, for ?debug=1
+  b3: string[]; // classes that have earned Benefit 3, the extra Formal Discussion
+  b3Note: string; // where that came from, for ?debug=1
   note: string; // what the Setup rows held, for ?debug=1
 };
 
@@ -900,6 +902,9 @@ export function pointsFromSetup(setup: string[][], pointsGrid: string[][]): Clas
 const POINTS_BLOCKS = [4, 17, 30, 43, 56, 69]; // D, Q, AD, AQ, BD, BQ — the name
 const POINTS_FIRST_WEEK_ROW = 6;
 const NAME_ROW = 3;
+// Each block's flags sit nine to twelve columns right of its name: B1, B2, P1,
+// then B3 — column P for the 7A block, which begins at D.
+const B3_FLAG_OFFSET = 12;
 const POINTS_LAST_WEEK_ROW = 46;
 
 export function pointsFromGrid(grid: string[][]): ClassPoints[] {
@@ -1139,6 +1144,7 @@ export type RawInputs = {
   pointsRow3?: string[]; // Points row 3 — class names
   pointsRow46?: string[];
   rewardRules?: string[][]; // Setup!D52:AE56 — the header row, then B1, B2, B3, W1
+  rewardRulesPoints?: string[][]; // Points!D52:AE56 — the same block on the tab the B3 flag is computed on
   impromptu?: string[][]; // Impromptu!L1:M30 — L the grade 7 topics, M the grade 8
   schoolCalendar?: string[][]; // SchoolCalendar!A1:G220 — a row per event: date, "<serial> n", event, no-school, description
   birthdays?: string[][]; // BDays!A1:AZ400 — a row per birthday, keyed "<serial> n" like the calendar
@@ -1209,10 +1215,14 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
       if (!meta.feature || meta.feature === url) meta.feature = "";
     }
   }
-  const rewards = parseRewardRules(inp.rewardRules || []);
+  // The block sits on both tabs, and the sheet's own B3 flag is written against
+  // the Points copy (its formula reads Z55 and AA55 with no tab in front of
+  // them), so that copy answers first where it carries anything.
+  const rewards = { ...parseRewardRules(inp.rewardRules || []), ...parseRewardRules(inp.rewardRulesPoints || []) };
   const points: Points = {
     numbers: null, percents: null, entered: null, note: "",
     ...writingOwed(inp.pointsGrid || [], inp.pointsRow3 || [], rewards.C1 || rewards.W1),
+    ...b3Earned(inp.pointsGrid || [], inp.pointsRow3 || [], rewards.B3),
   };
   // The cells the sheet builds its own plans line from carry the total and the
   // percentage side by side, so the board takes them from there rather than
@@ -1825,7 +1835,18 @@ export const POINTS_NAME_COLS = [4, 17, 30, 43, 56];
  * ("Pnts", "Days") rather than by how far along they sit — the block has hidden
  * columns in it, and revealing one moved every number a place to the right.
  */
-export type RewardRule = { points: number; days: number; times: number };
+export type RewardRule = {
+  points: number;
+  days: number;
+  times: number;
+  // How many days a week the days figure assumes — column AD of the block, the
+  // "Points!AD55" the B3 rule is written against. A class that meets less often
+  // than this has its days prorated against it.
+  assumes?: number;
+};
+
+// AD, counting from D where the block starts.
+const REWARD_ASSUMES_AT = 26;
 
 export function parseRewardRules(rows: string[][]): Record<string, RewardRule> {
   const out: Record<string, RewardRule> = {};
@@ -1856,7 +1877,11 @@ export function parseRewardRules(rows: string[][]): Record<string, RewardRule> {
     // row at nine", "two days in a row below six" — so the one stands in for
     // the other when the row is short.
     const times = numbers.length > 2 ? numbers[numbers.length - 1] : days;
-    out[label.toUpperCase()] = { points, days, times };
+    const assumes = numberAt(REWARD_ASSUMES_AT);
+    out[label.toUpperCase()] = {
+      points, days, times,
+      ...(assumes !== null && assumes >= 1 && assumes <= 7 ? { assumes } : {}),
+    };
   }
   return out;
 }
@@ -1916,6 +1941,91 @@ export function writingOwed(
   return {
     writing,
     writingNote: `below ${rule.points} ${rule.times}× in the last ${span} scored days — ${notes.join("  ")}`,
+  };
+}
+
+/**
+ * Which classes have earned Benefit 3 — the extra Formal Discussion.
+ *
+ * The sheet works this out itself, a flag per week row in the block's own
+ * column P (twelve columns right of the class name, beside B1, B2 and P1):
+ *
+ *   =iferror(if(and(average(D6:H7)>=$Z$55, countifs(D6:H7,">0")>=$AA$55),1,0),"")
+ *
+ * — the average of the last two weeks of day cells against B3's points, and the
+ * days actually scored in them against B3's days. The board reads that flag,
+ * and falls back to running the same test over the day cells when the column is
+ * empty, which is the state the Totals beside it were in all last term.
+ *
+ * AVERAGE counts a nought and COUNTIFS(">0") does not, so a day the class threw
+ * away lowers the average without counting towards the four days. That is the
+ * sheet's arithmetic and it is kept.
+ */
+const round2 = (n: number) => (Math.round(n * 100) / 100).toString();
+
+export function b3Earned(
+  grid: string[][],
+  row3: string[],
+  rule: RewardRule = { points: 8.5, days: 4, times: 1 }
+): { b3: string[]; b3Note: string } {
+  const rows = grid || [];
+  if (rows.length < 10) return { b3: [], b3Note: "no Points grid" };
+  const at = (r: number, c1: number) => String(((rows[r - 1] || [])[c1 - 1] ?? "")).trim();
+  const num = (r: number, c1: number): number | null => {
+    const v = at(r, c1);
+    if (!/^-?\d+(?:\.\d+)?$/.test(v)) return null;
+    const n = parseFloat(v);
+    return n >= 0 && n <= 20 ? n : null;
+  };
+  const classes = POINTS_BLOCKS
+    .map((base) => ({ name: at(NAME_ROW, base), base }))
+    .filter((c) => c.name && at(2, c.base + 3));
+  if (!classes.length) return { b3: [], b3Note: "no class taught this year has a name in row 3" };
+
+  // The days figure assumes a class that meets every day; one that meets three
+  // times a week cannot score four days in a week and would never earn this. So
+  // it is prorated against how often the class actually meets — row 3, three
+  // columns right of the name (G3, T3, AG3) — over what the rule assumes.
+  const assumes = rule.assumes && rule.assumes > 0 ? rule.assumes : 0;
+  const daysNeeded = (base: number) => {
+    const meets = num(NAME_ROW, base + 3);
+    if (!assumes || meets === null || meets <= 0 || meets >= assumes) return rule.days;
+    return (rule.days * meets) / assumes;
+  };
+
+  const b3: string[] = [];
+  const notes: string[] = [];
+  for (const c of classes) {
+    // The sheet's own answer first: the last week row whose flag cell says
+    // anything at all. A blank means it has not been worked out, not a no.
+    let said = "";
+    for (let r = POINTS_LAST_WEEK_ROW; r >= POINTS_FIRST_WEEK_ROW && !said; r -= 1) said = at(r, c.base + B3_FLAG_OFFSET);
+    if (said) {
+      if (/^(?:1|true|yes)$/i.test(said)) b3.push(c.name);
+      notes.push(`${c.name}=${said} (the sheet's own)`);
+      continue;
+    }
+    // Otherwise the sheet's own test, over the last two weeks that carry days.
+    const weeks: number[][] = [];
+    for (let r = POINTS_FIRST_WEEK_ROW; r <= POINTS_LAST_WEEK_ROW; r += 1) {
+      const week: number[] = [];
+      for (let col = c.base; col < c.base + 5; col += 1) {
+        const n = num(r, col);
+        if (n !== null) week.push(n);
+      }
+      if (week.length) weeks.push(week);
+    }
+    const days = weeks.slice(-2).flat();
+    const scored = days.filter((n) => n > 0);
+    const average = days.length ? days.reduce((sum, n) => sum + n, 0) / days.length : 0;
+    const needed = daysNeeded(c.base);
+    const earned = days.length > 0 && average >= rule.points && scored.length >= needed;
+    if (earned) b3.push(c.name);
+    notes.push(`${c.name}=${days.join(",") || "—"} avg ${days.length ? average.toFixed(2) : "—"} over ${scored.length} scored, needs ${round2(needed)}`);
+  }
+  return {
+    b3,
+    b3Note: `average ${rule.points} or better over at least ${rule.days} scored days of a ${assumes || 5}-day week, last two weeks — ${notes.join("  ")}`,
   };
 }
 
@@ -2105,25 +2215,91 @@ export function testWeekday(plan: Record<number, unknown[]>): number | null {
  * board simply does not know whose class to put the balloons over.
  * ------------------------------------------------------------------ */
 
-export type Birthday = { name: string; grade: string };
+export type Birthday = { name: string; grade: string; note: string };
 
 const BDAY_NAME_OFFSET = 9; // the tenth column of the block, as the rule uses
+const BDAY_DAY_COL = 11;    // K — the school day a weekend birthday is kept on
+const BDAY_NOTE_COL = 12;   // L — what to say about it
 const GRADE_CELL = /^([78])\s*[A-C]?$/;
+
+/**
+ * A date out of a cell, however the sheet wrote it: a serial, the "<serial> n"
+ * key the birthday rows are looked up by, or a date in words.
+ */
+function dayFromCell(v: string): Date | null {
+  const text = String(v || "").trim();
+  if (!text) return null;
+  const serial = /^(\d{5})(?:\s+\d+)?$/.exec(text);
+  if (serial) return new Date(Date.UTC(1899, 11, 30) + Number(serial[1]) * 86400000);
+  // A date has to look like one. new Date("12") is the first of December in a
+  // browser, and a cell holding a week number is not a date.
+  if (!/\d{1,4}[-/]\d{1,2}[-/]\d{1,4}/.test(text) && !/[A-Za-z]{3}/.test(text)) return null;
+  const parsed = Date.parse(text);
+  if (Number.isNaN(parsed)) return null;
+  const d = new Date(parsed);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+const sameDay = (a: Date, b: Date) =>
+  a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+/**
+ * Whose birthday the room keeps today.
+ *
+ * A birthday on a Saturday is kept on a school day, and column K of the BDays
+ * tab says which — so where K carries a date it is K that decides, and the
+ * birthday's own date only decides when it does not. Column L is the note that
+ * goes with it ("Saturday's birthday", "over the break"), and the band says it
+ * beside the names.
+ *
+ * The name is taken from the column the sheet's own lookup takes it from — the
+ * tenth of the block — and the grade is looked for rather than assumed: a cell
+ * reading 7, 8, 7A or 8B anywhere in the row. A row with no grade in it still
+ * gives its name, and the board simply does not know whose class to put the
+ * balloons over.
+ */
+/**
+ * Which column of the block carries the "<serial> n" key.
+ *
+ * Taken from the rows themselves rather than assumed, and from the whole block
+ * rather than from the row in hand: a birthday kept on another day matches on
+ * column K and its own key cell is some other date, so the row cannot say where
+ * its name sits. The rest of the tab can.
+ */
+function bdayKeyColumn(values: string[][]): number {
+  const tally: Record<number, number> = {};
+  for (const row of values || []) {
+    (row || []).forEach((c, i) => {
+      if (/^\d{5}\s+\d+$/.test(String(c ?? "").trim())) tally[i] = (tally[i] || 0) + 1;
+    });
+  }
+  let best = -1;
+  let most = 0;
+  for (const i of Object.keys(tally)) if (tally[Number(i)] > most) { best = Number(i); most = tally[Number(i)]; }
+  return best;
+}
 
 export function birthdaysToday(book: Book, at: Date): Birthday[] {
   const grids = (book || {})["bdays"] || [];
   const midnight = new Date(at.getFullYear(), at.getMonth(), at.getDate());
-  const serial = Math.floor(toSerial(midnight));
-  const key = new RegExp(`^${serial}\\s+\\d+$`);
+  const key = new RegExp(`^${Math.floor(toSerial(midnight))}\\s+\\d+$`);
   const out: Birthday[] = [];
   const seen = new Set<string>();
   for (const g of grids) {
+    const left = g.left || 1;
+    const keyCol = bdayKeyColumn(g.values || []);
     for (const row of g.values || []) {
       const cells = (row || []).map((c) => String(c ?? "").trim());
+      const col = (n: number) => (n - left >= 0 ? cells[n - left] || "" : "");
+      const kept = dayFromCell(col(BDAY_DAY_COL));
+      // K names the day it is kept on, and where it does the birthday's own
+      // date has nothing to say: a Saturday birthday is not put on the board on
+      // the Saturday, and not missed on the Friday either.
       const at0 = cells.findIndex((c) => key.test(c));
-      if (at0 < 0) continue;
-      const name = (cells[at0 + BDAY_NAME_OFFSET] || "")
-        || cells.slice(at0 + 1).find((c) => /[A-Za-z]{2}/.test(c) && !GRADE_CELL.test(c))
+      if (kept ? !sameDay(kept, midnight) : at0 < 0) continue;
+      const from = at0 >= 0 ? at0 : keyCol;
+      const name = (from >= 0 ? cells[from + BDAY_NAME_OFFSET] || "" : "")
+        || cells.slice(Math.max(0, from) + 1).find((c) => /[A-Za-z]{2}/.test(c) && !GRADE_CELL.test(c) && !dayFromCell(c))
         || "";
       if (!name) continue;
       const gradeCell = cells.find((c) => GRADE_CELL.test(c)) || "";
@@ -2131,7 +2307,7 @@ export function birthdaysToday(book: Book, at: Date): Birthday[] {
       const id = `${name}|${grade}`;
       if (seen.has(id)) continue;
       seen.add(id);
-      out.push({ name, grade });
+      out.push({ name, grade, note: col(BDAY_NOTE_COL) });
     }
   }
   return out;

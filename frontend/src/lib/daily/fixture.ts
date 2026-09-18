@@ -226,14 +226,21 @@ export const FIXTURE: RawInputs = {
   birthdays: (() => {
     const now = new Date();
     const serial = Math.floor((Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) - Date.UTC(1899, 11, 30)) / 86400000);
-    const row = (n: number, name: string, grade: string) => {
-      const r = new Array(11).fill("");
-      r[0] = `${serial} ${n}`;
+    const row = (n: number, name: string, grade: string, key = serial, keep = "", note = "") => {
+      const r = new Array(12).fill("");
+      r[0] = `${key} ${n}`;
       r[4] = grade;
       r[9] = name;
+      r[10] = keep; // K — the school day a weekend birthday is kept on
+      r[11] = note; // L — what to say about it
       return r;
     };
-    return [row(1, "Mia Nguyen", "7A"), row(2, "Daniel Okafor", "8B")];
+    return [
+      row(1, "Mia Nguyen", "7A"),
+      row(2, "Daniel Okafor", "8B"),
+      // A Saturday birthday, kept today: K decides and L says why.
+      row(3, "Ana Silva", "7B", serial - 1, new Date().toDateString(), "Saturday's birthday"),
+    ];
   })(),
   // SchoolCalendar A1:G220 — the title row, the header, then a row per event:
   // the date in words, the "<serial> n" key, the event, whether it is a day

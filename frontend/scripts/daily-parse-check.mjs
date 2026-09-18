@@ -950,10 +950,134 @@ check("column letters", P.columnName(4) === "D" && P.columnName(43) === "AQ" && 
     P.birthdaysToday(book, new Date(2026, 8, 19)).length === 0);
   check("birthdays: a book without the tab is not an error",
     P.birthdaysToday({}, day).length === 0);
+
+  // Column K is the school day a weekend birthday is kept on, and L the note.
+  // Where K says a day, it is K that decides and the birthday's own date does
+  // not — the Saturday itself is not the day the room is in.
+  const sat = Math.floor(F.toSerial(new Date(2026, 8, 19)));
+  const weekend = (n, name, grade, keep, note) => {
+    const r = new Array(24).fill("");
+    r[13] = `${sat} ${n}`; // the key sits at N, as the sheet's own rule reads it
+    r[10] = keep;          // K
+    r[11] = note;          // L
+    r[17] = grade;
+    r[22] = name;          // N + 9
+    return r;
+  };
+  const kept = { bdays: [{ top: 1, left: 1, width: 24, height: 5, values: [
+    weekend(1, "Ana Silva", "7B", "Fri, Sep 18, 2026", "Saturday's birthday"),
+    weekend(2, "Noah Green", "8A", `${Math.floor(F.toSerial(new Date(2026, 8, 21)))}`, "kept on Monday"),
+  ] }] };
+  const keptToday = P.birthdaysToday(kept, day);
+  check("birthdays: a weekend birthday is kept on the day column K names",
+    keptToday.map((b) => b.name).join() === "Ana Silva", keptToday);
+  check("birthdays: with the note from column L beside it",
+    keptToday[0].note === "Saturday's birthday" && keptToday[0].grade === "7", keptToday);
+  check("birthdays: and not on the Saturday itself",
+    P.birthdaysToday(kept, new Date(2026, 8, 19)).length === 0);
+  check("birthdays: K written as a serial works the same way",
+    P.birthdaysToday(kept, new Date(2026, 8, 21)).map((b) => b.name).join() === "Noah Green");
+  check("birthdays: a week number in K is not a date, so the row keeps its own day",
+    P.birthdaysToday({ bdays: [{ top: 1, left: 1, width: 24, height: 2, values: [
+      weekend(1, "Ella Brown", "7A", "12", ""),
+    ] }] }, new Date(2026, 8, 19)).map((b) => b.name).join() === "Ella Brown");
   check("names: one, two and three read properly",
     P.joinNames(["Mia"]) === "Mia"
     && P.joinNames(["Mia", "Sam"]) === "Mia and Sam"
     && P.joinNames(["Mia", "Sam", "Ana"]) === "Mia, Sam and Ana");
+}
+
+// ---- Benefit 3: the earned extra Formal Discussion ----
+{
+  // A class block on the Points tab: the name in row 3, the days-a-week cell
+  // three columns on, a week per row from row 6 — and the four flags nine to
+  // twelve columns along, B1, B2, P1, then B3 in column P.
+  const grid = Array.from({ length: 46 }, () => new Array(20).fill(""));
+  const set = (r, c1, v) => { grid[r - 1][c1 - 1] = String(v); };
+  set(3, 4, "7A");   // D3 the name
+  set(2, 7, "G");    // its column in row 2, which is what says it is taught
+  const week = (r, days) => { set(r, 1, `Week ${r - 5}`); days.forEach((d, i) => set(r, 4 + i, d)); };
+  week(6, [9, 10, 9, "x", "x"]);
+  week(7, [8, 9, 10, "x", "x"]);
+
+  const rule = { points: 8.5, days: 4, times: 1 };
+  const worked = P.b3Earned(grid, grid[2], rule);
+  check("B3: worked out the sheet's way when the flag column is empty",
+    worked.b3.join() === "7A", worked);
+  check("B3: and the working is said, for ?debug=1", /avg 9\.17/.test(worked.b3Note), worked.b3Note);
+
+  // Too few days scored, however good they were.
+  const thin = grid.map((r) => r.slice());
+  [6, 7].forEach((r) => [5, 6].forEach((c) => { thin[r - 1][c - 1] = "x"; }));
+  check("B3: not on fewer scored days than the rule asks for",
+    P.b3Earned(thin, thin[2], rule).b3.length === 0, P.b3Earned(thin, thin[2], rule).b3Note);
+
+  // A nought lowers the average without counting as a day, which is what
+  // AVERAGE and COUNTIFS(">0") do in the sheet's own formula.
+  const dropped = grid.map((r) => r.slice());
+  dropped[6][3] = "0";
+  check("B3: a nought lowers the average the way the sheet's AVERAGE does",
+    P.b3Earned(dropped, dropped[2], rule).b3.length === 0);
+
+  // And where the sheet has worked it out, that is the answer.
+  const flagged = thin.map((r) => r.slice());
+  flagged[6][15] = "1"; // P7
+  check("B3: the sheet's own flag in column P wins",
+    P.b3Earned(flagged, flagged[2], rule).b3.join() === "7A");
+  const denied = grid.map((r) => r.slice());
+  denied[6][15] = "0";
+  check("B3: including when it says no", P.b3Earned(denied, denied[2], rule).b3.length === 0);
+
+  // The days figure assumes a class that meets every day. A class that meets
+  // twice a week has four day cells in the two-week window at best, and a week
+  // with one of them unscored puts the four days out of reach altogether — so
+  // the figure is prorated: four days of a five-day week is 1.6 of a two-day one.
+  const twice = grid.map((r) => r.slice());
+  twice[2][6] = "2"; // G3 — how often this class actually meets
+  [6, 7].forEach((r) => [6, 7, 8].forEach((c) => { twice[r - 1][c - 1] = "x"; }));
+  twice[6][4] = "x"; // and one of the two days that week was not scored
+  const flat = { points: 8.5, days: 4, times: 1 };
+  check("B3: four days of a five-day week is out of reach for a two-day class",
+    P.b3Earned(twice, twice[2], flat).b3.length === 0, P.b3Earned(twice, twice[2], flat).b3Note);
+  const prorated = P.b3Earned(twice, twice[2], { ...flat, assumes: 5 });
+  check("B3: prorated against how often the class meets, it is earned",
+    prorated.b3.join() === "7A", prorated.b3Note);
+  check("B3: and the prorated figure is said, for ?debug=1",
+    /needs 1\.6/.test(prorated.b3Note), prorated.b3Note);
+  check("B3: a class that meets as often as the rule assumes is not prorated",
+    /needs 4/.test(P.b3Earned(grid, grid[2], { ...flat, assumes: 5 }).b3Note),
+    P.b3Earned(grid, grid[2], { ...flat, assumes: 5 }).b3Note);
+}
+
+// ---- the reward block's own numbers ----
+{
+  // D52:AE56 as the sheet carries it: the rule in words on the left, the
+  // numbers on the right under their headers, the label at the end, and the
+  // days-a-week the rule assumes in AD — index 26 counting from D.
+  const row = (words, pnts, days, assumes, label) => {
+    const r = new Array(28).fill("");
+    r[0] = words;
+    r[22] = String(pnts);  // Z
+    r[23] = String(days);  // AA
+    r[26] = String(assumes); // AD
+    r[27] = label;
+    return r;
+  };
+  const header = new Array(28).fill("");
+  header[22] = "Pnts";
+  header[23] = "Days";
+  const rules = P.parseRewardRules([
+    header,
+    row("Sit anywhere", 9, 5, 5, "B1"),
+    row("Extra Formal Discussion", 8.5, 4, 5, "B3"),
+  ]);
+  check("rewards: the numbers come off their own headers",
+    rules.B3.points === 8.5 && rules.B3.days === 4, rules);
+  check("rewards: and the week the days figure assumes, from AD",
+    rules.B3.assumes === 5, rules.B3);
+  const noAssume = P.parseRewardRules([header, row("Extra FD", 8.5, 4, "", "B3")]);
+  check("rewards: a block without that column simply does not prorate",
+    noAssume.B3.assumes === undefined, noAssume.B3);
 }
 
 // ---- what is on at school today, and the next day the room is here ----
