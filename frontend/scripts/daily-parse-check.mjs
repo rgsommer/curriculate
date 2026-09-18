@@ -938,6 +938,14 @@ check("column letters", P.columnName(4) === "D" && P.columnName(43) === "AQ" && 
     4: [{ subj: "History 7A" }, { subj: "Math 7B" }],
     6: [{ subj: "Math 7A" }],
   };
+  check("FD slot: a grade 8 group takes Geography, not History",
+    JSON.stringify(P.fdSlotForSection({ 2: [{ subj: "History 8A" }], 3: [{ subj: "Geography 8A" }], 6: [{ subj: "Math 8A" }] }, "8A"))
+      === JSON.stringify({ weekday: 3, subj: "Geography 8A" }),
+    P.fdSlotForSection({ 2: [{ subj: "History 8A" }], 3: [{ subj: "Geography 8A" }], 6: [{ subj: "Math 8A" }] }, "8A"));
+  check("FD slot: and a grade 7 group takes History, not Geography",
+    JSON.stringify(P.fdSlotForSection({ 2: [{ subj: "History 7A" }], 3: [{ subj: "Geography 7A" }], 6: [{ subj: "Math 7A" }] }, "7A"))
+      === JSON.stringify({ weekday: 2, subj: "History 7A" }),
+    P.fdSlotForSection({ 2: [{ subj: "History 7A" }], 3: [{ subj: "Geography 7A" }], 6: [{ subj: "Math 7A" }] }, "7A"));
   check("FD slot: the last History of the week, not the last class",
     JSON.stringify(P.fdSlotForSection(plan, "7A")) === JSON.stringify({ weekday: 4, subj: "History 7A" }),
     P.fdSlotForSection(plan, "7A"));
