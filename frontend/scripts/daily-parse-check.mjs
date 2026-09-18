@@ -946,6 +946,30 @@ check("column letters", P.columnName(4) === "D" && P.columnName(43) === "AQ" && 
     P.fdSlotForSection(plan, "7B"));
   check("FD slot: a group that never meets has none", P.fdSlotForSection(plan, "8C") === null);
 
+  // The subject is a preference, not a condition: a day with no History or
+  // Geography on it still has the discussion, in the group's last class there.
+  const mathOnly = { 2: [{ subj: "Math 7C" }], 4: [{ subj: "Math 7C" }, { subj: "Art 7C" }] };
+  const topics = Array.from({ length: 30 }, (_, i) => [`seven-${i + 1}`, `eight-${i + 1}`]);
+  const ask7c = (over) => P.formalDiscussion({
+    sec: "7C", subj: "Art 7C", at: new Date(2026, 8, 16, 11, 0), plan: mathOnly, impromptu: topics,
+    todaysSubjects: ["Math 7C", "Art 7C"], earnedExtra: false, extraAlreadyHad: false, ...over,
+  });
+  check("FD: with no History or Geography it takes the group's last class that day",
+    (ask7c({}) || {}).row === 9, ask7c({}));
+  check("FD: and not their earlier one that day", ask7c({ subj: "Math 7C" }) === null);
+  check("FD: when the day does carry the History period, that is the one",
+    P.formalDiscussion({
+      sec: "7A", subj: "History 7A", at: new Date(2026, 8, 16, 11, 0),
+      plan: { 4: [{ subj: "History 7A" }, { subj: "Math 7A" }] }, impromptu: topics,
+      todaysSubjects: ["History 7A", "Math 7A"], earnedExtra: false, extraAlreadyHad: false,
+    }) !== null);
+  check("FD: not the later Math on a day that has the History",
+    P.formalDiscussion({
+      sec: "7A", subj: "Math 7A", at: new Date(2026, 8, 16, 11, 0),
+      plan: { 4: [{ subj: "History 7A" }, { subj: "Math 7A" }] }, impromptu: topics,
+      todaysSubjects: ["History 7A", "Math 7A"], earnedExtra: false, extraAlreadyHad: false,
+    }) === null);
+
   const impromptu = Array.from({ length: 30 }, (_, i) => [`seven-${i + 1}`, `eight-${i + 1}`]);
   const ask = (over) => P.formalDiscussion({
     sec: "7A", subj: "History 7A", at: d(16), plan, impromptu,
@@ -973,6 +997,30 @@ check("column letters", P.columnName(4) === "D" && P.columnName(43) === "AQ" && 
   check("FD: not earned, no extra", ask({ at: d(23) }) === null);
   check("FD: a row the tab has nothing in gives nothing",
     P.formalDiscussion({ sec: "7A", subj: "History 7A", at: d(16), plan, impromptu: [], earnedExtra: false, extraAlreadyHad: false }) === null);
+}
+
+// ---- the memory verse, the poem, and the day the verse is tested ----
+{
+  check("memory verse: the column is joined into one",
+    P.memoryVerse([["For God so loved the world,"], [""], ["that he gave his only Son."]])
+      === "For God so loved the world, that he gave his only Son.");
+  check("memory verse: the sheet's own marker becomes its sentence",
+    /Make sure you review our last verse:/.test(P.memoryVerse([["This week.@@@@Last week."]])),
+    P.memoryVerse([["This week.@@@@Last week."]]));
+  check("memory verse: nothing in the column is nothing",
+    P.memoryVerse([[""], [""]]) === "");
+
+  const poems = [["week one A", "week one B"], ["week two A", "week two B"]];
+  check("poem: the week's row of column A", P.poemOfWeek(poems, 2, false) === "week two A");
+  check("poem: column B when Setup C19 says so", P.poemOfWeek(poems, 2, true) === "week two B");
+  check("poem: no week, no poem", P.poemOfWeek(poems, null, false) === "");
+
+  // The verse is tested on the last teaching day of the week.
+  check("test day: Friday when Friday is taught",
+    P.testWeekday({ 2: [1], 4: [1], 6: [1] }) === 6);
+  check("test day: Thursday when Friday is off",
+    P.testWeekday({ 2: [1], 3: [1], 5: [1], 6: [] }) === 5);
+  check("test day: a week with nothing in it has none", P.testWeekday({}) === null);
 }
 
 // ---- the reward thresholds, from Setup D52:AE56 ----

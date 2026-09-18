@@ -216,6 +216,34 @@ a.subj.deck:hover { text-decoration-color: currentColor; }
   font-style: italic;
   margin: 0;
 }
+/* The opening minutes of a class: the week's memory verse and the week's poem,
+   a column each and large enough for the room to say them together. */
+.main.opening {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 3vw;
+  align-content: start;
+  padding: 2vh 3vw;
+}
+
+.main.opening.solo { grid-template-columns: minmax(0, 1fr); }
+
+.main.opening .openpane h3 {
+  font-size: clamp(12px, 1.9vh, 20px);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 1.2vh;
+}
+
+.main.opening .script-lg {
+  font-family: var(--font-merriweather), Georgia, serif;
+  font-size: calc(clamp(20px, 3.6vh, 46px) * var(--fit));
+  line-height: 1.32;
+  margin: 0;
+  white-space: pre-line;
+}
+
 /* The Formal Discussion: its own colour, so it is not another reminder. */
 .block.fd {
   background: #ede9fe;
