@@ -220,6 +220,21 @@ export const FIXTURE: RawInputs = {
     `Grade 7 topic for row ${i + 1}: should students choose their own seats?`,
     `Grade 8 topic for row ${i + 1}: is it better to be respected or liked?`,
   ]),
+  // BDays A1:AZ400 as the tab itself is read: the "<serial> n" key, the grade,
+  // and the name ten columns along. The same two people arrive again through
+  // the rule-named block below, which is how the dedupe gets exercised.
+  birthdays: (() => {
+    const now = new Date();
+    const serial = Math.floor((Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) - Date.UTC(1899, 11, 30)) / 86400000);
+    const row = (n: number, name: string, grade: string) => {
+      const r = new Array(11).fill("");
+      r[0] = `${serial} ${n}`;
+      r[4] = grade;
+      r[9] = name;
+      return r;
+    };
+    return [row(1, "Mia Nguyen", "7A"), row(2, "Daniel Okafor", "8B")];
+  })(),
   // SchoolCalendar A1:G220 — the title row, the header, then a row per event:
   // the date in words, the "<serial> n" key, the event, whether it is a day
   // off, a letter of the sheet's own, and the description. Keyed to today and
@@ -228,7 +243,10 @@ export const FIXTURE: RawInputs = {
     const serial = (d: Date) =>
       Math.floor((Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) - Date.UTC(1899, 11, 30)) / 86400000);
     const now = new Date();
-    const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    // The next day the room is actually in, so the fixture reads sensibly
+    // whatever day it is opened on — on a Friday that is Monday.
+    let next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+    while (next.getDay() === 0 || next.getDay() === 6) next = new Date(next.getFullYear(), next.getMonth(), next.getDate() + 1);
     const row = (d: Date, n: number, event: string, off: boolean, about: string) =>
       ["", `${serial(d)} ${n}`, event, off ? "TRUE" : "FALSE", "f", about, ""];
     return [
@@ -236,6 +254,8 @@ export const FIXTURE: RawInputs = {
       ["2026", "", "Event", "No School", "", "Description", "Notes"],
       row(now, 1, "Business Fair", false, "Business Fair"),
       row(now, 2, "Terry Fox Run ($2)", false, "Terry Fox Run ($2)"),
+      // Left out of the banner: the teacher's own diary, not the room's day.
+      row(now, 3, "MAPS Roster Due", false, "MAPS Roster Due"),
       row(next, 1, "Thanksgiving Day", true, "No School (Thanksgiving Day)"),
     ];
   })(),

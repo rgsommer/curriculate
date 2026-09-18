@@ -956,55 +956,77 @@ check("column letters", P.columnName(4) === "D" && P.columnName(43) === "AQ" && 
     && P.joinNames(["Mia", "Sam", "Ana"]) === "Mia, Sam and Ana");
 }
 
-// ---- what is on at school today, and tomorrow ----
+// ---- what is on at school today, and the next day the room is here ----
 {
   // The SchoolCalendar tab as the sheet writes it: the date in words, the
   // "<serial> n" key, the event, whether it is a day off, a letter of the
   // sheet's own, then the description.
-  const day = new Date(2026, 8, 18, 11, 0);
-  const key = (d, n) => `${Math.floor(F.toSerial(d))} ${n}`;
-  const rows = [
+  const key = (d) => `${Math.floor(F.toSerial(d))}`;
+  const ev = (d, n, event, off, about) => [
+    "a date in words", `${key(d)} ${n}`, event, off ? "TRUE" : "FALSE", "f", about ?? event, "",
+  ];
+  const cal = (rows) => ({ schoolcalendar: [{ top: 1, left: 1, width: 7, height: 220, values: rows }] });
+  // Friday the 18th of September 2026, with the weekend after it.
+  const fri = new Date(2026, 8, 18, 11, 0);
+  const sat = new Date(2026, 8, 19);
+  const mon = new Date(2026, 8, 21);
+  const tue = new Date(2026, 8, 22);
+
+  const book = cal([
     ["School Calendar Events", "", "", "", "", "", ""],
     ["2026", "", "Event", "No School", "", "Description", "Notes"],
-    ["Fri, Sep 18, 2026", key(new Date(2026, 8, 18), 1), "GUDD", "FALSE", "f", "GUDD", ""],
-    ["Fri, Sep 18, 2026", key(new Date(2026, 8, 18), 2), "Terry Fox Run ($2)", "FALSE", "", "Terry Fox Run ($2)", ""],
-    ["Sat, Sep 19, 2026", key(new Date(2026, 8, 19), 1), "Thanksgiving Day", "TRUE", "s", "No School (Thanksgiving Day)", ""],
-    ["Mon, Oct 12, 2026", key(new Date(2026, 9, 12), 1), "Elsewhere entirely", "FALSE", "", "Elsewhere entirely", ""],
-  ];
-  const book = { schoolcalendar: [{ top: 1, left: 1, width: 7, height: 220, values: rows }] };
-  const both = P.specialDays(book, day);
+    ev(fri, 1, "GUDD", false),
+    ev(fri, 2, "Terry Fox Run ($2)", false),
+    ev(fri, 3, "MAPS Roster Due", false),
+    ev(sat, 1, "School pictures", false),
+    ev(mon, 1, "MAPS Testing", false),
+  ]);
+  const seen = P.specialDays(book, fri);
   check("calendar: today's events, in the order the tab carries them",
-    both.today.map((e) => e.label).join(" | ") === "GUDD | Terry Fox Run ($2)", both.today);
-  check("calendar: and tomorrow's", both.tomorrow.map((e) => e.label).join() === "Thanksgiving Day", both.tomorrow);
-  check("calendar: a day off is marked as one",
-    both.tomorrow[0].noSchool === true && both.today.every((e) => !e.noSchool), both.tomorrow);
-  check("calendar: a date neither today nor tomorrow stays out of it",
-    JSON.stringify(both).includes("Elsewhere") === false);
-  check("calendar: a book without the tab is not an error",
-    P.calendarEvents({}, day).length === 0);
+    seen.today.map((e) => e.label).join(" | ") === "GUDD | Terry Fox Run ($2)", seen.today);
+  check("calendar: the teacher's own diary stays off the board",
+    seen.today.every((e) => e.label !== "MAPS Roster Due"), seen.today);
+  check("calendar: but it is marked rather than lost, for ?debug=1",
+    P.calendarEvents(book, fri).find((e) => e.label === "MAPS Roster Due").staffOnly === true);
+  check("calendar: on a Friday the next day is Monday, not Saturday",
+    seen.ahead.length === 1 && seen.ahead[0].when === "Monday"
+      && seen.ahead[0].events.map((e) => e.label).join() === "MAPS Testing", seen.ahead);
+  check("calendar: the day after a Monday is called Tomorrow",
+    P.specialDays(cal([ev(tue, 1, "Gauss Math Contest", false)]), new Date(2026, 8, 21, 11, 0))
+      .ahead[0].when === "Tomorrow");
+
+  // A day off is the one thing the room wants to hear about before it comes,
+  // so it is said in its own right and the walk carries on past it.
+  const off = P.specialDays(cal([
+    ev(mon, 1, "Thanksgiving Day", true, "No School (Thanksgiving Day)"),
+    ev(tue, 1, "Picture Retakes", false),
+  ]), fri);
+  check("calendar: a day off ahead is announced by name",
+    off.ahead[0].when === "Monday" && off.ahead[0].events[0].noSchool === true, off.ahead);
+  check("calendar: and the day they are next in is announced after it",
+    off.ahead[1].when === "Tuesday" && off.ahead[1].events[0].label === "Picture Retakes", off.ahead);
+  check("calendar: a quiet weekend says nothing",
+    P.specialDays(cal([ev(sat, 1, "School pictures", false)]), fri).ahead.length === 0);
+  check("calendar: nothing ahead at all is not an error",
+    P.specialDays(cal([ev(fri, 1, "GUDD", false)]), fri).ahead.length === 0);
+
+  check("calendar: a book without the tab is not an error", P.calendarEvents({}, fri).length === 0);
   check("calendar: TRUE in the no-school column is what marks it, not the wording",
-    P.calendarEvents({ schoolcalendar: [{ top: 1, left: 1, width: 7, height: 4, values: [
-      ["Fri, Sep 18, 2026", key(new Date(2026, 8, 18), 1), "Edvance / PD Day", "TRUE", "f", "", ""],
-    ] }] }, day)[0].noSchool === true);
+    P.calendarEvents(cal([ev(fri, 1, "Edvance / PD Day", true, "")]), fri)[0].noSchool === true);
+  check("calendar: a day off is shown whatever it is called",
+    P.forTheRoom(P.calendarEvents(cal([ev(fri, 1, "Interviews 9-5 (staff)", true, "")]), fri)).length === 1);
   check("calendar: the description says it when the event column is empty",
-    P.calendarEvents({ schoolcalendar: [{ top: 1, left: 1, width: 7, height: 4, values: [
-      ["Fri, Sep 18, 2026", key(new Date(2026, 8, 18), 1), "", "TRUE", "f", "No School (PD Day)", ""],
-    ] }] }, day)[0].label === "No School (PD Day)");
+    P.calendarEvents(cal([ev(fri, 1, "", true, "No School (PD Day)")]), fri)[0].label === "No School (PD Day)");
   // A range the rules happened to name starts at B, so C is the second cell of
   // the row rather than the third. The grid's own left edge is what says so.
   check("calendar: a grid that starts at B is still read as B and C",
     P.calendarEvents({ schoolcalendar: [{ top: 3, left: 2, width: 6, height: 200, values: [
-      [key(new Date(2026, 8, 18), 1), "Community Night", "FALSE", "", "Community Night", ""],
-    ] }] }, day)[0].label === "Community Night");
+      [`${key(fri)} 1`, "Community Night", "FALSE", "", "Community Night", ""],
+    ] }] }, fri)[0].label === "Community Night");
   check("calendar: the same event twice over is said once",
-    P.calendarEvents({ schoolcalendar: [{ top: 1, left: 1, width: 7, height: 4, values: [
-      ["", key(new Date(2026, 8, 18), 1), "GUDD", "FALSE", "", "GUDD", ""],
-      ["", key(new Date(2026, 8, 18), 2), "GUDD", "FALSE", "", "GUDD", ""],
-    ] }] }, day).length === 1);
+    P.calendarEvents(cal([ev(fri, 1, "GUDD", false), ev(fri, 2, "GUDD", false)]), fri).length === 1);
   check("calendar: a banner is not the whole calendar — three at most",
-    P.calendarEvents({ schoolcalendar: [{ top: 1, left: 1, width: 7, height: 9, values:
-      [1, 2, 3, 4, 5].map((n) => ["", key(new Date(2026, 8, 18), n), `Event ${n}`, "FALSE", "", "", ""]),
-    }] }, day).length === 3);
+    P.forTheRoom(P.calendarEvents(cal([1, 2, 3, 4, 5].map((n) => ev(fri, n, `Event ${n}`, false))), fri)).length === 3);
 }
 
 // ---- the Formal Discussion ----
