@@ -3175,10 +3175,25 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
 // patterns, notices home, current strike load. Copied to clipboard by the UI.
 router.post("/executive-summary", authAny, loadMembership, async (req, res, next) => {
   try {
-    const months = [3, 6, 12].includes(Number(req.body?.months)) ? Number(req.body.months) : 12;
+    // Default to the CURRENT SCHOOL YEAR (since Sept 1), matching the Reports
+    // page; a numeric `months` still gives a rolling 3/6/12-month view.
+    const raw = String(req.body?.months || "year");
     const scope = req.body?.scope === "me" ? "me" : "all";
-    const cutoff = new Date();
-    cutoff.setMonth(cutoff.getMonth() - months);
+    let months, cutoff, windowShort, windowFull;
+    if (raw === "year" || raw === "") {
+      months = "year";
+      const now = new Date();
+      const startYear = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1; // Sept = month 8
+      cutoff = new Date(startYear, 8, 1);
+      windowShort = "this school year";
+      windowFull = `this school year (since ${cutoff.toISOString().slice(0, 10)})`;
+    } else {
+      months = [3, 6, 12].includes(Number(raw)) ? Number(raw) : 12;
+      cutoff = new Date();
+      cutoff.setMonth(cutoff.getMonth() - months);
+      windowShort = `the last ${months} months`;
+      windowFull = `last ${months} months (since ${cutoff.toISOString().slice(0, 10)})`;
+    }
     const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
     const triggerCount = config?.triggerCount ?? 3;
     const fadeDays = config?.fadeWindowDays ?? 30;
@@ -3320,7 +3335,7 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
     const subject = scope === "me" ? (req.membership.name || "This teacher") : "Across the division, staff";
     const fuQuality = fuResolvedPct >= 80 ? "strong" : fuResolvedPct >= 50 ? "moderate" : "an area to tighten";
     const overview =
-      `Overall picture: over the last ${months} months, ${subject} engaged with ${students.size} student(s) — ` +
+      `Overall picture: over ${windowShort}, ${subject} engaged with ${students.size} student(s) — ` +
       `${totalOffences} offence(s), ${positiveCount} positive recognition(s) and ${interactionCount} documented interaction(s). ` +
       (topTypeNames.length ? `Offences are concentrated in ${listJoin(topTypeNames)}, ` : "") +
       `and the monthly offence load has ${trendVerb} on average across the window${peakMonth ? `; the busiest month was ${fmtMonth(peakMonth)} (${peakVol})` : ""}. ` +
@@ -3330,7 +3345,7 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
       (positivesNew ? `Positive recognition was only recently introduced, so that thread is still getting underway.` : "");
 
     const ctxText =
-      `Window: last ${months} months (since ${cutoff.toISOString().slice(0, 10)}). Scope: ${who}.\n` +
+      `Window: ${windowFull}. Scope: ${who}.\n` +
       `Students involved (any event type): ${students.size}.\n` +
       `\nThree DISTINCT threads — keep them separate, do not conflate:\n` +
       `1) OFFENCES (negative behaviour, counts toward strikes): ${totalOffences} total — ${offenceCount} logged as individual incidents in the app` +
@@ -3366,7 +3381,7 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
     // "three distinct threads", etc.), which must never reach a reader.
     const fallbackText =
       `${overview}\n\n` +
-      `Window: last ${months} months (since ${cutoff.toISOString().slice(0, 10)}). Scope: ${who}.\n` +
+      `Window: ${windowFull}. Scope: ${who}.\n` +
       `Students involved (any event type): ${students.size}.\n\n` +
       `Offences (negative behaviour): ${totalOffences} total` +
       (legacyOffences ? ` — ${offenceCount} logged in the app, plus ${legacyOffences} earlier offence(s) carried in from historical notices home.` : ".") + `\n` +
@@ -3381,7 +3396,7 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
       `Current strike load (division): ${atThreshold} student(s) at or one away from the ${triggerCount}-strike trigger.` +
       (positivesNew ? `\n\nNote: positive-behaviour recognition was only recently introduced${firstPositive ? ` (first positive logged ${new Date(firstPositive.timestamp).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ })})` : ""}, so the small number of positives simply reflects that it's just getting underway.` : "");
 
-    let summary = `Executive summary — ${who} (last ${months} months)\n\n${fallbackText}`;
+    let summary = `Executive summary — ${who} (${windowShort})\n\n${fallbackText}`;
     let aiUsed = false;
     const provided = String(req.body?.summaryText || "").trim();
     if (provided) {
@@ -3407,9 +3422,9 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
       const html = emailShell({
         title: "Executive summary",
         schoolName: config?.branding?.schoolName || "Behaviours",
-        preheader: `${who} · last ${months} months`,
+        preheader: `${who} · ${windowShort}`,
         contentHtml:
-          `<p style="color:#64748b;margin:0 0 16px">${escapeHtml(who)} · last ${months} months</p>` +
+          `<p style="color:#64748b;margin:0 0 16px">${escapeHtml(who)} · ${windowShort}</p>` +
           mdToHtml(summary) +
           `<hr style="border:none;border-top:1px solid #e2e8f0;margin:18px 0">` +
           `<h3 style="margin:0 0 6px;font-size:15px;color:#0f172a">Monthly volume (red = negative, green = positive)</h3>${monthlyKindChartHtml(byMonthKind)}` +
@@ -3425,7 +3440,7 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
         await sendEmail({
           from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
           to,
-          subject: `Behaviours executive summary — ${who} (last ${months} months)`,
+          subject: `Behaviours executive summary — ${who} (${windowShort})`,
           text: summary,
           html,
         });

@@ -447,7 +447,7 @@ function StudentsToWatch({ fadeDays }: { fadeDays?: number }) {
 }
 
 function ExecutiveSummaryCard() {
-  const [months, setMonths] = useState(12);
+  const [months, setMonths] = useState<number | "year">("year");
   const [summary, setSummary] = useState("");
   const [scope, setScope] = useState<"me" | "all">("me");
   const [msg, setMsg] = useState("");
@@ -498,7 +498,8 @@ function ExecutiveSummaryCard() {
         An overview of behaviour trends and your interactions over time — good for sharing with an administrator or year-end reflection. Copied to your clipboard.
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <select value={months} onChange={(e) => setMonths(Number(e.target.value))} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        <select value={months} onChange={(e) => setMonths(e.target.value === "year" ? "year" : Number(e.target.value))} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+          <option value="year">This school year</option>
           <option value={3}>Last 3 months</option>
           <option value={6}>Last 6 months</option>
           <option value={12}>Last 12 months</option>
