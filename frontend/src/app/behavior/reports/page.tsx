@@ -9,7 +9,7 @@ import {
 import { api, getToken, loginHref } from "../_lib/api";
 
 type Stats = {
-  months: number;
+  months: number | string;
   triggerCount: number;
   totals: { incidents: number; positives: number; consequences: number; notices: number; noticesSent: number; students: number; atOrNearThreshold: number; interactions: number };
   monthly: Array<{ month: string; incidents: number; positives: number; notices: number; consequences: number }>;
@@ -37,7 +37,7 @@ function BehaviourTick({ x, y, payload }: any) {
 }
 
 export default function ReportsPage() {
-  const [months, setMonths] = useState(12);
+  const [months, setMonths] = useState<number | "year">("year");
   const [data, setData] = useState<Stats | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -59,7 +59,8 @@ export default function ReportsPage() {
           <Link href="/behavior" className="text-sm text-slate-500 underline">← dashboard</Link>
           <h1 className="mt-1 text-xl font-semibold">Reports</h1>
         </div>
-        <select value={months} onChange={(e) => setMonths(Number(e.target.value))} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        <select value={months} onChange={(e) => setMonths(e.target.value === "year" ? "year" : Number(e.target.value))} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+          <option value="year">This school year</option>
           <option value={6}>Last 6 months</option>
           <option value={12}>Last 12 months</option>
           <option value={24}>Last 24 months</option>

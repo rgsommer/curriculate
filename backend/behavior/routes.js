@@ -3445,10 +3445,22 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
 // Aggregated stats for the in-app reports/charts (Phase 4).
 router.get("/stats", authAny, loadMembership, async (req, res, next) => {
   try {
-    const months = [6, 12, 24].includes(Number(req.query.months)) ? Number(req.query.months) : 12;
-    const cutoff = new Date();
-    cutoff.setMonth(cutoff.getMonth() - months);
-    cutoff.setDate(1);
+    // Default to the CURRENT SCHOOL YEAR (since Sept 1) rather than a rolling
+    // window, so the report doesn't fold in last year's data. A numeric `months`
+    // still gives a rolling 6/12/24-month view.
+    const raw = String(req.query.months || "year");
+    let months, cutoff;
+    if (raw === "year" || raw === "") {
+      months = "year";
+      const now = new Date();
+      const startYear = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1; // Sept = month 8
+      cutoff = new Date(startYear, 8, 1); // Sept 1 of the current school year
+    } else {
+      months = [6, 12, 24].includes(Number(raw)) ? Number(raw) : 12;
+      cutoff = new Date();
+      cutoff.setMonth(cutoff.getMonth() - months);
+      cutoff.setDate(1);
+    }
     const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
     const triggerCount = config?.triggerCount ?? 3;
     const fadeDays = config?.fadeWindowDays ?? 30;
