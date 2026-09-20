@@ -25,6 +25,15 @@ const BehaviorConsequenceSchema = new mongoose.Schema(
     // white-slip → "behaviour" category rule).
     relatedIncidentId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorIncident", default: null },
 
+    // Lifecycle for white slips: "recommended" once the VP is emailed, then
+    // "issued" when any staff member confirms it was actually given (via the
+    // "White slip issued? Yes" button). Directly-documented consequences
+    // (detention, call home) are "issued" from the start.
+    status: { type: String, enum: ["recommended", "issued"], default: "issued", index: true },
+    issuedByTeacherId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorTeacher", default: null },
+    issuedByName: { type: String, default: "" },
+    issuedAt: { type: Date, default: null },
+
     at: { type: Date, default: Date.now, index: true },
   },
   { timestamps: true }

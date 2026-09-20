@@ -132,6 +132,7 @@ async function fireWhiteSlip({ req, student, config, behaviorName, detailText, a
       schoolId: req.schoolId, studentId: student._id,
       type: "White slip", detail: behaviorName + (detailText ? ` — ${detailText}` : ""),
       byTeacherId: req.membership._id, byName: teacherName, relatedIncidentId, at: when,
+      status: "recommended", // awaits a staff "issued? Yes" confirmation
     });
   } catch (e) { console.warn("[behavior] white-slip consequence log failed:", e?.message || e); }
   if (!teacherEmail && !vpEmail) return;
@@ -1548,7 +1549,16 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
       ]);
       gcnt = Object.fromEntries(gagg.map((a) => [String(a._id), a.n]));
     }
-    const out = students.map((s) => ({ ...s, activeCount: cnt[String(s._id)] || 0, guddCount: gcnt[String(s._id)] || 0 }));
+    // Recommended-but-not-yet-issued white slips → an "issued? Yes" indicator any
+    // teacher can confirm. Newest pending slip per student.
+    const pendAgg = await BehaviorConsequence.aggregate([
+      { $match: { schoolId: req.schoolId, studentId: { $in: students.map((s) => s._id) }, type: "White slip", status: "recommended" } },
+      { $sort: { at: -1 } },
+      { $group: { _id: "$studentId", id: { $first: "$_id" } } },
+    ]);
+    const pend = Object.fromEntries(pendAgg.map((a) => [String(a._id), String(a.id)]));
+
+    const out = students.map((s) => ({ ...s, activeCount: cnt[String(s._id)] || 0, guddCount: gcnt[String(s._id)] || 0, pendingWhiteSlipId: pend[String(s._id)] || null }));
     res.json({
       ok: true, students: out, triggerCount,
       gudd: guddOn ? { enabled: true, name: gcfg.name || "GUDD", threshold: gcfg.threshold ?? 3 } : { enabled: false },
@@ -3777,6 +3787,27 @@ router.delete("/consequences/:id", authAny, loadMembership, canLog, async (req, 
     await BehaviorConsequence.deleteOne({ _id: c._id });
     await audit(req.schoolId, "consequence.delete", req, { studentId: String(c.studentId), meta: { type: c.type } });
     res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Confirm a recommended white slip was actually issued. ANY staff member who can
+// log may click "issued? Yes"; the first click registers it (records who/when)
+// and later clicks are a harmless no-op — it doesn't matter who confirms.
+router.post("/consequences/:id/issue", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const c = await BehaviorConsequence.findOne({ _id: req.params.id, schoolId: req.schoolId });
+    if (!c) return res.status(404).json({ ok: false, error: "Not found" });
+    if (c.status !== "issued") {
+      c.status = "issued";
+      c.issuedByTeacherId = req.membership._id;
+      c.issuedByName = req.membership.name || req.user?.name || "";
+      c.issuedAt = new Date();
+      await c.save();
+      await audit(req.schoolId, "consequence.issued", req, { studentId: String(c.studentId), meta: { type: c.type } });
+    }
+    res.json({ ok: true, consequence: c.toObject() });
   } catch (err) {
     next(err);
   }
