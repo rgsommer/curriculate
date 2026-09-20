@@ -55,7 +55,7 @@ export async function GET(req: Request) {
 
   const { data: engs } = await admin
     .from("engagements")
-    .select("id, group_id, title, total_expected, deadline, reveal, type, deadline_nudged_at, hold_until_deadline, birth_year, config")
+    .select("id, group_id, title, total_expected, deadline, reveal, type, deadline_nudged_at, hold_until_deadline, birth_year, config, is_blind")
     .eq("status", "active")
     .eq("paused", false) // paused → no auto-reveal / auto-nudge
     .not("deadline", "is", null);
@@ -154,6 +154,40 @@ export async function GET(req: Request) {
         .eq("id", e.group_id)
         .single();
 
+      // Who's already responded (first names) → social proof in the nudge. Skipped for
+      // blind/anonymous engagements; prefers each person's per-group display name.
+      let responderNames: string[] = [];
+      if (!e.is_blind) {
+        const { data: rr } = await admin
+          .from("responses")
+          .select("user_id")
+          .eq("engagement_id", e.id);
+        const rids = Array.from(new Set((rr ?? []).map((r) => r.user_id as string)));
+        if (rids.length) {
+          const { data: gm } = await admin
+            .from("group_members")
+            .select("user_id, display_name")
+            .eq("group_id", e.group_id)
+            .in("user_id", rids);
+          const gmName = new Map(
+            (gm ?? []).map((m) => [m.user_id as string, (m.display_name as string | null) ?? ""])
+          );
+          const missing = rids.filter((id) => !gmName.get(id));
+          const pfName = new Map<string, string>();
+          if (missing.length) {
+            const { data: pf } = await admin
+              .from("profiles")
+              .select("id, display_name")
+              .in("id", missing);
+            for (const p of pf ?? [])
+              pfName.set(p.id as string, (p.display_name as string | null) ?? "");
+          }
+          responderNames = rids
+            .map((id) => (gmName.get(id) || pfName.get(id) || "").trim().split(/\s+/)[0])
+            .filter(Boolean);
+        }
+      }
+
       const engUrl = `${base}/campfirelive/group/${e.group_id}/engagement/${e.id}`;
       const messages: {
         from: string;
@@ -174,6 +208,7 @@ export async function GET(req: Request) {
           url: engUrl,
           responded: count ?? 0,
           total: (e.total_expected as number) ?? 0,
+          responderNames,
           // Within the last day it becomes an urgent "final call".
           hoursLeft: Math.max(0, Math.round((dl - now) / (60 * 60 * 1000))),
         });
