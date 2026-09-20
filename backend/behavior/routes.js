@@ -3214,7 +3214,13 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
     const byType = {};          // offence types
     const posByType = {};       // positive types
     const byMonth = {};         // OFFENCE monthly volume (the discipline trend)
+    const byWeek = {};          // OFFENCE weekly volume — used when the window spans a single month
     const byMonthKind = {};     // { "YYYY-MM": { neg, pos } } red/green chart — offences vs positives only
+    const weekKey = (d) => {
+      const dt = new Date(d); dt.setUTCHours(0, 0, 0, 0);
+      dt.setUTCDate(dt.getUTCDate() - ((dt.getUTCDay() + 6) % 7)); // back to Monday
+      return dt.toISOString().slice(0, 10);
+    };
     const bumpKind = (d, kind) => {
       const k = new Date(d).toISOString().slice(0, 7);
       byMonthKind[k] = byMonthKind[k] || { neg: 0, pos: 0 };
@@ -3242,6 +3248,7 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
         byType[nm] = (byType[nm] || 0) + 1;
         const mk = new Date(i.timestamp).toISOString().slice(0, 7);
         byMonth[mk] = (byMonth[mk] || 0) + 1;
+        byWeek[weekKey(i.timestamp)] = (byWeek[weekKey(i.timestamp)] || 0) + 1;
         bumpKind(i.timestamp, "neg");
       }
     }
@@ -3265,6 +3272,7 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
         legacyOffences += 1;
         const mk = new Date(n.sentAt || n.createdAt).toISOString().slice(0, 7);
         byMonth[mk] = (byMonth[mk] || 0) + 1;
+        byWeek[weekKey(n.sentAt || n.createdAt)] = (byWeek[weekKey(n.sentAt || n.createdAt)] || 0) + 1;
         bumpKind(n.sentAt || n.createdAt, "neg");
         if (n.studentId) students.add(String(n.studentId));
       }
@@ -3334,11 +3342,25 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
     const topTypeNames = topTypes.slice(0, 3).map(([k]) => k);
     const subject = scope === "me" ? (req.membership.name || "This teacher") : "Across the division, staff";
     const fuQuality = fuResolvedPct >= 80 ? "strong" : fuResolvedPct >= 50 ? "moderate" : "an area to tighten";
+
+    // With a single calendar month of data (common early in a school year), a
+    // "monthly trend" is meaningless — break the offence volume down by week
+    // instead, and don't assert a trend the data can't support.
+    const useWeekly = activeMonths <= 1;
+    const weekKeysSorted = Object.keys(byWeek).sort();
+    const weeklySeries = weekKeysSorted.map((k) => { const d = new Date(k); return `wk of ${MONTH_NAMES[d.getUTCMonth()].slice(0, 3)} ${d.getUTCDate()}: ${byWeek[k]}`; });
+    const volumeSeries = useWeekly ? weeklySeries : monthly;
+    const volumeLabel = useWeekly ? "Weekly offence volume (this term)" : "Monthly offence volume";
+    const trendClause = useWeekly
+      ? (weekKeysSorted.length >= 2
+          ? `and week to week the offence load reads ${weeklySeries.join("; ")}`
+          : `and it is early in the term (${totalOffences} offence(s) so far), so it is too soon to read a trend`)
+      : `and the monthly offence load has ${trendVerb} on average across the window${peakMonth ? `; the busiest month was ${fmtMonth(peakMonth)} (${peakVol})` : ""}`;
     const overview =
       `Overall picture: over ${windowShort}, ${subject} engaged with ${students.size} student(s) — ` +
       `${totalOffences} offence(s), ${positiveCount} positive recognition(s) and ${interactionCount} documented interaction(s). ` +
       (topTypeNames.length ? `Offences are concentrated in ${listJoin(topTypeNames)}, ` : "") +
-      `and the monthly offence load has ${trendVerb} on average across the window${peakMonth ? `; the busiest month was ${fmtMonth(peakMonth)} (${peakVol})` : ""}. ` +
+      `${trendClause}. ` +
       (fuTotal ? `Consequence follow-through is ${fuQuality} (${fuResolvedPct}% of ${fuTotal} resolved), ` : "") +
       `with the record kept across ${activeMonths} active month(s)${teacherNoteCount ? ` and ${teacherNoteCount} private note(s)` : ""}. ` +
       (atThreshold ? `Division-wide, ${atThreshold} student(s) sit at or one away from the ${triggerCount}-strike trigger. ` : "") +
@@ -3358,7 +3380,7 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
       `\nBy offence type: ${topTypes.map(([k, v]) => `${k} ${v}`).join(", ") || "none"}.\n` +
       `Engagement span: activity recorded across ${activeMonths} distinct month(s) of the window.\n` +
       `Documentation diligence: ${teacherNoteCount} private teacher note(s) recorded alongside incidents.\n` +
-      `Monthly OFFENCE volume (incidents + historical notices): ${monthly.join("; ") || "n/a"}.\n` +
+      `${volumeLabel}${useWeekly ? "" : " (incidents + historical notices)"}: ${volumeSeries.join("; ") || "n/a"}.\n` +
       `Parent communication: ${notices.length} notice(s) home created (${noticesSent} sent) — by reason: ${Object.entries(noticeByReason).map(([k, v]) => `${k} ${v}`).join(", ") || "none"}.\n` +
       `Consequence follow-through: of ${fuTotal} consequence(s) that carried a follow-up, ${fuResolved} were resolved (${fu.done} completed, ${fu.waived} waived) — ${fuResolvedPct}% — with ${fu.not_done} missed and ${fu.open} still open.\n` +
       `Current strike load (division, shared count): ${atThreshold} student(s) at or one away from the ${triggerCount}-strike trigger.` +
@@ -3366,7 +3388,7 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
     const prompt =
       `You are writing a COMPREHENSIVE executive summary about a teacher's classroom-behaviour management over the period, addressed to school leadership for SUPPORTIVE purposes. ` +
       `Frame it as a supervisor would when championing and supporting a staff member: lead with what is going well and the diligence shown; present challenges (a heavy offence load, a difficult class, a rough month) as where the teacher may benefit from support, resources, mentoring or co-planning — never as a failing. Be encouraging, fair and constructive; this is for backing the teacher up, not evaluating or disciplining them. Give due weight to every form of engagement, not just discipline, and don't omit a thread because its number is small. ` +
-      `Cover, as distinct threads: (1) how things are going overall and the OFFENCE trend across the window (improving / worsening / steady, citing the monthly offence volumes — use the ${totalOffences} total offences, not just the logged-incident count); ` +
+      `Cover, as distinct threads: (1) how things are going overall and the OFFENCE trend across the window (improving / worsening / steady, citing the ${useWeekly ? "weekly" : "monthly"} volumes — use the ${totalOffences} total offences, not just the logged-incident count)${useWeekly ? ". IMPORTANT: the data spans a single calendar month — do NOT describe a monthly trend; use the weekly volumes above, or simply state the total so far this term, and never imply a longer trend than the data supports" : ""}; ` +
       `(2) POSITIVE recognition — how positives are being used to reinforce good behaviour (${positiveCount} in the window); ` +
       `(3) documented INTERACTIONS (${interactionCount}) such as conversations and parent meetings logged for the record — proactive, relationship-building engagement that is NOT discipline; ` +
       `(4) thoroughness and follow-through — parent communication (${notices.length} notice(s) home), consequence follow-through (${fuResolvedPct}% of ${fuTotal} resolved), documentation via ${teacherNoteCount} private note(s), and steady engagement across ${activeMonths} month(s); ` +
@@ -3389,7 +3411,7 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
       `Documented interactions (conversations & parent meetings): ${interactionCount}.\n\n` +
       `By offence type: ${topTypes.map(([k, v]) => `${k} ${v}`).join(", ") || "none"}.\n` +
       `Activity across ${activeMonths} month(s); ${teacherNoteCount} private teacher note(s) on file.\n` +
-      `Monthly offence volume: ${monthly.join("; ") || "n/a"}.\n` +
+      `${volumeLabel}: ${volumeSeries.join("; ") || "n/a"}.\n` +
       `Parent communication: ${notices.length} notice(s) home (${noticesSent} sent)` +
       (legacyOffences ? " — these include the historical notices already counted in the offence total above, not additional events." : ".") + `\n` +
       `Consequence follow-through: ${fuResolved} of ${fuTotal} resolved (${fuResolvedPct}%), ${fu.not_done} missed, ${fu.open} still open.\n` +
