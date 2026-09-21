@@ -485,6 +485,19 @@ a.subj.deck:hover { text-decoration-color: currentColor; }
   96%, 100% { transform: translateX(0); }
 }
 
+/* The bar's tip: what it carries while the verse is up in the right-hand
+   panel. Upright rather than italic, so it does not read as scripture, and
+   quieter than the verse — it is a footnote, not the line of the day. */
+.bottom .verse.tipline { font-style: normal; font-family: inherit; color: var(--muted); }
+.bottom .verse.tipline b {
+  font-weight: 600;
+  color: var(--sun-ink);
+  background: var(--sun-fill);
+  padding: .1em .5em;
+  border-radius: 4px;
+  margin-right: .5em;
+}
+
 /* The riddle's answer rides at the far end of the line, out of sight until the
    sweep reaches it — and hidden even on a line short enough not to sweep, so a
    short riddle is not given away before anyone has thought about it. */

@@ -92,6 +92,30 @@ const HOUSE_JOKES = [
   ["What is the king of all school supplies?", "The ruler."],
 ];
 
+// A success tip for the bottom bar, for the minutes the verse of the day is up
+// in the right-hand panel: the room should not be reading the same words in two
+// places at once, and a blank bar is a waste of the one line everyone can see.
+// Picked by the day and the class on screen, so it holds still while it is up
+// and the next period gets a different one.
+const HOUSE_TIPS = [
+  "Write the assignment in your agenda the moment it is given.",
+  "Stuck? Read the question aloud under your breath. It often answers itself.",
+  "Three short goes beat one long one: memory keeps what it meets twice.",
+  "Work with your phone out of sight. It really is out of mind.",
+  "Answer what you know first, then come back to the hard one.",
+  "Before you hand it in, read it once as though someone else wrote it.",
+  "Ask the question. Someone else in the room has it too and is hoping you will.",
+  "Start the homework the day it is set, even if you only do five minutes of it.",
+  "Copy the diagram, not just the words. You remember what your hand has drawn.",
+  "Neat work is easier to study from. Give yourself a page you can read in June.",
+  "Say a new word out loud three times. That is how it gets into your own vocabulary.",
+  "Check the mark scheme: four marks means four things to say.",
+  "Missed a class? Get the notes the same week.",
+  "Pack your bag the night before and the morning takes care of itself.",
+  "Teach it to someone else. If you can explain it, you know it.",
+  "Two minutes on yesterday's notes is the cheapest revision there is.",
+];
+
 function fmt(m) {
   const h = Math.floor(m / 60), mm = Math.floor(m % 60), ap = h >= 12 ? "PM" : "AM";
   return `${h % 12 || 12}:${mm < 10 ? "0" : ""}${mm} ${ap}`;
@@ -992,6 +1016,18 @@ export default function DailyPage() {
     const pair = HOUSE_RIDDLES[(d.getFullYear() * 372 + d.getMonth() * 31 + d.getDate()) % HOUSE_RIDDLES.length];
     return { q: pair[0], a: pair[1] };
   };
+  // Where the verse of the day is at this minute. It has the right-hand panel
+  // for its first minutes and the bottom bar for the rest of the day, and never
+  // both at once — the panel's copy is the one the room is reading, and the same
+  // words sweeping along the bottom underneath it are only a distraction. The
+  // panels set this as they render, which is the one place that knows.
+  let verseUp = false;
+  const tipNow = () => {
+    const d = new Date();
+    const n = d.getFullYear() * 372 + d.getMonth() * 31 + d.getDate()
+      + (cur && cur.start ? Math.floor(cur.start / 5) : 0);
+    return HOUSE_TIPS[Math.abs(n) % HOUSE_TIPS.length];
+  };
   const footer = (showPuzzle, endOfDay) => (
     <>
       {/* The sheet swaps the two on the minute; the board follows the same beat,
@@ -1040,7 +1076,25 @@ export default function DailyPage() {
                   </span>
                 );
               })()
-            : (
+            : verseUp
+              // The verse is up in the panel; the bar carries a success tip
+              // instead, and takes the verse back the minute the panel does not
+              // want it — sweeping on the minute as it does all day.
+              ? (
+                <span
+                  className={`verse tipline${verseOver > 8 ? " scrolling" : ""}`}
+                  ref={verseRef}
+                  style={verseStyle}
+                  title={sweepTitle}
+                  onClick={sweepNow}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={onSweepKey}
+                >
+                  <span className="vtext" key={sweepKey}><b>Tip</b> {tipNow()}</span>
+                </span>
+              )
+              : (
               <span
                 className={`verse${verseOver > 8 ? " scrolling" : ""}`}
                 ref={verseRef}
@@ -1285,13 +1339,70 @@ export default function DailyPage() {
     const v = verseBlock();
     return v ? <div className="panel verseonly">{v}</div> : null;
   };
+  // What has been set: a class's assignment, else its homework. The verse has
+  // the half for its first minutes and then gives it to this, because the room
+  // has read the verse by then — and it carries on along the bottom bar all day
+  // — while what they have to do is the thing they will ask about at the end.
+  const workOf = (c) => {
+    if (!c) return null;
+    const items = (c.assign || []).length
+      ? c.assign
+      : c.homework ? [c.homework] : [];
+    return items.length ? { head: (c.assign || []).length ? "Assignment" : "Homework", items } : null;
+  };
+  const workBlock = (c) => {
+    const w = workOf(c);
+    return w ? (
+      <div key="work" className="block sun">
+        <h3>{w.head}</h3>
+        {w.items.length > 1 ? list(w.items) : <p>{w.items[0]}</p>}
+      </div>
+    ) : null;
+  };
+  // The same thing for the day's own screens, where there is no one class on
+  // screen: every class that has something set, named.
+  const dayWorkPanel = () => {
+    const rows = (classes.length ? classes : dayPlan)
+      .map((c) => ({ c, w: workOf(c) }))
+      .filter((x) => x.w);
+    if (!rows.length) return null;
+    return (
+      <div className="panel verseonly">
+        <div className="block sun">
+          <h3>Set for today</h3>
+          <div className="agenda">
+            {rows.map(({ c, w }, i) => [
+              <span key={`t${i}`} className="t">{c.subj}</span>,
+              <span key={`s${i}`}>{w.items.join("; ")}</span>,
+            ])}
+          </div>
+        </div>
+      </div>
+    );
+  };
+  // The day's own screens have no beginning to measure from — a morning is not
+  // a class — so the half alternates on the board's own clock: the verse for
+  // `verseMin` minutes, the work for the same, and the scrubber moves it like
+  // everything else.
+  const verseOnNow = Math.floor(t / Math.max(1, setup.verseMin)) % 2 === 0;
+  // Whichever of the two has the half this minute, falling back to the other
+  // when there is nothing to show — an empty half is worse than either.
+  const dayAside = () => {
+    const verse = () => {
+      const v = versePanel();
+      if (v) verseUp = true;
+      return v;
+    };
+    if (verseOnNow) return verse() || dayWorkPanel();
+    return dayWorkPanel() || verse();
+  };
   // A picture takes the right-hand half where there is one; failing that, the
   // day's own screens carry the verse there.
   const withPicture = (content, side) => {
     if (featureImage) {
       return <div className="main pic-right pic-feature">{content}{bigPicture(featureImage, "On screen now", "")}</div>;
     }
-    const aside = side === undefined ? versePanel() : side;
+    const aside = side === undefined ? dayAside() : side;
     // The day's own screens keep the wider half for the day — the agenda, the
     // materials and the notices — and give the verse the narrower one.
     return aside
@@ -1703,16 +1814,26 @@ export default function DailyPage() {
     // first `memoryMin` minutes. The subject is what decides it, and the fourth
     // class of the day is the fallback on a day with no CE on it.
     const memoryPeriod = classes.find((c) => /^CE\b/i.test(c.subj || "")) || classes[3] || null;
-    const memoryOn = !!memoryPeriod
-      && cur.start === memoryPeriod.start
-      && elapsed < setup.memoryMin
-      && !!(mv || hymn);
+    const memoryClass = !!memoryPeriod && cur.start === memoryPeriod.start;
+    const memoryOn = memoryClass && elapsed < setup.memoryMin && !!(mv || hymn);
     const nx = nextClass(cur.end);
     // The picture for this lesson comes from its Lessons row when there is one;
     // the Setup slot picture is the fallback.
     const lessonPic = cur.image ? { url: cur.image, seconds: setup.picSeconds } : data.picture;
-    const lessonPicOn = opts.pic !== "off" && lessonPic && usable(lessonPic.url) && elapsed * 60 < setup.picSeconds;
+    const hasLessonPic = opts.pic !== "off" && !!lessonPic && usable(lessonPic.url);
+    const lessonPicOn = hasLessonPic && elapsed * 60 < setup.picSeconds;
     const picOn = !!featureImage || lessonPicOn;
+
+    // The verse of the day takes the right-hand half once it is free — the
+    // lesson picture and the memory work have their own windows first — and
+    // holds it for `verseMin` minutes. Its minutes therefore start when it
+    // actually appears, not when the class does; after them the half turns over
+    // to the work, and the bottom bar takes the verse back.
+    const verseFrom = Math.max(
+      memoryClass ? setup.memoryMin : 0,
+      hasLessonPic ? setup.picSeconds / 60 : 0,
+    );
+    const verseInPanel = elapsed < verseFrom + setup.verseMin;
 
     // Handouts named in the lesson cell, so they can be opened and printed from
     // the board if they were not run off beforehand.
@@ -1737,7 +1858,10 @@ export default function DailyPage() {
     let side;
     if (memoryOn) {
       // For those minutes the right-hand half is the memory work — over the
-      // lesson picture, which has its own window later in the class.
+      // lesson picture, which has its own window later in the class. The bottom
+      // bar gives up the verse for them as well: scripture along the bottom of
+      // scripture is a line nobody reads.
+      verseUp = true;
       side = (
         <div className="panel">
           {mv ? (
@@ -1794,9 +1918,19 @@ export default function DailyPage() {
       // which is what used to put the benediction up before lunch.
       if (lunchSoon) blocks.push(<div key="l" className="block sun"><h3>Before lunch</h3><p>{LUNCH_GRACE}</p></div>);
       // Last, under whatever the class needs first: the verse is for the whole
-      // day and the time-sensitive blocks above it are not.
+      // day and the time-sensitive blocks above it are not. It has the slot for
+      // its own minutes and then hands it to the work — what has been set for
+      // this class — unless the panel is already saying that, in which case it
+      // simply steps aside. With nothing to turn over to it stays, since an
+      // empty half helps no one.
+      const assignShown = assignOnLeft
+        || left <= setup.homeworkAt
+        || (phase !== "open" && cur.assign.length > 0);
       const vod = verseBlock();
-      if (vod) blocks.push(vod);
+      const work = assignShown ? null : workBlock(cur);
+      if (verseInPanel && vod) { blocks.push(vod); verseUp = true; }
+      else if (work) blocks.push(work);
+      else if (!assignShown && vod) { blocks.push(vod); verseUp = true; }
       side = blocks.length ? <div className="panel">{blocks}</div> : null;
     }
 

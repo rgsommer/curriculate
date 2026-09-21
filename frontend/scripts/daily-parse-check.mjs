@@ -1364,6 +1364,20 @@ check("benefit windows: the colour follows what is on offer",
   [P.statusWords("AB1 & B2", win(3)), P.statusWords("AB1 & B2", win(20))]);
 check("setup: the free-seat window defaults to five minutes", P.parseSetup([]).seatMin === 5);
 check("setup: a row can change the free-seat window", P.parseSetup([["", "Free seat for", "7", "minutes"]]).seatMin === 7);
+
+// The verse of the day holds the right-hand half for its own minutes and then
+// hands it to the work — and the bottom bar takes the verse back at the same
+// moment, so the room never has the same words in two places.
+check("setup: the verse window defaults to ten minutes", P.parseSetup([]).verseMin === 10);
+check(
+  "setup: a row can change the verse window",
+  P.parseSetup([["", "Verse of the day for", "6", "minutes"]]).verseMin === 6,
+);
+check(
+  "setup: the memory verse row does not change the verse window",
+  P.parseSetup([["", "Memory verse for", "12", "minutes"]]).verseMin === 10
+    && P.parseSetup([["", "Memory verse for", "12", "minutes"]]).memoryMin === 12,
+);
 check("status digits: the flags line up with the labels", (() => {
   const a = P.parseStatus("A1100"), b = P.parseStatus("AB1 & B2");
   return a.B1 === b.B1 && a.B2 === b.B2 && a.FD === b.FD;
