@@ -17,6 +17,11 @@ const BehaviorConsequenceSchema = new mongoose.Schema(
     type: { type: String, required: true, trim: true },
     detail: { type: String, default: "" }, // optional note / specifics
 
+    // Tone of the record. Disciplinary consequences are "corrective" (the default
+    // and how they're shown under Consequences); an encouraging parent note is
+    // logged as "encouraging" and shown under the student's Encouragements.
+    kind: { type: String, enum: ["encouraging", "corrective"], default: "corrective", index: true },
+
     // Who applied/recorded it.
     byTeacherId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorTeacher", index: true },
     byName: { type: String, default: "" },

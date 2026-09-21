@@ -208,9 +208,9 @@ function ParentTemplatesSection() {
       .catch(() => setLoaded(true));
   }, []);
 
-  const update = (i: number, field: "name" | "body", value: string) =>
+  const update = (i: number, field: "name" | "body" | "kind", value: string) =>
     setTemplates((list) => list.map((t, idx) => (idx === i ? { ...t, [field]: value } : t)));
-  const add = () => setTemplates((list) => [...list, { name: "New template", body: "Dear {parents},\n\n\n\n{teacher}\n{school}" }]);
+  const add = () => setTemplates((list) => [...list, { name: "New template", body: "Dear {parents},\n\n\n\n{teacher}\n{school}", kind: "encouraging" }]);
   const remove = (i: number) => setTemplates((list) => list.filter((_, idx) => idx !== i));
 
   async function save() {
@@ -246,6 +246,12 @@ function ParentTemplatesSection() {
             <div className="flex items-center gap-2">
               <input value={t.name} onChange={(e) => update(i, "name", e.target.value)} placeholder="Template name"
                 className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium" />
+              <select value={t.kind || "encouraging"} onChange={(e) => update(i, "kind", e.target.value)}
+                title="Encouraging notes log under the student's Encouragements; corrective ones under Consequences."
+                className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+                <option value="encouraging">Encouraging</option>
+                <option value="corrective">Corrective</option>
+              </select>
               <button type="button" onClick={() => remove(i)}
                 className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50">Remove</button>
             </div>

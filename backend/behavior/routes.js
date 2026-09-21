@@ -653,7 +653,11 @@ router.put("/my-templates", authAny, loadMembership, async (req, res, next) => {
     if ("subject" in b) set.subject = String(b.subject || "").trim().slice(0, 120);
     if (Array.isArray(b.templates)) {
       set.parentTemplates = b.templates
-        .map((t) => ({ name: String(t?.name || "").trim().slice(0, 80), body: String(t?.body || "").slice(0, 4000) }))
+        .map((t) => ({
+          name: String(t?.name || "").trim().slice(0, 80),
+          body: String(t?.body || "").slice(0, 4000),
+          kind: t?.kind === "corrective" ? "corrective" : "encouraging",
+        }))
         .filter((t) => t.name || t.body)
         .slice(0, 40);
     }
@@ -689,13 +693,14 @@ router.post("/students/:id/parent-message", authAny, loadMembership, canLog, asy
       schoolName: config?.branding?.schoolName || school?.name || "",
     });
 
-    // Log that the teacher sent a parent message — a documented, positive action
-    // (not a strike). Kept as a consequence record so it shows in the student's
-    // history and the digest.
+    // Log that the teacher sent a parent message. Encouraging notes are recorded
+    // as "encouraging" (shown under the student's Encouragements); corrective ones
+    // as "corrective" (shown under Consequences). Never a strike.
+    const kind = tpl.kind === "encouraging" ? "encouraging" : "corrective";
     await BehaviorConsequence.create({
       schoolId: req.schoolId, studentId: student._id,
       type: `Parent message: ${tpl.name}`, detail: "Copied to send by the teacher",
-      byTeacherId: req.membership._id, byName: teacherName, status: "issued",
+      byTeacherId: req.membership._id, byName: teacherName, status: "issued", kind,
       issuedByTeacherId: req.membership._id, issuedByName: teacherName, issuedAt: new Date(),
     });
     await audit(req.schoolId, "parent_message.generated", req, { studentId: String(student._id), meta: { template: tpl.name } });
@@ -4143,7 +4148,7 @@ async function composeAdminDigest(schoolId, config) {
   // Consequences issued (white slips, detentions, calls home, …) in the last 7
   // days. These aren't incident-threshold events, so they'd otherwise never show
   // in this digest — an admin should still see them.
-  const consRows = await BehaviorConsequence.find({ schoolId, at: { $gt: since7 } })
+  const consRows = await BehaviorConsequence.find({ schoolId, at: { $gt: since7 }, kind: { $ne: "encouraging" } })
     .select("type detail byName studentId at").sort({ at: -1 }).lean();
   const consStudents = consRows.length
     ? await BehaviorStudent.find({ _id: { $in: consRows.map((c) => c.studentId) } })
@@ -4168,6 +4173,21 @@ async function composeAdminDigest(schoolId, config) {
     : [];
   const ptName = Object.fromEntries(posTeachers.map((t) => [String(t._id), t.name]));
 
+  // Encouraging parent messages are logged as "encouraging" consequences — they
+  // belong in the Encouragements list, not under Consequences.
+  const encRows = await BehaviorConsequence.find({ schoolId, at: { $gt: since7 }, kind: "encouraging" })
+    .select("type byName studentId at").sort({ at: -1 }).lean();
+  const encStudents = encRows.length
+    ? await BehaviorStudent.find({ _id: { $in: encRows.map((c) => c.studentId) } }).select("firstName preferredName lastName classGroup").lean()
+    : [];
+  const eName = Object.fromEntries(encStudents.map((s) =>
+    [String(s._id), `${s.preferredName || s.firstName} ${s.lastName || ""}`.trim() + (s.classGroup ? ` (${s.classGroup})` : "")]));
+  // Combined encouragements: positive behaviours + encouraging parent messages.
+  const encItems = [
+    ...posIncs.map((i) => ({ name: pName[String(i.studentId)] || "—", label: i.behaviorSnapshot?.name || "Encouragement", by: ptName[String(i.teacherId)] || "" })),
+    ...encRows.map((c) => ({ name: eName[String(c.studentId)] || "—", label: c.type || "Parent message", by: c.byName || "" })),
+  ];
+
   const li = (s) => `<li style="margin:3px 0">${s}</li>`;
   const section = (title, inner) => `<h3 style="margin:18px 0 6px;font-size:15px;color:#0f172a">${title}</h3>${inner}`;
   const flagged = insights.teachers.filter((t) => t.flag);
@@ -4188,8 +4208,8 @@ async function composeAdminDigest(schoolId, config) {
         ? `<ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6">${consRows.slice(0, 15).map((c) => li(`<strong>${escapeHtml(cName[String(c.studentId)] || "—")}</strong> — ${escapeHtml(c.type || "consequence")}${c.detail ? `: ${escapeHtml(c.detail)}` : ""} <span style="color:#94a3b8">· ${escapeHtml(c.byName || "")}</span>`)).join("")}</ul>`
         : `<p style="margin:0;color:#64748b">None.</p>`) +
     section("Encouragements (last 7 days)",
-      posIncs.length
-        ? `<ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6">${posIncs.slice(0, 15).map((i) => li(`<strong>${escapeHtml(pName[String(i.studentId)] || "—")}</strong> — ${escapeHtml(i.behaviorSnapshot?.name || "Encouragement")}${ptName[String(i.teacherId)] ? ` <span style="color:#94a3b8">· ${escapeHtml(ptName[String(i.teacherId)])}</span>` : ""}`)).join("")}</ul>`
+      encItems.length
+        ? `<ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6">${encItems.slice(0, 15).map((e) => li(`<strong>${escapeHtml(e.name)}</strong> — ${escapeHtml(e.label)}${e.by ? ` <span style="color:#94a3b8">· ${escapeHtml(e.by)}</span>` : ""}`)).join("")}</ul>`
         : `<p style="margin:0;color:#64748b">None logged — encourage staff to catch the good too.</p>`) +
     section("Students to get ahead of (rising lately)", top(insights.proactive, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.recent} in 2 weeks${r.prior ? ` (was ${r.prior})` : ""}`)) +
     section("Most-logged (60 days)", top(insights.topRepeat, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.count}`)) +
@@ -4202,7 +4222,7 @@ async function composeAdminDigest(schoolId, config) {
     `${wkNeg} incidents · ${wkPos} encouragements · ${wkInt} interactions · ${wkWhiteSlips} white slips · ${wkNotices} notices sent (last 7 days).\n\n` +
     `At/near a notice: ${insights.atThreshold.slice(0, 6).map((r) => `${r.name} (${r.strikes}/${r.triggerCount})`).join(", ") || "none"}.\n` +
     `Consequences issued / recommended: ${consRows.slice(0, 8).map((c) => `${cName[String(c.studentId)] || "—"} — ${c.type}`).join("; ") || "none"}.\n` +
-    `Encouragements: ${posIncs.slice(0, 8).map((i) => `${pName[String(i.studentId)] || "—"} — ${i.behaviorSnapshot?.name || "Encouragement"}`).join("; ") || "none"}.\n` +
+    `Encouragements: ${encItems.slice(0, 8).map((e) => `${e.name} — ${e.label}`).join("; ") || "none"}.\n` +
     `Rising lately: ${insights.proactive.slice(0, 6).map((r) => `${r.name} (${r.recent}/2wk)`).join(", ") || "none"}.\n` +
     `Staff who may welcome support: ${flagged.map((t) => t.name).join(", ") || "none"}.\n\n` +
     `Open the dashboard → School insights for the full picture.`;

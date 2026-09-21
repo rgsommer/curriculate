@@ -18,6 +18,7 @@
 export const DEFAULT_PARENT_TEMPLATES = [
   {
     name: "Missing / incomplete work",
+    kind: "corrective",
     body:
 `Dear {parents},
 
@@ -30,6 +31,7 @@ Btw, I enjoy having {student} in class!
   },
   {
     name: "Below expected behaviour",
+    kind: "corrective",
     body:
 `Dear {parents},
 
@@ -42,6 +44,7 @@ This is meant to help {student} take some corrective action early. I do my best 
   },
   {
     name: "Improvement",
+    kind: "encouraging",
     body:
 `Dear {parents},
 
@@ -52,6 +55,7 @@ Just a quick note to let you know I've seen a marked improvement in {student}'s 
   },
   {
     name: "Reminder / task",
+    kind: "encouraging",
     body:
 `Dear {parents},
 
@@ -64,6 +68,7 @@ If {he} could get to it today, that would be great. Thanks for your support — 
   },
   {
     name: "Encouragement / a blessing",
+    kind: "encouraging",
     body:
 `Dear {parents},
 
@@ -75,6 +80,7 @@ Have a great day,
   },
   {
     name: "Disruption — for your awareness",
+    kind: "corrective",
     body:
 `Dear {parents},
 

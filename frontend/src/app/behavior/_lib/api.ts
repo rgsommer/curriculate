@@ -139,7 +139,7 @@ export type StudentSummary = {
   pendingWhiteSlipId?: string | null;
 };
 
-export type ParentTemplate = { name: string; body: string };
+export type ParentTemplate = { name: string; body: string; kind?: "encouraging" | "corrective" };
 
 // The signed-in teacher's parent-message templates + subject label (seeded with
 // generalized defaults server-side when the teacher hasn't saved any).

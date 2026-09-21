@@ -49,7 +49,14 @@ const BehaviorTeacherSchema = new mongoose.Schema(
     // placeholders like {student}, {parents}, {he}, {subject}. Seeded with a
     // generalized default set on first load if empty; fully editable per teacher.
     parentTemplates: {
-      type: [{ name: { type: String, default: "" }, body: { type: String, default: "" }, _id: false }],
+      type: [{
+        name: { type: String, default: "" },
+        body: { type: String, default: "" },
+        // "encouraging" notes log under the student's Encouragements; "corrective"
+        // ones log under Consequences.
+        kind: { type: String, enum: ["encouraging", "corrective"], default: "encouraging" },
+        _id: false,
+      }],
       default: [],
     },
 

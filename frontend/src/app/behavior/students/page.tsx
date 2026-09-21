@@ -148,7 +148,16 @@ export default function StudentsPage() {
             <span className="font-medium">✉ Parent message:</span>
             <select value={tpl} onChange={(e) => { setTpl(e.target.value); try { localStorage.setItem("pm_template", e.target.value); } catch { /* ignore */ } }}
               className="rounded-lg border border-slate-300 px-2 py-1">
-              {templates.map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
+              {templates.some((t) => (t.kind || "encouraging") === "encouraging") && (
+                <optgroup label="Encouraging">
+                  {templates.filter((t) => (t.kind || "encouraging") === "encouraging").map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
+                </optgroup>
+              )}
+              {templates.some((t) => t.kind === "corrective") && (
+                <optgroup label="Corrective">
+                  {templates.filter((t) => t.kind === "corrective").map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
+                </optgroup>
+              )}
             </select>
             <span className="text-xs text-slate-500">then tap ✉ by a student to copy their message &amp; log it.</span>
             <Link href="/behavior/setup#templates" className="text-xs text-slate-500 underline">edit templates</Link>
