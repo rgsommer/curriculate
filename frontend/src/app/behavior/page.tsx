@@ -370,13 +370,15 @@ function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: st
       .catch(() => setRows([]));
   }, []);
 
-  // Confirm / resolve a recommended white slip. Optimistic; any teacher can do it.
+  // Confirm / resolve a recommended white slip. Once the action is taken the
+  // student drops off this list; on failure the row is restored. Any teacher can
+  // do it — the first click registers it server-side.
   async function resolveSlip(s: StudentSummary, other?: string) {
     const id = s.pendingWhiteSlipId;
     if (!id) return;
-    setRows((list) => (list || []).map((x) => (x._id === s._id ? { ...x, pendingWhiteSlipId: null } : x)));
+    setRows((list) => (list || []).filter((x) => x._id !== s._id));
     try { await issueWhiteSlip(id, other); }
-    catch { setRows((list) => (list || []).map((x) => (x._id === s._id ? { ...x, pendingWhiteSlipId: id } : x))); }
+    catch { setRows((list) => [...(list || []), s]); }
   }
 
   if (!rows || rows.length === 0) return null;
