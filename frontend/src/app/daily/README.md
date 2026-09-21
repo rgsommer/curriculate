@@ -215,6 +215,29 @@ for the whole spreadsheet — so `onEditRecordImages` filters on the edited rang
 and since inserting a picture often arrives as a *change* rather than an *edit*,
 with no range to filter on, the hourly trigger is the dependable one.
 
+### A lesson that is not a lesson
+
+`apps-script/lesson-text-guard.gs` is the other sheet-side script, and it belongs
+to the script that *writes* the lessons rather than to the board.
+
+"MAPS testing" is the standardized test written into the period the school gives
+it in. Handed to a model as a lesson title it reads as cartography, and the sheet
+gets back a confident, well-written lesson that never existed — *"How can maps
+help you solve real problems?"* — which the board then shows to the room in
+letters a foot high. The board cannot tell that from a real lesson, and it should
+not try: by the time the text reaches the sheet the mistake has already been
+made.
+
+So the guard sits in front of the AI call. `LESSON_TEXT_RULES` is a paragraph for
+the prompt — a title may name a test, an event or a routine, and an invented
+lesson is worse than an empty one — and `plainLesson_()` is the list of titles
+that recur here, which are not sent to the model at all: a test period needs no
+lesson written for it, and a rule that never calls the model cannot be talked out
+of its answer. Both are in plain sight at the top of the file, and
+`checkLessonTitles` prints every title in the Lessons tab the list would
+intercept, before it intercepts any of them — a pattern that catches a real
+lesson is a worse fault than the one being fixed.
+
 ### The writing penalty
 
 The legend's last row — *"Writing assignment penalty if below x points z times in
