@@ -246,7 +246,7 @@ export function buildPrompt(ctx) {
     historyBlock,
     positivesBlock,
     (ctx.consequences || []).length ? `Consequence(s) to state: ${ctx.consequences.join("; ")}.` : "",
-    hasUniform ? `One or more items are uniform/dress-code matters: briefly and kindly note that repeated uniform issues also affect the student's uniform standing (the school's "Good Uniform Dress Down"). Keep it factual, not a threat.` : "",
+    hasUniform ? `One or more of the items above are uniform/dress-code matters (marked "[uniform/dress-code]" in the list). When you list those items, KEEP them clearly marked as a uniform/dress-code item (e.g. append " (uniform)"), and briefly and kindly note that repeated uniform issues also affect the student's uniform standing (the school's "Good Uniform Dress Down"). Only reference "items marked uniform" if you have actually marked them. Keep it factual, not a threat.` : "",
     ctx.ccVp ? `Mention that the Vice-Principal has been copied.` : "",
     `Sign off with this signature block exactly:\n${ctx.signature || ""}`,
     `Write only the note body (no subject line). Keep it under 220 words. Do not invent facts beyond those given, and do not recount the background history.`,
