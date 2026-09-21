@@ -760,8 +760,13 @@ function GuddSettings({ config }: { config: any }) {
   const [escText, setEscText] = useState<string>(
     (Array.isArray(g.escalations) && g.escalations.length ? g.escalations : ["Lunch detention", "Meeting with the VP"]).join("\n")
   );
+  const [autoFri, setAutoFri] = useState<boolean>(!!g.autoResetFriday);
   const [err, setErr] = useState<string | null>(null);
-  const saveState = useSaveState([enabled, name, threshold, fadeDays, escText]);
+  const saveState = useSaveState([enabled, name, threshold, fadeDays, escText, autoFri]);
+  const [report, setReport] = useState<any | null>(null);
+  const [reportBusy, setReportBusy] = useState(false);
+  const [clearBusy, setClearBusy] = useState(false);
+  const [gMsg, setGMsg] = useState("");
 
   function save() {
     setErr(null);
@@ -773,9 +778,27 @@ function GuddSettings({ config }: { config: any }) {
         threshold: Math.max(1, Number(threshold) || 3),
         fadeWindowDays: Math.max(1, Number(fadeDays) || 30),
         escalations,
+        autoResetFriday: autoFri,
       };
       try { await api("/config", { method: "PUT", body: { gudd } }); } catch (e: any) { setErr(e.message); throw e; }
     });
+  }
+
+  async function genReport() {
+    setReportBusy(true); setGMsg("");
+    try {
+      const r = await api<any>("/gudd/report");
+      setReport(r);
+      if (!r.lost?.length && !r.atRisk?.length) setGMsg("No uniform infractions this period.");
+    } catch (e: any) { setGMsg(`✗ ${e.message}`); }
+    finally { setReportBusy(false); }
+  }
+  async function clearList() {
+    if (!window.confirm(`Clear the ${name || "GUDD"} list now? Uniform infractions so far stop counting and a fresh period starts. History is kept.`)) return;
+    setClearBusy(true); setGMsg("");
+    try { await api("/gudd/reset", { method: "POST", body: {} }); setReport(null); setGMsg("✓ List cleared — a new period has started."); }
+    catch (e: any) { setGMsg(`✗ ${e.message}`); }
+    finally { setClearBusy(false); }
   }
 
   return (
@@ -813,6 +836,59 @@ function GuddSettings({ config }: { config: any }) {
           <p className="text-xs text-slate-400">One consequence per line. The 1st further infraction after the loss gets line 1, the 2nd gets line 2, holding at the last line.</p>
           <textarea value={escText} onChange={(e) => setEscText(e.target.value)} rows={4} className={`${inputCls} mt-1 font-sans`}
             placeholder={"Lunch detention\nMeeting with the VP\nIn-school suspension"} />
+
+          <div className="mt-4 rounded-xl border border-slate-200 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-sm font-medium text-slate-700">Disqualification report &amp; period reset</p>
+                <p className="text-xs text-slate-400">
+                  {g.resetAt ? `Current period started ${new Date(g.resetAt).toLocaleString()}.` : "Counting over the fade window (list not cleared yet)."}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button type="button" onClick={genReport} disabled={reportBusy} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+                  {reportBusy ? "…" : "Generate report"}
+                </button>
+                <button type="button" onClick={clearList} disabled={clearBusy} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-800 disabled:opacity-40">
+                  {clearBusy ? "…" : "Clear the list now"}
+                </button>
+              </div>
+            </div>
+            <label className="mt-2 flex items-center gap-2 text-sm text-slate-600">
+              <input type="checkbox" checked={autoFri} onChange={(e) => setAutoFri(e.target.checked)} />
+              Auto-clear every Friday (end of school day) — remember to Save
+            </label>
+            {gMsg && <p className={`mt-1 text-xs ${gMsg.startsWith("✗") ? "text-red-600" : "text-slate-600"}`}>{gMsg}</p>}
+            {report && (
+              <div className="mt-2">
+                <p className="text-sm font-medium">Lost the {report.name} ({report.lost.length})</p>
+                {report.lost.length ? (
+                  <ul className="mt-1 divide-y divide-slate-100 text-sm">
+                    {report.lost.map((r: any) => (
+                      <li key={r.studentId} className="flex justify-between gap-2 py-1">
+                        <span>{r.name} <span className="text-slate-400">{r.classGroup}</span></span>
+                        <span className="text-slate-500">{r.count}/{r.threshold}{r.consequence ? ` · ${r.consequence}` : ""}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p className="text-xs text-slate-400">None have lost it this period.</p>}
+                {report.atRisk?.length > 0 && (
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-xs text-slate-500">At risk ({report.atRisk.length})</summary>
+                    <ul className="mt-1 divide-y divide-slate-100 text-sm">
+                      {report.atRisk.map((r: any) => (
+                        <li key={r.studentId} className="flex justify-between gap-2 py-1">
+                          <span>{r.name} <span className="text-slate-400">{r.classGroup}</span></span>
+                          <span className="text-slate-500">{r.count}/{r.threshold}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+                <button type="button" onClick={() => window.print()} className="no-print mt-2 rounded-lg border border-slate-300 px-3 py-1 text-xs">Print</button>
+              </div>
+            )}
+          </div>
         </>
       )}
       <div className="mt-3"><SaveButton state={saveState} onClick={save} label="Save GUDD settings" /></div>

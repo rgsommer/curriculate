@@ -98,7 +98,10 @@ function guddStatus(incidents, config) {
   const threshold = g.threshold ?? 3;
   const fadeDays = g.fadeWindowDays ?? 30;
   const escalations = (Array.isArray(g.escalations) ? g.escalations : []).map((s) => String(s || "").trim()).filter(Boolean);
-  const cutoff = Date.now() - fadeDays * DAY_MS;
+  // Count only infractions since the later of the fade window and the last period
+  // reset ("clear the list"), so a cleared list starts the new period fresh.
+  const resetAt = g.resetAt ? new Date(g.resetAt).getTime() : 0;
+  const cutoff = Math.max(Date.now() - fadeDays * DAY_MS, resetAt);
   const count = (incidents || []).filter(
     (i) => i.behaviorSnapshot?.uniform && new Date(i.timestamp).getTime() > cutoff
   ).length;
@@ -372,10 +375,15 @@ router.put("/config", authAny, loadMembership, requireAdmin, async (req, res, ne
       "aiSendMode", "cancelWindowSeconds", "aiProvider", "aiModel",
       "noticesResetMode", "termStartDates", "repeatScopeDays",
       "reminderTime", "manualNonSchoolDays", "houseReport", "housesEnabled", "housePointsResetAt",
-      "homework", "vpNotify", "teacherDraft", "consequenceLadder", "consequenceWhitelist", "adminDigest", "gudd", "houseCaps", "houseEvents", "houseRewards",
+      "homework", "vpNotify", "teacherDraft", "consequenceLadder", "consequenceWhitelist", "adminDigest", "houseCaps", "houseEvents", "houseRewards",
     ];
     const update = {};
     for (const k of allowed) if (k in (req.body || {})) update[k] = req.body[k];
+    // Merge gudd by field (dot notation) so a settings save never clobbers the
+    // period reset (resetAt) or the auto-Friday flag it didn't send.
+    if (req.body?.gudd && typeof req.body.gudd === "object") {
+      for (const [k, v] of Object.entries(req.body.gudd)) update[`gudd.${k}`] = v;
+    }
     const config = await BehaviorConfig.findOneAndUpdate(
       { schoolId: req.schoolId },
       { $set: update },
@@ -1677,7 +1685,8 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
     const guddOn = gcfg.enabled !== false;
     let gcnt = {};
     if (guddOn) {
-      const gCutoff = new Date(Date.now() - (gcfg.fadeWindowDays ?? 30) * DAY_MS);
+      const gReset = gcfg.resetAt ? new Date(gcfg.resetAt).getTime() : 0;
+      const gCutoff = new Date(Math.max(Date.now() - (gcfg.fadeWindowDays ?? 30) * DAY_MS, gReset));
       const gagg = await BehaviorIncident.aggregate([
         { $match: { schoolId: req.schoolId, studentId: { $in: students.map((s) => s._id) }, "behaviorSnapshot.uniform": true, timestamp: { $gt: gCutoff } } },
         { $group: { _id: "$studentId", n: { $sum: 1 } } },
@@ -4153,7 +4162,7 @@ async function buildSchoolInsights(schoolId, config) {
   const gcfg = config?.gudd || {};
   if (gcfg.enabled !== false) {
     const gThreshold = gcfg.threshold ?? 3;
-    const gCutoff = now - (gcfg.fadeWindowDays ?? 30) * DAY_MS;
+    const gCutoff = Math.max(now - (gcfg.fadeWindowDays ?? 30) * DAY_MS, gcfg.resetAt ? new Date(gcfg.resetAt).getTime() : 0);
     const gEsc = (Array.isArray(gcfg.escalations) ? gcfg.escalations : []).map((s) => String(s || "").trim()).filter(Boolean);
     const gCount = {}; const gLast = {};
     for (const i of incs) {
@@ -4192,6 +4201,67 @@ router.get("/intervention", authAny, loadMembership, requireAdmin, async (req, r
     const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
     const insights = await buildSchoolInsights(req.schoolId, config);
     res.json({ ok: true, ...insights });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── GUDD disqualification report + period reset (admins) ─────────────────────
+
+// On-demand list of who has lost the GUDD this period (and who's at risk).
+router.get("/gudd/report", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    const g = config?.gudd || {};
+    if (g.enabled === false) return res.json({ ok: true, enabled: false, lost: [], atRisk: [] });
+    const threshold = g.threshold ?? 3;
+    const escalations = (Array.isArray(g.escalations) ? g.escalations : []).map((s) => String(s || "").trim()).filter(Boolean);
+    const lastEsc = escalations.length ? escalations[escalations.length - 1] : "";
+    const resetAt = g.resetAt ? new Date(g.resetAt).getTime() : 0;
+    const cutoff = new Date(Math.max(Date.now() - (g.fadeWindowDays ?? 30) * DAY_MS, resetAt));
+
+    const students = await BehaviorStudent.find({ schoolId: req.schoolId, active: true })
+      .select("firstName preferredName lastName classGroup grade").lean();
+    const sById = Object.fromEntries(students.map((s) => [String(s._id), s]));
+    const agg = await BehaviorIncident.aggregate([
+      { $match: { schoolId: req.schoolId, studentId: { $in: students.map((s) => s._id) }, "behaviorSnapshot.uniform": true, timestamp: { $gt: cutoff } } },
+      { $group: { _id: "$studentId", n: { $sum: 1 }, last: { $max: "$timestamp" } } },
+    ]);
+    const rows = agg
+      .filter((a) => sById[String(a._id)])
+      .map((a) => {
+        const s = sById[String(a._id)];
+        const overBy = Math.max(0, a.n - threshold);
+        return {
+          studentId: String(a._id),
+          name: `${s.preferredName || s.firstName} ${s.lastName || ""}`.trim(),
+          classGroup: s.classGroup || "", grade: s.grade || "",
+          count: a.n, threshold, lost: a.n >= threshold,
+          consequence: overBy > 0 ? (escalations[overBy - 1] || lastEsc) : "",
+          lastAt: a.last,
+        };
+      })
+      .sort((x, y) => y.count - x.count || new Date(y.lastAt) - new Date(x.lastAt) || x.name.localeCompare(y.name));
+
+    res.json({
+      ok: true, enabled: true, name: g.name || "GUDD", threshold,
+      since: cutoff, resetAt: g.resetAt || null, autoResetFriday: !!g.autoResetFriday,
+      lost: rows.filter((r) => r.lost), atRisk: rows.filter((r) => !r.lost),
+      generatedAt: new Date(),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Clear the GUDD list — starts a fresh period. Earlier uniform infractions stay
+// in history but stop counting toward the GUDD.
+router.post("/gudd/reset", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const at = new Date();
+    await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: { "gudd.resetAt": at } });
+    await audit(req.schoolId, "gudd.cleared", req, {});
+    res.json({ ok: true, resetAt: at });
   } catch (err) {
     next(err);
   }
