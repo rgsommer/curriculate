@@ -99,6 +99,8 @@ remembered and left out of later batches (`readRangesSafe`).
 | Show pregnancy weeks during (D) | Grace window (minutes) for the status chips at each end of a period |
 | Can go to washroom x min before (D) | "Washroom" chip switches off N minutes before the end |
 | Snacks are allowed with B2 (C) | "Snacks" chip for N minutes once B2 is on |
+| Memory verse for (C) | The memory verse and the hymn hold the CE period's right-hand half for N minutes — 10 if the row is missing, which it is in the sheet today |
+| Verse of the day for (C) | The verse of the day holds the right-hand half for N minutes before the work takes it — 10 if the row is missing, which it is in the sheet today |
 
 The opening window (question and warm-up instead of the bullet list) is fixed at
 5 minutes in `parse.ts` (`DEFAULT_SETUP.openMin`); there is no Setup row for it yet.
@@ -170,13 +172,33 @@ The bubble says **what the benefit is**, not the sheet's shorthand
 | all three | All 3 | the whole class, from the first minute — it is the class's own reward | the "both" column, orange |
 | trailing ` 4` | `+2` | with whatever else shows | the bonus of two for being perfect the whole class |
 
-### The opening minutes
+### The right-hand half, and where the verse is
 
-A class opens on the verse. For the first `openMin` minutes (Setup, 5 by
-default) the day's verse leads the panel in full, large and in the serif — the
-brief focus while everyone settles. After that it is not gone: it carries on
-along the bottom bar, where it stays all day, just no longer the thing at the
-front of the room.
+The half beside the lesson is shared out by the clock, and the verse of the day
+is only ever in one place at a time.
+
+On a **class** it goes, in order: the lesson picture for its window
+(`picSeconds`, 10 min), the memory work in CE for `memoryMin` (10 min), then the
+**verse of the day for `verseMin`** — its own ten minutes start when it actually
+appears, not when the class does — and after that the half turns over to **the
+work**: the class's assignment, else its homework. Where the panel is already
+saying that (the Assign block, or "Write in your agenda") the verse simply steps
+aside; where there is nothing to turn over to it stays, because an empty half
+helps no one.
+
+On the **day's own screens** — before school, between classes — there is no
+beginning to measure from, so the two alternate on the board's own clock:
+the verse for `verseMin` minutes, "Set for today" (every class that has
+something set, named) for the same, and the scrubber moves it like everything
+else.
+
+**The bottom bar carries whichever the panel does not.** While a verse holds the
+half — the verse of the day, or the memory verse in CE — the bar carries a
+success tip instead (`HOUSE_TIPS`, picked by the day and the class on screen, so
+it holds still while it is up and the next period gets a different one). The
+moment the panel gives the verse up, the bar takes it back and sweeps it on the
+minute as it does all day. The same words in two places is a line the room reads
+in neither.
 
 ### Pictures the API cannot see
 
