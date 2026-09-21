@@ -37,6 +37,7 @@ export type Points = {
   numbers: number[] | null;
   percents: number[] | null;
   entered: boolean | null;
+  enteredCell: string; // what column D of the plans row actually held, for ?debug=1
   writing: string[]; // classes owed a corrective writing assignment
   writingNote: string; // how that was worked out, for ?debug=1
   b3: string[]; // classes that have earned Benefit 3, the extra Formal Discussion
@@ -1220,7 +1221,7 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
   // them), so that copy answers first where it carries anything.
   const rewards = { ...parseRewardRules(inp.rewardRules || []), ...parseRewardRules(inp.rewardRulesPoints || []) };
   const points: Points = {
-    numbers: null, percents: null, entered: null, note: "",
+    numbers: null, percents: null, entered: null, enteredCell: "", note: "",
     ...writingOwed(inp.pointsGrid || [], inp.pointsRow3 || [], rewards.C1 || rewards.W1),
     ...b3Earned(inp.pointsGrid || [], inp.pointsRow3 || [], rewards.B3),
   };
@@ -1278,7 +1279,11 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
       meta.plans = p.title;
       if (p.kind === "numbers") points.numbers = p.values;
       if (p.kind === "percents") points.percents = p.values;
+      // The sheet's own flag, in column D of that row. The board only reports
+      // it, so when the strip says the points are missing and they are plainly
+      // in, this is the cell to look at.
       const d = (r[3] || "").trim();
+      points.enteredCell = d;
       if (d !== "") points.entered = d === "1" || /^true$/i.test(d);
     }
     if (/^Q:/.test(c) && !meta.riddle) meta.riddle = c;
@@ -1801,7 +1806,7 @@ export function buildSources(inp: RawInputs): Sources {
  * the cell is what makes the chips follow the scrubber.
  * ------------------------------------------------------------------ */
 
-export type PointsClass = { name: string; letter: string; digits: string[] };
+export type PointsClass = { name: string; letter: string; digits: string[]; flagsAt: number };
 
 /** Where the class names sit in Points row 3, left to right. */
 export const POINTS_NAME_COLS = [4, 17, 30, 43, 56];
@@ -2586,6 +2591,7 @@ export function buildPointsClasses(row3: string[], row46: string[]): PointsClass
       name: at(row3, base - 9),
       letter,
       digits: [0, 1, 2, 3].map((k) => at(row46, base + k)),
+      flagsAt: base, // B1 here, then B2, P1, B3 — for ?debug=1 to name the cells
     }))
     .filter((c) => c.name);
 }

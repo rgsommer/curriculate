@@ -425,7 +425,7 @@ export default function DailyPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [loadNote, setLoadNote] = useState("Contacting the sheet…");
-  const [points, setPoints] = useState({ numbers: null, percents: null, entered: null, writing: [], writingNote: "", b3: [], b3Note: "", note: "" });
+  const [points, setPoints] = useState({ numbers: null, percents: null, entered: null, enteredCell: "", writing: [], writingNote: "", b3: [], b3Note: "", note: "" });
   const [tick, setTick] = useState(0);
   const [vidBig, setVidBig] = useState(false);
   const [opts, setOpts] = useState({ t: null, k: "", pic: "right", debug: false });
@@ -517,6 +517,7 @@ export default function DailyPage() {
           numbers: (j.points && j.points.numbers) || p.numbers,
           percents: (j.points && j.points.percents) || p.percents,
           entered: j.points && j.points.entered != null ? j.points.entered : p.entered,
+          enteredCell: (j.points && j.points.enteredCell) || "",
           writing: (j.points && j.points.writing) || [],
           writingNote: (j.points && j.points.writingNote) || "",
           b3: (j.points && j.points.b3) || [],
@@ -1395,6 +1396,17 @@ export default function DailyPage() {
               {row("riddle", meta.riddle)}
               {row("points", `${(points.numbers || []).join(", ") || "—"} | ${(points.percents || []).join(", ") || "—"} | entered: ${points.entered}`)}
               {row("points source", points.note || "—")}
+              {/* Both of these answer "the board is saying something the sheet
+                  does not": the strip's flag and the privilege flags are the
+                  sheet's own cells, and these say which cells and what was in
+                  them at the moment of the read. */}
+              {row("points entered flag (plans row, column D)",
+                `${points.enteredCell === "" ? "empty" : `"${points.enteredCell}"`} → ${points.entered == null ? "nothing shown" : points.entered ? "Points in" : "Points missing"}`)}
+              {row("privilege flags (Points row 46)",
+                (sources.pointsClasses || []).map((c) => {
+                  const at = (k) => `${columnName(c.flagsAt + k)}46=${c.digits[k] === "" ? "·" : c.digits[k]}`;
+                  return `${c.name}: B1 ${at(0)} · B2 ${at(1)} · P1 ${at(2)} · B3 ${at(3)}`;
+                }).join("      ") || "no class flags read")}
               {row("Setup rows 35-40 (F, K, L)", (sources.plansCells || []).map((r) => `${r[0] || "·"} | ${r[1] || "·"} | ${r[2] || "·"}`).join("    ") || "—")}
               {/* The Points tab itself, every cell of it that holds anything.
                   Whether the strip reads the wrong cells or the sheet is
