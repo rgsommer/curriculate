@@ -18,6 +18,10 @@ const BehaviorHouseSchema = new mongoose.Schema(
     // (e.g. Falcon #1 → 202, Falcon #2 → 204). Shown in the student look-up.
     roomGroup1: { type: String, default: "" },
     roomGroup2: { type: String, default: "" },
+    // Up to two staff leads ("heads of house"), entered as free text. Shown on
+    // the printed houses list.
+    teacher1: { type: String, default: "" },
+    teacher2: { type: String, default: "" },
     active: { type: Boolean, default: true, index: true },
     sortOrder: { type: Number, default: 0 },
   },

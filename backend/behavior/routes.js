@@ -4577,6 +4577,8 @@ router.put("/houses/:id", authAny, loadMembership, canManageHouses, async (req, 
     if ("sortOrder" in b) $set.sortOrder = Number(b.sortOrder) || 0;
     if ("roomGroup1" in b) $set.roomGroup1 = String(b.roomGroup1 || "").trim();
     if ("roomGroup2" in b) $set.roomGroup2 = String(b.roomGroup2 || "").trim();
+    if ("teacher1" in b) $set.teacher1 = String(b.teacher1 || "").trim().slice(0, 80);
+    if ("teacher2" in b) $set.teacher2 = String(b.teacher2 || "").trim().slice(0, 80);
     if ("image" in b) {
       const img = String(b.image || "");
       if (img === "") $set.image = "";
