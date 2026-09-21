@@ -604,7 +604,7 @@ export default function VideoGrading({
       lines.push("");
     }
     if (r.videoUrl) {
-      lines.push("Saved captures (30-day links):");
+      lines.push("Saved captures:");
       lines.push(`Video recording: ${r.videoUrl}`);
       lines.push("");
     }

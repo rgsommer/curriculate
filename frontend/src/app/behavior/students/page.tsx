@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { api, getToken, loginHref, type StudentSummary, type Me } from "../_lib/api";
+import { api, getToken, loginHref, issueWhiteSlip, type StudentSummary, type Me } from "../_lib/api";
 
 function rowNameColor(count: number, trigger: number) {
   if (count >= trigger - 1) return "text-orange-600";
@@ -38,6 +38,15 @@ export default function StudentsPage() {
     setStudents((list) => list.map((x) => (x._id === s._id ? { ...x, ...body } : x)));
     try { await api(`/students/${s._id}`, { method: "PATCH", body }); }
     catch (e: any) { setErr(e.message); setStudents((list) => list.map((x) => (x._id === s._id ? prev : x))); }
+  }
+  // Any teacher can confirm a recommended white slip was issued. Optimistic; the
+  // first confirmation registers it server-side regardless of who clicks.
+  async function issueSlip(s: StudentSummary) {
+    const id = s.pendingWhiteSlipId;
+    if (!id) return;
+    setStudents((list) => list.map((x) => (x._id === s._id ? { ...x, pendingWhiteSlipId: null } : x)));
+    try { await issueWhiteSlip(id); }
+    catch (e: any) { setErr(e.message); setStudents((list) => list.map((x) => (x._id === s._id ? { ...x, pendingWhiteSlipId: id } : x))); }
   }
   const houseName = (id?: string | null) => houses.find((h) => h._id === String(id))?.name || "";
   const houseColor = (id?: string | null) => houses.find((h) => h._id === String(id))?.color || "#94a3b8";
@@ -121,6 +130,14 @@ export default function StudentsPage() {
               </span>
               <span className="shrink-0 text-sm text-slate-400">{s.classGroup}</span>
             </Link>
+
+            {s.pendingWhiteSlipId && (
+              <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-800 ring-1 ring-amber-200" title="A white slip was recommended and the VP was emailed. Confirm once it's actually been issued.">
+                White slip — issued?
+                <button type="button" onClick={() => issueSlip(s)}
+                  className="rounded-md bg-amber-600 px-2 py-0.5 font-semibold text-white hover:bg-amber-700">Yes</button>
+              </span>
+            )}
 
             {housesOn && (
               isAdmin ? (

@@ -2,6 +2,8 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import BatchGrading from "./BatchGrading";
+import HomeworkCheck from "./HomeworkCheck";
+import NewYearReset from "./NewYearReset";
 import VideoGrading from "./VideoGrading";
 import AudioGrading from "./AudioGrading";
 import QuestWidget, { GRADING_QUESTS, completeQuest } from "../../components/QuestWidget";
@@ -1027,7 +1029,7 @@ function buildFullTeacherPayloadText(assessment, codeLocal = "", gradeBandForKit
 
   // (Optional) keep links in portal payload too
   if (links.length) {
-    lines.push("Saved captures (30-day links):");
+    lines.push("Saved captures:");
     links.forEach((img) => lines.push(`Photo ${img.index}: ${img.url}`));
     lines.push("");
   }
@@ -3522,7 +3524,7 @@ export default function GradingPage() {
           <div style="margin-top:10px; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
             <b>Saved captures</b>
             <div style="font-size:12px; opacity:0.85; margin-bottom:6px;">
-              These links work for ~30 days.
+              These links work for about 90 days.
             </div>
             <ul style="margin:0 0 0 18px; padding:0;">
               ${htmlLinks.map(img => `
@@ -3804,6 +3806,17 @@ export default function GradingPage() {
                 </span>
               )}
             </div>
+            {/* Start-of-year housekeeping: clear last year's published results
+                so a new cohort doesn't share a progress portal with the last. */}
+            {teacherEmail && (
+              <div style={{ marginTop: 6 }}>
+                <NewYearReset
+                  backendBase={backendBase}
+                  teacherEmail={teacherEmail}
+                  onDone={() => { setSessionItems([]); setRefCode(""); }}
+                />
+              </div>
+            )}
           </label>
         )}
 
@@ -3844,7 +3857,7 @@ export default function GradingPage() {
         <style>{`
           @media (min-width: 820px) {
             .grading-grid {
-              grid-template-columns: ${(inputMode === "batch" || inputMode === "video" || inputMode === "audio") ? "1fr" : "1fr 1fr"} !important;
+              grid-template-columns: ${(inputMode === "batch" || inputMode === "video" || inputMode === "audio" || inputMode === "homework") ? "1fr" : "1fr 1fr"} !important;
             }
             .grading-grid > .grading-submit-card {
               position: sticky;
@@ -3888,6 +3901,8 @@ export default function GradingPage() {
                   },
                   { mode: "paste", label: "Paste", onClick: () => setInputMode("paste") },
                   { mode: "batch", label: "Batch", onClick: () => setInputMode("batch"), ref: tourTargetBatchRef },
+                  { mode: "homework", label: "Homework", onClick: () => setInputMode("homework"),
+                    title: "Check who did the homework — completeness and correctness from a printed workbook" },
                   { mode: "video", label: "Video", onClick: () => setInputMode("video") },
                   { mode: "audio", label: "Audio", onClick: () => setInputMode("audio") },
                 ].map(({ mode, label, onClick, title, ref: btnRef }) => {
@@ -3974,6 +3989,13 @@ export default function GradingPage() {
               setTeacherEmail={setTeacherEmail}
               rosterClasses={rosterClasses}
               setRosterClasses={setRosterClasses}
+              onClose={() => setInputMode("photo")}
+            />
+          ) : inputMode === "homework" ? (
+            <HomeworkCheck
+              gradingUrl={gradingUrl}
+              teacherEmail={teacherEmail}
+              rosterClasses={rosterClasses}
               onClose={() => setInputMode("photo")}
             />
           ) : (
@@ -4728,7 +4750,7 @@ export default function GradingPage() {
           </div>
 
           {/* SUBMIT + RESPONSE CARD — hidden in batch/video/audio mode */}
-          <div className="grading-submit-card" style={{ ...styles.card, ...((inputMode === "batch" || inputMode === "video" || inputMode === "audio") ? { display: "none" } : {}) }}>
+          <div className="grading-submit-card" style={{ ...styles.card, ...((inputMode === "batch" || inputMode === "video" || inputMode === "audio" || inputMode === "homework") ? { display: "none" } : {}) }}>
             <div style={styles.cardTitle}>Submit</div>
 
             <div style={styles.btnRow}>
@@ -5770,7 +5792,7 @@ export default function GradingPage() {
                     <>
                       <div style={styles.gradingSectionTitle}>Saved captures</div>
                       <div style={{ fontSize: 13, opacity: 0.9, marginBottom: 6 }}>
-                        These links work for ~30 days.
+                        These links work for about 90 days.
                       </div>
                       <ul style={styles.gradingUl}>
                         {getAssignmentImagesFromAssessment(assessment).map((img) => (

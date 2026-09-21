@@ -134,7 +134,17 @@ export type StudentSummary = {
   behaviourConcern?: boolean;
   sportsSkilled?: boolean;
   academic?: boolean;
+  // Id of a recommended-but-not-yet-issued white slip (null if none) — drives the
+  // "White slip — issued? Yes" indicator any teacher can confirm.
+  pendingWhiteSlipId?: string | null;
 };
+
+// Resolve a recommended white slip (any teacher may click). Omit `other` to
+// confirm it was issued; pass `other` to record that a different consequence was
+// given instead (logged as its own consequence).
+export function issueWhiteSlip(consequenceId: string, other?: string) {
+  return api(`/consequences/${consequenceId}/issue`, { method: "POST", body: other ? { other } : {} });
+}
 
 // GUDD (Good Uniform Dress Down) status for a student.
 export type GuddStatus = {

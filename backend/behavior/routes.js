@@ -132,6 +132,7 @@ async function fireWhiteSlip({ req, student, config, behaviorName, detailText, a
       schoolId: req.schoolId, studentId: student._id,
       type: "White slip", detail: behaviorName + (detailText ? ` — ${detailText}` : ""),
       byTeacherId: req.membership._id, byName: teacherName, relatedIncidentId, at: when,
+      status: "recommended", // awaits a staff "issued? Yes" confirmation
     });
   } catch (e) { console.warn("[behavior] white-slip consequence log failed:", e?.message || e); }
   if (!teacherEmail && !vpEmail) return;
@@ -1548,7 +1549,16 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
       ]);
       gcnt = Object.fromEntries(gagg.map((a) => [String(a._id), a.n]));
     }
-    const out = students.map((s) => ({ ...s, activeCount: cnt[String(s._id)] || 0, guddCount: gcnt[String(s._id)] || 0 }));
+    // Recommended-but-not-yet-issued white slips → an "issued? Yes" indicator any
+    // teacher can confirm. Newest pending slip per student.
+    const pendAgg = await BehaviorConsequence.aggregate([
+      { $match: { schoolId: req.schoolId, studentId: { $in: students.map((s) => s._id) }, type: "White slip", status: "recommended" } },
+      { $sort: { at: -1 } },
+      { $group: { _id: "$studentId", id: { $first: "$_id" } } },
+    ]);
+    const pend = Object.fromEntries(pendAgg.map((a) => [String(a._id), String(a.id)]));
+
+    const out = students.map((s) => ({ ...s, activeCount: cnt[String(s._id)] || 0, guddCount: gcnt[String(s._id)] || 0, pendingWhiteSlipId: pend[String(s._id)] || null }));
     res.json({
       ok: true, students: out, triggerCount,
       gudd: guddOn ? { enabled: true, name: gcfg.name || "GUDD", threshold: gcfg.threshold ?? 3 } : { enabled: false },
@@ -1602,8 +1612,10 @@ router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
       name: i.behaviorSnapshot?.name || "", detail: i.detailText || "", date: i.timestamp,
     }));
 
-    // "Not responding to discipline": repeated measures (≥2 notices + documented
-    // consequences) yet the student is still offending AFTER the most recent one.
+    // Suggests escalating support (VP meeting / behaviour plan) when SEVERAL
+    // measures (notices home + documented consequences) have been applied yet the
+    // student is still offending AFTER the most recent one. Threshold kept at 3+
+    // so it doesn't fire after just an early notice + consequence.
     const interventions = (student.noticesHomeCount || 0) + consequences.length;
     const lastInterventionAt = Math.max(
       0,
@@ -1615,7 +1627,7 @@ router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
       const isInteraction = !isPos && inc.behaviorSnapshot?.triggerMode === "INTERACTION";
       return !isPos && !isInteraction && new Date(inc.timestamp).getTime() > lastInterventionAt;
     }).length;
-    const notResponding = interventions >= 2 && offencesSince >= 1
+    const notResponding = interventions >= 3 && offencesSince >= 1
       ? { flag: true, interventions, offencesSince }
       : { flag: false };
 
@@ -3175,10 +3187,25 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
 // patterns, notices home, current strike load. Copied to clipboard by the UI.
 router.post("/executive-summary", authAny, loadMembership, async (req, res, next) => {
   try {
-    const months = [3, 6, 12].includes(Number(req.body?.months)) ? Number(req.body.months) : 12;
+    // Default to the CURRENT SCHOOL YEAR (since Sept 1), matching the Reports
+    // page; a numeric `months` still gives a rolling 3/6/12-month view.
+    const raw = String(req.body?.months || "year");
     const scope = req.body?.scope === "me" ? "me" : "all";
-    const cutoff = new Date();
-    cutoff.setMonth(cutoff.getMonth() - months);
+    let months, cutoff, windowShort, windowFull;
+    if (raw === "year" || raw === "") {
+      months = "year";
+      const now = new Date();
+      const startYear = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1; // Sept = month 8
+      cutoff = new Date(startYear, 8, 1);
+      windowShort = "this school year";
+      windowFull = `this school year (since ${cutoff.toISOString().slice(0, 10)})`;
+    } else {
+      months = [3, 6, 12].includes(Number(raw)) ? Number(raw) : 12;
+      cutoff = new Date();
+      cutoff.setMonth(cutoff.getMonth() - months);
+      windowShort = `the last ${months} months`;
+      windowFull = `last ${months} months (since ${cutoff.toISOString().slice(0, 10)})`;
+    }
     const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
     const triggerCount = config?.triggerCount ?? 3;
     const fadeDays = config?.fadeWindowDays ?? 30;
@@ -3199,7 +3226,13 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
     const byType = {};          // offence types
     const posByType = {};       // positive types
     const byMonth = {};         // OFFENCE monthly volume (the discipline trend)
+    const byWeek = {};          // OFFENCE weekly volume — used when the window spans a single month
     const byMonthKind = {};     // { "YYYY-MM": { neg, pos } } red/green chart — offences vs positives only
+    const weekKey = (d) => {
+      const dt = new Date(d); dt.setUTCHours(0, 0, 0, 0);
+      dt.setUTCDate(dt.getUTCDate() - ((dt.getUTCDay() + 6) % 7)); // back to Monday
+      return dt.toISOString().slice(0, 10);
+    };
     const bumpKind = (d, kind) => {
       const k = new Date(d).toISOString().slice(0, 7);
       byMonthKind[k] = byMonthKind[k] || { neg: 0, pos: 0 };
@@ -3227,6 +3260,7 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
         byType[nm] = (byType[nm] || 0) + 1;
         const mk = new Date(i.timestamp).toISOString().slice(0, 7);
         byMonth[mk] = (byMonth[mk] || 0) + 1;
+        byWeek[weekKey(i.timestamp)] = (byWeek[weekKey(i.timestamp)] || 0) + 1;
         bumpKind(i.timestamp, "neg");
       }
     }
@@ -3250,6 +3284,7 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
         legacyOffences += 1;
         const mk = new Date(n.sentAt || n.createdAt).toISOString().slice(0, 7);
         byMonth[mk] = (byMonth[mk] || 0) + 1;
+        byWeek[weekKey(n.sentAt || n.createdAt)] = (byWeek[weekKey(n.sentAt || n.createdAt)] || 0) + 1;
         bumpKind(n.sentAt || n.createdAt, "neg");
         if (n.studentId) students.add(String(n.studentId));
       }
@@ -3319,18 +3354,32 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
     const topTypeNames = topTypes.slice(0, 3).map(([k]) => k);
     const subject = scope === "me" ? (req.membership.name || "This teacher") : "Across the division, staff";
     const fuQuality = fuResolvedPct >= 80 ? "strong" : fuResolvedPct >= 50 ? "moderate" : "an area to tighten";
+
+    // With a single calendar month of data (common early in a school year), a
+    // "monthly trend" is meaningless — break the offence volume down by week
+    // instead, and don't assert a trend the data can't support.
+    const useWeekly = activeMonths <= 1;
+    const weekKeysSorted = Object.keys(byWeek).sort();
+    const weeklySeries = weekKeysSorted.map((k) => { const d = new Date(k); return `wk of ${MONTH_NAMES[d.getUTCMonth()].slice(0, 3)} ${d.getUTCDate()}: ${byWeek[k]}`; });
+    const volumeSeries = useWeekly ? weeklySeries : monthly;
+    const volumeLabel = useWeekly ? "Weekly offence volume (this term)" : "Monthly offence volume";
+    const trendClause = useWeekly
+      ? (weekKeysSorted.length >= 2
+          ? `and week to week the offence load reads ${weeklySeries.join("; ")}`
+          : `and it is early in the term (${totalOffences} offence(s) so far), so it is too soon to read a trend`)
+      : `and the monthly offence load has ${trendVerb} on average across the window${peakMonth ? `; the busiest month was ${fmtMonth(peakMonth)} (${peakVol})` : ""}`;
     const overview =
-      `Overall picture: over the last ${months} months, ${subject} engaged with ${students.size} student(s) — ` +
+      `Overall picture: over ${windowShort}, ${subject} engaged with ${students.size} student(s) — ` +
       `${totalOffences} offence(s), ${positiveCount} positive recognition(s) and ${interactionCount} documented interaction(s). ` +
       (topTypeNames.length ? `Offences are concentrated in ${listJoin(topTypeNames)}, ` : "") +
-      `and the monthly offence load has ${trendVerb} on average across the window${peakMonth ? `; the busiest month was ${fmtMonth(peakMonth)} (${peakVol})` : ""}. ` +
+      `${trendClause}. ` +
       (fuTotal ? `Consequence follow-through is ${fuQuality} (${fuResolvedPct}% of ${fuTotal} resolved), ` : "") +
       `with the record kept across ${activeMonths} active month(s)${teacherNoteCount ? ` and ${teacherNoteCount} private note(s)` : ""}. ` +
       (atThreshold ? `Division-wide, ${atThreshold} student(s) sit at or one away from the ${triggerCount}-strike trigger. ` : "") +
       (positivesNew ? `Positive recognition was only recently introduced, so that thread is still getting underway.` : "");
 
     const ctxText =
-      `Window: last ${months} months (since ${cutoff.toISOString().slice(0, 10)}). Scope: ${who}.\n` +
+      `Window: ${windowFull}. Scope: ${who}.\n` +
       `Students involved (any event type): ${students.size}.\n` +
       `\nThree DISTINCT threads — keep them separate, do not conflate:\n` +
       `1) OFFENCES (negative behaviour, counts toward strikes): ${totalOffences} total — ${offenceCount} logged as individual incidents in the app` +
@@ -3343,7 +3392,7 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
       `\nBy offence type: ${topTypes.map(([k, v]) => `${k} ${v}`).join(", ") || "none"}.\n` +
       `Engagement span: activity recorded across ${activeMonths} distinct month(s) of the window.\n` +
       `Documentation diligence: ${teacherNoteCount} private teacher note(s) recorded alongside incidents.\n` +
-      `Monthly OFFENCE volume (incidents + historical notices): ${monthly.join("; ") || "n/a"}.\n` +
+      `${volumeLabel}${useWeekly ? "" : " (incidents + historical notices)"}: ${volumeSeries.join("; ") || "n/a"}.\n` +
       `Parent communication: ${notices.length} notice(s) home created (${noticesSent} sent) — by reason: ${Object.entries(noticeByReason).map(([k, v]) => `${k} ${v}`).join(", ") || "none"}.\n` +
       `Consequence follow-through: of ${fuTotal} consequence(s) that carried a follow-up, ${fuResolved} were resolved (${fu.done} completed, ${fu.waived} waived) — ${fuResolvedPct}% — with ${fu.not_done} missed and ${fu.open} still open.\n` +
       `Current strike load (division, shared count): ${atThreshold} student(s) at or one away from the ${triggerCount}-strike trigger.` +
@@ -3351,7 +3400,7 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
     const prompt =
       `You are writing a COMPREHENSIVE executive summary about a teacher's classroom-behaviour management over the period, addressed to school leadership for SUPPORTIVE purposes. ` +
       `Frame it as a supervisor would when championing and supporting a staff member: lead with what is going well and the diligence shown; present challenges (a heavy offence load, a difficult class, a rough month) as where the teacher may benefit from support, resources, mentoring or co-planning — never as a failing. Be encouraging, fair and constructive; this is for backing the teacher up, not evaluating or disciplining them. Give due weight to every form of engagement, not just discipline, and don't omit a thread because its number is small. ` +
-      `Cover, as distinct threads: (1) how things are going overall and the OFFENCE trend across the window (improving / worsening / steady, citing the monthly offence volumes — use the ${totalOffences} total offences, not just the logged-incident count); ` +
+      `Cover, as distinct threads: (1) how things are going overall and the OFFENCE trend across the window (improving / worsening / steady, citing the ${useWeekly ? "weekly" : "monthly"} volumes — use the ${totalOffences} total offences, not just the logged-incident count)${useWeekly ? ". IMPORTANT: the data spans a single calendar month — do NOT describe a monthly trend; use the weekly volumes above, or simply state the total so far this term, and never imply a longer trend than the data supports" : ""}; ` +
       `(2) POSITIVE recognition — how positives are being used to reinforce good behaviour (${positiveCount} in the window); ` +
       `(3) documented INTERACTIONS (${interactionCount}) such as conversations and parent meetings logged for the record — proactive, relationship-building engagement that is NOT discipline; ` +
       `(4) thoroughness and follow-through — parent communication (${notices.length} notice(s) home), consequence follow-through (${fuResolvedPct}% of ${fuTotal} resolved), documentation via ${teacherNoteCount} private note(s), and steady engagement across ${activeMonths} month(s); ` +
@@ -3366,7 +3415,7 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
     // "three distinct threads", etc.), which must never reach a reader.
     const fallbackText =
       `${overview}\n\n` +
-      `Window: last ${months} months (since ${cutoff.toISOString().slice(0, 10)}). Scope: ${who}.\n` +
+      `Window: ${windowFull}. Scope: ${who}.\n` +
       `Students involved (any event type): ${students.size}.\n\n` +
       `Offences (negative behaviour): ${totalOffences} total` +
       (legacyOffences ? ` — ${offenceCount} logged in the app, plus ${legacyOffences} earlier offence(s) carried in from historical notices home.` : ".") + `\n` +
@@ -3374,14 +3423,14 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
       `Documented interactions (conversations & parent meetings): ${interactionCount}.\n\n` +
       `By offence type: ${topTypes.map(([k, v]) => `${k} ${v}`).join(", ") || "none"}.\n` +
       `Activity across ${activeMonths} month(s); ${teacherNoteCount} private teacher note(s) on file.\n` +
-      `Monthly offence volume: ${monthly.join("; ") || "n/a"}.\n` +
+      `${volumeLabel}: ${volumeSeries.join("; ") || "n/a"}.\n` +
       `Parent communication: ${notices.length} notice(s) home (${noticesSent} sent)` +
       (legacyOffences ? " — these include the historical notices already counted in the offence total above, not additional events." : ".") + `\n` +
       `Consequence follow-through: ${fuResolved} of ${fuTotal} resolved (${fuResolvedPct}%), ${fu.not_done} missed, ${fu.open} still open.\n` +
       `Current strike load (division): ${atThreshold} student(s) at or one away from the ${triggerCount}-strike trigger.` +
       (positivesNew ? `\n\nNote: positive-behaviour recognition was only recently introduced${firstPositive ? ` (first positive logged ${new Date(firstPositive.timestamp).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ })})` : ""}, so the small number of positives simply reflects that it's just getting underway.` : "");
 
-    let summary = `Executive summary — ${who} (last ${months} months)\n\n${fallbackText}`;
+    let summary = `Executive summary — ${who} (${windowShort})\n\n${fallbackText}`;
     let aiUsed = false;
     const provided = String(req.body?.summaryText || "").trim();
     if (provided) {
@@ -3407,9 +3456,9 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
       const html = emailShell({
         title: "Executive summary",
         schoolName: config?.branding?.schoolName || "Behaviours",
-        preheader: `${who} · last ${months} months`,
+        preheader: `${who} · ${windowShort}`,
         contentHtml:
-          `<p style="color:#64748b;margin:0 0 16px">${escapeHtml(who)} · last ${months} months</p>` +
+          `<p style="color:#64748b;margin:0 0 16px">${escapeHtml(who)} · ${windowShort}</p>` +
           mdToHtml(summary) +
           `<hr style="border:none;border-top:1px solid #e2e8f0;margin:18px 0">` +
           `<h3 style="margin:0 0 6px;font-size:15px;color:#0f172a">Monthly volume (red = negative, green = positive)</h3>${monthlyKindChartHtml(byMonthKind)}` +
@@ -3425,7 +3474,7 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
         await sendEmail({
           from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
           to,
-          subject: `Behaviours executive summary — ${who} (last ${months} months)`,
+          subject: `Behaviours executive summary — ${who} (${windowShort})`,
           text: summary,
           html,
         });
@@ -3445,10 +3494,22 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
 // Aggregated stats for the in-app reports/charts (Phase 4).
 router.get("/stats", authAny, loadMembership, async (req, res, next) => {
   try {
-    const months = [6, 12, 24].includes(Number(req.query.months)) ? Number(req.query.months) : 12;
-    const cutoff = new Date();
-    cutoff.setMonth(cutoff.getMonth() - months);
-    cutoff.setDate(1);
+    // Default to the CURRENT SCHOOL YEAR (since Sept 1) rather than a rolling
+    // window, so the report doesn't fold in last year's data. A numeric `months`
+    // still gives a rolling 6/12/24-month view.
+    const raw = String(req.query.months || "year");
+    let months, cutoff;
+    if (raw === "year" || raw === "") {
+      months = "year";
+      const now = new Date();
+      const startYear = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1; // Sept = month 8
+      cutoff = new Date(startYear, 8, 1); // Sept 1 of the current school year
+    } else {
+      months = [6, 12, 24].includes(Number(raw)) ? Number(raw) : 12;
+      cutoff = new Date();
+      cutoff.setMonth(cutoff.getMonth() - months);
+      cutoff.setDate(1);
+    }
     const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
     const triggerCount = config?.triggerCount ?? 3;
     const fadeDays = config?.fadeWindowDays ?? 30;
@@ -3728,6 +3789,47 @@ router.delete("/consequences/:id", authAny, loadMembership, canLog, async (req, 
     await BehaviorConsequence.deleteOne({ _id: c._id });
     await audit(req.schoolId, "consequence.delete", req, { studentId: String(c.studentId), meta: { type: c.type } });
     res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Confirm a recommended white slip was actually issued. ANY staff member who can
+// log may click "issued? Yes"; the first click registers it (records who/when)
+// and later clicks are a harmless no-op — it doesn't matter who confirms.
+router.post("/consequences/:id/issue", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const c = await BehaviorConsequence.findOne({ _id: req.params.id, schoolId: req.schoolId });
+    if (!c) return res.status(404).json({ ok: false, error: "Not found" });
+    const other = String(req.body?.other || "").trim();
+    const who = req.membership.name || req.user?.name || "";
+    if (c.status === "recommended") {
+      if (other) {
+        // A DIFFERENT consequence was applied instead of the recommended white
+        // slip: close the recommendation as "other" and log the actual one.
+        c.status = "other";
+        c.issuedByTeacherId = req.membership._id;
+        c.issuedByName = who;
+        c.issuedAt = new Date();
+        await c.save();
+        await BehaviorConsequence.create({
+          schoolId: req.schoolId, studentId: c.studentId,
+          type: other, detail: "Given instead of the recommended white slip",
+          byTeacherId: req.membership._id, byName: who,
+          relatedIncidentId: c.relatedIncidentId || null, status: "issued",
+          issuedByTeacherId: req.membership._id, issuedByName: who, issuedAt: new Date(),
+        });
+        await audit(req.schoolId, "consequence.other", req, { studentId: String(c.studentId), meta: { instead: other } });
+      } else {
+        c.status = "issued";
+        c.issuedByTeacherId = req.membership._id;
+        c.issuedByName = who;
+        c.issuedAt = new Date();
+        await c.save();
+        await audit(req.schoolId, "consequence.issued", req, { studentId: String(c.studentId), meta: { type: c.type } });
+      }
+    }
+    res.json({ ok: true, consequence: c.toObject() });
   } catch (err) {
     next(err);
   }

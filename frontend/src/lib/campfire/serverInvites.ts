@@ -549,12 +549,22 @@ export function reminderEmail(opts: {
   url: string;
   responded: number;
   total: number;
+  // First names of who has already responded (caller omits these for blind/anonymous).
+  responderNames?: string[];
   // Hours until the reveal; when ~24h or less this becomes a "final call".
   hoursLeft?: number;
   // An optional one-line personal note from the member sending the nudge.
   note?: string;
 }) {
-  const { groupName, title, url, responded, total, hoursLeft, note } = opts;
+  const { groupName, title, url, responded, total, responderNames, hoursLeft, note } = opts;
+  // Social proof: "Maria, Jon, Sara and 5 others already responded (8 of 14)".
+  const shownNames = (responderNames ?? []).filter(Boolean).slice(0, 3);
+  const otherResp = Math.max(0, responded - shownNames.length);
+  const who = shownNames.length
+    ? `${shownNames.join(", ")}${
+        otherResp > 0 ? ` and ${otherResp} other${otherResp === 1 ? "" : "s"}` : ""
+      } already responded (${responded} of ${total})`
+    : `${responded} of ${total} have responded`;
   const noteText = note ? `\n\n💬 "${note}"` : "";
   const noteHtml = note
     ? `<blockquote style="margin:16px 0; padding:10px 14px; border-left:3px solid #f97316; background:#fff7ed; color:#9a3412; font-style:italic; border-radius:6px;">💬 "${escapeHtml(
@@ -577,7 +587,7 @@ export function reminderEmail(opts: {
       ? `⏰ Final call — "${title}" in "${groupName}" closes ${closes}.`
       : `The group "${groupName}" is waiting on you for "${title}".`
   }
-${responded} of ${total} have responded — be one of the ones that unlocks the reveal!${noteText}
+${who} — be one of the ones that unlocks the reveal!${noteText}
 
 Respond here: ${url}${appPromoBlock(url).text}`;
   const html = `
@@ -588,7 +598,7 @@ Respond here: ${url}${appPromoBlock(url).text}`;
     finalCall
       ? `<strong>"${escapeHtml(title)}"</strong> in <strong>${escapeHtml(groupName)}</strong> closes <strong>${closes}</strong>.`
       : `The group <strong>${escapeHtml(groupName)}</strong> is waiting on you for <strong>"${escapeHtml(title)}"</strong>.`
-  } ${responded} of ${total} have responded — nobody sees the results until everyone's in.</p>
+  } ${who} — nobody sees the results until everyone's in.</p>
   ${noteHtml}
   <p style="text-align:center; margin:24px 0;">
     <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">Respond now</a>

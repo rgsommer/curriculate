@@ -4,20 +4,60 @@
     {
       "name": "frontend",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "frontend", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "frontend",
+        "run",
+        "dev"
+      ],
       "port": 3000
     },
     {
       "name": "teacher-app",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "teacher-app", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "teacher-app",
+        "run",
+        "dev"
+      ],
       "port": 5173
     },
     {
       "name": "student-app",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "student-app", "run", "dev", "--", "--port", "5174"],
+      "runtimeArgs": [
+        "--prefix",
+        "student-app",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5174"
+      ],
       "port": 5174
+    },
+    {
+      "name": "qrewzi-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "qrewzi-web",
+        "run",
+        "dev"
+      ],
+      "port": 3100
+    },
+    {
+      "name": "humoletics-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "humoletics-web",
+        "run",
+        "dev"
+      ],
+      "port": 3200
     }
   ]
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, getToken, loginHref, type Me, type StudentSummary } from "./_lib/api";
+import { api, getToken, loginHref, issueWhiteSlip, type Me, type StudentSummary } from "./_lib/api";
 import { Markdown } from "./_lib/Markdown";
 import SendNoticeModal from "./_components/SendNoticeModal";
 
@@ -359,13 +359,27 @@ function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: st
       .then((d) => {
         const t = d.triggerCount || 3;
         setTrigger(t);
+        // Include students at/near the trigger after a notice, PLUS anyone with a
+        // recommended white slip awaiting confirmation (so it can be acted on here
+        // even if they're not otherwise on probation-watch).
         const watch = (d.students || [])
-          .filter((s) => (s.noticesHomeCount || 0) >= 1 && (s.activeCount || 0) >= t - 1)
-          .sort((a, b) => (b.noticesHomeCount || 0) - (a.noticesHomeCount || 0) || (b.activeCount || 0) - (a.activeCount || 0));
+          .filter((s) => s.pendingWhiteSlipId || ((s.noticesHomeCount || 0) >= 1 && (s.activeCount || 0) >= t - 1))
+          .sort((a, b) => (b.pendingWhiteSlipId ? 1 : 0) - (a.pendingWhiteSlipId ? 1 : 0) || (b.noticesHomeCount || 0) - (a.noticesHomeCount || 0) || (b.activeCount || 0) - (a.activeCount || 0));
         setRows(watch);
       })
       .catch(() => setRows([]));
   }, []);
+
+  // Confirm / resolve a recommended white slip. Once the action is taken the
+  // student drops off this list; on failure the row is restored. Any teacher can
+  // do it — the first click registers it server-side.
+  async function resolveSlip(s: StudentSummary, other?: string) {
+    const id = s.pendingWhiteSlipId;
+    if (!id) return;
+    setRows((list) => (list || []).filter((x) => x._id !== s._id));
+    try { await issueWhiteSlip(id, other); }
+    catch { setRows((list) => [...(list || []), s]); }
+  }
 
   if (!rows || rows.length === 0) return null;
   // The consequence the next notice would carry = ladder step for (notices + 1).
@@ -381,11 +395,13 @@ function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: st
         {rows.map((s) => {
           const action = nextAction(s.noticesHomeCount || 0);
           return (
-            <li key={s._id}>
-              <Link href={`/behavior/student/${s._id}`} className="flex items-center justify-between gap-2 py-2 text-sm hover:text-slate-600">
+            <li key={s._id} className="py-2">
+              <Link href={`/behavior/student/${s._id}`} className="flex items-center justify-between gap-2 text-sm hover:text-slate-600">
                 <span className="min-w-0">
                   <span className="font-medium">{s.lastName}, {s.firstName}</span> <span className="text-slate-400">{s.classGroup}</span>
-                  {action && <span className="mt-0.5 block text-xs text-red-700">Next: {action}</span>}
+                  {s.pendingWhiteSlipId
+                    ? <span className="mt-0.5 block text-xs text-red-700">Next: White slip recommended</span>
+                    : action && <span className="mt-0.5 block text-xs text-red-700">Next: {action}</span>}
                 </span>
                 <span className="flex shrink-0 items-center gap-3">
                   <span className="text-xs text-slate-400">{s.noticesHomeCount} notice{(s.noticesHomeCount || 0) === 1 ? "" : "s"}</span>
@@ -394,6 +410,16 @@ function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: st
                   </span>
                 </span>
               </Link>
+              {s.pendingWhiteSlipId && (
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="text-slate-500">Confirm the consequence given:</span>
+                  <button type="button" onClick={() => resolveSlip(s)}
+                    className="rounded-md bg-amber-600 px-2 py-0.5 font-semibold text-white hover:bg-amber-700">Issued</button>
+                  <button type="button"
+                    onClick={() => { const t = window.prompt("What consequence was given instead of the white slip? (e.g. Work detention, Call home)"); if (t && t.trim()) resolveSlip(s, t.trim()); }}
+                    className="rounded-md border border-slate-300 px-2 py-0.5 font-semibold text-slate-700 hover:bg-slate-50">Other…</button>
+                </div>
+              )}
             </li>
           );
         })}
@@ -447,7 +473,7 @@ function StudentsToWatch({ fadeDays }: { fadeDays?: number }) {
 }
 
 function ExecutiveSummaryCard() {
-  const [months, setMonths] = useState(12);
+  const [months, setMonths] = useState<number | "year">("year");
   const [summary, setSummary] = useState("");
   const [scope, setScope] = useState<"me" | "all">("me");
   const [msg, setMsg] = useState("");
@@ -498,7 +524,8 @@ function ExecutiveSummaryCard() {
         An overview of behaviour trends and your interactions over time — good for sharing with an administrator or year-end reflection. Copied to your clipboard.
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <select value={months} onChange={(e) => setMonths(Number(e.target.value))} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+        <select value={months} onChange={(e) => setMonths(e.target.value === "year" ? "year" : Number(e.target.value))} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+          <option value="year">This school year</option>
           <option value={3}>Last 3 months</option>
           <option value={6}>Last 6 months</option>
           <option value={12}>Last 12 months</option>

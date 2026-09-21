@@ -25,6 +25,9 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 // Field Day backend module (ESM router)
 import fielddayRouter from "./fieldday/index.js";
 import gradingFeedbackRouter from "./routes/gradingFeedback.js";
+import homeworkCheckRouter from "./routes/homeworkCheck.js";
+import gradingResetRouter from "./routes/gradingReset.js";
+import { RESULT_RETENTION_DAYS, RESULT_RETENTION_MS } from "./utils/retention.js";
 import pulseBetaRouter, { isActiveBetaCode } from "./routes/pulseBeta.js";
 import cardsRouter from "./routes/cards.js";
 import avgsRouter from "./routes/avgs.js";
@@ -200,7 +203,11 @@ const GradingCapture = mongoose.models.GradingCapture || mongoose.model(
     {
       submissionId: { type: String, unique: true, index: true, required: true },
       keys: { type: [String], default: [] }, // S3 object keys
-      createdAt: { type: Date, default: Date.now, expires: 60 * 60 * 24 * 30 }, // 30 days TTL
+      // Kept in step with RESULT_RETENTION_DAYS. This record is what maps a
+      // submission to its S3 objects, so if it expires first the result text
+      // outlives its own photos and the "saved captures" links 404 while the
+      // page around them still works.
+      createdAt: { type: Date, default: Date.now, expires: RESULT_RETENTION_DAYS * 24 * 60 * 60 },
     },
     { timestamps: false }
   )
@@ -625,6 +632,12 @@ startResearchWorker();
 
 // Class roster management (Edsby CSV upload, student lookup)
 app.use("/class-roster", classRosterRouter);
+// Homework Check: assignment page → capture lap → name-delimited grouping →
+// completeness/correctness table. Photo-heavy, so it owns its own resumable
+// upload store and background job map (see the router).
+app.use("/homework", homeworkCheckRouter);
+// "Start a new school year" — two-step, token-gated reset of published results.
+app.use("/grading/reset", gradingResetRouter);
 app.use("/student-scavenger-progress", studentScavengerProgressRouter);
 app.use("/student-contact", studentContactRouter);
 app.use("/student-progress", studentProgressRouter);
@@ -12611,8 +12624,11 @@ app.get("/grading/capture/:submissionId/:file", async (req, res) => {
   try {
     const { submissionId, file } = req.params;
     
-    // Validate file param early (allow images and video files)
-    if (!/^(image-\d+\.jpg|video\.\w+)$/i.test(file)) {
+    // Validate file param early (images, video and audio captures).
+    // Note this is only a shape check — the real authorisation is the
+    // record.keys membership test below, which is what stops one submission's
+    // URL reaching another's objects.
+    if (!/^(image-\d+\.jpg|answer-key-\d+\.jpg|video\.\w+|audio\.\w+)$/i.test(file)) {
       return res
         .status(200)
         .set("Content-Type", "text/html")
@@ -18504,28 +18520,43 @@ app.post("/grading/audio", gradingLimiter, audioUpload.single("audio"), async (r
     const responseTimeMs = Date.now() - startTime;
     console.log(`[audio-grade] Done in ${(responseTimeMs / 1000).toFixed(1)}s — score: ${grade.overall_score}/${grade.overall_out_of}`);
 
-    // Upload source audio to S3 with 30-day presigned URL
+    // Upload source audio to S3, served through the /grading/capture proxy.
+    //
+    // This used to mint a 30-day presigned URL directly. AWS SigV4 caps
+    // presigned URLs at 7 days, so getSignedUrl THREW every single time, the
+    // catch below swallowed it as "upload failed" (the upload had actually
+    // succeeded), audioSourceUrl stayed null, and the "Listen to source
+    // recording" link never rendered. Every audio grade was therefore leaving
+    // an unreachable object in the bucket.
+    //
+    // The capture proxy is the pattern video already uses and is the right one:
+    // a stable, long-lived URL backed by a short-lived (5-minute) signature
+    // minted on demand, authorised by the GradingCapture record. The link lives
+    // as long as that record (RESULT_RETENTION_DAYS).
     let audioSourceUrl = null;
     let audioSourceExpires = null;
     try {
       const s3 = getS3Client();
       if (s3 && S3_BUCKET) {
-        const safeName = (studentName || "student").replace(/[^a-zA-Z0-9_-]/g, "_");
-        const s3Key = `audio-grading/${safeName}-${Date.now()}.${ext}`;
+        // UUID path rather than the old `${studentName}-${timestamp}` key —
+        // the student's name no longer ends up in an object key.
+        const submissionId = crypto.randomUUID();
+        const audioKey = `grading/${submissionId}/audio.${ext}`;
         await s3.send(new PutObjectCommand({
           Bucket: S3_BUCKET,
-          Key: s3Key,
+          Key: audioKey,
           Body: req.file.buffer,
           ContentType: mimeType,
+          CacheControl: "private, max-age=0, no-store",
+          Metadata: { submissionid: submissionId, kind: "audio-grading" },
         }));
-        const THIRTY_DAYS = 30 * 24 * 60 * 60; // 2,592,000 seconds
-        const getCmd = new GetObjectCommand({ Bucket: S3_BUCKET, Key: s3Key });
-        audioSourceUrl = await getSignedUrl(s3, getCmd, { expiresIn: THIRTY_DAYS });
-        audioSourceExpires = new Date(Date.now() + THIRTY_DAYS * 1000).toISOString();
-        console.log(`[audio-grade] Source uploaded to S3: ${s3Key} (30-day link)`);
+        await GradingCapture.create({ submissionId, keys: [audioKey], createdAt: new Date() });
+        audioSourceUrl = `https://www.curriculate.net/grading/capture/${submissionId}/audio.${ext}`;
+        audioSourceExpires = new Date(Date.now() + RESULT_RETENTION_MS).toISOString();
+        console.log(`[audio-grade] Source uploaded: ${audioKey} (${RESULT_RETENTION_DAYS}-day link)`);
       }
     } catch (e) {
-      console.warn("[audio-grade] S3 upload failed (non-fatal):", e?.message);
+      console.warn("[audio-grade] S3 source upload failed (non-fatal):", e?.message);
     }
 
     // Log usage
