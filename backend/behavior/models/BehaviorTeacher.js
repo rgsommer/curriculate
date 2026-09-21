@@ -40,6 +40,19 @@ const BehaviorTeacherSchema = new mongoose.Schema(
     // per-teacher, not a hardcoded single teacher).
     signature: { type: String, default: "" },
 
+    // This teacher's subject/class label, used to fill the {subject} placeholder
+    // in parent message templates (e.g. "Grade 7 Math").
+    subject: { type: String, default: "" },
+
+    // Per-teacher parent-message templates (encouraging / proactive notes home the
+    // teacher copies and sends themselves). Each has a name and a body with
+    // placeholders like {student}, {parents}, {he}, {subject}. Seeded with a
+    // generalized default set on first load if empty; fully editable per teacher.
+    parentTemplates: {
+      type: [{ name: { type: String, default: "" }, body: { type: String, default: "" }, _id: false }],
+      default: [],
+    },
+
     // Per-teacher Edsby identity so a notice posts AS the teacher who sent it
     // (Edsby's broadcast create is /core/create/<userNid> and must match the
     // session). Each teacher enters their own Edsby user nid + session cookie;

@@ -139,6 +139,22 @@ export type StudentSummary = {
   pendingWhiteSlipId?: string | null;
 };
 
+export type ParentTemplate = { name: string; body: string };
+
+// The signed-in teacher's parent-message templates + subject label (seeded with
+// generalized defaults server-side when the teacher hasn't saved any).
+export function getMyTemplates() {
+  return api<{ subject: string; templates: ParentTemplate[]; teacherName: string }>("/my-templates");
+}
+export function saveMyTemplates(body: { subject?: string; templates?: ParentTemplate[] }) {
+  return api<{ subject: string; templates: ParentTemplate[] }>("/my-templates", { method: "PUT", body });
+}
+// Build a parent message for a student from a template, log it, and return the
+// filled text to copy. The teacher sends it themselves.
+export function generateParentMessage(studentId: string, name: string) {
+  return api<{ message: string; template: string }>(`/students/${studentId}/parent-message`, { method: "POST", body: { name } });
+}
+
 // Resolve a recommended white slip (any teacher may click). Omit `other` to
 // confirm it was issued; pass `other` to record that a different consequence was
 // given instead (logged as its own consequence).

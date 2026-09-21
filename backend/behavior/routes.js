@@ -40,6 +40,7 @@ import { encrypt, decrypt } from "./lib/secretBox.js";
 import { EdsbyProvider } from "./lib/providers/EdsbyProvider.js";
 import { seedBehaviorDocs } from "./lib/seedBehaviors.js";
 import { parseRoster, parseRosterFile } from "./lib/rosterImport.js";
+import { DEFAULT_PARENT_TEMPLATES, fillTemplate } from "./lib/parentTemplates.js";
 import { STANDARD_BEHAVIORS } from "./lib/standardBehaviors.js";
 import { composeNotice, composePositiveNotice, makeDefaultAiClient, deterministicNote, deterministicPositiveNote } from "./lib/aiNote.js";
 import { buildAvgsRouter } from "./avgsRoutes.js";
@@ -626,6 +627,79 @@ router.put("/my-edsby", authAny, loadMembership, async (req, res, next) => {
     await audit(req.schoolId, "edsby.my_identity_updated", req, { meta: { fields: Object.keys(set) } });
     const me = await BehaviorTeacher.findById(req.membership._id).select("edsbyUserNid edsbyCookieEnc edsbyZoomNid").lean();
     res.json({ ok: true, userNid: me.edsbyUserNid || "", hasCookie: !!me.edsbyCookieEnc, zoomNid: me.edsbyZoomNid || "" });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Parent message templates (per teacher) ──────────────────────────────────
+
+// The teacher's editable parent-message templates + subject label. Seeds the
+// generalized defaults when the teacher hasn't saved any yet.
+router.get("/my-templates", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const me = await BehaviorTeacher.findById(req.membership._id).select("subject parentTemplates").lean();
+    const templates = (me?.parentTemplates && me.parentTemplates.length) ? me.parentTemplates : DEFAULT_PARENT_TEMPLATES;
+    res.json({ ok: true, subject: me?.subject || "", templates, teacherName: req.membership.name || req.user?.name || "" });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put("/my-templates", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const set = {};
+    if ("subject" in b) set.subject = String(b.subject || "").trim().slice(0, 120);
+    if (Array.isArray(b.templates)) {
+      set.parentTemplates = b.templates
+        .map((t) => ({ name: String(t?.name || "").trim().slice(0, 80), body: String(t?.body || "").slice(0, 4000) }))
+        .filter((t) => t.name || t.body)
+        .slice(0, 40);
+    }
+    if (!Object.keys(set).length) return res.status(400).json({ ok: false, error: "Nothing to update." });
+    await BehaviorTeacher.updateOne({ _id: req.membership._id }, { $set: set });
+    const me = await BehaviorTeacher.findById(req.membership._id).select("subject parentTemplates").lean();
+    res.json({ ok: true, subject: me.subject || "", templates: me.parentTemplates || [] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Generate a parent message for a student from one of the teacher's templates:
+// fill the placeholders, LOG it as a documented action, and return the text for
+// the teacher to paste into their own email. Never sends anything itself.
+router.post("/students/:id/parent-message", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const student = await BehaviorStudent.findOne({ _id: req.params.id, schoolId: req.schoolId }).lean();
+    if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
+    const name = String(req.body?.name || "").trim();
+    const me = await BehaviorTeacher.findById(req.membership._id).select("subject parentTemplates name").lean();
+    const templates = (me?.parentTemplates && me.parentTemplates.length) ? me.parentTemplates : DEFAULT_PARENT_TEMPLATES;
+    const tpl = templates.find((t) => t.name === name) || templates[0];
+    if (!tpl) return res.status(400).json({ ok: false, error: "No template selected." });
+
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("branding.schoolName").lean();
+    const school = await BehaviorSchool.findById(req.schoolId).select("name").lean();
+    const teacherName = req.membership.name || req.user?.name || "";
+    const message = fillTemplate(tpl.body, {
+      student,
+      teacher: teacherName,
+      subject: me?.subject || "",
+      schoolName: config?.branding?.schoolName || school?.name || "",
+    });
+
+    // Log that the teacher sent a parent message — a documented, positive action
+    // (not a strike). Kept as a consequence record so it shows in the student's
+    // history and the digest.
+    await BehaviorConsequence.create({
+      schoolId: req.schoolId, studentId: student._id,
+      type: `Parent message: ${tpl.name}`, detail: "Copied to send by the teacher",
+      byTeacherId: req.membership._id, byName: teacherName, status: "issued",
+      issuedByTeacherId: req.membership._id, issuedByName: teacherName, issuedAt: new Date(),
+    });
+    await audit(req.schoolId, "parent_message.generated", req, { studentId: String(student._id), meta: { template: tpl.name } });
+    res.json({ ok: true, message, template: tpl.name });
   } catch (err) {
     next(err);
   }

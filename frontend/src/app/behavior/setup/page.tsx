@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { api, getToken, loginHref, API_BASE, type Me } from "../_lib/api";
+import { api, getToken, loginHref, API_BASE, getMyTemplates, saveMyTemplates, type Me, type ParentTemplate } from "../_lib/api";
 
 // School-approved consequences shown by default (admins can edit). The AI coach
 // only ever suggests from this list, filling in specifics (line text, word
@@ -52,6 +52,7 @@ export default function SetupPage() {
     <div className="space-y-5">
       {err && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
       <ConfigSection config={me.config} />
+      <ParentTemplatesSection />
       <Card>
         <h2 className="font-semibold">Behaviours (division list)</h2>
         <p className="mt-1 text-sm text-slate-500">Add/edit offenses, their trigger mode, consequence and follow-up.</p>
@@ -97,6 +98,7 @@ function ReadOnlySettings({ me }: { me: Me }) {
       </Card>
 
       {/* Blocks teachers may act on themselves. */}
+      <ParentTemplatesSection />
       <AddStudentSection />
       <InviteSection domain={me.school?.emailDomain || ""} isOriginator={false} />
       <TeacherHomeworkPrefs config={me.config} prefs={me.membership?.homeworkPrefs} />
@@ -189,6 +191,76 @@ function CreateSchool({ onCreated }: { onCreated: () => Promise<void> }) {
       >
         {busy ? "Creating…" : "Create school"}
       </button>
+    </Card>
+  );
+}
+
+function ParentTemplatesSection() {
+  const [subject, setSubject] = useState("");
+  const [templates, setTemplates] = useState<ParentTemplate[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    getMyTemplates()
+      .then((d) => { setSubject(d.subject || ""); setTemplates(d.templates || []); setLoaded(true); })
+      .catch(() => setLoaded(true));
+  }, []);
+
+  const update = (i: number, field: "name" | "body", value: string) =>
+    setTemplates((list) => list.map((t, idx) => (idx === i ? { ...t, [field]: value } : t)));
+  const add = () => setTemplates((list) => [...list, { name: "New template", body: "Dear {parents},\n\n\n\n{teacher}\n{school}" }]);
+  const remove = (i: number) => setTemplates((list) => list.filter((_, idx) => idx !== i));
+
+  async function save() {
+    setBusy(true); setMsg("");
+    try { const r = await saveMyTemplates({ subject, templates }); setTemplates(r.templates || templates); setMsg("✓ Saved"); }
+    catch (e: any) { setMsg(`✗ ${e.message}`); }
+    finally { setBusy(false); }
+  }
+
+  if (!loaded) return null;
+  return (
+    <Card>
+      <h2 id="templates" className="scroll-mt-20 font-semibold">Parent message templates</h2>
+      <p className="mt-1 text-sm text-slate-500">
+        Your own encouraging / proactive notes home. On the Students page, pick a template and tap ✉ beside a student to copy a personalised
+        message and log it — you send it yourself. Edit freely; keep the <code className="rounded bg-slate-100 px-1">{`{placeholders}`}</code>.
+      </p>
+      <p className="mt-1 text-xs text-slate-400">
+        Placeholders: <code>{`{student}`}</code> <code>{`{parents}`}</code> <code>{`{parent1}`}</code> <code>{`{parentEmails}`}</code>{" "}
+        <code>{`{he}`}</code>/<code>{`{him}`}</code>/<code>{`{his}`}</code> <code>{`{subject}`}</code> <code>{`{teacher}`}</code> <code>{`{school}`}</code>
+      </p>
+
+      <div className="mt-3">
+        <Field label="My subject / class (fills {subject})">
+          <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="e.g. Grade 7 Math"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        </Field>
+      </div>
+
+      <div className="mt-3 space-y-4">
+        {templates.map((t, i) => (
+          <div key={i} className="rounded-xl border border-slate-200 p-3">
+            <div className="flex items-center gap-2">
+              <input value={t.name} onChange={(e) => update(i, "name", e.target.value)} placeholder="Template name"
+                className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium" />
+              <button type="button" onClick={() => remove(i)}
+                className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50">Remove</button>
+            </div>
+            <textarea value={t.body} onChange={(e) => update(i, "body", e.target.value)}
+              className="mt-2 h-40 w-full rounded-lg border border-slate-300 p-2 font-mono text-xs" />
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <button type="button" onClick={add} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">+ Add template</button>
+        <button type="button" onClick={save} disabled={busy}
+          className={`rounded-lg px-4 py-1.5 text-sm font-semibold text-white ${busy ? "bg-slate-400" : "bg-slate-900"}`}>{busy ? "Saving…" : "Save"}</button>
+        {msg && <span className={`text-sm ${msg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{msg}</span>}
+      </div>
     </Card>
   );
 }

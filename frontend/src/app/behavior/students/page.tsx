@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { api, getToken, loginHref, issueWhiteSlip, type StudentSummary, type Me } from "../_lib/api";
+import { api, getToken, loginHref, issueWhiteSlip, getMyTemplates, generateParentMessage, type StudentSummary, type Me, type ParentTemplate } from "../_lib/api";
 
 function rowNameColor(count: number, trigger: number) {
   if (count >= trigger - 1) return "text-orange-600";
@@ -19,6 +19,10 @@ export default function StudentsPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [houses, setHouses] = useState<{ _id: string; name: string; color?: string }[]>([]);
   const [housesOn, setHousesOn] = useState(false);
+  const [templates, setTemplates] = useState<ParentTemplate[]>([]);
+  const [tpl, setTpl] = useState("");
+  const [pmMsg, setPmMsg] = useState("");
+  const [lastMsg, setLastMsg] = useState<{ text: string; label: string } | null>(null);
 
   useEffect(() => {
     if (!getToken()) return;
@@ -30,7 +34,25 @@ export default function StudentsPage() {
       .catch((e) => setErr(e.message));
     api<Me>("/me").then((d) => setIsAdmin(d.membership?.role === "originator" || d.membership?.role === "admin")).catch(() => {});
     api<{ enabled: boolean; houses: any[] }>("/houses").then((d) => { setHousesOn(!!d.enabled); setHouses(d.houses || []); }).catch(() => {});
+    getMyTemplates().then((d) => {
+      setTemplates(d.templates || []);
+      const names = (d.templates || []).map((t) => t.name);
+      let saved = ""; try { saved = localStorage.getItem("pm_template") || ""; } catch { /* ignore */ }
+      setTpl(names.includes(saved) ? saved : (names[0] || ""));
+    }).catch(() => {});
   }, []);
+
+  // Generate a parent message for one student from the chosen template: copy it
+  // to the clipboard and log it. The selected template persists across students.
+  async function sendParentMessage(s: StudentSummary) {
+    if (!tpl) { setPmMsg("Pick a message template first."); return; }
+    try {
+      const r = await generateParentMessage(s._id, tpl);
+      setLastMsg({ text: r.message, label: `${r.template} → ${s.firstName} ${s.lastName}` });
+      try { await navigator.clipboard.writeText(r.message); setPmMsg(`✓ Copied & logged “${r.template}” for ${s.firstName} — paste it into your email.`); }
+      catch { setPmMsg(`Logged “${r.template}” for ${s.firstName} — copy the text below to send.`); }
+    } catch (e: any) { setPmMsg(`✗ ${e.message}`); }
+  }
 
   // Optimistic per-student update (flags, house, room). Reverts on failure.
   async function patchStudent(s: StudentSummary, body: Partial<StudentSummary>) {
@@ -120,6 +142,28 @@ export default function StudentsPage() {
         inputMode="search"
       />
 
+      {templates.length > 0 && (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="font-medium">✉ Parent message:</span>
+            <select value={tpl} onChange={(e) => { setTpl(e.target.value); try { localStorage.setItem("pm_template", e.target.value); } catch { /* ignore */ } }}
+              className="rounded-lg border border-slate-300 px-2 py-1">
+              {templates.map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
+            </select>
+            <span className="text-xs text-slate-500">then tap ✉ by a student to copy their message &amp; log it.</span>
+            <Link href="/behavior/setup#templates" className="text-xs text-slate-500 underline">edit templates</Link>
+          </div>
+          {pmMsg && <p className="mt-1 text-xs text-slate-700">{pmMsg}</p>}
+          {lastMsg && (
+            <div className="mt-2">
+              <div className="text-xs text-slate-500">{lastMsg.label}</div>
+              <textarea readOnly value={lastMsg.text} onFocus={(e) => e.currentTarget.select()}
+                className="mt-1 h-28 w-full rounded-lg border border-slate-300 p-2 font-mono text-xs" />
+            </div>
+          )}
+        </div>
+      )}
+
       <ul className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
         {visible.map((s) => (
           <li key={s._id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 hover:bg-slate-50">
@@ -130,6 +174,12 @@ export default function StudentsPage() {
               </span>
               <span className="shrink-0 text-sm text-slate-400">{s.classGroup}</span>
             </Link>
+
+            {templates.length > 0 && (
+              <button type="button" onClick={() => sendParentMessage(s)} disabled={!tpl}
+                title={tpl ? `Copy the “${tpl}” parent message for this student and log it` : "Pick a template above first"}
+                className="shrink-0 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-40">✉</button>
+            )}
 
             {s.pendingWhiteSlipId && (
               <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-800 ring-1 ring-amber-200" title="A white slip was recommended and the VP was emailed. Confirm once it's actually been issued.">
