@@ -1388,6 +1388,7 @@ function HousesSection({ config }: { config?: any }) {
 
       const html = `<!doctype html><meta charset="utf-8"><title>Houses list</title>` +
         `<style>` +
+        `*{-webkit-print-color-adjust:exact;print-color-adjust:exact}` +   /* keep header/stripe/swatch colours in print & PDF */
         `body{font-family:Arial,Helvetica,sans-serif;font-size:11pt;margin:24px;color:#0f172a}` +
         `h1{font-size:16pt;margin:0 0 6px}h2{font-size:14pt;color:#0f766e;margin:0 0 4px}h3{font-size:12pt;margin:14px 0 4px}` +
         `.meta{margin:2px 0 8px;font-size:10.5pt;color:#334155}` +
