@@ -3799,13 +3799,33 @@ router.post("/consequences/:id/issue", authAny, loadMembership, canLog, async (r
   try {
     const c = await BehaviorConsequence.findOne({ _id: req.params.id, schoolId: req.schoolId });
     if (!c) return res.status(404).json({ ok: false, error: "Not found" });
-    if (c.status !== "issued") {
-      c.status = "issued";
-      c.issuedByTeacherId = req.membership._id;
-      c.issuedByName = req.membership.name || req.user?.name || "";
-      c.issuedAt = new Date();
-      await c.save();
-      await audit(req.schoolId, "consequence.issued", req, { studentId: String(c.studentId), meta: { type: c.type } });
+    const other = String(req.body?.other || "").trim();
+    const who = req.membership.name || req.user?.name || "";
+    if (c.status === "recommended") {
+      if (other) {
+        // A DIFFERENT consequence was applied instead of the recommended white
+        // slip: close the recommendation as "other" and log the actual one.
+        c.status = "other";
+        c.issuedByTeacherId = req.membership._id;
+        c.issuedByName = who;
+        c.issuedAt = new Date();
+        await c.save();
+        await BehaviorConsequence.create({
+          schoolId: req.schoolId, studentId: c.studentId,
+          type: other, detail: "Given instead of the recommended white slip",
+          byTeacherId: req.membership._id, byName: who,
+          relatedIncidentId: c.relatedIncidentId || null, status: "issued",
+          issuedByTeacherId: req.membership._id, issuedByName: who, issuedAt: new Date(),
+        });
+        await audit(req.schoolId, "consequence.other", req, { studentId: String(c.studentId), meta: { instead: other } });
+      } else {
+        c.status = "issued";
+        c.issuedByTeacherId = req.membership._id;
+        c.issuedByName = who;
+        c.issuedAt = new Date();
+        await c.save();
+        await audit(req.schoolId, "consequence.issued", req, { studentId: String(c.studentId), meta: { type: c.type } });
+      }
     }
     res.json({ ok: true, consequence: c.toObject() });
   } catch (err) {

@@ -26,10 +26,11 @@ const BehaviorConsequenceSchema = new mongoose.Schema(
     relatedIncidentId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorIncident", default: null },
 
     // Lifecycle for white slips: "recommended" once the VP is emailed, then
-    // "issued" when any staff member confirms it was actually given (via the
-    // "White slip issued? Yes" button). Directly-documented consequences
+    // "issued" when any staff member confirms it was actually given, or "other"
+    // if a different consequence was applied instead (that different consequence
+    // is logged as its own "issued" record). Directly-documented consequences
     // (detention, call home) are "issued" from the start.
-    status: { type: String, enum: ["recommended", "issued"], default: "issued", index: true },
+    status: { type: String, enum: ["recommended", "issued", "other"], default: "issued", index: true },
     issuedByTeacherId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorTeacher", default: null },
     issuedByName: { type: String, default: "" },
     issuedAt: { type: Date, default: null },

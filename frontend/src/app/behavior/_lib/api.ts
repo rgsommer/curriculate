@@ -139,9 +139,11 @@ export type StudentSummary = {
   pendingWhiteSlipId?: string | null;
 };
 
-// Confirm a recommended white slip was actually issued (any teacher may click).
-export function issueWhiteSlip(consequenceId: string) {
-  return api(`/consequences/${consequenceId}/issue`, { method: "POST" });
+// Resolve a recommended white slip (any teacher may click). Omit `other` to
+// confirm it was issued; pass `other` to record that a different consequence was
+// given instead (logged as its own consequence).
+export function issueWhiteSlip(consequenceId: string, other?: string) {
+  return api(`/consequences/${consequenceId}/issue`, { method: "POST", body: other ? { other } : {} });
 }
 
 // GUDD (Good Uniform Dress Down) status for a student.
