@@ -1012,9 +1012,21 @@ export default function DailyPage() {
     }
     return out;
   })();
+  // The lesson in one line — the same choice the class screen itself makes: the
+  // question the lesson asks, else what it is about, else its first activity.
+  // Before the first bell the agenda is the only place the day is laid out, and
+  // "History 7A · Rm 202" says nothing about what the day holds.
+  const lessonLine = (c) => (c ? (c.q || c.today || ((c.plan || [])[0] || "")).trim() : "");
+  const agendaRow = (c, key, when) => [
+    <span key={`t${key}`} className="t">{when}</span>,
+    <span key={`s${key}`}>
+      <b>{c.subj}</b>{c.room ? ` · ${c.room}` : ""}{c.page ? ` · ${c.page}` : ""}
+      {lessonLine(c) ? <i className="lede">{lessonLine(c)}</i> : null}
+    </span>,
+  ];
   const agenda = () => (
     <div className="agenda">
-      {classes.map((p) => [<span key={`t${p.start}`} className="t">{fmt(p.start)}</span>, <span key={`s${p.start}`}>{p.subj} · {p.room}</span>])}
+      {classes.map((p) => agendaRow(p, p.start, fmt(p.start)))}
     </div>
   );
   const featureText = evaluated.text || meta.feature;
@@ -1465,15 +1477,7 @@ export default function DailyPage() {
             <p className="summary">{note}</p>
             {dayPlan.length > 0 ? (
               <div className="agenda">
-                {dayPlan.map((c, i) => [
-                  <span key={`t${i}`} className="t">{c.start != null ? fmt(c.start) : c.room || "—"}</span>,
-                  <span key={`s${i}`}>
-                    <b>{c.subj}</b>
-                    {c.start != null && c.room ? ` · ${c.room}` : ""}
-                    {c.page ? ` · ${c.page}` : ""}
-                    {c.today ? ` · ${c.today}` : ""}
-                  </span>,
-                ])}
+                {dayPlan.map((c, i) => agendaRow(c, i, c.start != null ? fmt(c.start) : c.room || "—"))}
               </div>
             ) : P.length > 0 ? (
               <div className="agenda">

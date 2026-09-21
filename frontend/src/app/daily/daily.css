@@ -518,6 +518,19 @@ a.subj.deck:hover { text-decoration-color: currentColor; }
 .main.center { grid-template-columns: minmax(0, 1fr); place-items: center; text-align: center; }
 .agenda { display: grid; grid-template-columns: auto 1fr; gap: .6vh 2vw; font-size: calc(clamp(15px, 2.6vh, 28px) * var(--fit)); text-align: left; margin-top: 2vh; font-variant-numeric: tabular-nums; }
 .agenda .t { color: var(--muted); }
+/* What the class is actually about, under its name: one line, quieter than the
+   class, and cut with an ellipsis rather than pushing the agenda off the screen. */
+.agenda .lede {
+  display: block;
+  font-style: normal;
+  color: var(--muted);
+  font-size: .78em;
+  line-height: 1.25;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 /* On a centred screen the times still read as a column, but a centred one. */
 .main.center .agenda { max-width: 100%; margin-left: auto; margin-right: auto; }
 .main.blank { grid-template-columns: 1fr; place-items: center; }
