@@ -987,6 +987,21 @@ check("column letters", P.columnName(4) === "D" && P.columnName(43) === "AQ" && 
     && P.joinNames(["Mia", "Sam", "Ana"]) === "Mia, Sam and Ana");
 }
 
+// ---- the riddle and its answer ----
+{
+  const base = { display: [[""]], displayD: [], displayC: [], setup: [], slots: [] };
+  const src = P.buildSources({
+    ...base,
+    master: [["Week"], ["2"]],
+    riddles: [["Riddle one", "Answer one"], ["Riddle two", "A: Answer two"]],
+  });
+  check("riddle: taken from the week's row", src.riddle === "Riddle two", src.riddle);
+  check("riddle: the answer comes from the column beside it",
+    src.riddleAnswer === "A: Answer two", src.riddleAnswer);
+  const none = P.buildSources({ ...base, master: [["Week"], ["1"]], riddles: [["Only a riddle"]] });
+  check("riddle: a row with no answer is not an error", none.riddleAnswer === "");
+}
+
 // ---- Benefit 3: the earned extra Formal Discussion ----
 {
   // A class block on the Points tab: the name in row 3, the days-a-week cell

@@ -139,7 +139,7 @@ async function refresh(quick: boolean): Promise<Payload> {
       "DisplayAI!E1",       // 5
       "Poems!F1:J3",        // 6
       "VerticalAi!D1:J200", // 7
-      "Riddles!D1:D400",    // 8
+      "Riddles!D1:E400",    // 8 D the riddle, E its answer
       "Master!B1:B2",       // 9
       "Verses!A1:A400",     // 10 what A5 picks the day's verse from
       "Vertical!A1:K200",   // 11 column A the period times, F to K the day's plan

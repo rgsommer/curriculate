@@ -1138,7 +1138,7 @@ export type RawInputs = {
   poems?: string[][]; // Poems!F1:J3 values
   poemFormulas?: string[][]; // Poems!F1:J3 formulas
   vertical?: string[][]; // VerticalAi!D1:J200 values
-  riddles?: string[][]; // Riddles!D1:D400 values
+  riddles?: string[][]; // Riddles!D1:E400 — D the riddle, E its answer
   master?: string[][]; // Master!B1:B2 values
   pointsGrid?: string[][]; // Points!A1:BV46 — row 3 the class names, row 46 the flags, the days in between
   pointsRow3?: string[]; // Points row 3 — class names
@@ -1463,6 +1463,7 @@ export type Sources = {
   notice: string; // DisplayAI!A2 as read
   noticeFormula: string; // and as a rule, to be run at the board's clock
   riddle: string; // Riddles!D at the week in Master!B2
+  riddleAnswer: string; // Riddles!E on the same row — the answer to that riddle
   verses: string[]; // Verses!A — the whole column, indexed the way A5 indexes it
   verseWeek: number | null; // Vertical!B4
   pointsClasses: PointsClass[]; // for the D-column status rule
@@ -1479,7 +1480,7 @@ export type Sources = {
 export const EMPTY_SOURCES: Sources = {
   windowStart: null, windowEnd: null, offsetHours: 0, b7: false, d7: false, a9: null, a11: null,
   poemRow: [], poemF3: "", poemF3Formula: "", poemGrid: [], poemGridFormulas: [],
-  verticalRow: [], slots: [], riddle: "",
+  verticalRow: [], slots: [], riddle: "", riddleAnswer: "",
   verses: [], verseWeek: null, pointsClasses: [], pointsLabels: [], book: {}, cellImages: {}, plansCells: [], pointsCells: [], rewards: {}, impromptu: [], memoryVerse: "", poem: "", notice: "", noticeFormula: "",
 };
 
@@ -1753,6 +1754,8 @@ export function buildSources(inp: RawInputs): Sources {
     verticalRow: (inp.vertical || []).find((r) => String((r || [])[0] || "").trim() === "1") || [],
     slots,
     riddle: Number.isFinite(week) ? String((riddleRows[week - 1] || [])[0] || "") : "",
+    // The answer sits in the next column along, which is why the read is D:E.
+    riddleAnswer: Number.isFinite(week) ? String((riddleRows[week - 1] || [])[1] || "").trim() : "",
     verses: (inp.verses || []).map((r) => String((r || [])[0] || "")),
     verseWeek: (() => {
       const n = parseInt(String(((inp.verseWeek || [])[0] || [])[0] || "").trim(), 10);
