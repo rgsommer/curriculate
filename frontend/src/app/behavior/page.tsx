@@ -560,7 +560,7 @@ function ExecutiveSummaryCard() {
   );
 }
 
-type Pending = { _id: string; studentId: string; studentName: string; classGroup?: string; reason?: string; ccVp?: boolean; count?: number; evidenceCount?: number; createdAt: string; renderedText?: string };
+type Pending = { _id: string; studentId: string; studentName: string; classGroup?: string; reason?: string; ccVp?: boolean; count?: number; evidenceCount?: number; createdAt: string; renderedText?: string; sequenceNo?: number };
 
 function PendingDecisions() {
   const [rows, setRows] = useState<Pending[] | null>(null);
@@ -630,10 +630,12 @@ function PendingDecisions() {
             {openId === n._id && n.renderedText && (
               <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-lg border border-slate-200 bg-slate-50 p-3 font-sans text-xs text-slate-700">{n.renderedText}</pre>
             )}
-            <label className="mt-2 flex items-center gap-2 text-xs text-slate-600">
-              <input type="checkbox" checked={!!meetingFor[n._id]} onChange={(e) => setMeetingFor((m) => ({ ...m, [n._id]: e.target.checked }))} />
-              Also request a meeting with the parents
-            </label>
+            {(n.sequenceNo || 1) >= 2 && (
+              <label className="mt-2 flex items-center gap-2 text-xs text-slate-600">
+                <input type="checkbox" checked={!!meetingFor[n._id]} onChange={(e) => setMeetingFor((m) => ({ ...m, [n._id]: e.target.checked }))} />
+                Also request a meeting with the parents <span className="text-slate-400">(notice #{n.sequenceNo} — a note has already gone home)</span>
+              </label>
+            )}
             <div className="mt-2 flex flex-wrap gap-2">
               <button onClick={() => setConfirmRow(n)} disabled={!!busy} className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40">
                 {busy === n._id ? "…" : "Send to parent"}
