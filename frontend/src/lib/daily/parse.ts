@@ -61,6 +61,7 @@ export type Setup = {
   seatMin: number; // how long the free seat is on the table at the top of a class
   anthemMin: number; // how long O Canada holds the screen after the announcements
   openMin: number;
+  memoryMin: number; // how long the memory verse and the hymn hold the panel in CE
   picSeconds: number;
 };
 
@@ -127,6 +128,7 @@ export const DEFAULT_SETUP: Setup = {
   seatMin: 5,
   anthemMin: 5,
   openMin: 5,
+  memoryMin: 10,
   picSeconds: 600,
 };
 
@@ -1120,6 +1122,9 @@ export function parseSetup(rows: string[][]): Setup {
     // No such row in the sheet yet; add one labelled "O Canada for" with the
     // minutes in column C to change it from five.
     else if (/^(o canada|anthem)/.test(label)) out.anthemMin = num(c, out.anthemMin);
+    // No such row in the sheet yet; add one labelled "Memory verse for" with
+    // the minutes in column C to change it from ten.
+    else if (/^(memory verse|memory work)/.test(label)) out.memoryMin = num(c, out.memoryMin);
   }
   return out;
 }
@@ -1165,7 +1170,7 @@ export type RawInputs = {
   verseWeek?: string[][]; // Vertical!B4 — the week number A5 indexes with
   // The tabs the Setup slot rules reach into, so the board can run them itself.
   displayTab?: string[][]; // Display!A1:F20
-  poemsAB?: string[][]; // Poems!A1:B60
+  poemsAB?: string[][]; // Poems!A1:C60 — A the poem, B the hymn's name, C its words
   memoryCards?: string[][]; // MemoryCards!H1:H40
   vocab?: string[][]; // Vocab!A1:B60
   masterWide?: string[][]; // Master!A1:K2
@@ -1469,6 +1474,7 @@ export type Sources = {
   noticeFormula: string; // and as a rule, to be run at the board's clock
   riddle: string; // Riddles!D at the week in Master!B2
   riddleAnswer: string; // Riddles!E on the same row — the answer to that riddle
+  poemIsHymn: boolean; // Setup C19 — the week is on the hymn column rather than the poem one
   verses: string[]; // Verses!A — the whole column, indexed the way A5 indexes it
   verseWeek: number | null; // Vertical!B4
   pointsClasses: PointsClass[]; // for the D-column status rule
@@ -1480,13 +1486,14 @@ export type Sources = {
   impromptu: string[][]; // Impromptu!L1:M30 — the Formal Discussion topics
   memoryVerse: string; // the week's memory verse, from MemoryCards column H
   poem: string; // the week's poem or hymn, from Poems A (or B when Setup C19 is on)
+  poemWords: string; // Poems C — the hymn's words, when the hymn is what shows
 };
 
 export const EMPTY_SOURCES: Sources = {
   windowStart: null, windowEnd: null, offsetHours: 0, b7: false, d7: false, a9: null, a11: null,
   poemRow: [], poemF3: "", poemF3Formula: "", poemGrid: [], poemGridFormulas: [],
-  verticalRow: [], slots: [], riddle: "", riddleAnswer: "",
-  verses: [], verseWeek: null, pointsClasses: [], pointsLabels: [], book: {}, cellImages: {}, plansCells: [], pointsCells: [], rewards: {}, impromptu: [], memoryVerse: "", poem: "", notice: "", noticeFormula: "",
+  verticalRow: [], slots: [], riddle: "", riddleAnswer: "", poemIsHymn: false,
+  verses: [], verseWeek: null, pointsClasses: [], pointsLabels: [], book: {}, cellImages: {}, plansCells: [], pointsCells: [], rewards: {}, impromptu: [], memoryVerse: "", poem: "", poemWords: "", notice: "", noticeFormula: "",
 };
 
 const truthy = (s: string) => /^(TRUE|1|YES)$/i.test(String(s || "").trim());
@@ -1791,6 +1798,9 @@ export function buildSources(inp: RawInputs): Sources {
     impromptu: inp.impromptu || [],
     memoryVerse: memoryVerse(inp.memoryCards || []),
     poem: poemOfWeek(inp.poemsAB || [], week, truthy(String(((inp.setup || [])[18] || [])[2] ?? ""))),
+    poemIsHymn: truthy(String(((inp.setup || [])[18] || [])[2] ?? "")),
+    // Only when the hymn is what is showing: a poem carries its own words.
+    poemWords: truthy(String(((inp.setup || [])[18] || [])[2] ?? "")) ? hymnWords(inp.poemsAB || [], week) : "",
     notice: String(((inp.display || [])[1] || [])[0] || "").trim(),
     noticeFormula: String(inp.noticeFormula || "").trim(),
   };
@@ -2189,10 +2199,45 @@ export function memoryVerse(cards: string[][]): string {
     .trim();
 }
 
+/**
+ * The first verse of a hymn or poem.
+ *
+ * The cell holds the whole thing — several verses, and often a line of credit
+ * after them. A projector panel wants the first verse, whole: enough to sing or
+ * say together, and not so much that the type has to shrink to fit.
+ *
+ * A blank line is what separates verses, so that is the cut. Where the cell has
+ * none — a single run-on paragraph, which is how some of them are typed — the
+ * first few lines are taken instead, and a cell that is short enough already is
+ * left exactly as it is.
+ */
+export function firstVerse(text: string, maxLines = 8): string {
+  const whole = String(text || "").replace(/\r/g, "").trim();
+  if (!whole) return "";
+  const verses = whole.split(/\n\s*\n/).map((v) => v.trim()).filter(Boolean);
+  const first = verses[0] || whole;
+  const lines = first.split("\n");
+  return (lines.length > maxLines ? lines.slice(0, maxLines) : lines).join("\n").trim();
+}
+
 export function poemOfWeek(poems: string[][], week: number | null, alternate: boolean): string {
   if (!week || week < 1) return "";
   const row = (poems || [])[week - 1] || [];
   return String(row[alternate ? 1 : 0] ?? "").trim();
+}
+
+/**
+ * The hymn's words, which live in the column beside its name.
+ *
+ * Column A is the poem and carries the whole thing; column B, which Setup C19
+ * switches to, carries only the hymn's TITLE — "My Jesus, I Love Thee" — so a
+ * board showing column B showed the room a name and nothing to sing. The words
+ * are in C, a verse or two of them, and they are what goes on the screen with
+ * the title above them.
+ */
+export function hymnWords(poems: string[][], week: number | null): string {
+  if (!week || week < 1) return "";
+  return String(((poems || [])[week - 1] || [])[2] ?? "").trim();
 }
 
 /**

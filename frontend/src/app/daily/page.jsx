@@ -16,7 +16,7 @@
 // picture and any image the sheet puts in the feature cell E1).
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, evaluateNotice, firstClassStart, formalDiscussion, testWeekday, birthdaysToday, birthdaysForSection, joinNames, specialDays, calendarEvents, columnName, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
+import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, evaluateNotice, firstClassStart, formalDiscussion, testWeekday, birthdaysToday, birthdaysForSection, joinNames, specialDays, calendarEvents, columnName, firstVerse, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
 
 const CLASS_LABELS = ["7A", "7B", "7C", "8A", "8B", "8C"];
 // The Setup slot table's own columns, for ?debug=1.
@@ -48,7 +48,7 @@ const STALE_AFTER_MS = 600_000;
 const VERSE_MAX = 85;
 // How far the lesson type may be scaled to fill the screen, and how much slack
 // is left alone rather than triggering another search.
-const FIT_MIN = 0.66;
+const FIT_MIN = 0.55;
 const FIT_MAX = 1.9;
 const FIT_SLACK = 0.05;
 // The shortest a period may be cut to by the bell schedule.
@@ -1271,9 +1271,33 @@ export default function DailyPage() {
   );
   // Between classes and before school there is no lesson column, so the picture
   // shares the screen with whatever text that screen carries.
-  const withPicture = (content) => (featureImage
-    ? <div className="main pic-right pic-feature">{content}{bigPicture(featureImage, "On screen now", "")}</div>
-    : <div className="main center">{content}</div>);
+  // The verse of the day, on the right-hand half rather than only along the
+  // bottom bar: the bar carries it all day in passing, and this is where the
+  // room can actually read it.
+  const verseBlock = () => (verseFull
+    ? (
+      <div key="vod" className="block versefocus">
+        <h3>Verse of the day</h3>
+        <p>{verseFull}</p>
+      </div>
+    ) : null);
+  const versePanel = () => {
+    const v = verseBlock();
+    return v ? <div className="panel verseonly">{v}</div> : null;
+  };
+  // A picture takes the right-hand half where there is one; failing that, the
+  // day's own screens carry the verse there.
+  const withPicture = (content, side) => {
+    if (featureImage) {
+      return <div className="main pic-right pic-feature">{content}{bigPicture(featureImage, "On screen now", "")}</div>;
+    }
+    const aside = side === undefined ? versePanel() : side;
+    // The day's own screens keep the wider half for the day — the agenda, the
+    // materials and the notices — and give the verse the narrower one.
+    return aside
+      ? <div className="main pic-right verse-aside">{content}{aside}</div>
+      : <div className="main center">{content}</div>;
+  };
 
   // /daily?debug=1 — what the board actually received from the sheet. Use it to
   // tell whether a picture or link is reaching the page at all.
@@ -1567,7 +1591,6 @@ export default function DailyPage() {
         {withPicture(
           <div>
             <p className="script">{greeting}</p>
-            <p className="question">{verse}</p>
             <p className="summary">{note}</p>
             {dayPlan.length > 0 ? (
               <div className="agenda">
@@ -1595,7 +1618,6 @@ export default function DailyPage() {
         {withPicture(
           <div>
             <p className="script">{greeting}</p>
-            <p className="question">{verse}</p>
             {agenda()}
             {linkChips(dayLinks, "Materials to print today")}
             {noticeBlock()}
@@ -1675,7 +1697,16 @@ export default function DailyPage() {
     // week — it is not put up: that is the day they are asked for it.
     const testToday = testWeekday(data.dayPlan || {}) === weekday;
     const mv = testToday ? "" : (sources.memoryVerse || "");
-    const openingScreen = phase === "open" && !!(mv || sources.poem);
+    const hymn = firstVerse(sources.poem || "");
+    // The memory verse and the hymn belong to one class a day, not to every
+    // one: the CE period — the fourth, at 12:55 in this timetable — for its
+    // first `memoryMin` minutes. The subject is what decides it, and the fourth
+    // class of the day is the fallback on a day with no CE on it.
+    const memoryPeriod = classes.find((c) => /^CE\b/i.test(c.subj || "")) || classes[3] || null;
+    const memoryOn = !!memoryPeriod
+      && cur.start === memoryPeriod.start
+      && elapsed < setup.memoryMin
+      && !!(mv || hymn);
     const nx = nextClass(cur.end);
     // The picture for this lesson comes from its Lessons row when there is one;
     // the Setup slot picture is the fallback.
@@ -1704,7 +1735,29 @@ export default function DailyPage() {
     );
 
     let side;
-    if (endOfDaySoon) {
+    if (memoryOn) {
+      // For those minutes the right-hand half is the memory work — over the
+      // lesson picture, which has its own window later in the class.
+      side = (
+        <div className="panel">
+          {mv ? (
+            <div className="block memory">
+              <h3>Memory verse — this week</h3>
+              <p className="script-lg">{mv}</p>
+            </div>
+          ) : null}
+          {hymn ? (
+            <div className="block hymn">
+              <h3>
+                {sources.poemIsHymn ? "Hymn — this week" : "Poem of the week"}
+                {testToday ? " · verse test today" : ""}
+              </h3>
+              <p className="script-lg verses">{hymn}</p>
+            </div>
+          ) : null}
+        </div>
+      );
+    } else if (endOfDaySoon) {
       // The last few minutes of the day: E1 gives its side of the screen over to
       // the dismissal package.
       side = dismissalPanel(true, endOfDayAt);
@@ -1715,17 +1768,6 @@ export default function DailyPage() {
       side = bigPicture(lessonPic.url, `Lesson picture${cur.code ? ` · ${cur.code}` : ""}`, `${picLeft} min left on screen`);
     } else {
       const blocks = [];
-      // The class opens on the verse of the day while everyone settles — but
-      // only when the opening screen itself is not up, which now carries the
-      // week's memory verse and the poem instead.
-      if (phase === "open" && verseFull && !openingScreen) {
-        blocks.push(
-          <div key="v" className="block versefocus">
-            <h3>Verse of the day</h3>
-            <p>{verseFull}</p>
-          </div>
-        );
-      }
       if (phase === "open") {
         let o;
         if (/^Math/.test(cur.subj) && challenge) o = { h: "Math challenge", p: `${challenge} Treat for the first correct answer in; max one win a week.` };
@@ -1751,25 +1793,12 @@ export default function DailyPage() {
       // day is the dismissal time — not simply the last class on the board,
       // which is what used to put the benediction up before lunch.
       if (lunchSoon) blocks.push(<div key="l" className="block sun"><h3>Before lunch</h3><p>{LUNCH_GRACE}</p></div>);
+      // Last, under whatever the class needs first: the verse is for the whole
+      // day and the time-sensitive blocks above it are not.
+      const vod = verseBlock();
+      if (vod) blocks.push(vod);
       side = blocks.length ? <div className="panel">{blocks}</div> : null;
     }
-
-    const openingMain = (
-      <div className={`main opening${mv && sources.poem ? "" : " solo"}`}>
-        {mv ? (
-          <div className="openpane">
-            <h3>Memory verse — this week</h3>
-            <p className="script-lg">{mv}</p>
-          </div>
-        ) : null}
-        {sources.poem ? (
-          <div className="openpane">
-            <h3>{testToday ? "Poem of the week — verse test today" : "Poem of the week"}</h3>
-            <p className="script-lg">{sources.poem}</p>
-          </div>
-        ) : null}
-      </div>
-    );
 
     body = (
       <>
@@ -1787,11 +1816,9 @@ export default function DailyPage() {
         })}
         {calendarBanner()}
         {birthdayBand(cur)}
-        {openingScreen ? openingMain : (
-          <div className={`main${side ? "" : " solo"}${picOn && !endOfDaySoon ? ` pic-${opts.pic}` : ""}${featureImage && !endOfDaySoon ? " pic-feature" : ""}`}>
-            {picOn && !endOfDaySoon && opts.pic === "left" ? <>{side}{leftCol}</> : <>{leftCol}{side}</>}
-          </div>
-        )}
+        <div className={`main${side ? "" : " solo"}${picOn && !memoryOn && !endOfDaySoon ? ` pic-${opts.pic}` : ""}${featureImage && !memoryOn && !endOfDaySoon ? " pic-feature" : ""}`}>
+          {picOn && !memoryOn && !endOfDaySoon && opts.pic === "left" ? <>{side}{leftCol}</> : <>{leftCol}{side}</>}
+        </div>
         {footer(left <= setup.nextAdvance)}
       </>
     );

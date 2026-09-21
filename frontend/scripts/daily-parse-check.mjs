@@ -987,6 +987,21 @@ check("column letters", P.columnName(4) === "D" && P.columnName(43) === "AQ" && 
     && P.joinNames(["Mia", "Sam", "Ana"]) === "Mia, Sam and Ana");
 }
 
+// ---- the first verse of a hymn ----
+{
+  const hymn = "Great is Thy faithfulness,\nO God my Father\n\nMorning by morning\nnew mercies I see\n\n— Thomas Chisholm";
+  check("hymn: the first verse, cut at the blank line",
+    P.firstVerse(hymn) === "Great is Thy faithfulness,\nO God my Father", JSON.stringify(P.firstVerse(hymn)));
+  check("hymn: its line breaks are kept", P.firstVerse(hymn).split("\n").length === 2);
+  check("hymn: a single paragraph comes back whole when it is short",
+    P.firstVerse("The little boy is fishing, with a bent pin on a string.")
+      === "The little boy is fishing, with a bent pin on a string.");
+  const long = Array.from({ length: 14 }, (_, i) => `line ${i + 1}`).join("\n");
+  check("hymn: a run-on cell is cut to the first few lines",
+    P.firstVerse(long).split("\n").length === 8 && P.firstVerse(long).startsWith("line 1"));
+  check("hymn: nothing in, nothing out", P.firstVerse("") === "" && P.firstVerse(null) === "");
+}
+
 // ---- the riddle and its answer ----
 {
   const base = { display: [[""]], displayD: [], displayC: [], setup: [], slots: [] };

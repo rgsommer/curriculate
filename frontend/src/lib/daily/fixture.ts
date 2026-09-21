@@ -185,7 +185,10 @@ export const FIXTURE: RawInputs = {
   memoryCards: [["\"Trust in the Lord with all your heart,"], ["and do not lean on your own understanding.\""], ["Proverbs 3:5"]],
   // Poems A1:B60 — a row per week, A the poem and B the alternate (Setup C19).
   poemsAB: [
-    ["The Fisherman, by Abbie Farwell Brown — The little boy is fishing, with a bent pin on a string.", "Hymn: Great is Thy faithfulness, O God my Father."],
+    [
+      "The Fisherman, by Abbie Farwell Brown\nThe little boy is fishing,\nwith a bent pin on a string.\n\nHe sits upon the bank and waits\nfor hours, poor little thing.",
+      "Great is Thy faithfulness,\nO God my Father;\nthere is no shadow of turning with Thee.\n\nThou changest not,\nThy compassions they fail not;\nas Thou hast been Thou forever wilt be.",
+    ],
     ["Week two's poem.", "Week two's hymn."],
   ],
   feature: "Q: A horse is on a 24 foot chain and wants an apple that is 26 feet away. How can the horse get to the apple?",
