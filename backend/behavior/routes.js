@@ -710,6 +710,62 @@ router.post("/students/:id/parent-message", authAny, loadMembership, canLog, asy
   }
 });
 
+// Bulk parent messages: for each selected student, fill the template, EMAIL the
+// filled message to the teacher (one email per student, ready to forward), and
+// log it separately. Never emails a parent directly.
+router.post("/parent-message/bulk", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const name = String(req.body?.name || "").trim();
+    const ids = (Array.isArray(req.body?.studentIds) ? req.body.studentIds : []).map((x) => String(x)).slice(0, 60);
+    if (!ids.length) return res.status(400).json({ ok: false, error: "No students selected." });
+
+    const teacherEmail = String(req.user?.email || "").trim();
+    if (!teacherEmail) return res.status(400).json({ ok: false, error: "No email on your account to send to." });
+
+    const me = await BehaviorTeacher.findById(req.membership._id).select("subject parentTemplates name").lean();
+    const templates = (me?.parentTemplates && me.parentTemplates.length) ? me.parentTemplates : DEFAULT_PARENT_TEMPLATES;
+    const tpl = templates.find((t) => t.name === name) || templates[0];
+    if (!tpl) return res.status(400).json({ ok: false, error: "No template selected." });
+    const kind = tpl.kind === "encouraging" ? "encouraging" : "corrective";
+
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("branding.schoolName").lean();
+    const school = await BehaviorSchool.findById(req.schoolId).select("name").lean();
+    const schoolName = config?.branding?.schoolName || school?.name || "";
+    const teacherName = req.membership.name || req.user?.name || "";
+    const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+
+    const students = await BehaviorStudent.find({ _id: { $in: ids }, schoolId: req.schoolId, active: true }).lean();
+    let sent = 0, logged = 0;
+    for (const student of students) {
+      const message = fillTemplate(tpl.body, { student, teacher: teacherName, subject: me?.subject || "", schoolName });
+      const studentName = `${student.preferredName || student.firstName} ${student.lastName || ""}`.trim();
+      try {
+        await sendEmail({
+          from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
+          to: teacherEmail,
+          subject: `Parent message — ${studentName} (${tpl.name})`,
+          text: message,
+          html: `<pre style="font-family:inherit;white-space:pre-wrap;margin:0">${escapeHtml(message)}</pre>`,
+        });
+        sent += 1;
+      } catch (e) { console.warn("[behavior] bulk parent-message email failed:", e?.message || e); }
+      try {
+        await BehaviorConsequence.create({
+          schoolId: req.schoolId, studentId: student._id,
+          type: `Parent message: ${tpl.name}`, detail: "Emailed to the teacher to send",
+          byTeacherId: req.membership._id, byName: teacherName, status: "issued", kind,
+          issuedByTeacherId: req.membership._id, issuedByName: teacherName, issuedAt: new Date(),
+        });
+        logged += 1;
+      } catch (e) { console.warn("[behavior] bulk parent-message log failed:", e?.message || e); }
+    }
+    await audit(req.schoolId, "parent_message.bulk", req, { meta: { template: tpl.name, requested: ids.length, sent, logged } });
+    res.json({ ok: true, template: tpl.name, requested: ids.length, matched: students.length, sent, logged, to: teacherEmail });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Send a test email (admin) to verify SMTP delivery. Returns the SMTP error in
 // the body (still 200) so the UI can show exactly why it failed.
 router.post("/test-email", authAny, loadMembership, requireAdmin, async (req, res, next) => {

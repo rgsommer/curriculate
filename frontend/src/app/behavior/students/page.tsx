@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { api, getToken, loginHref, issueWhiteSlip, getMyTemplates, generateParentMessage, type StudentSummary, type Me, type ParentTemplate } from "../_lib/api";
+import { api, getToken, loginHref, issueWhiteSlip, getMyTemplates, generateParentMessage, bulkParentMessage, type StudentSummary, type Me, type ParentTemplate } from "../_lib/api";
 
 function rowNameColor(count: number, trigger: number) {
   if (count >= trigger - 1) return "text-orange-600";
@@ -23,6 +23,8 @@ export default function StudentsPage() {
   const [tpl, setTpl] = useState("");
   const [pmMsg, setPmMsg] = useState("");
   const [lastMsg, setLastMsg] = useState<{ text: string; label: string } | null>(null);
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   useEffect(() => {
     if (!getToken()) return;
@@ -52,6 +54,20 @@ export default function StudentsPage() {
       try { await navigator.clipboard.writeText(r.message); setPmMsg(`✓ Copied & logged “${r.template}” for ${s.firstName} — paste it into your email.`); }
       catch { setPmMsg(`Logged “${r.template}” for ${s.firstName} — copy the text below to send.`); }
     } catch (e: any) { setPmMsg(`✗ ${e.message}`); }
+  }
+
+  const selectedIds = Object.keys(selected).filter((id) => selected[id]);
+  // Bulk: email the teacher one personalised message per selected student + log each.
+  async function sendBulk() {
+    if (!tpl || !selectedIds.length) return;
+    setBulkBusy(true); setPmMsg("");
+    try {
+      const r = await bulkParentMessage(tpl, selectedIds);
+      setPmMsg(`✓ Emailed ${r.sent} message(s) to ${r.to} (“${r.template}”) and logged ${r.logged}. Forward each to the parent.`);
+      setSelected({});
+      setLastMsg(null);
+    } catch (e: any) { setPmMsg(`✗ ${e.message}`); }
+    finally { setBulkBusy(false); }
   }
 
   // Optimistic per-student update (flags, house, room). Reverts on failure.
@@ -162,6 +178,15 @@ export default function StudentsPage() {
             <span className="text-xs text-slate-500">then tap ✉ by a student to copy their message &amp; log it.</span>
             <Link href="/behavior/setup#templates" className="text-xs text-slate-500 underline">edit templates</Link>
           </div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            Several students: tick the boxes, then
+            <button type="button" onClick={sendBulk} disabled={bulkBusy || !tpl || selectedIds.length === 0}
+              className="rounded-lg bg-slate-900 px-2.5 py-1 font-semibold text-white disabled:opacity-40">
+              {bulkBusy ? "Sending…" : `✉ Email me each & log (${selectedIds.length})`}
+            </button>
+            <span>— one personalised email per student, ready to forward.</span>
+            {selectedIds.length > 0 && <button type="button" onClick={() => setSelected({})} className="underline">clear</button>}
+          </div>
           {pmMsg && <p className="mt-1 text-xs text-slate-700">{pmMsg}</p>}
           {lastMsg && (
             <div className="mt-2">
@@ -176,6 +201,10 @@ export default function StudentsPage() {
       <ul className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
         {visible.map((s) => (
           <li key={s._id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 hover:bg-slate-50">
+            {templates.length > 0 && (
+              <input type="checkbox" checked={!!selected[s._id]} onChange={(e) => setSelected((m) => ({ ...m, [s._id]: e.target.checked }))}
+                title="Select for a bulk parent message" className="shrink-0" />
+            )}
             <Link href={`/behavior/student/${s._id}`} className="flex min-w-0 flex-1 basis-48 items-center justify-between gap-2">
               <span className={`truncate font-medium ${rowNameColor(s.activeCount || 0, trigger)}`}>
                 {s.lastName}, {s.firstName}{s.preferredName && s.preferredName !== s.firstName && s.preferredName !== s.lastName ? ` (${s.preferredName})` : ""}

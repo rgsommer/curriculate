@@ -154,6 +154,12 @@ export function saveMyTemplates(body: { subject?: string; templates?: ParentTemp
 export function generateParentMessage(studentId: string, name: string) {
   return api<{ message: string; template: string }>(`/students/${studentId}/parent-message`, { method: "POST", body: { name } });
 }
+// Bulk: email the teacher one personalised message per selected student and log
+// each separately.
+export function bulkParentMessage(name: string, studentIds: string[]) {
+  return api<{ template: string; requested: number; matched: number; sent: number; logged: number; to: string }>(
+    "/parent-message/bulk", { method: "POST", body: { name, studentIds } });
+}
 
 // Resolve a recommended white slip (any teacher may click). Omit `other` to
 // confirm it was issued; pass `other` to record that a different consequence was
