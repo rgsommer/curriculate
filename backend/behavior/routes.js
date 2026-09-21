@@ -1612,8 +1612,10 @@ router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
       name: i.behaviorSnapshot?.name || "", detail: i.detailText || "", date: i.timestamp,
     }));
 
-    // "Not responding to discipline": repeated measures (≥2 notices + documented
-    // consequences) yet the student is still offending AFTER the most recent one.
+    // Suggests escalating support (VP meeting / behaviour plan) when SEVERAL
+    // measures (notices home + documented consequences) have been applied yet the
+    // student is still offending AFTER the most recent one. Threshold kept at 3+
+    // so it doesn't fire after just an early notice + consequence.
     const interventions = (student.noticesHomeCount || 0) + consequences.length;
     const lastInterventionAt = Math.max(
       0,
@@ -1625,7 +1627,7 @@ router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
       const isInteraction = !isPos && inc.behaviorSnapshot?.triggerMode === "INTERACTION";
       return !isPos && !isInteraction && new Date(inc.timestamp).getTime() > lastInterventionAt;
     }).length;
-    const notResponding = interventions >= 2 && offencesSince >= 1
+    const notResponding = interventions >= 3 && offencesSince >= 1
       ? { flag: true, interventions, offencesSince }
       : { flag: false };
 

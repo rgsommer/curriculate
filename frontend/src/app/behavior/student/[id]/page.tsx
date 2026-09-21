@@ -384,8 +384,8 @@ export default function StudentPage() {
           </div>
         )}
         {data.notResponding?.flag && (
-          <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800">
-            ⚠ Not responding to discipline so far — {data.notResponding.interventions} measure(s) home/applied, yet {data.notResponding.offencesSince} further offence(s) since. Consider a meeting, a behaviour plan, or VP involvement.
+          <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            {data.notResponding.interventions} measure(s) applied, with {data.notResponding.offencesSince} further offence(s) since the most recent. If the current measures don&apos;t succeed, consider a meeting with the VP and/or a behaviour plan.
           </p>
         )}
         {data.whiteSlipEligible && (
