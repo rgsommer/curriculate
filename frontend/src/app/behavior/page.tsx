@@ -93,7 +93,10 @@ export default function BehaviorDashboard() {
         🔍 Find a student &amp; view history
       </Link>
 
-      {canLog && <PendingDecisions />}
+      {canLog && <PendingDecisions
+        autoSend={!!me.config?.edsby?.enabled || !!me.config?.channels?.emailToParents}
+        channelLabel={me.config?.edsby?.enabled ? "Edsby" : me.config?.channels?.emailToParents ? "email" : ""}
+      />}
 
       {canLog && <ReminderToday />}
 
@@ -562,7 +565,7 @@ function ExecutiveSummaryCard() {
 
 type Pending = { _id: string; studentId: string; studentName: string; classGroup?: string; reason?: string; ccVp?: boolean; count?: number; evidenceCount?: number; createdAt: string; renderedText?: string; sequenceNo?: number };
 
-function PendingDecisions() {
+function PendingDecisions({ autoSend, channelLabel }: { autoSend: boolean; channelLabel?: string }) {
   const [rows, setRows] = useState<Pending[] | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [meetingFor, setMeetingFor] = useState<Record<string, boolean>>({});
@@ -580,10 +583,10 @@ function PendingDecisions() {
     setBusy(id);
     setMsg("");
     try {
-      await api(`/notices/${id}/send`, { body: { requestMeeting: !!meetingFor[id], includeEvidence: !!evidenceFor[id] } });
+      await api(`/notices/${id}/send`, { body: { requestMeeting: !!meetingFor[id], includeEvidence: !!evidenceFor[id], recordOnly: !autoSend } });
       setRows((p) => (p || []).filter((n) => n._id !== id));
       setConfirmRow(null);
-      setMsg("Sent to the parent ✓");
+      setMsg(autoSend ? "Sent to the parent ✓" : "Recorded as sent ✓ — remember to send your copy to the parent.");
     } catch (e: any) {
       setMsg(`✗ ${e.message}`);
     } finally {
@@ -638,7 +641,7 @@ function PendingDecisions() {
             )}
             <div className="mt-2 flex flex-wrap gap-2">
               <button onClick={() => setConfirmRow(n)} disabled={!!busy} className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40">
-                {busy === n._id ? "…" : "Send to parent"}
+                {busy === n._id ? "…" : autoSend ? "Send to parent" : "Mark as sent to parent"}
               </button>
               <button onClick={() => notNow(n._id)} disabled={!!busy} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
                 Not this time
@@ -651,7 +654,9 @@ function PendingDecisions() {
       <SendNoticeModal
         open={!!confirmRow}
         studentName={confirmRow?.studentName}
-        channelLabel="Edsby"
+        channelLabel={channelLabel}
+        recordOnly={!autoSend}
+        showMeeting={(confirmRow?.sequenceNo || 1) >= 2}
         noteText={confirmRow?.renderedText || ""}
         requestMeeting={!!(confirmRow && meetingFor[confirmRow._id])}
         onToggleMeeting={(v) => confirmRow && setMeetingFor((m) => ({ ...m, [confirmRow._id]: v }))}

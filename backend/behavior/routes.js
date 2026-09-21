@@ -45,7 +45,7 @@ import { STANDARD_BEHAVIORS } from "./lib/standardBehaviors.js";
 import { composeNotice, composePositiveNotice, makeDefaultAiClient, deterministicNote, deterministicPositiveNote } from "./lib/aiNote.js";
 import { buildAvgsRouter } from "./avgsRoutes.js";
 import { emailShell, emailButton, noteToHtml, mdToHtml, monthlyKindChartHtml } from "./lib/emailTemplate.js";
-import { scheduleDispatch, dispatchNotice, sendHomeworkMessage } from "./lib/notify.js";
+import { scheduleDispatch, dispatchNotice, sendHomeworkMessage, recordNoticeAsSent } from "./lib/notify.js";
 import { uploadEvidence, signEvidenceKey, deleteEvidenceKey, isAllowedType, evidenceStorageAvailable } from "./lib/evidenceStore.js";
 
 const router = express.Router();
@@ -2671,9 +2671,20 @@ router.post("/notices/:id/send", authAny, loadMembership, canLog, async (req, re
       notice.includeEvidence = !!req.body.includeEvidence;
       await notice.save();
     }
-    const result = await dispatchNotice(notice._id, { force: true }); // explicit send — bypass the edit-defer window
-    await audit(req.schoolId, "notice.sent_manual", req, { studentId: notice.studentId, noticeId: notice._id });
-    res.json({ ok: result.ok !== false, status: result.status || (result.ok ? "sent" : "failed") });
+    // With no automatic parent channel, the teacher sends the note themselves and
+    // this just RECORDS it as sent (consuming strikes, advancing the counter) —
+    // rather than attempting a delivery that would only "fail".
+    const cfg = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("edsby.enabled channels.emailToParents").lean();
+    const autoSend = !!cfg?.edsby?.enabled || !!cfg?.channels?.emailToParents;
+    let result;
+    if (req.body?.recordOnly === true || !autoSend) {
+      result = await recordNoticeAsSent(notice._id);
+      await audit(req.schoolId, "notice.recorded_sent", req, { studentId: notice.studentId, noticeId: notice._id });
+    } else {
+      result = await dispatchNotice(notice._id, { force: true }); // explicit send — bypass the edit-defer window
+      await audit(req.schoolId, "notice.sent_manual", req, { studentId: notice.studentId, noticeId: notice._id });
+    }
+    res.json({ ok: result.ok !== false, status: result.status || (result.ok ? "sent" : "failed"), recorded: !!result.recorded });
   } catch (err) {
     next(err);
   }
