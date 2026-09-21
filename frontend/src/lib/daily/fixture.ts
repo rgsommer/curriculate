@@ -178,7 +178,8 @@ export const FIXTURE: RawInputs = {
       "Things you need to know for today...\nGeography 8A term list is due next class.\nSkip 7A Bring your textbook to every class.\nDress-down payments due Fri Sep 25.",
       "Fri update"],
   ],
-  riddles: [["Riddle for week 1"], ["Riddle for week 2"]],
+  // D the riddle, E its answer.
+  riddles: [["Riddle for week 1", "Answer for week 1"], ["Riddle for week 2", "Answer for week 2"]],
   master: [["Week"], ["1"]],
   // MemoryCards column H — the week's memory verse, in pieces the sheet joins.
   memoryCards: [["\"Trust in the Lord with all your heart,"], ["and do not lean on your own understanding.\""], ["Proverbs 3:5"]],

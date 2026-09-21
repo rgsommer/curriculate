@@ -15,7 +15,7 @@
 // DAILY_ACCESS_KEY is set; ?pic=left|off moves or hides pictures (the lesson
 // picture and any image the sheet puts in the feature cell E1).
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, evaluateNotice, firstClassStart, formalDiscussion, testWeekday, birthdaysToday, birthdaysForSection, joinNames, specialDays, calendarEvents, columnName, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
 
 const CLASS_LABELS = ["7A", "7B", "7C", "8A", "8B", "8C"];
@@ -60,14 +60,14 @@ const LUNCH_GRACE =
   "For food in a world where many walk in hunger, for faith in a world where many walk in fear, "
   + "and for friends in a world where many walk alone \u2014 we give You thanks.";
 const HOUSE_RIDDLES = [
-  "What has to be broken before you can use it?",
-  "I am tall when I am young and short when I am old. What am I?",
-  "What has many keys but cannot open a single lock?",
-  "What goes up but never comes down?",
-  "What can travel around the world while staying in a corner?",
-  "The more of me you take, the more you leave behind. What am I?",
-  "What has hands but cannot clap?",
-  "What gets wetter the more it dries?",
+  ["What has to be broken before you can use it?", "An egg."],
+  ["I am tall when I am young and short when I am old. What am I?", "A candle."],
+  ["What has many keys but cannot open a single lock?", "A piano."],
+  ["What goes up but never comes down?", "Your age."],
+  ["What can travel around the world while staying in a corner?", "A stamp."],
+  ["The more of me you take, the more you leave behind. What am I?", "Footsteps."],
+  ["What has hands but cannot clap?", "A clock."],
+  ["What gets wetter the more it dries?", "A towel."],
 ];
 
 // A joke to end the day on, one per day of the year. Classroom-safe, groan-
@@ -690,23 +690,6 @@ export default function DailyPage() {
     return () => { cancelAnimationFrame(raf); ro.disconnect(); };
   });
 
-  // Slide the verse along the bottom bar when it is longer than the bar. The
-  // distance is measured rather than guessed, so a short verse sits still.
-  const verseRef = useRef(null);
-  useEffect(() => {
-    const box = verseRef.current;
-    if (!box) return;
-    const text = box.firstElementChild;
-    if (!text) return;
-    const over = text.scrollWidth - box.clientWidth;
-    if (over > 8) {
-      box.style.setProperty("--over", `${over}px`);
-      box.style.setProperty("--dur", `${Math.round(over / 45) + 10}s`);
-      box.classList.add("scrolling");
-    } else {
-      box.classList.remove("scrolling");
-    }
-  });
 
   // Once an earned Formal Discussion has been on the screen it has been had.
   // The render decides that — it is the render that knows which class is up —
@@ -725,6 +708,65 @@ export default function DailyPage() {
       return next;
     });
   });
+
+  // The verse along the bottom bar is longer than the bar, so it sweeps across
+  // and back — but once a minute, or when someone presses it, rather than
+  // endlessly. A line that never stops moving in the corner of a projector is
+  // something the room learns to ignore, and it kept the riddle's answer moving
+  // past before anyone had read it.
+  const liveMinute = Math.floor(live);
+  const verseEl = useRef(null);
+  const verseWatch = useRef(null);
+  const [sweep, setSweep] = useState(0);
+  const [verseOver, setVerseOver] = useState(0);
+  const sweepNow = () => setSweep((n) => n + 1);
+  const onSweepKey = (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); sweepNow(); }
+  };
+  const sweepTitle = "Press to read the whole line";
+
+  // How far the line overruns the bar, measured rather than guessed, so a line
+  // that fits sits still. Held in state rather than written onto the element by
+  // hand: a class put on that way does not survive React rebuilding the node,
+  // and the board rebuilds the bottom bar every few seconds.
+  const measureVerse = useCallback(() => {
+    const box = verseEl.current;
+    const text = box && box.firstElementChild;
+    if (!text) return;
+    const over = Math.max(0, text.scrollWidth - box.clientWidth);
+    setVerseOver((was) => (Math.abs(was - over) > 4 ? over : was));
+  }, []);
+
+  // Measured when the line itself arrives, not on a later tick. The board opens
+  // on "Contacting the sheet…" with no bottom bar at all, so an effect that
+  // only runs on the minute measured a line that was not on the screen yet and
+  // called it a line that fits. The observer then catches the bar settling —
+  // the verse is the flexible item in it, giving way to the week line and the
+  // "Pray for …" link, so its width arrives a moment after the text does.
+  const verseRef = useCallback((node) => {
+    if (verseWatch.current) { verseWatch.current.disconnect(); verseWatch.current = null; }
+    verseEl.current = node;
+    if (!node) return;
+    const ro = new ResizeObserver(measureVerse);
+    ro.observe(node);
+    verseWatch.current = ro;
+    measureVerse();
+  }, [measureVerse]);
+
+  // And again on the minute, when the sweep itself comes round.
+  useEffect(measureVerse, [measureVerse, sweep, liveMinute]);
+  // The sweep is one run of the animation, and what restarts it is the inner
+  // span being rebuilt: a fresh element starts its animation from the top.
+  // The whole minute, not `live` itself — that carries the seconds as a
+  // fraction, so the key changed on every tick and the sweep never got past
+  // its first second. And the real clock rather than the board's, so dragging
+  // the scrubber across an afternoon does not set the line sweeping on every
+  // minute it passes.
+  const sweepKey = `${sweep}-${liveMinute}`;
+  const verseStyle = {
+    "--over": `${verseOver}px`,
+    "--dur": `${Math.min(34, Math.round(verseOver / 45) + 12)}s`,
+  };
 
   // Shrink the video when the period changes.
   const curKey = view && view.cur ? view.cur.start : -1;
@@ -775,6 +817,7 @@ export default function DailyPage() {
   // The bottom bar has one line for it, so rather than cut the quote short it
   // carries the whole thing and slides it across when it does not fit.
   const verseFull = verseSrc.text ? verseQuote : tidyTruncated(verseQuote);
+
   // The Setup slot rules are written against NOW(); handing the board's own
   // clock in is what lets the scrubber move them — otherwise E1 keeps showing
   // whatever was true at the moment the sheet was read.
@@ -940,9 +983,13 @@ export default function DailyPage() {
   };
   const riddleOfDay = () => {
     const own = (meta.riddle || "").replace(/^Q:\s*/, "").trim();
-    if (own && own !== (featureText || "").replace(/^Q:\s*/, "").trim()) return own;
+    // The sheet's own riddle, with the answer from the column beside it.
+    if (own && own !== (featureText || "").replace(/^Q:\s*/, "").trim()) {
+      return { q: own, a: (sources.riddleAnswer || "").replace(/^A:\s*/, "").trim() };
+    }
     const d = new Date();
-    return HOUSE_RIDDLES[(d.getFullYear() * 372 + d.getMonth() * 31 + d.getDate()) % HOUSE_RIDDLES.length];
+    const pair = HOUSE_RIDDLES[(d.getFullYear() * 372 + d.getMonth() * 31 + d.getDate()) % HOUSE_RIDDLES.length];
+    return { q: pair[0], a: pair[1] };
   };
   const footer = (showPuzzle, endOfDay) => (
     <>
@@ -969,8 +1016,43 @@ export default function DailyPage() {
         {showPuzzle && puzzleWord
           ? <span className="puzzle">Unscramble for a treat: <b>{puzzleWord}</b></span>
           : endOfDay
-            ? <span className="verse riddleline">Riddle: {riddleOfDay()}</span>
-            : <span className="verse" ref={verseRef}><span className="vtext">{verseFull}</span></span>}
+            ? (() => {
+                const r = riddleOfDay();
+                return (
+                  <span
+                    className={`verse riddleline${verseOver > 8 ? " scrolling" : ""}`}
+                    ref={verseRef}
+                    style={verseStyle}
+                    title={sweepTitle}
+                    onClick={sweepNow}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={onSweepKey}
+                  >
+                    <span className="vtext" key={sweepKey}>
+                      Riddle: {r.q}
+                      {/* The answer rides at the far end of the line: out of
+                          sight until the sweep reaches it, so the room gets a
+                          moment to think before it arrives. */}
+                      {r.a ? <i className="answer">{r.a}</i> : null}
+                    </span>
+                  </span>
+                );
+              })()
+            : (
+              <span
+                className={`verse${verseOver > 8 ? " scrolling" : ""}`}
+                ref={verseRef}
+                style={verseStyle}
+                title={sweepTitle}
+                onClick={sweepNow}
+                role="button"
+                tabIndex={0}
+                onKeyDown={onSweepKey}
+              >
+                <span className="vtext" key={sweepKey}>{verseFull}</span>
+              </span>
+            )}
       </div>
       <Scrub
         min={dayMin}
