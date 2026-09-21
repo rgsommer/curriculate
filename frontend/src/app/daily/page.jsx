@@ -1380,6 +1380,35 @@ export default function DailyPage() {
       </div>
     );
   };
+  // What the right-hand half is doing this minute, and why. "Why is the verse
+  // still up?" has a precise answer — the picture's window, the memory work's,
+  // the verse's own, and whether there is any work to hand it to — and that
+  // answer should come off the board rather than out of the code.
+  const halfStory = () => {
+    if (!cur || cur.duty || cur.empty) {
+      return `day screen · showing ${verseOnNow ? "the verse of the day" : '"Set for today"'}`
+        + ` · the two alternate every ${setup.verseMin} min`;
+    }
+    const pic = cur.image ? { url: cur.image, seconds: setup.picSeconds } : data.picture;
+    const hasPic = opts.pic !== "off" && !!pic && usable(pic.url);
+    const memClass = (() => {
+      const mp = classes.find((c) => /^CE\b/i.test(c.subj || "")) || classes[3] || null;
+      return !!mp && cur.start === mp.start;
+    })();
+    const from = Math.max(memClass ? setup.memoryMin : 0, hasPic ? setup.picSeconds / 60 : 0);
+    const until = from + setup.verseMin;
+    const w = workOf(cur);
+    const showing = cur.elapsed < until
+      ? (memClass && cur.elapsed < setup.memoryMin ? "the memory work" : hasPic && cur.elapsed * 60 < setup.picSeconds ? "the lesson picture" : "the verse of the day")
+      : w ? w.head.toLowerCase() : "the verse of the day (nothing set to turn over to)";
+    return [
+      `picture: ${hasPic ? `${Math.round(setup.picSeconds / 60)} min` : "none for this class"}`,
+      memClass ? `memory work: ${setup.memoryMin} min` : "not the CE period",
+      `verse: ${fmt(Math.round(cur.start + from))} to ${fmt(Math.round(cur.start + until))}`,
+      `work: ${w ? `${w.head} — ${w.items.join("; ").slice(0, 60)}` : "nothing set (no assignment, no homework on the Lessons row)"}`,
+      `showing now: ${showing}`,
+    ].join("  ·  ");
+  };
   // The day's own screens have no beginning to measure from — a morning is not
   // a class — so the half alternates on the board's own clock: the verse for
   // `verseMin` minutes, the work for the same, and the scrubber moves it like
@@ -1525,6 +1554,7 @@ export default function DailyPage() {
               {row("day plan", dayPlan.length ? dayPlan.map((c) => `${c.start == null ? "--:--" : fmt(c.start)} ${c.subj}${c.code ? ` (${c.code})` : ""}`).join("  |  ") : "")}
               {row("bell schedule", (data.dayTimes || []).map(fmt).join("  ") || "")}
               {row("periods in view", P.map((x) => `${fmt(x.start)}${x.subj ? ` ${x.subj}` : x.empty ? " —" : " duty"}`).join("  |  "))}
+              {row("right-hand half", halfStory())}
               {row("lesson material", cur ? `page: ${cur.page || "—"} · homework: ${(cur.homework || "—").slice(0, 60)} · image: ${cur.image || "—"} · video: ${cur.video || "—"}` : "")}
               {row("handouts (current class)", cur && (cur.links || []).length ? cur.links.map((l) => `${l.label} \u2192 ${l.url}`).join("  |  ") : "")}
               {row("puzzle", meta.puzzle)}
