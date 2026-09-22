@@ -126,6 +126,7 @@ export type StudentSummary = {
   preferredName?: string;
   classGroup?: string;
   grade?: string;
+  gender?: string;
   activeCount?: number;
   noticesHomeCount?: number;
   guddCount?: number;

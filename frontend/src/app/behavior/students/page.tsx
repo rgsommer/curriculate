@@ -40,6 +40,7 @@ export default function StudentsPage() {
   const [lastMsg, setLastMsg] = useState<{ text: string; label: string } | null>(null);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [sortBy, setSortBy] = useState<"name" | "grade" | "room" | "gender">("name");
 
   useEffect(() => {
     if (!getToken()) return;
@@ -132,8 +133,18 @@ export default function StudentsPage() {
     let list = students;
     if (q) list = list.filter((s) => `${s.firstName} ${s.lastName} ${s.preferredName || ""}`.toLowerCase().includes(q));
     else if (cls) list = list.filter((s) => (s.classGroup || "").trim() === cls);
-    return [...list].sort((a, b) => `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`));
-  }, [students, query, cls]);
+    const byName = (a: StudentSummary, b: StudentSummary) =>
+      `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`, undefined, { numeric: true });
+    const gradeNum = (g?: string) => { const n = parseInt(String(g || ""), 10); return isNaN(n) ? 999 : n; };
+    // Every sort falls back to last-name so ties are stable and predictable.
+    const cmp: Record<typeof sortBy, (a: StudentSummary, b: StudentSummary) => number> = {
+      name: byName,
+      grade: (a, b) => (gradeNum(a.grade) - gradeNum(b.grade)) || byName(a, b),
+      room: (a, b) => (a.classGroup || "").localeCompare(b.classGroup || "", undefined, { numeric: true }) || byName(a, b),
+      gender: (a, b) => (a.gender || "￿").localeCompare(b.gender || "￿", undefined, { sensitivity: "base" }) || byName(a, b),
+    };
+    return [...list].sort(cmp[sortBy]);
+  }, [students, query, cls, sortBy]);
 
   if (!getToken()) return <p>Please <Link className="underline" href={loginHref("/behavior/students")}>sign in</Link>.</p>;
   if (err) return <p className="text-red-600">{err}</p>;
@@ -165,13 +176,25 @@ export default function StudentsPage() {
         ))}
       </div>
 
-      <input
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search any student by name…"
-        className="w-full rounded-xl border border-slate-300 px-4 py-3"
-        inputMode="search"
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search any student by name…"
+          className="min-w-[12rem] flex-1 rounded-xl border border-slate-300 px-4 py-3"
+          inputMode="search"
+        />
+        <label className="flex shrink-0 items-center gap-1.5 text-sm text-slate-500">
+          Sort by
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+            className="rounded-lg border border-slate-300 bg-white px-2 py-2 text-slate-800">
+            <option value="name">Last name</option>
+            <option value="grade">Grade</option>
+            <option value="room">Room</option>
+            <option value="gender">Gender</option>
+          </select>
+        </label>
+      </div>
 
       {templates.length > 0 && (
         <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
