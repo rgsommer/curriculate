@@ -902,7 +902,17 @@ export default function DailyPage() {
   // The minutes before the last bell: the class tidies up and stands ready for
   // the homeroom teacher. The end-of-day package comes up with it.
   const readyMin = Math.max(setup.dismissalReadyMin || 5, dismissal.advanceMin || 0);
-  const endOfDaySoon = endOfDayAt != null && t >= endOfDayAt - readyMin && t < endOfDayAt;
+  // The moment the room has to be standing — which is not the bell. Setup's
+  // "Stand ready for dismissal" row names it, either as minutes before the end
+  // or as the time itself; the note on the board says that time, since "ready
+  // for your homeroom teacher by 3:30" is the bell, and by 3:30 it is too late.
+  const readyAt = endOfDayAt == null
+    ? null
+    : setup.dismissalReadyAt != null && setup.dismissalReadyAt < endOfDayAt
+      ? setup.dismissalReadyAt
+      : endOfDayAt - readyMin;
+  const endOfDaySoon = endOfDayAt != null
+    && t >= Math.min(readyAt, endOfDayAt - readyMin) && t < endOfDayAt;
   const msgNear = dismissal.times.find((m) => t >= m.at - dismissal.advanceMin && t < m.at) || null;
   const msgSoon = endOfDaySoon || !!msgNear;
   // The last minutes before lunch get a grace, not the end-of-day benediction.
@@ -1326,6 +1336,15 @@ export default function DailyPage() {
     ) : null);
   // The end-of-day package that takes over the feature side: what is on
   // tomorrow, the head-out list, and the Kiss & Ride names waiting outside.
+  // Two cells can carry the same words — the head-out cell ends with the
+  // blessing, and the feature slot often holds it too at that hour — and the
+  // board was showing it twice on the same screen.
+  const sameText = (a, b) => {
+    const tidy = (v) => String(v || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    const x = tidy(a);
+    const y = tidy(b);
+    return !!x && !!y && (x === y || x.includes(y) || y.includes(x));
+  };
   const dismissalPanel = (withHeadout, readyAt) => (
     <div className="panel dismissalpanel">
       {readyAt != null ? (
@@ -1344,7 +1363,7 @@ export default function DailyPage() {
             <ol className="waiting">{waiting.slice(0, 6).map((w, i) => <li key={i}>{w}</li>)}</ol>
           </div>
         ) : null}
-      {withHeadout ? null : featureBlock()}
+      {withHeadout || sameText(featureText, meta.blessing) ? null : featureBlock()}
     </div>
   );
 
@@ -1449,16 +1468,21 @@ export default function DailyPage() {
       const mp = classes.find((c) => /^CE\b/i.test(c.subj || "")) || classes[3] || null;
       return !!mp && cur.start === mp.start;
     })();
-    const from = Math.max(memClass ? setup.memoryMin : 0, hasPic ? setup.picSeconds / 60 : 0);
+    const from = memClass ? setup.memoryMin : 0;
     const until = from + setup.verseMin;
+    const mediaEnd = until + setup.mediaMin;
+    const media = hasPic || cur.video;
     const w = workOf(cur);
-    const showing = cur.elapsed < until
-      ? (memClass && cur.elapsed < setup.memoryMin ? "the memory work" : hasPic && cur.elapsed * 60 < setup.picSeconds ? "the lesson picture" : "the verse of the day")
-      : w ? w.head.toLowerCase() : "the verse of the day (nothing set to turn over to)";
+    const showing = cur.elapsed < from ? "the memory work"
+      : cur.elapsed < until ? "the verse of the day"
+        : cur.elapsed < mediaEnd && media ? `the lesson's own ${hasPic && cur.video ? "picture and video" : hasPic ? "picture" : "video"}`
+          : w ? w.head.toLowerCase() : "the verse of the day (nothing set to turn over to)";
     return [
-      `picture: ${hasPic ? `${Math.round(setup.picSeconds / 60)} min` : "none for this class"}`,
       memClass ? `memory work: ${setup.memoryMin} min` : "not the CE period",
       `verse: ${fmt(Math.round(cur.start + from))} to ${fmt(Math.round(cur.start + until))}`,
+      `lesson media: ${media ? `${fmt(Math.round(cur.start + until))} to ${fmt(Math.round(cur.start + mediaEnd))}` : "nothing in columns I to K for this row"}`
+        + `  ·  picture ${cur.image ? (hasPic ? "found" : "found but it does not load") : "empty"}`
+        + `, video ${cur.video ? "found" : "empty"}`,
       `work: ${w ? `${w.head} — ${w.items.join("; ").slice(0, 60)}` : "nothing set (no assignment, no homework on the Lessons row)"}`,
       `showing now: ${showing}`,
     ].join("  ·  ");
@@ -1609,6 +1633,18 @@ export default function DailyPage() {
               {row("head out items", meta.headout.join(" | "))}
               {row("blessing", meta.blessing)}
               {row("end of day at", endOfDayAt == null ? "" : `${fmt(endOfDayAt)} (package from ${fmt(endOfDayAt - dismissal.advanceMin)})`)}
+              {/* Four cells can say when the day ends and the first that is set
+                  wins, so all four are printed: a board an hour out is a wrong
+                  cell, not a wrong rule. */}
+              {row("end of day, where from", [
+                `DisplayAI dismissal row: ${dismissalRow ? fmt(dismissalRow.start) : "none"}`,
+                `message block "Dismissal": ${(dismissal.times.find((m) => /dismiss/i.test(m.label)) || {}).at != null ? fmt((dismissal.times.find((m) => /dismiss/i.test(m.label)) || {}).at) : "none"}`,
+                `Setup "Show Dismissal List": ${setup.dismissalAt != null ? fmt(setup.dismissalAt) : "none"}`,
+                `last bell: ${(data.dayTimes || []).length ? fmt(data.dayTimes[data.dayTimes.length - 1]) : "none"}`,
+              ].join("   ·   "))}
+              {row("stand ready by", readyAt == null
+                ? "no end of day"
+                : `${fmt(readyAt)}  ·  ${setup.dismissalReadyAt != null ? "Setup names the time" : `Setup names ${setup.dismissalReadyMin} min before the bell`}`)}
               {row("dismissal messages", dismissal.times.map((m) => `${m.label} ${fmt(m.at)}`).join("  ") + `  · ${dismissal.advanceMin} min before`)}
               {row("Kiss & Ride waiting", waiting.length ? waiting.join(" | ") : "")}
               {row("verse (as read)", meta.verse)}
@@ -1763,11 +1799,17 @@ export default function DailyPage() {
                 return <p className="question joke"><span>{q}</span> <b>{a}</b></p>;
               })()}
             <p className="summary">Tidy your area, tuck your chair in and stand behind it, ready for your homeroom teacher.</p>
-            {meta.headout.length > 0 && (
-              <div className="block alert" style={{ textAlign: "left", display: "inline-block" }}>
-                <h3>Before you head out</h3>{list(meta.headout)}
-              </div>
-            )}
+            {(() => {
+              // The blessing is already the line above, in full and in the
+              // serif. A copy of it at the foot of the list is the same words
+              // twice on one screen.
+              const items = meta.headout.filter((x) => !sameText(x, meta.blessing));
+              return items.length > 0 ? (
+                <div className="block alert" style={{ textAlign: "left", display: "inline-block" }}>
+                  <h3>Before you head out</h3>{list(items)}
+                </div>
+              ) : null;
+            })()}
           </div>
           {featureImage ? bigPicture(featureImage, "On screen now", "") : dismissalPanel(false)}
         </div>
@@ -1913,19 +1955,47 @@ export default function DailyPage() {
     // the Setup slot picture is the fallback.
     const lessonPic = cur.image ? { url: cur.image, seconds: setup.picSeconds } : data.picture;
     const hasLessonPic = opts.pic !== "off" && !!lessonPic && usable(lessonPic.url);
-    const lessonPicOn = hasLessonPic && elapsed * 60 < setup.picSeconds;
-    const picOn = !!featureImage || lessonPicOn;
+    const hasLessonVideo = !!cur.video;
 
-    // The verse of the day takes the right-hand half once it is free — the
-    // lesson picture and the memory work have their own windows first — and
-    // holds it for `verseMin` minutes. Its minutes therefore start when it
-    // actually appears, not when the class does; after them the half turns over
-    // to the work, and the bottom bar takes the verse back.
-    const verseFrom = Math.max(
-      memoryClass ? setup.memoryMin : 0,
-      hasLessonPic ? setup.picSeconds / 60 : 0,
-    );
-    const verseInPanel = elapsed < verseFrom + setup.verseMin;
+    // The right-hand half in order: the memory work where there is any, then the
+    // verse of the day, then the lesson's own picture and video, then the work.
+    // The verse leads because it is the same few lines every day and the room
+    // reads it in the settling minutes; the lesson's own material follows,
+    // while the class is still on the introduction.
+    const verseFrom = memoryClass ? setup.memoryMin : 0;
+    const verseUntil = verseFrom + setup.verseMin;
+    const mediaUntil = verseUntil + setup.mediaMin;
+    const verseInPanel = elapsed < verseUntil;
+    const lessonPicOn = hasLessonPic && elapsed >= verseUntil && elapsed < mediaUntil;
+    const mediaOn = (hasLessonPic || hasLessonVideo) && elapsed >= verseUntil && elapsed < mediaUntil;
+    const picOn = !!featureImage || lessonPicOn;
+    // The lesson's own material, on the half: the picture, and the video as a
+    // poster that opens over the whole board. Column I and column J of the
+    // Lessons row, which is where the teacher puts them.
+    const lessonMedia = () => {
+      const left = Math.max(1, Math.ceil(mediaUntil - elapsed));
+      const pic = hasLessonPic
+        ? bigPicture(lessonPic.url, `Lesson picture${cur.code ? ` · ${cur.code}` : ""}`, `${left} min left on screen`)
+        : null;
+      const video = hasLessonVideo ? (
+        <div className="block videoblock">
+          <h3>Video{cur.code ? ` · ${cur.code}` : ""}</h3>
+          <div
+            className="vid poster"
+            role="button"
+            tabIndex={0}
+            aria-label="Play the lesson video"
+            onClick={() => setVidBig(true)}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setVidBig(true); } }}
+          >
+            <div className="thumb">▶</div>
+          </div>
+          <p className="summary">Press to play</p>
+        </div>
+      ) : null;
+      if (pic && !video) return pic;
+      return <div className="panel mediaside">{pic}{video}</div>;
+    };
 
     // Handouts named in the lesson cell, so they can be opened and printed from
     // the board if they were not run off beforehand.
@@ -1981,12 +2051,11 @@ export default function DailyPage() {
     } else if (endOfDaySoon) {
       // The last few minutes of the day: E1 gives its side of the screen over to
       // the dismissal package.
-      side = dismissalPanel(true, endOfDayAt);
+      side = dismissalPanel(true, readyAt);
     } else if (featureImage) {
       side = bigPicture(featureImage, `On screen now · ${cur.code}`, "");
-    } else if (lessonPicOn) {
-      const picLeft = Math.ceil((setup.picSeconds - elapsed * 60) / 60);
-      side = bigPicture(lessonPic.url, `Lesson picture${cur.code ? ` · ${cur.code}` : ""}`, `${picLeft} min left on screen`);
+    } else if (mediaOn) {
+      side = lessonMedia();
     } else {
       const blocks = [];
       if (phase === "open") {

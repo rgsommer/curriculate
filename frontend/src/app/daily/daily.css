@@ -242,7 +242,12 @@ a.subj.deck:hover { text-decoration-color: currentColor; }
 .main.endofday .question.blessing {
   font-family: var(--font-merriweather), Georgia, serif;
   font-style: italic;
-  margin: 0;
+  /* The last words of the day, and the room is reading them from their seats.
+     It was set at the size of the notes around it — a footnote to its own
+     screen — and this is the one line on it that everyone is meant to read. */
+  font-size: calc(clamp(22px, 4.4vh, 52px) * var(--fit));
+  line-height: 1.25;
+  margin: .6vh 0 .4vh;
 }
 /* What the school's calendar carries for today and tomorrow: one line across
    the top of every screen, whatever the board is showing. */
@@ -492,7 +497,23 @@ a.subj.deck:hover { text-decoration-color: currentColor; }
 /* The Prayercast, in the right-hand half for the minutes after O Canada. The
    tile fills the column — this is meant to be pressed from across the room,
    not found — and expanding it is the same overlay the bar's little one uses. */
-.block.prayercast { background: color-mix(in srgb, var(--subj) 10%, transparent); text-align: center; }
+.block.prayercast, .block.videoblock { background: color-mix(in srgb, var(--subj) 10%, transparent); text-align: center; }
+/* The lesson's own video, on the half after the verse. Same tile as the
+   Prayercast's: sized to the column, because a thumbnail in the middle of an
+   empty half is something nobody presses. */
+.block.videoblock .vid:not(.big) {
+  width: 100%;
+  max-width: none;
+  margin: 1.4vh 0 .8vh;
+  border-width: 3px;
+  border-color: color-mix(in srgb, var(--subj) 45%, transparent);
+  cursor: pointer;
+}
+.block.videoblock .vid:not(.big) .thumb { font-size: clamp(34px, 7vh, 80px); }
+.block.videoblock .summary { margin: 0; font-size: calc(clamp(13px, 2vh, 20px) * var(--fit)); letter-spacing: .08em; text-transform: uppercase; }
+/* Picture above, video below, both filling the column. */
+.panel.mediaside { justify-content: center; gap: 1.6vh; }
+.panel.mediaside .picture { flex: 0 1 auto; min-height: 0; }
 /* :not(.big) matters — this rule is more specific than .vid.big, so without it
    the panel's width and aspect ratio follow the tile into the expanded state
    and the overlay opens six pixels tall. */

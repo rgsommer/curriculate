@@ -56,6 +56,7 @@ export type Setup = {
   riddleUntil: number | null;
   graceMin: number;
   dismissalReadyMin: number;
+  dismissalReadyAt: number | null; // the row may name the moment rather than the minutes
   washroomBefore: number;
   snacksB2Min: number;
   seatMin: number; // how long the free seat is on the table at the top of a class
@@ -64,6 +65,7 @@ export type Setup = {
   memoryMin: number; // how long the memory verse and the hymn hold the panel in CE
   verseMin: number; // how long the verse of the day holds the right-hand half before the work takes it
   prayerMin: number; // how long the Prayercast video holds the half after O Canada
+  mediaMin: number; // how long the lesson's own picture and video hold the half, after the verse
   picSeconds: number;
 };
 
@@ -125,6 +127,7 @@ export const DEFAULT_SETUP: Setup = {
   riddleUntil: null,
   graceMin: 15,
   dismissalReadyMin: 5,
+  dismissalReadyAt: null,
   washroomBefore: 10,
   snacksB2Min: 5,
   seatMin: 5,
@@ -133,6 +136,7 @@ export const DEFAULT_SETUP: Setup = {
   memoryMin: 10,
   verseMin: 10,
   prayerMin: 5,
+  mediaMin: 15,
   picSeconds: 600,
 };
 
@@ -1116,7 +1120,14 @@ export function parseSetup(rows: string[][]): Setup {
     } else if (label.startsWith("show dismissal list")) out.dismissalAt = parseTime(d) ?? parseTime(c);
     // No such row in the sheet yet; add one labelled "Stand ready for dismissal"
     // with the minutes in column C to change it from five.
-    else if (/^(stand ready|get ready|dismissal ready)/.test(label)) out.dismissalReadyMin = num(c, out.dismissalReadyMin);
+    // The row may say how many minutes before the bell, or the time itself
+    // ("3:25 PM"). A time is what a teacher writes when what they mean is "be
+    // standing by then", and num() made 3 minutes of it.
+    else if (/^(stand ready|get ready|dismissal ready)/.test(label)) {
+      const when = parseTime(c) ?? parseTime(d);
+      if (when != null) out.dismissalReadyAt = when;
+      else out.dismissalReadyMin = num(c, out.dismissalReadyMin);
+    }
     else if (label.startsWith("show pregnancy weeks")) out.graceMin = num(d, out.graceMin);
     else if (label.startsWith("can go to washroom")) out.washroomBefore = num(d, out.washroomBefore);
     else if (label.startsWith("snacks are allowed")) out.snacksB2Min = num(c, out.snacksB2Min);
@@ -1135,6 +1146,9 @@ export function parseSetup(rows: string[][]): Setup {
     // No such row in the sheet yet; add one labelled "Prayercast for" with the
     // minutes in column C to change it from five.
     else if (/^(prayercast|prayer video|prayer for)/.test(label)) out.prayerMin = num(c, out.prayerMin);
+    // No such row in the sheet yet; add one labelled "Lesson picture for" with
+    // the minutes in column C to change it from fifteen.
+    else if (/^(lesson picture|lesson media|lesson video)/.test(label)) out.mediaMin = num(c, out.mediaMin);
   }
   return out;
 }
