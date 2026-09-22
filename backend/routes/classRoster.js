@@ -9,6 +9,13 @@ import { resolveAccessForUser } from "../billing/planResolver.js";
 
 const router = express.Router();
 
+// Used when a class name can't be derived from the filename. Rosters that fall
+// back to it are NOT treated as the same class as each other — two unnamed
+// uploads are two classes, not one overwriting the other.
+const FALLBACK_CLASS_NAME = "Imported Class";
+
+const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 /**
  * Look up a teacher's tier by email. Returns "FREE" if not found.
  * Used by the upload route to gate class-linking behind PLUS.
@@ -164,11 +171,32 @@ router.post("/upload", async (req, res) => {
         derivedClassName = base;
       }
     }
-    derivedClassName = derivedClassName || "Imported Class";
+    derivedClassName = derivedClassName || FALLBACK_CLASS_NAME;
 
-    // If the same teacher already uploaded the same sourceFile, replace it
-    if (sourceFile) {
-      await ClassRoster.deleteMany({ teacherEmail: email, sourceFile });
+    // Replace, don't accumulate. Re-uploading a class list is a correction or a
+    // new year's version of a roster the teacher already has — two rosters for
+    // GEO8A is never what they meant, and both would then be offered as match
+    // targets after grading.
+    //
+    // Matching on sourceFile alone was too narrow: next year's export, a
+    // re-download the browser names "… (1).csv", or a file renamed by hand all
+    // arrive under a different filename and used to land beside the old roster
+    // rather than replacing it. The class name is the identity that matters, so
+    // match on either — case-insensitively, since "Geo8a" and "GEO8A" are the
+    // same class.
+    //
+    // Parent emails are not collateral here: StudentContact is its own
+    // collection keyed by edsbyId, so contacts survive the roster document
+    // being replaced and re-attach to the new one.
+    const replaceMatch = [];
+    if (sourceFile) replaceMatch.push({ sourceFile });
+    if (derivedClassName !== FALLBACK_CLASS_NAME) {
+      replaceMatch.push({ className: new RegExp(`^${escapeRegex(derivedClassName)}$`, "i") });
+    }
+    let replacedCount = 0;
+    if (replaceMatch.length) {
+      const del = await ClassRoster.deleteMany({ teacherEmail: email, $or: replaceMatch });
+      replacedCount = del?.deletedCount || 0;
     }
 
     const roster = await ClassRoster.create({
@@ -183,6 +211,9 @@ router.post("/upload", async (req, res) => {
       rosterId: roster._id,
       className: derivedClassName,
       studentCount: students.length,
+      // How many existing rosters this upload replaced, so the UI can say
+      // "replaced" rather than implying a second copy was added.
+      replacedCount,
       students: students.map((s) => ({
         firstName: s.firstName,
         lastName: s.lastName,
@@ -428,13 +459,27 @@ router.post("/:id/contacts/bulk-set", async (req, res) => {
 });
 
 /* ------------------------------------------------------------------
- *  DELETE /class-roster/:id
- *  Deletes a single roster by ID.
+ *  DELETE /class-roster/:id?teacherEmail=...
+ *  Deletes a single roster by ID, if it belongs to this teacher.
+ *
+ *  The ownership check is not optional: roster ids are handed to the browser by
+ *  /list and ObjectIds carry a timestamp and counter, so without it any caller
+ *  could delete another teacher's class list. Every other route in this file
+ *  verifies the owner; this one used to delete on the id alone.
  * ------------------------------------------------------------------ */
 router.delete("/:id", async (req, res) => {
   try {
-    await ClassRoster.findByIdAndDelete(req.params.id);
-    return res.json({ ok: true });
+    const email = String(req.query.teacherEmail || "").trim().toLowerCase();
+    if (!email || !email.includes("@")) {
+      return res.status(400).json({ error: "Valid teacherEmail is required." });
+    }
+    const roster = await ClassRoster.findById(req.params.id).lean();
+    if (!roster) return res.json({ ok: true, removed: 0 }); // already gone
+    if (String(roster.teacherEmail || "").toLowerCase() !== email) {
+      return res.status(403).json({ error: "Roster not yours." });
+    }
+    await ClassRoster.deleteOne({ _id: roster._id });
+    return res.json({ ok: true, removed: 1 });
   } catch (err) {
     console.error("DELETE /class-roster/:id error:", err?.message || err);
     return res.status(500).json({ error: "Failed to delete roster." });

@@ -635,6 +635,9 @@ export default function BatchGrading({
   const rosterClasses = parentRosterClasses || localRosterClasses;
   const setRosterClasses = parentSetRosterClasses || localSetRosterClasses;
   const [rosterUploading, setRosterUploading] = useState(false);
+  // What the last upload did, so replacing an existing class is visible rather
+  // than looking like nothing happened.
+  const [rosterNotice, setRosterNotice] = useState("");
   const [rosterLoading, setRosterLoading] = useState(false);
   const rosterFileRef = useRef(null);
 
@@ -3305,8 +3308,11 @@ export default function BatchGrading({
     }
 
     setRosterUploading(true);
+    setRosterNotice("");
     const rosterBase = gradingUrl.replace(/\/grading$/, "/class-roster");
     const errors = [];
+    const replaced = [];
+    const added = [];
     for (const file of files) {
       try {
         const text = await file.text();
@@ -3321,6 +3327,7 @@ export default function BatchGrading({
         });
         const data = await res.json();
         if (!res.ok) errors.push(`${file.name}: ${data.error || "failed"}`);
+        else (data.replacedCount > 0 ? replaced : added).push(data.className || file.name);
       } catch (err) {
         errors.push(`${file.name}: ${err?.message || "failed"}`);
       }
@@ -3337,17 +3344,38 @@ export default function BatchGrading({
     else {
       try { if (window.gtag) window.gtag("event", "roster_uploaded", { file_count: files.length }); } catch {}
     }
+    const bits = [];
+    if (replaced.length) bits.push(`Replaced ${replaced.join(", ")}`);
+    if (added.length) bits.push(`Added ${added.join(", ")}`);
+    setRosterNotice(bits.join(" · "));
     setRosterUploading(false);
   }, [gradingUrl]);
 
   const deleteRoster = useCallback(async (rosterId) => {
     if (!confirm("Delete this class roster?")) return;
+    const email = parentTeacherEmail || (() => { try { return localStorage.getItem("curriculate_report_email") || ""; } catch { return ""; } })();
+    if (!email || !email.includes("@")) {
+      alert("Please set your email address in the email field above first.");
+      return;
+    }
     try {
       const rosterBase = gradingUrl.replace(/\/grading$/, "/class-roster");
-      await fetch(`${rosterBase}/${rosterId}`, { method: "DELETE" });
+      // teacherEmail is required by the server, which checks the roster is
+      // actually yours before removing it.
+      const res = await fetch(
+        `${rosterBase}/${rosterId}?teacherEmail=${encodeURIComponent(email)}`,
+        { method: "DELETE" }
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || "Could not delete that roster.");
+        return;
+      }
       setRosterClasses((prev) => prev.filter((r) => r.id !== rosterId));
-    } catch {}
-  }, [gradingUrl]);
+    } catch {
+      alert("Could not delete that roster.");
+    }
+  }, [gradingUrl, parentTeacherEmail]);
 
   // Generate IDs from a list of names
   const generateManualRoster = useCallback(() => {
@@ -3495,6 +3523,19 @@ export default function BatchGrading({
             >
               {showManualRoster ? "Cancel" : "Create Roster"}
             </button>
+
+            {rosterNotice && (
+              <div
+                role="status"
+                style={{
+                  fontSize: 12, color: "#166534", background: "rgba(22,101,52,0.08)",
+                  border: "1px solid rgba(22,101,52,0.2)", borderRadius: 6,
+                  padding: "5px 9px", marginBottom: 8,
+                }}
+              >
+                {rosterNotice}
+              </div>
+            )}
 
             {/* Manual roster entry */}
             {showManualRoster && (

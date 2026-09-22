@@ -17,6 +17,24 @@
 
 import React, { useState } from "react";
 
+// Shown on hover before the dialog is ever opened. A destructive control
+// labelled only "Start a new school year…" doesn't say what it clears, and the
+// one thing a teacher needs to know before clicking is that results are deleted
+// outright rather than archived.
+const NEW_YEAR_TOOLTIP = [
+  "Permanently deletes last year's graded results from your account, so a new",
+  "cohort doesn't inherit the previous one's progress portal. Result links you",
+  "handed out stop working.",
+  "",
+  "Deleted by default: published results and homework batches.",
+  "Kept by default: class rosters, parent contacts and answer keys — you can",
+  "tick those in if you want them gone too. (Answer keys belong to a textbook,",
+  "not a year.)",
+  "",
+  "You see exact counts of what will go before anything happens, and must type",
+  "NEW YEAR to confirm. It cannot be undone.",
+].join("\n");
+
 export default function NewYearReset({ backendBase, teacherEmail, onDone }) {
   const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState(null);
@@ -88,7 +106,12 @@ export default function NewYearReset({ backendBase, teacherEmail, onDone }) {
 
   if (!open) {
     return (
-      <button type="button" style={st.trigger} onClick={() => { setOpen(true); runPreview(); }}>
+      <button
+        type="button"
+        style={st.trigger}
+        onClick={() => { setOpen(true); runPreview(); }}
+        title={NEW_YEAR_TOOLTIP}
+      >
         Start a new school year…
       </button>
     );
@@ -128,6 +151,9 @@ export default function NewYearReset({ backendBase, teacherEmail, onDone }) {
             <div style={st.body}>
               Clears last year's results so a new cohort doesn't share a progress portal
               with the previous one. Everything here is scoped to your account only.
+              {" "}
+              <b>This deletes permanently — there is no archive and no undo, and any
+              result links you handed out will stop working.</b>
             </div>
 
             <div style={{ marginBottom: 12 }}>
