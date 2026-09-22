@@ -88,7 +88,13 @@ export default function HousesDisplay() {
     );
   }
 
-  const max = Math.max(1, ...(board?.houses || []).map((h) => Math.abs(h.points)));
+  // Bar length reflects STANDING (leader longest), normalized across the real
+  // [low, high] range so negative totals never look like they're "ahead".
+  const ptVals = (board?.houses || []).map((h) => h.points || 0);
+  const hiPts = Math.max(0, ...ptVals);
+  const loPts = Math.min(0, ...ptVals);
+  const ptSpan = Math.max(1, hiPts - loPts);
+  const barPct = (p: number) => Math.max(3, Math.round((((p || 0) - loPts) / ptSpan) * 100));
   const ts = board?.dailyTopStudent;
   const th = board?.dailyTopHouse;
 
@@ -193,7 +199,7 @@ export default function HousesDisplay() {
                     <span className="text-[2.2vw] font-extrabold tabular-nums">{h.points.toLocaleString()}</span>
                   </div>
                   <div className="mt-[0.6vh] h-[1.6vh] w-full overflow-hidden rounded-full bg-white/15">
-                    <div className="h-full rounded-full" style={{ width: `${Math.max(3, (Math.abs(h.points) / max) * 100)}%`, background: h.color }} />
+                    <div className="h-full rounded-full" style={{ width: `${barPct(h.points)}%`, background: h.color, opacity: (h.points || 0) < 0 ? 0.45 : 1 }} />
                   </div>
                 </div>
               </li>

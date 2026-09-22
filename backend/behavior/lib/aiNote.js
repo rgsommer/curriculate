@@ -53,6 +53,21 @@ function fmtDate(d) {
  * Name]," or "[Teacher]"), neutralise it here rather than send raw brackets to a
  * parent. Applied to EVERY composed note, AI or template.
  */
+/**
+ * Remove light markdown emphasis (**bold**, __bold__, *italic*, _italic_) from a
+ * note, leaving clean prose. The composer is asked to bold key items with
+ * **double asterisks** so the teacher's pasteable copy reads as rich text; every
+ * plain-text surface (the note stored/dispatched to a parent, the teacher's text
+ * copy) runs through this so no asterisks ever reach a family.
+ */
+export function stripMarkdown(text) {
+  return String(text || "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1")
+    .replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, "$1$2")
+    .replace(/(^|[^_])_([^_\n]+)_(?!_)/g, "$1$2");
+}
+
 export function sanitizeNote(text, ctx = {}) {
   let s = String(text || "");
   // "Dear [anything]," → the real greeting if we have one, else a safe generic.
@@ -174,6 +189,7 @@ export function buildPositivePrompt(ctx) {
     `School: ${ctx.schoolName || ""}.`,
     `The positive contributions to celebrate:\n${incidentLines}`,
     `Do NOT mention any negative behaviour, discipline, consequences, points, or concerns of any kind. Keep it genuine, specific, and under 150 words.`,
+    `Formatting: use **double asterisks** to bold ONLY the student's name the first time it appears and the specific thing being celebrated. Bold sparingly; never bold a whole sentence, and use no other markdown.`,
     `Sign off with this signature block exactly:\n${ctx.signature || ""}`,
     `Write only the note body (no subject line).`,
   ]
@@ -185,15 +201,18 @@ export function buildPositivePrompt(ctx) {
 export async function composePositiveNotice(ctx, opts = {}) {
   const aiClient = opts.aiClient;
   const timeoutMs = opts.timeoutMs || DEFAULT_TIMEOUT_MS;
-  if (!aiClient) return { text: sanitizeNote(deterministicPositiveNote(ctx), ctx), aiUsed: false };
+  if (!aiClient) { const t = sanitizeNote(deterministicPositiveNote(ctx), ctx); return { text: t, markdown: t, aiUsed: false }; }
   try {
     const text = await withTimeout(aiClient.complete(buildPositivePrompt(ctx)), timeoutMs);
     const trimmed = sanitizeNote(text, ctx);
     if (!trimmed) throw new Error("empty AI response");
-    return { text: trimmed, aiUsed: true };
+    // `markdown` keeps the **bold** for the teacher's pasteable copy; `text` is
+    // the clean version used everywhere a parent/reader sees plain text.
+    return { text: stripMarkdown(trimmed), markdown: trimmed, aiUsed: true };
   } catch (err) {
     console.warn("[behavior/aiNote] positive AI compose failed, using template:", err?.message || err);
-    return { text: sanitizeNote(deterministicPositiveNote(ctx), ctx), aiUsed: false };
+    const t = sanitizeNote(deterministicPositiveNote(ctx), ctx);
+    return { text: t, markdown: t, aiUsed: false };
   }
 }
 
@@ -248,6 +267,7 @@ export function buildPrompt(ctx) {
     (ctx.consequences || []).length ? `Consequence(s) to state: ${ctx.consequences.join("; ")}.` : "",
     hasUniform ? `One or more of the items above are uniform/dress-code matters (marked "[uniform/dress-code]" in the list). When you list those items, KEEP them clearly marked as a uniform/dress-code item (e.g. append " (uniform)"), and briefly and kindly note that repeated uniform issues also affect the student's uniform standing (the school's "Good Uniform Dress Down"). Only reference "items marked uniform" if you have actually marked them. Keep it factual, not a threat.` : "",
     ctx.ccVp ? `Mention that the Vice-Principal has been copied.` : "",
+    `Formatting: use **double asterisks** to bold ONLY the few most important items — the student's name the first time it appears, the specific consequence(s), and any date or deadline the parent must act on. Bold sparingly; never bold a whole sentence or paragraph, and use no other markdown.`,
     `Sign off with this signature block exactly:\n${ctx.signature || ""}`,
     `Write only the note body (no subject line). Keep it under 220 words. Do not invent facts beyond those given, and do not recount the background history.`,
   ]
@@ -269,7 +289,8 @@ export async function composeNotice(ctx, opts = {}) {
   const timeoutMs = opts.timeoutMs || DEFAULT_TIMEOUT_MS;
 
   if (!aiClient) {
-    return { text: sanitizeNote(deterministicNote(ctx), ctx), aiUsed: false };
+    const t = sanitizeNote(deterministicNote(ctx), ctx);
+    return { text: t, markdown: t, aiUsed: false };
   }
 
   try {
@@ -277,11 +298,14 @@ export async function composeNotice(ctx, opts = {}) {
     const text = await withTimeout(aiClient.complete(prompt), timeoutMs);
     const trimmed = sanitizeNote(text, ctx);
     if (!trimmed) throw new Error("empty AI response");
-    return { text: trimmed, aiUsed: true };
+    // `markdown` keeps the **bold** for the teacher's pasteable copy; `text` is
+    // the clean version used everywhere a parent/reader sees plain text.
+    return { text: stripMarkdown(trimmed), markdown: trimmed, aiUsed: true };
   } catch (err) {
     // Fail safe — never let a notice die because of the AI.
     console.warn("[behavior/aiNote] AI compose failed, using template:", err?.message || err);
-    return { text: sanitizeNote(deterministicNote(ctx), ctx), aiUsed: false };
+    const t = sanitizeNote(deterministicNote(ctx), ctx);
+    return { text: t, markdown: t, aiUsed: false };
   }
 }
 
