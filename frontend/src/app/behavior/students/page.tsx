@@ -62,14 +62,19 @@ export default function StudentsPage() {
 
   // Generate a parent message for one student from the chosen template: copy it
   // to the clipboard and log it. The selected template persists across students.
-  async function sendParentMessage(s: StudentSummary, force = false) {
+  async function sendParentMessage(s: StudentSummary, force = false, newStudentArg?: boolean) {
     if (!tpl) { setPmMsg("Pick a message template first."); return; }
+    // On an encouraging note, offer to add a warm welcome for a new student.
+    const isEncouraging = (templates.find((t) => t.name === tpl)?.kind ?? "encouraging") !== "corrective";
+    const newStudent = newStudentArg !== undefined
+      ? newStudentArg
+      : (isEncouraging && window.confirm(`Is ${s.firstName} a new student?\n\nOK = add a warm welcome (“so glad to have them”); Cancel = a normal note.`));
     try {
-      const r = await generateParentMessage(s._id, tpl, force);
+      const r = await generateParentMessage(s._id, tpl, force, newStudent);
       if (r.duplicate) {
         const when = r.lastSentAt ? new Date(r.lastSentAt).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" }) : "earlier this year";
         if (window.confirm(`You already sent this message to ${s.firstName} ${s.lastName} on ${when}. Send another anyway?`)) {
-          await sendParentMessage(s, true);
+          await sendParentMessage(s, true, newStudent);
         } else {
           setPmMsg(`Skipped ${s.firstName} — already sent this ${when}.`);
         }

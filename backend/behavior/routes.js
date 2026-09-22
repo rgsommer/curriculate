@@ -793,12 +793,21 @@ router.post("/students/:id/parent-message", authAny, loadMembership, canLog, asy
       if (prior) return res.json({ ok: true, duplicate: true, lastSentAt: prior.at, template: tpl.name });
     }
 
-    const filled = fillTemplate(tpl.body, {
+    let filled = fillTemplate(tpl.body, {
       student,
       teacher: teacherName,
       subject: me?.subject || "",
       schoolName: config?.branding?.schoolName || school?.name || "",
     });
+    // New student on an encouraging note: add a warm welcome saying how glad we
+    // are to have them. Inserted after the greeting so the AI rewrite keeps it.
+    if (req.body?.newStudent === true && kind === "encouraging") {
+      const pron = derivePronoun(student);
+      const him = pron.startsWith("he") ? "him" : pron.startsWith("she") ? "her" : "them";
+      const sn = config?.branding?.schoolName || school?.name || "";
+      const welcome = `We're so glad to have ${studentName} join us${sn ? ` at ${sn}` : ""} — it's a real joy to have ${him} in our class.`;
+      filled = filled.includes("\n\n") ? filled.replace("\n\n", `\n\n${welcome}\n\n`) : `${welcome}\n\n${filled}`;
+    }
     // Rewrite the filled template so each note is unique (not an obvious form
     // letter), keeping its Christian character — a verse in, a verse out.
     const aiClient = makeDefaultAiClient(config || {});

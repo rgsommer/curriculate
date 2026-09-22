@@ -154,9 +154,9 @@ export function saveMyTemplates(body: { subject?: string; templates?: ParentTemp
 }
 // Build a parent message for a student from a template, log it, and return the
 // filled text to copy. The teacher sends it themselves.
-export function generateParentMessage(studentId: string, name: string, force = false) {
+export function generateParentMessage(studentId: string, name: string, force = false, newStudent = false) {
   return api<{ message?: string; html?: string; template: string; duplicate?: boolean; lastSentAt?: string }>(
-    `/students/${studentId}/parent-message`, { method: "POST", body: { name, force } });
+    `/students/${studentId}/parent-message`, { method: "POST", body: { name, force, newStudent } });
 }
 // Bulk: email the teacher one personalised message per selected student and log
 // each separately. Encouraging duplicates within a year are skipped (reported in
