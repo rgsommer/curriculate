@@ -1410,6 +1410,9 @@ export default function GradingPage() {
     });
     const [rosterClasses, setRosterClasses] = useState([]);
     const [rosterLoading, setRosterLoading] = useState(false);
+    // Whether this teacher's plan allows linking classes, from /list. Lets the
+    // roster panel state the gate before they pick files, rather than after.
+    const [rosterAccess, setRosterAccess] = useState(null); // { canLinkClasses, tier, requiredPlan }
 
     // Persist teacher email
     useEffect(() => {
@@ -1781,13 +1784,18 @@ export default function GradingPage() {
 
     // Load rosters when email is set
     useEffect(() => {
-      if (!teacherEmail || !teacherEmail.includes("@") || !gradingUrl) { setRosterClasses([]); return; }
+      if (!teacherEmail || !teacherEmail.includes("@") || !gradingUrl) { setRosterClasses([]); setRosterAccess(null); return; }
       const rosterBase = gradingUrl.replace(/\/grading$/, "/class-roster");
       setRosterLoading(true);
       fetch(`${rosterBase}/list?teacherEmail=${encodeURIComponent(teacherEmail)}`)
         .then((r) => r.ok ? r.json() : { rosters: [] })
         .then((data) => {
           setRosterClasses(data.rosters || []);
+          setRosterAccess(
+            typeof data.canLinkClasses === "boolean"
+              ? { canLinkClasses: data.canLinkClasses, tier: data.tier, requiredPlan: data.requiredPlan || "PLUS" }
+              : null // older backend — say nothing rather than guess
+          );
           if ((data.rosters || []).length > 0) completeQuest("setup_class_roster");
         })
         .catch(() => {})
@@ -2931,7 +2939,14 @@ export default function GradingPage() {
             setSubmitError("");
             return;
           }
-          const msg = parsed?.details || parsed?.error || `HTTP ${res.status} from grading endpoint`;
+          // Include the server's error code and correlation id — in production
+          // `details` is deliberately vague ("unknown error"), so on its own it
+          // leaves nothing to act on or look up.
+          const msg = [
+            parsed?.details && parsed.details !== "unknown error" ? parsed.details : (parsed?.error || `HTTP ${res.status} from grading endpoint`),
+            parsed?.code && parsed.code !== "unknown" ? `(${parsed.code})` : null,
+            parsed?.errorId ? `[${parsed.errorId}]` : null,
+          ].filter(Boolean).join(" ");
           throw new Error(msg);
         }
       } catch (err) {
@@ -3989,6 +4004,7 @@ export default function GradingPage() {
               setTeacherEmail={setTeacherEmail}
               rosterClasses={rosterClasses}
               setRosterClasses={setRosterClasses}
+              rosterAccess={rosterAccess}
               onClose={() => setInputMode("photo")}
             />
           ) : inputMode === "homework" ? (

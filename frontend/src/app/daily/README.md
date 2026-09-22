@@ -102,7 +102,10 @@ remembered and left out of later batches (`readRangesSafe`).
 | Memory verse for (C) | The memory verse and the hymn hold the CE period's right-hand half for N minutes — 10 if the row is missing, which it is in the sheet today |
 | Verse of the day for (C) | The verse of the day holds the right-hand half for N minutes before the work takes it — 10 if the row is missing, which it is in the sheet today |
 | Prayercast for (C) | The day's "Pray for …" video holds the right-hand half for N minutes from the end of O Canada — 5 if the row is missing, which it is in the sheet today |
+<<<<<<< HEAD
 | Lesson picture for (C) | The lesson's own picture and video hold the right-hand half for N minutes after the verse — 15 if the row is missing, which it is in the sheet today |
+=======
+>>>>>>> origin/main
 
 The opening window (question and warm-up instead of the bullet list) is fixed at
 5 minutes in `parse.ts` (`DEFAULT_SETUP.openMin`); there is no Setup row for it yet.

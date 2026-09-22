@@ -524,6 +524,52 @@ function buildBatchPayloadText(result, refCode, gradeBandForKita) {
   return lines.join("\n").trim();
 }
 
+// ── Service faults: the failures that will hit every student identically ────
+// A bad OpenAI key, an exhausted quota, a retired model or dead AWS credentials
+// are properties of the deployment, not of the page being graded. Retrying the
+// next student cannot succeed. Left unchecked a 19-student batch uploads 19
+// times, waits a minute each time and prints 19 identical red rows — so the
+// batch stops at the first one instead, and says what is actually wrong.
+const SERVICE_FAULT_CODES = new Set([
+  "openai_auth",   // key missing, revoked or rejected
+  "openai_quota",  // out of credit / billing stopped
+  "openai_model",  // AI_MODEL / AI_MODEL_FULL names a model the account can't use
+  "aws_auth",      // S3 access key wrong or deactivated
+  "aws_denied",
+  "aws_no_bucket",
+]);
+
+const SERVICE_FAULT_HINTS = {
+  openai_auth: "The grading service's OpenAI key is missing or has been rejected.",
+  openai_quota: "The grading service's OpenAI account is out of credit.",
+  openai_model: "The grading service is configured to use an AI model it can't reach.",
+  aws_auth: "The grading service's storage credentials have been rejected.",
+  aws_denied: "The grading service was denied access to its storage.",
+  aws_no_bucket: "The grading service's storage bucket is missing.",
+};
+
+// When a roster was last uploaded. The year is always shown: telling this
+// year's class list from last year's is the whole reason the date is there, and
+// "Sep 22" alone doesn't.
+function formatUploadDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+// Read the server's classification off a result row. `raw` is the parsed
+// response body; a row that failed before the fetch returned has none.
+function serviceFaultOf(result) {
+  const code = result?.raw?.code;
+  if (!code || !SERVICE_FAULT_CODES.has(code)) return null;
+  return {
+    code,
+    hint: SERVICE_FAULT_HINTS[code] || "The grading service is misconfigured.",
+    errorId: result?.raw?.errorId || null,
+  };
+}
+
 export default function BatchGrading({
   gradingUrl,
   resultsUrl,
@@ -539,6 +585,7 @@ export default function BatchGrading({
   setTeacherEmail: parentSetTeacherEmail,
   rosterClasses: parentRosterClasses,
   setRosterClasses: parentSetRosterClasses,
+  rosterAccess,
   onClose,
 }) {
   // Preload jsPDF + qrcode CDN scripts as soon as batch mode opens
@@ -557,6 +604,9 @@ export default function BatchGrading({
   const [extractedAnswerKey, setExtractedAnswerKey] = useState(answerKeyOverride || "");
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
+  // Set when a grade comes back with a deployment-level fault, which halts the
+  // run — see SERVICE_FAULT_CODES. { code, hint, errorId, stoppedAt }
+  const [serviceFault, setServiceFault] = useState(null);
 
   const [grading, setGrading] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0, current: "" });
@@ -596,6 +646,9 @@ export default function BatchGrading({
   const rosterClasses = parentRosterClasses || localRosterClasses;
   const setRosterClasses = parentSetRosterClasses || localSetRosterClasses;
   const [rosterUploading, setRosterUploading] = useState(false);
+  // What the last upload did, so replacing an existing class is visible rather
+  // than looking like nothing happened.
+  const [rosterNotice, setRosterNotice] = useState(null); // { kind, text, errors[] }
   const [rosterLoading, setRosterLoading] = useState(false);
   const rosterFileRef = useRef(null);
 
@@ -1025,6 +1078,7 @@ export default function BatchGrading({
 
     abortRef.current = false;
     abortControllerRef.current = new AbortController();
+    setServiceFault(null); // a fresh run gets a fresh verdict on the service
     setGrading(true);
     // Wrap the whole run so an unexpected throw (or early return) can never leave
     // the UI stuck in the "grading" state — finally always clears it.
@@ -1267,7 +1321,19 @@ export default function BatchGrading({
           detectedTitle: data.detected_title || "",
           pageImages: images,
           refCode: null,
-          error: data.error ? (data.details ? `${data.error}: ${data.details}` : data.error) : null,
+          // Surface the server's error code and correlation id, not just the
+          // (deliberately vague in production) details string. "Grading failed:
+          // unknown error" across 19 rows tells you nothing; "openai_model
+          // [AB12CD]" tells you the model name is wrong and gives you the exact
+          // log line to look up.
+          error: data.error
+            ? [
+                data.error,
+                data.code && data.code !== "unknown" ? `(${data.code})` : null,
+                data.details && data.details !== "unknown error" ? `— ${data.details}` : null,
+                data.errorId ? `[${data.errorId}]` : null,
+              ].filter(Boolean).join(" ")
+            : null,
           raw: data,
         };
 
@@ -1342,6 +1408,9 @@ export default function BatchGrading({
         });
         const result = await gradeOneStudent(i, group);
         passes.push(result);
+        // No point running pass 2 and 3 against a rejected key — the caller
+        // checks the merged result and will stop the run anyway.
+        if (serviceFaultOf(result)) break;
       }
       return mergeMultiPassResults(passes);
     };
@@ -1349,6 +1418,9 @@ export default function BatchGrading({
     // Grade first student solo for fast initial feedback, then batches of 3
     const CONCURRENCY = precisionMode ? 1 : 3; // serialize in precision mode to avoid API overload
     let start = 0;
+    // Distinct from abortRef, which means the teacher pressed Stop. This means
+    // the service itself is down and continuing is pointless.
+    let halted = false;
 
     // First student — solo so the teacher sees a result quickly
     if (total > 0 && !abortRef.current) {
@@ -1357,11 +1429,21 @@ export default function BatchGrading({
       batchResults.push(first);
       setResults([...batchResults]);
       start = 1;
+
+      // The first student is graded solo precisely so a problem shows up before
+      // the rest are committed. A service fault here will repeat for all of
+      // them, so stop: uploading 18 more papers to a rejected API key wastes
+      // the teacher's time and tells them nothing new.
+      const fault = serviceFaultOf(first);
+      if (fault) {
+        setServiceFault({ ...fault, stoppedAt: 1, total });
+        halted = true;
+      }
     }
 
     // Remaining students in parallel batches
     for (; start < total; start += CONCURRENCY) {
-      if (abortRef.current) break;
+      if (abortRef.current || halted) break;
 
       const batchEnd = Math.min(start + CONCURRENCY, total);
       const batchSlice = studentGroups.slice(start, batchEnd);
@@ -1386,6 +1468,12 @@ export default function BatchGrading({
       settled.forEach((outcome, offset) => {
         if (outcome.status === "fulfilled") {
           batchResults.push(outcome.value);
+          // A quota can run dry, or a key be revoked, partway through a batch.
+          const fault = serviceFaultOf(outcome.value);
+          if (fault && !halted) {
+            setServiceFault({ ...fault, stoppedAt: batchResults.length, total });
+            halted = true;
+          }
         } else {
           console.error(`[batch] student ${start + offset + 1} grade threw:`, outcome.reason);
           batchResults.push({
@@ -3231,8 +3319,11 @@ export default function BatchGrading({
     }
 
     setRosterUploading(true);
+    setRosterNotice(null);
     const rosterBase = gradingUrl.replace(/\/grading$/, "/class-roster");
     const errors = [];
+    const replaced = [];
+    const added = [];
     for (const file of files) {
       try {
         const text = await file.text();
@@ -3246,7 +3337,15 @@ export default function BatchGrading({
           }),
         });
         const data = await res.json();
-        if (!res.ok) errors.push(`${file.name}: ${data.error || "failed"}`);
+        if (!res.ok) {
+          // Keep the server's own wording — "requires a PLUS plan" is the whole
+          // answer, and "failed" would have hidden it.
+          const why = data.error || `failed (${res.status})`;
+          const plan = data.currentPlan ? ` You're on ${data.currentPlan}.` : "";
+          errors.push(`${file.name}: ${why}${plan}`);
+        } else {
+          (data.replacedCount > 0 ? replaced : added).push(data.className || file.name);
+        }
       } catch (err) {
         errors.push(`${file.name}: ${err?.message || "failed"}`);
       }
@@ -3259,21 +3358,48 @@ export default function BatchGrading({
         setRosterClasses(listData.rosters || []);
       }
     } catch {}
-    if (errors.length) alert("Some files failed:\n" + errors.join("\n"));
-    else {
+    if (!errors.length) {
       try { if (window.gtag) window.gtag("event", "roster_uploaded", { file_count: files.length }); } catch {}
     }
+    // Failures stay on the page. An alert() is dismissed and gone, which is how
+    // an upload rejected outright — every file refused by the plan gate, say —
+    // reads afterwards as "the upload just didn't do anything".
+    const bits = [];
+    if (replaced.length) bits.push(`Replaced ${replaced.join(", ")}`);
+    if (added.length) bits.push(`Added ${added.join(", ")}`);
+    setRosterNotice({
+      kind: errors.length ? (replaced.length || added.length ? "partial" : "error") : "ok",
+      text: bits.join(" · "),
+      errors,
+    });
     setRosterUploading(false);
-  }, [gradingUrl]);
+  }, [gradingUrl, parentTeacherEmail]);
 
   const deleteRoster = useCallback(async (rosterId) => {
     if (!confirm("Delete this class roster?")) return;
+    const email = parentTeacherEmail || (() => { try { return localStorage.getItem("curriculate_report_email") || ""; } catch { return ""; } })();
+    if (!email || !email.includes("@")) {
+      alert("Please set your email address in the email field above first.");
+      return;
+    }
     try {
       const rosterBase = gradingUrl.replace(/\/grading$/, "/class-roster");
-      await fetch(`${rosterBase}/${rosterId}`, { method: "DELETE" });
+      // teacherEmail is required by the server, which checks the roster is
+      // actually yours before removing it.
+      const res = await fetch(
+        `${rosterBase}/${rosterId}?teacherEmail=${encodeURIComponent(email)}`,
+        { method: "DELETE" }
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || "Could not delete that roster.");
+        return;
+      }
       setRosterClasses((prev) => prev.filter((r) => r.id !== rosterId));
-    } catch {}
-  }, [gradingUrl]);
+    } catch {
+      alert("Could not delete that roster.");
+    }
+  }, [gradingUrl, parentTeacherEmail]);
 
   // Generate IDs from a list of names
   const generateManualRoster = useCallback(() => {
@@ -3339,6 +3465,9 @@ export default function BatchGrading({
   }, [manualRosterPreview, manualClassName, gradingUrl]);
 
   const totalRosterStudents = rosterClasses.reduce((s, r) => s + (r.studentCount || 0), 0);
+  // Only lock on an explicit "no". A null rosterAccess means an older backend
+  // that doesn't report the tier, and guessing would lock out paying teachers.
+  const rosterLocked = rosterAccess?.canLinkClasses === false;
 
   // ---------- Render ----------
   return (
@@ -3390,6 +3519,26 @@ export default function BatchGrading({
               Upload a class CSV (from Edsby or any spreadsheet with First Name, Last Name, Student ID columns), or click "Create Roster" to type names and auto-generate IDs. Students are auto-matched by name after grading. Note: you'll need to upload rosters on each device until login is available.
             </div>
 
+            {/* State the plan gate before any files are chosen. Finding out via a
+                403 after picking nine CSVs is the wrong moment to learn it — and
+                an upload that refuses every file otherwise just looks inert. */}
+            {rosterAccess && !rosterAccess.canLinkClasses && (
+              <div
+                role="note"
+                style={{
+                  fontSize: 12, color: "#7c2d12", background: "rgba(234,88,12,0.10)",
+                  border: "1px solid rgba(234,88,12,0.35)", borderRadius: 6,
+                  padding: "7px 10px", marginBottom: 8, lineHeight: 1.5,
+                }}
+              >
+                <b>Class rosters need a {rosterAccess.requiredPlan} plan.</b>{" "}
+                You're on {rosterAccess.tier || "FREE"}, so uploading is turned off — grading
+                works as normal, but results won't link to named students or reach the
+                progress portal.
+                {rosterClasses.length > 0 && " Rosters you've already uploaded still work, and you can still remove them."}
+              </div>
+            )}
+
             <input
               ref={rosterFileRef}
               type="file"
@@ -3400,27 +3549,57 @@ export default function BatchGrading({
             />
             <button
               onClick={() => rosterFileRef.current?.click()}
-              disabled={rosterUploading}
+              disabled={rosterUploading || rosterLocked}
               type="button"
+              title={rosterLocked ? `Requires a ${rosterAccess.requiredPlan} plan` : undefined}
               style={{
                 background: "#2563eb", color: "#fff", border: "none", borderRadius: 6,
-                padding: "6px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer",
-                opacity: rosterUploading ? 0.6 : 1, marginBottom: 8,
+                padding: "6px 14px", fontSize: 13, fontWeight: 700,
+                cursor: rosterLocked ? "not-allowed" : "pointer",
+                opacity: rosterUploading || rosterLocked ? 0.5 : 1, marginBottom: 8,
               }}
             >
               {rosterUploading ? "Uploading..." : "Upload CSVs"}
             </button>
             <button
               onClick={() => setShowManualRoster(!showManualRoster)}
+              disabled={rosterLocked}
               type="button"
+              title={rosterLocked ? `Requires a ${rosterAccess.requiredPlan} plan` : undefined}
               style={{
                 background: "none", color: "#2563eb", border: "1px solid #2563eb", borderRadius: 6,
-                padding: "6px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+                padding: "6px 14px", fontSize: 13, fontWeight: 700,
+                cursor: rosterLocked ? "not-allowed" : "pointer",
+                opacity: rosterLocked ? 0.5 : 1,
                 marginBottom: 8, marginLeft: 8,
               }}
             >
               {showManualRoster ? "Cancel" : "Create Roster"}
             </button>
+
+            {rosterNotice && (
+              <div
+                role={rosterNotice.kind === "ok" ? "status" : "alert"}
+                style={{
+                  fontSize: 12, marginBottom: 8, padding: "6px 9px", borderRadius: 6,
+                  ...(rosterNotice.kind === "ok"
+                    ? { color: "#166534", background: "rgba(22,101,52,0.08)", border: "1px solid rgba(22,101,52,0.2)" }
+                    : { color: "#7c2d12", background: "rgba(234,88,12,0.10)", border: "1px solid rgba(234,88,12,0.35)" }),
+                }}
+              >
+                {rosterNotice.text && <div>{rosterNotice.text}</div>}
+                {rosterNotice.errors?.length > 0 && (
+                  <>
+                    <div style={{ fontWeight: 700, marginTop: rosterNotice.text ? 4 : 0 }}>
+                      {rosterNotice.errors.length === 1 ? "This file was not uploaded:" : "These files were not uploaded:"}
+                    </div>
+                    {rosterNotice.errors.map((e, i) => (
+                      <div key={i} style={{ marginTop: 2 }}>{e}</div>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
 
             {/* Manual roster entry */}
             {showManualRoster && (
@@ -3513,6 +3692,16 @@ export default function BatchGrading({
                       <span style={{ color: "#94a3b8", marginLeft: 8, fontSize: 12 }}>
                         {rc.studentCount} student{rc.studentCount !== 1 ? "s" : ""}
                       </span>
+                      {/* Ahead of the filename, which is long and gets clipped on
+                          a narrow panel — the date is the part worth keeping. */}
+                      {formatUploadDate(rc.createdAt) && (
+                        <span
+                          style={{ color: "#64748b", marginLeft: 8, fontSize: 12 }}
+                          title={`Uploaded ${new Date(rc.createdAt).toLocaleString()}`}
+                        >
+                          uploaded {formatUploadDate(rc.createdAt)}
+                        </span>
+                      )}
                       {rc.sourceFile && (
                         <span style={{ color: "#cbd5e1", marginLeft: 6, fontSize: 11 }}>
                           ({rc.sourceFile})
@@ -3617,6 +3806,38 @@ export default function BatchGrading({
       {loadError && (
         <div style={{ ...batchStyles.statusBox, color: "#dc2626", background: "rgba(220,38,38,0.08)" }}>
           {loadError}
+        </div>
+      )}
+
+      {/* A deployment-level fault stopped the run. Say so plainly: the teacher
+          did nothing wrong and re-uploading will not help. */}
+      {serviceFault && (
+        <div
+          role="alert"
+          style={{
+            ...batchStyles.statusBox,
+            textAlign: "left",
+            color: "#7c2d12",
+            background: "rgba(234,88,12,0.10)",
+            border: "1px solid rgba(234,88,12,0.35)",
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>
+            Grading stopped — this is a problem with the service, not your papers.
+          </div>
+          <div style={{ marginBottom: 6 }}>{serviceFault.hint}</div>
+          <div style={{ marginBottom: 6 }}>
+            {serviceFault.stoppedAt >= serviceFault.total
+              ? "No students were graded."
+              : `Stopped after student ${serviceFault.stoppedAt} of ${serviceFault.total} — the remaining ${
+                  serviceFault.total - serviceFault.stoppedAt
+                } were not uploaded or graded. Nothing has been published.`}
+            {" "}Your file is still loaded: once the service is fixed, press Start again.
+          </div>
+          <div style={{ fontSize: 12, opacity: 0.8, fontFamily: "ui-monospace, monospace" }}>
+            {serviceFault.code}
+            {serviceFault.errorId ? ` · ${serviceFault.errorId}` : ""}
+          </div>
         </div>
       )}
 

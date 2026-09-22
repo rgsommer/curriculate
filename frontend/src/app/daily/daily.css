@@ -497,6 +497,7 @@ a.subj.deck:hover { text-decoration-color: currentColor; }
 /* The Prayercast, in the right-hand half for the minutes after O Canada. The
    tile fills the column — this is meant to be pressed from across the room,
    not found — and expanding it is the same overlay the bar's little one uses. */
+<<<<<<< HEAD
 .block.prayercast, .block.videoblock { background: color-mix(in srgb, var(--subj) 10%, transparent); text-align: center; }
 /* The lesson's own video, on the half after the verse. Same tile as the
    Prayercast's: sized to the column, because a thumbnail in the middle of an
@@ -514,6 +515,9 @@ a.subj.deck:hover { text-decoration-color: currentColor; }
 /* Picture above, video below, both filling the column. */
 .panel.mediaside { justify-content: center; gap: 1.6vh; }
 .panel.mediaside .picture { flex: 0 1 auto; min-height: 0; }
+=======
+.block.prayercast { background: color-mix(in srgb, var(--subj) 10%, transparent); text-align: center; }
+>>>>>>> origin/main
 /* :not(.big) matters — this rule is more specific than .vid.big, so without it
    the panel's width and aspect ratio follow the tile into the expanded state
    and the overlay opens six pixels tall. */

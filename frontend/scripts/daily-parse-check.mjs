@@ -1394,6 +1394,7 @@ check(
   "setup: a row can change the verse window",
   P.parseSetup([["", "Verse of the day for", "6", "minutes"]]).verseMin === 6,
 );
+<<<<<<< HEAD
 // The lesson's own picture and video follow the verse on the right-hand half.
 check("setup: the lesson media window defaults to fifteen minutes", P.parseSetup([]).mediaMin === 15);
 check(
@@ -1412,6 +1413,8 @@ check(
   P.parseSetup([["", "Stand ready for dismissal", "3:25 PM", ""]]).dismissalReadyAt,
 );
 
+=======
+>>>>>>> origin/main
 // The Prayercast holds the half for the minutes after O Canada.
 check("setup: the prayer window defaults to five minutes", P.parseSetup([]).prayerMin === 5);
 check(
