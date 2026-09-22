@@ -169,7 +169,11 @@ a.subj.deck:hover { text-decoration-color: currentColor; }
 .vid .thumb { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-size: clamp(18px, 3.5vh, 40px); background: linear-gradient(135deg, #16283f, #0d1b2a); }
 .vid .cap { position: absolute; left: 0; right: 0; bottom: 0; font-size: clamp(10px, 1.4vh, 13px); color: #fff; background: rgba(0, 0, 0, .55); padding: 2px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .vid iframe, .vid video { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #000; }
-.vid.big { position: absolute; z-index: 5; left: 3vw; right: 3vw; top: 14vh; bottom: 9vh; width: auto; aspect-ratio: auto; border-color: var(--accent); box-shadow: 0 20px 60px rgba(0, 0, 0, .35); }
+/* align-self is the one that matters: .vid sets `align-self: center`, and an
+   absolutely positioned child of a flex or grid container is still aligned by
+   it — so the expanded tile was sized to its content and centred, four pixels
+   of border with the insets ignored, instead of stretching between them. */
+.vid.big { position: absolute; z-index: 5; left: 3vw; right: 3vw; top: 14vh; bottom: 9vh; width: auto; height: auto; align-self: stretch; justify-self: stretch; aspect-ratio: auto; border-color: var(--accent); box-shadow: 0 20px 60px rgba(0, 0, 0, .35); }
 .vid.big .thumb { display: none; }
 .vid.big .cap { display: none; }
 .vid .close { position: absolute; top: .6vh; right: .6vw; z-index: 2; background: rgba(0, 0, 0, .6); color: #fff; border: 0; border-radius: 999px; font: inherit; font-size: clamp(12px, 2vh, 18px); padding: .4vh 1vw; cursor: pointer; display: none; }
@@ -484,6 +488,47 @@ a.subj.deck:hover { text-decoration-color: currentColor; }
   46%, 60% { transform: translateX(calc(-1 * var(--over, 0px))); }
   96%, 100% { transform: translateX(0); }
 }
+
+/* The Prayercast, in the right-hand half for the minutes after O Canada. The
+   tile fills the column — this is meant to be pressed from across the room,
+   not found — and expanding it is the same overlay the bar's little one uses. */
+.block.prayercast { background: color-mix(in srgb, var(--subj) 10%, transparent); text-align: center; }
+/* :not(.big) matters — this rule is more specific than .vid.big, so without it
+   the panel's width and aspect ratio follow the tile into the expanded state
+   and the overlay opens six pixels tall. */
+.block.prayercast .vid:not(.big) {
+  width: 100%;
+  max-width: none;
+  margin: 1.4vh 0 .8vh;
+  border-width: 3px;
+  border-color: color-mix(in srgb, var(--subj) 45%, transparent);
+}
+.block.prayercast .vid:not(.big) .thumb { font-size: clamp(34px, 7vh, 80px); }
+/* The poster in the panel. Pressing it opens the player, which the board
+   renders at its own foot: the lesson area is transformed by the settle
+   animation, so an overlay inside it is measured against that box and not the
+   screen, and .vid's own align-self: center then collapsed it to a four-pixel
+   strip. */
+.block.prayercast .vid.poster { cursor: pointer; }
+.block.prayercast .vid.poster .thumb { font-size: clamp(34px, 7vh, 80px); }
+.block.prayercast .summary { margin: 0; font-size: calc(clamp(13px, 2vh, 20px) * var(--fit)); letter-spacing: .08em; text-transform: uppercase; }
+.panel.prayerside { justify-content: center; }
+/* Not a video: Prayercast's own page for the country. A card the size of the
+   tile, so the screen reads the same either way, and it opens in a tab. */
+.block.prayercast .praycard {
+  display: grid;
+  place-items: center;
+  gap: .8vh;
+  margin: 1.4vh 0 .8vh;
+  padding: 3vh 1vw;
+  border-radius: 6px;
+  border: 3px solid color-mix(in srgb, var(--subj) 45%, transparent);
+  background: linear-gradient(135deg, #16283f, #0d1b2a);
+  color: #fff;
+  text-decoration: none;
+}
+.block.prayercast .praycard .thumb { font-size: clamp(34px, 7vh, 80px); }
+.block.prayercast .praycard .open { font-size: calc(clamp(14px, 2.2vh, 24px) * var(--fit)); }
 
 /* The bar's tip: what it carries while the verse is up in the right-hand
    panel. Upright rather than italic, so it does not read as scripture, and
