@@ -2,12 +2,27 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { api, getToken, loginHref, issueWhiteSlip, type StudentSummary, type Me } from "../_lib/api";
+import { api, getToken, loginHref, issueWhiteSlip, getMyTemplates, generateParentMessage, bulkParentMessage, type StudentSummary, type Me, type ParentTemplate } from "../_lib/api";
 
 function rowNameColor(count: number, trigger: number) {
   if (count >= trigger - 1) return "text-orange-600";
   if (count === trigger - 2) return "text-orange-400";
   return "";
+}
+
+// Copy a message to the clipboard as BOTH rich HTML and plain text, so pasting
+// into Edsby (or an email) keeps the bold/bullets. Falls back to plain text when
+// the browser can't write HTML (older browsers, insecure context).
+async function copyRich(html: string | undefined, text: string) {
+  if (html && typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+    const item = new ClipboardItem({
+      "text/html": new Blob([html], { type: "text/html" }),
+      "text/plain": new Blob([text], { type: "text/plain" }),
+    });
+    await navigator.clipboard.write([item]);
+    return;
+  }
+  await navigator.clipboard.writeText(text);
 }
 
 export default function StudentsPage() {
@@ -19,6 +34,12 @@ export default function StudentsPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [houses, setHouses] = useState<{ _id: string; name: string; color?: string }[]>([]);
   const [housesOn, setHousesOn] = useState(false);
+  const [templates, setTemplates] = useState<ParentTemplate[]>([]);
+  const [tpl, setTpl] = useState("");
+  const [pmMsg, setPmMsg] = useState("");
+  const [lastMsg, setLastMsg] = useState<{ text: string; label: string } | null>(null);
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   useEffect(() => {
     if (!getToken()) return;
@@ -30,7 +51,39 @@ export default function StudentsPage() {
       .catch((e) => setErr(e.message));
     api<Me>("/me").then((d) => setIsAdmin(d.membership?.role === "originator" || d.membership?.role === "admin")).catch(() => {});
     api<{ enabled: boolean; houses: any[] }>("/houses").then((d) => { setHousesOn(!!d.enabled); setHouses(d.houses || []); }).catch(() => {});
+    getMyTemplates().then((d) => {
+      setTemplates(d.templates || []);
+      const names = (d.templates || []).map((t) => t.name);
+      let saved = ""; try { saved = localStorage.getItem("pm_template") || ""; } catch { /* ignore */ }
+      setTpl(names.includes(saved) ? saved : (names[0] || ""));
+    }).catch(() => {});
   }, []);
+
+  // Generate a parent message for one student from the chosen template: copy it
+  // to the clipboard and log it. The selected template persists across students.
+  async function sendParentMessage(s: StudentSummary) {
+    if (!tpl) { setPmMsg("Pick a message template first."); return; }
+    try {
+      const r = await generateParentMessage(s._id, tpl);
+      setLastMsg({ text: r.message, label: `${r.template} → ${s.firstName} ${s.lastName}` });
+      try { await copyRich(r.html, r.message); setPmMsg(`✓ Copied & logged “${r.template}” for ${s.firstName} — paste it into Edsby (formatting carries over).`); }
+      catch { setPmMsg(`Logged “${r.template}” for ${s.firstName} — copy the text below to send.`); }
+    } catch (e: any) { setPmMsg(`✗ ${e.message}`); }
+  }
+
+  const selectedIds = Object.keys(selected).filter((id) => selected[id]);
+  // Bulk: email the teacher one personalised message per selected student + log each.
+  async function sendBulk() {
+    if (!tpl || !selectedIds.length) return;
+    setBulkBusy(true); setPmMsg("");
+    try {
+      const r = await bulkParentMessage(tpl, selectedIds);
+      setPmMsg(`✓ Emailed ${r.sent} message(s) to ${r.to} (“${r.template}”) and logged ${r.logged}. Forward each to the parent.`);
+      setSelected({});
+      setLastMsg(null);
+    } catch (e: any) { setPmMsg(`✗ ${e.message}`); }
+    finally { setBulkBusy(false); }
+  }
 
   // Optimistic per-student update (flags, house, room). Reverts on failure.
   async function patchStudent(s: StudentSummary, body: Partial<StudentSummary>) {
@@ -120,9 +173,53 @@ export default function StudentsPage() {
         inputMode="search"
       />
 
+      {templates.length > 0 && (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="font-medium">✉ Parent message:</span>
+            <select value={tpl} onChange={(e) => { setTpl(e.target.value); try { localStorage.setItem("pm_template", e.target.value); } catch { /* ignore */ } }}
+              className="rounded-lg border border-slate-300 px-2 py-1">
+              {templates.some((t) => (t.kind || "encouraging") === "encouraging") && (
+                <optgroup label="Encouraging">
+                  {templates.filter((t) => (t.kind || "encouraging") === "encouraging").map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
+                </optgroup>
+              )}
+              {templates.some((t) => t.kind === "corrective") && (
+                <optgroup label="Corrective">
+                  {templates.filter((t) => t.kind === "corrective").map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
+                </optgroup>
+              )}
+            </select>
+            <span className="text-xs text-slate-500">then tap ✉ by a student to copy their message &amp; log it.</span>
+            <Link href="/behavior/setup#templates" className="text-xs text-slate-500 underline">edit templates</Link>
+          </div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+            Several students: tick the boxes, then
+            <button type="button" onClick={sendBulk} disabled={bulkBusy || !tpl || selectedIds.length === 0}
+              className="rounded-lg bg-slate-900 px-2.5 py-1 font-semibold text-white disabled:opacity-40">
+              {bulkBusy ? "Sending…" : `✉ Email me each & log (${selectedIds.length})`}
+            </button>
+            <span>— one personalised email per student, ready to forward.</span>
+            {selectedIds.length > 0 && <button type="button" onClick={() => setSelected({})} className="underline">clear</button>}
+          </div>
+          {pmMsg && <p className="mt-1 text-xs text-slate-700">{pmMsg}</p>}
+          {lastMsg && (
+            <div className="mt-2">
+              <div className="text-xs text-slate-500">{lastMsg.label}</div>
+              <textarea readOnly value={lastMsg.text} onFocus={(e) => e.currentTarget.select()}
+                className="mt-1 h-28 w-full rounded-lg border border-slate-300 p-2 font-mono text-xs" />
+            </div>
+          )}
+        </div>
+      )}
+
       <ul className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
         {visible.map((s) => (
           <li key={s._id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 hover:bg-slate-50">
+            {templates.length > 0 && (
+              <input type="checkbox" checked={!!selected[s._id]} onChange={(e) => setSelected((m) => ({ ...m, [s._id]: e.target.checked }))}
+                title="Select for a bulk parent message" className="shrink-0" />
+            )}
             <Link href={`/behavior/student/${s._id}`} className="flex min-w-0 flex-1 basis-48 items-center justify-between gap-2">
               <span className={`truncate font-medium ${rowNameColor(s.activeCount || 0, trigger)}`}>
                 {s.lastName}, {s.firstName}{s.preferredName && s.preferredName !== s.firstName && s.preferredName !== s.lastName ? ` (${s.preferredName})` : ""}
@@ -130,6 +227,12 @@ export default function StudentsPage() {
               </span>
               <span className="shrink-0 text-sm text-slate-400">{s.classGroup}</span>
             </Link>
+
+            {templates.length > 0 && (
+              <button type="button" onClick={() => sendParentMessage(s)} disabled={!tpl}
+                title={tpl ? `Copy the “${tpl}” parent message for this student and log it` : "Pick a template above first"}
+                className="shrink-0 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-40">✉</button>
+            )}
 
             {s.pendingWhiteSlipId && (
               <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-800 ring-1 ring-amber-200" title="A white slip was recommended and the VP was emailed. Confirm once it's actually been issued.">

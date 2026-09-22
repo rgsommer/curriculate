@@ -191,6 +191,13 @@ const BehaviorConfigSchema = new mongoose.Schema(
       // Consequences applied AFTER the GUDD is lost: the 1st further infraction
       // gets escalations[0], the 2nd escalations[1], holding at the last.
       escalations: { type: [String], default: ["Lunch detention", "Meeting with the VP"] },
+      // Period reset: only uniform infractions AFTER this moment count toward the
+      // GUDD. Admins "clear the list" to start a fresh period; earlier infractions
+      // stay in history but stop counting. Null = fall back to the fade window.
+      resetAt: { type: Date, default: null },
+      // Auto-clear the GUDD list every Friday (end of school day, school timezone)
+      // so staff don't have to reset it manually.
+      autoResetFriday: { type: Boolean, default: false },
     },
 
     // Per-student caps on how much any ONE student can move their house total

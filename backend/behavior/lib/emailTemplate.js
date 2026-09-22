@@ -43,16 +43,19 @@ export function emailShell({ title = "", schoolName = "", contentHtml = "", preh
 
 /**
  * Convert a plain composed note (paragraphs separated by blank lines, bullet
- * lines starting with • or -) into clean HTML paragraphs + lists.
+ * lines starting with • or -) into clean HTML paragraphs + lists. Inline
+ * **bold** is honoured so the note reads as genuinely rich text when pasted
+ * into Edsby or an email.
  */
 export function noteToHtml(text) {
   const lines = String(text || "").replace(/\r/g, "").split("\n");
+  const inline = (s) => escapeHtml(s).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
   let html = "";
   let para = [];
   let list = [];
   const flushPara = () => {
     if (para.length) {
-      html += `<p style="margin:0 0 12px;line-height:1.6;color:#334155">${para.map(escapeHtml).join("<br>")}</p>`;
+      html += `<p style="margin:0 0 12px;line-height:1.6;color:#334155">${para.map(inline).join("<br>")}</p>`;
       para = [];
     }
   };
@@ -60,7 +63,7 @@ export function noteToHtml(text) {
     if (list.length) {
       html +=
         `<ul style="margin:8px 0 14px;padding-left:20px;color:#334155">` +
-        list.map((li) => `<li style="margin:4px 0;line-height:1.5">${escapeHtml(li)}</li>`).join("") +
+        list.map((li) => `<li style="margin:4px 0;line-height:1.5">${inline(li)}</li>`).join("") +
         `</ul>`;
       list = [];
     }
@@ -84,6 +87,23 @@ export function noteToHtml(text) {
   flushPara();
   flushList();
   return html;
+}
+
+/**
+ * Wrap a parent-ready note (already HTML, e.g. from noteToHtml) in a clearly
+ * labelled, lightly-bordered block for the teacher's own copy. The teacher
+ * selects the message and pastes it into Edsby; the inner formatting (bold,
+ * bullets, paragraphs) carries over into Edsby's rich-text composer.
+ */
+export function pasteableNote(noteHtml, { channel = "Edsby" } = {}) {
+  const where = escapeHtml(channel || "Edsby");
+  return (
+    `<div style="margin:2px 0 6px;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#64748b">` +
+    `Copy the message below into ${where}` +
+    `</div>` +
+    `<div style="border:1px solid #cbd5e1;border-radius:10px;padding:16px 18px;background:#ffffff">${noteHtml}</div>` +
+    `<p style="margin:8px 0 0;font-size:12px;color:#94a3b8">Select the message, copy it (⌘/Ctrl-C), and paste into ${where} — the bold and bullets carry over.</p>`
+  );
 }
 
 /** Convert light markdown (**bold**, # headings, - bullets) to email HTML. */

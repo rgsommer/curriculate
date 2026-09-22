@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { api, getToken, loginHref, API_BASE, type Me } from "../_lib/api";
+import { api, getToken, loginHref, API_BASE, getMyTemplates, saveMyTemplates, type Me, type ParentTemplate } from "../_lib/api";
 
 // School-approved consequences shown by default (admins can edit). The AI coach
 // only ever suggests from this list, filling in specifics (line text, word
@@ -52,6 +52,7 @@ export default function SetupPage() {
     <div className="space-y-5">
       {err && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
       <ConfigSection config={me.config} />
+      <ParentTemplatesSection />
       <Card>
         <h2 className="font-semibold">Behaviours (division list)</h2>
         <p className="mt-1 text-sm text-slate-500">Add/edit offenses, their trigger mode, consequence and follow-up.</p>
@@ -97,6 +98,7 @@ function ReadOnlySettings({ me }: { me: Me }) {
       </Card>
 
       {/* Blocks teachers may act on themselves. */}
+      <ParentTemplatesSection />
       <AddStudentSection />
       <InviteSection domain={me.school?.emailDomain || ""} isOriginator={false} />
       <TeacherHomeworkPrefs config={me.config} prefs={me.membership?.homeworkPrefs} />
@@ -189,6 +191,82 @@ function CreateSchool({ onCreated }: { onCreated: () => Promise<void> }) {
       >
         {busy ? "Creating…" : "Create school"}
       </button>
+    </Card>
+  );
+}
+
+function ParentTemplatesSection() {
+  const [subject, setSubject] = useState("");
+  const [templates, setTemplates] = useState<ParentTemplate[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    getMyTemplates()
+      .then((d) => { setSubject(d.subject || ""); setTemplates(d.templates || []); setLoaded(true); })
+      .catch(() => setLoaded(true));
+  }, []);
+
+  const update = (i: number, field: "name" | "body" | "kind", value: string) =>
+    setTemplates((list) => list.map((t, idx) => (idx === i ? { ...t, [field]: value } : t)));
+  const add = () => setTemplates((list) => [...list, { name: "New template", body: "Dear {parents},\n\n\n\n{teacher}\n{school}", kind: "encouraging" }]);
+  const remove = (i: number) => setTemplates((list) => list.filter((_, idx) => idx !== i));
+
+  async function save() {
+    setBusy(true); setMsg("");
+    try { const r = await saveMyTemplates({ subject, templates }); setTemplates(r.templates || templates); setMsg("✓ Saved"); }
+    catch (e: any) { setMsg(`✗ ${e.message}`); }
+    finally { setBusy(false); }
+  }
+
+  if (!loaded) return null;
+  return (
+    <Card>
+      <h2 id="templates" className="scroll-mt-20 font-semibold">Parent message templates</h2>
+      <p className="mt-1 text-sm text-slate-500">
+        Your own encouraging / proactive notes home. On the Students page, pick a template and tap ✉ beside a student to copy a personalised
+        message and log it — you send it yourself. Edit freely; keep the <code className="rounded bg-slate-100 px-1">{`{placeholders}`}</code>.
+      </p>
+      <p className="mt-1 text-xs text-slate-400">
+        Placeholders: <code>{`{student}`}</code> <code>{`{parents}`}</code> <code>{`{parent1}`}</code> <code>{`{parentEmails}`}</code>{" "}
+        <code>{`{he}`}</code>/<code>{`{him}`}</code>/<code>{`{his}`}</code> <code>{`{subject}`}</code> <code>{`{teacher}`}</code> <code>{`{school}`}</code>
+      </p>
+
+      <div className="mt-3">
+        <Field label="My subject / class (fills {subject})">
+          <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="e.g. Grade 7 Math"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        </Field>
+      </div>
+
+      <div className="mt-3 space-y-4">
+        {templates.map((t, i) => (
+          <div key={i} className="rounded-xl border border-slate-200 p-3">
+            <div className="flex items-center gap-2">
+              <input value={t.name} onChange={(e) => update(i, "name", e.target.value)} placeholder="Template name"
+                className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium" />
+              <select value={t.kind || "encouraging"} onChange={(e) => update(i, "kind", e.target.value)}
+                title="Encouraging notes log under the student's Encouragements; corrective ones under Consequences."
+                className="rounded-lg border border-slate-300 px-2 py-1.5 text-xs">
+                <option value="encouraging">Encouraging</option>
+                <option value="corrective">Corrective</option>
+              </select>
+              <button type="button" onClick={() => remove(i)}
+                className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50">Remove</button>
+            </div>
+            <textarea value={t.body} onChange={(e) => update(i, "body", e.target.value)}
+              className="mt-2 h-40 w-full rounded-lg border border-slate-300 p-2 font-mono text-xs" />
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <button type="button" onClick={add} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">+ Add template</button>
+        <button type="button" onClick={save} disabled={busy}
+          className={`rounded-lg px-4 py-1.5 text-sm font-semibold text-white ${busy ? "bg-slate-400" : "bg-slate-900"}`}>{busy ? "Saving…" : "Save"}</button>
+        {msg && <span className={`text-sm ${msg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{msg}</span>}
+      </div>
     </Card>
   );
 }
@@ -682,8 +760,13 @@ function GuddSettings({ config }: { config: any }) {
   const [escText, setEscText] = useState<string>(
     (Array.isArray(g.escalations) && g.escalations.length ? g.escalations : ["Lunch detention", "Meeting with the VP"]).join("\n")
   );
+  const [autoFri, setAutoFri] = useState<boolean>(!!g.autoResetFriday);
   const [err, setErr] = useState<string | null>(null);
-  const saveState = useSaveState([enabled, name, threshold, fadeDays, escText]);
+  const saveState = useSaveState([enabled, name, threshold, fadeDays, escText, autoFri]);
+  const [report, setReport] = useState<any | null>(null);
+  const [reportBusy, setReportBusy] = useState(false);
+  const [clearBusy, setClearBusy] = useState(false);
+  const [gMsg, setGMsg] = useState("");
 
   function save() {
     setErr(null);
@@ -695,9 +778,27 @@ function GuddSettings({ config }: { config: any }) {
         threshold: Math.max(1, Number(threshold) || 3),
         fadeWindowDays: Math.max(1, Number(fadeDays) || 30),
         escalations,
+        autoResetFriday: autoFri,
       };
       try { await api("/config", { method: "PUT", body: { gudd } }); } catch (e: any) { setErr(e.message); throw e; }
     });
+  }
+
+  async function genReport() {
+    setReportBusy(true); setGMsg("");
+    try {
+      const r = await api<any>("/gudd/report");
+      setReport(r);
+      if (!r.lost?.length && !r.atRisk?.length) setGMsg("No uniform infractions this period.");
+    } catch (e: any) { setGMsg(`✗ ${e.message}`); }
+    finally { setReportBusy(false); }
+  }
+  async function clearList() {
+    if (!window.confirm(`Clear the ${name || "GUDD"} list now? Uniform infractions so far stop counting and a fresh period starts. History is kept.`)) return;
+    setClearBusy(true); setGMsg("");
+    try { await api("/gudd/reset", { method: "POST", body: {} }); setReport(null); setGMsg("✓ List cleared — a new period has started."); }
+    catch (e: any) { setGMsg(`✗ ${e.message}`); }
+    finally { setClearBusy(false); }
   }
 
   return (
@@ -735,6 +836,59 @@ function GuddSettings({ config }: { config: any }) {
           <p className="text-xs text-slate-400">One consequence per line. The 1st further infraction after the loss gets line 1, the 2nd gets line 2, holding at the last line.</p>
           <textarea value={escText} onChange={(e) => setEscText(e.target.value)} rows={4} className={`${inputCls} mt-1 font-sans`}
             placeholder={"Lunch detention\nMeeting with the VP\nIn-school suspension"} />
+
+          <div className="mt-4 rounded-xl border border-slate-200 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-sm font-medium text-slate-700">Disqualification report &amp; period reset</p>
+                <p className="text-xs text-slate-400">
+                  {g.resetAt ? `Current period started ${new Date(g.resetAt).toLocaleString()}.` : "Counting over the fade window (list not cleared yet)."}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button type="button" onClick={genReport} disabled={reportBusy} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+                  {reportBusy ? "…" : "Generate report"}
+                </button>
+                <button type="button" onClick={clearList} disabled={clearBusy} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-800 disabled:opacity-40">
+                  {clearBusy ? "…" : "Clear the list now"}
+                </button>
+              </div>
+            </div>
+            <label className="mt-2 flex items-center gap-2 text-sm text-slate-600">
+              <input type="checkbox" checked={autoFri} onChange={(e) => setAutoFri(e.target.checked)} />
+              Auto-clear every Friday (end of school day) — remember to Save
+            </label>
+            {gMsg && <p className={`mt-1 text-xs ${gMsg.startsWith("✗") ? "text-red-600" : "text-slate-600"}`}>{gMsg}</p>}
+            {report && (
+              <div className="mt-2">
+                <p className="text-sm font-medium">Lost the {report.name} ({report.lost.length})</p>
+                {report.lost.length ? (
+                  <ul className="mt-1 divide-y divide-slate-100 text-sm">
+                    {report.lost.map((r: any) => (
+                      <li key={r.studentId} className="flex justify-between gap-2 py-1">
+                        <span>{r.name} <span className="text-slate-400">{r.classGroup}</span></span>
+                        <span className="text-slate-500">{r.count}/{r.threshold}{r.consequence ? ` · ${r.consequence}` : ""}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p className="text-xs text-slate-400">None have lost it this period.</p>}
+                {report.atRisk?.length > 0 && (
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-xs text-slate-500">At risk ({report.atRisk.length})</summary>
+                    <ul className="mt-1 divide-y divide-slate-100 text-sm">
+                      {report.atRisk.map((r: any) => (
+                        <li key={r.studentId} className="flex justify-between gap-2 py-1">
+                          <span>{r.name} <span className="text-slate-400">{r.classGroup}</span></span>
+                          <span className="text-slate-500">{r.count}/{r.threshold}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+                <button type="button" onClick={() => window.print()} className="no-print mt-2 rounded-lg border border-slate-300 px-3 py-1 text-xs">Print</button>
+              </div>
+            )}
+          </div>
         </>
       )}
       <div className="mt-3"><SaveButton state={saveState} onClick={save} label="Save GUDD settings" /></div>
@@ -1165,10 +1319,18 @@ function HousesSection({ config }: { config?: any }) {
           const grp = s.houseGroup === 1 || s.houseGroup === 2 ? s.houseGroup : 0;
           const room = grp === 1 ? (h.roomGroup1 || "") : grp === 2 ? (h.roomGroup2 || "") : "";
           return {
-            house: h.name || "—", houseSort: h.sortOrder ?? 99, grp, room,
+            house: h.name || "—", houseId: String(s.houseId), houseSort: h.sortOrder ?? 99, grp, room,
             name: `${s.lastName}, ${s.firstName}`, grade: String(s.grade || "").trim(), gender: String(s.gender || "").trim(),
           };
         });
+
+      // Captains per house (full name) for the house header.
+      const captainsByHouse: Record<string, string[]> = {};
+      for (const s of (st.students || [])) {
+        if (s.houseCaptain && s.houseId) {
+          (captainsByHouse[String(s.houseId)] ||= []).push(`${s.preferredName || s.firstName} ${s.lastName}`.trim());
+        }
+      }
 
       // Gender + grade counts for a footer line.
       const breakdown = (items: Row[]) => {
@@ -1184,9 +1346,16 @@ function HousesSection({ config }: { config?: any }) {
         const grStr = Object.entries(gr).sort((a, b) => (Number(a[0]) || 99) - (Number(b[0]) || 99) || a[0].localeCompare(b[0])).map(([k, v]) => `Gr ${k}: ${v}`).join(" · ");
         return `${items.length} student${items.length === 1 ? "" : "s"} &nbsp;·&nbsp; ${gStr || "—"} &nbsp;·&nbsp; ${grStr || "—"}`;
       };
+      // Sort within each house/room: grade → gender → last name (name is "Last, First").
+      const gradeNum = (g: string) => { const n = parseInt(String(g), 10); return isNaN(n) ? 999 : n; };
+      const sortRows = (a: Row, b: Row) =>
+        gradeNum(a.grade) - gradeNum(b.grade) ||
+        String(a.grade).localeCompare(String(b.grade)) ||
+        String(a.gender).localeCompare(String(b.gender)) ||
+        a.name.localeCompare(b.name);
       const tableFor = (items: Row[]) =>
         `<table><thead><tr><th>Student</th><th>Grade</th><th>Gender</th></tr></thead><tbody>` +
-        items.sort((a, b) => a.name.localeCompare(b.name)).map((r) =>
+        items.sort(sortRows).map((r) =>
           `<tr><td>${esc(r.name)}</td><td style="text-align:center">${esc(r.grade)}</td><td style="text-align:center">${esc(r.gender)}</td></tr>`).join("") +
         `</tbody></table>`;
 
@@ -1195,6 +1364,8 @@ function HousesSection({ config }: { config?: any }) {
         .sort((a, b) => (rows.find((r) => r.house === a)!.houseSort) - (rows.find((r) => r.house === b)!.houseSort) || a.localeCompare(b));
       const sections = houseNames.map((hn) => {
         const hRows = rows.filter((r) => r.house === hn);
+        const hid = hRows[0]?.houseId || "";
+        const h = houseById[hid] || {};
         const groups: Array<{ grp: number; room: string }> = [];
         for (const r of hRows) if (!groups.some((x) => x.grp === r.grp)) groups.push({ grp: r.grp, room: r.room });
         groups.sort((a, b) => a.grp - b.grp);
@@ -1203,13 +1374,24 @@ function HousesSection({ config }: { config?: any }) {
           const label = g.grp ? `Group #${g.grp}${g.room ? ` — Room ${esc(g.room)}` : ""}` : "Unassigned group";
           return `<div class="room"><h3>${label}</h3>${tableFor(gRows)}<p class="foot">Room total — ${breakdown(gRows)}</p></div>`;
         }).join("");
-        return `<section class="house"><h2>${esc(hn)}</h2>${roomsHtml}<p class="hfoot">House total, ${esc(hn)} — ${breakdown(hRows)}</p></section>`;
+        // House header: crest image, colour swatch, then teachers + captains.
+        const swatch = `<span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${esc(h.color || "#0f172a")};vertical-align:middle;margin-right:8px"></span>`;
+        const img = h.image ? `<img src="${esc(h.image)}" alt="" style="width:30px;height:30px;border-radius:5px;object-fit:cover;vertical-align:middle;margin-right:8px"/>` : "";
+        const caps = captainsByHouse[hid] || [];
+        const teachers = [h.teacher1, h.teacher2].filter((t: string) => t && String(t).trim());
+        const meta: string[] = [];
+        if (teachers.length) meta.push(`<strong>Teachers:</strong> ${teachers.map(esc).join(", ")}`);
+        if (caps.length) meta.push(`<strong>Captains:</strong> ${caps.map(esc).join(", ")}`);
+        const metaHtml = meta.length ? `<p class="meta">${meta.join(" &nbsp;·&nbsp; ")}</p>` : "";
+        return `<section class="house"><h2>${img}${swatch}${esc(hn)}</h2>${metaHtml}${roomsHtml}<p class="hfoot">House total, ${esc(hn)} — ${breakdown(hRows)}</p></section>`;
       }).join("");
 
       const html = `<!doctype html><meta charset="utf-8"><title>Houses list</title>` +
         `<style>` +
+        `*{-webkit-print-color-adjust:exact;print-color-adjust:exact}` +   /* keep header/stripe/swatch colours in print & PDF */
         `body{font-family:Arial,Helvetica,sans-serif;font-size:11pt;margin:24px;color:#0f172a}` +
         `h1{font-size:16pt;margin:0 0 6px}h2{font-size:14pt;color:#0f766e;margin:0 0 4px}h3{font-size:12pt;margin:14px 0 4px}` +
+        `.meta{margin:2px 0 8px;font-size:10.5pt;color:#334155}` +
         `table{width:100%;border-collapse:collapse;margin-top:6px}th,td{border:1px solid #cbd5e1;padding:5px 8px;text-align:left}` +
         `th{background:#0f766e;color:#fff}tr:nth-child(even) td{background:#f1f5f9}` +
         `.foot{margin:6px 0 0;font-size:10pt;color:#475569;background:#ecfdf5;border:1px solid #a7f3d0;padding:5px 8px;border-radius:4px}` +
@@ -1601,6 +1783,28 @@ function HousesSection({ config }: { config?: any }) {
               );
             })}
             {(houses || []).length === 0 && <p className="text-xs text-slate-400">Define houses first.</p>}
+          </div>
+        )}
+      </div>
+
+      {/* House teachers */}
+      <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <p className="text-sm font-medium text-slate-700">House teachers</p>
+        <p className="mt-0.5 text-xs text-slate-500">Up to two staff leads (“heads of house”) per house. Shown on the printed houses list.</p>
+        {(houses || []).length === 0 ? (
+          <p className="mt-2 text-xs text-slate-400">Define houses first.</p>
+        ) : (
+          <div className="mt-2 space-y-1.5">
+            {(houses || []).map((h) => (
+              <div key={h._id} className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="inline-block h-3 w-3 rounded-full" style={{ background: h.color || "#0f172a" }} />
+                <span className="w-24 truncate">{h.name}</span>
+                <input defaultValue={h.teacher1 || ""} onBlur={(e) => save(h, { teacher1: e.target.value })}
+                  placeholder="Teacher 1" className="w-48 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+                <input defaultValue={h.teacher2 || ""} onBlur={(e) => save(h, { teacher2: e.target.value })}
+                  placeholder="Teacher 2" className="w-48 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+              </div>
+            ))}
           </div>
         )}
       </div>

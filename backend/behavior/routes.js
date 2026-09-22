@@ -40,11 +40,12 @@ import { encrypt, decrypt } from "./lib/secretBox.js";
 import { EdsbyProvider } from "./lib/providers/EdsbyProvider.js";
 import { seedBehaviorDocs } from "./lib/seedBehaviors.js";
 import { parseRoster, parseRosterFile } from "./lib/rosterImport.js";
+import { DEFAULT_PARENT_TEMPLATES, fillTemplate } from "./lib/parentTemplates.js";
 import { STANDARD_BEHAVIORS } from "./lib/standardBehaviors.js";
 import { composeNotice, composePositiveNotice, makeDefaultAiClient, deterministicNote, deterministicPositiveNote } from "./lib/aiNote.js";
 import { buildAvgsRouter } from "./avgsRoutes.js";
-import { emailShell, emailButton, noteToHtml, mdToHtml, monthlyKindChartHtml } from "./lib/emailTemplate.js";
-import { scheduleDispatch, dispatchNotice, sendHomeworkMessage } from "./lib/notify.js";
+import { emailShell, emailButton, noteToHtml, mdToHtml, monthlyKindChartHtml, pasteableNote } from "./lib/emailTemplate.js";
+import { scheduleDispatch, dispatchNotice, sendHomeworkMessage, recordNoticeAsSent } from "./lib/notify.js";
 import { uploadEvidence, signEvidenceKey, deleteEvidenceKey, isAllowedType, evidenceStorageAvailable } from "./lib/evidenceStore.js";
 
 const router = express.Router();
@@ -97,7 +98,10 @@ function guddStatus(incidents, config) {
   const threshold = g.threshold ?? 3;
   const fadeDays = g.fadeWindowDays ?? 30;
   const escalations = (Array.isArray(g.escalations) ? g.escalations : []).map((s) => String(s || "").trim()).filter(Boolean);
-  const cutoff = Date.now() - fadeDays * DAY_MS;
+  // Count only infractions since the later of the fade window and the last period
+  // reset ("clear the list"), so a cleared list starts the new period fresh.
+  const resetAt = g.resetAt ? new Date(g.resetAt).getTime() : 0;
+  const cutoff = Math.max(Date.now() - fadeDays * DAY_MS, resetAt);
   const count = (incidents || []).filter(
     (i) => i.behaviorSnapshot?.uniform && new Date(i.timestamp).getTime() > cutoff
   ).length;
@@ -371,10 +375,15 @@ router.put("/config", authAny, loadMembership, requireAdmin, async (req, res, ne
       "aiSendMode", "cancelWindowSeconds", "aiProvider", "aiModel",
       "noticesResetMode", "termStartDates", "repeatScopeDays",
       "reminderTime", "manualNonSchoolDays", "houseReport", "housesEnabled", "housePointsResetAt",
-      "homework", "vpNotify", "teacherDraft", "consequenceLadder", "consequenceWhitelist", "adminDigest", "gudd", "houseCaps", "houseEvents", "houseRewards",
+      "homework", "vpNotify", "teacherDraft", "consequenceLadder", "consequenceWhitelist", "adminDigest", "houseCaps", "houseEvents", "houseRewards",
     ];
     const update = {};
     for (const k of allowed) if (k in (req.body || {})) update[k] = req.body[k];
+    // Merge gudd by field (dot notation) so a settings save never clobbers the
+    // period reset (resetAt) or the auto-Friday flag it didn't send.
+    if (req.body?.gudd && typeof req.body.gudd === "object") {
+      for (const [k, v] of Object.entries(req.body.gudd)) update[`gudd.${k}`] = v;
+    }
     const config = await BehaviorConfig.findOneAndUpdate(
       { schoolId: req.schoolId },
       { $set: update },
@@ -626,6 +635,149 @@ router.put("/my-edsby", authAny, loadMembership, async (req, res, next) => {
     await audit(req.schoolId, "edsby.my_identity_updated", req, { meta: { fields: Object.keys(set) } });
     const me = await BehaviorTeacher.findById(req.membership._id).select("edsbyUserNid edsbyCookieEnc edsbyZoomNid").lean();
     res.json({ ok: true, userNid: me.edsbyUserNid || "", hasCookie: !!me.edsbyCookieEnc, zoomNid: me.edsbyZoomNid || "" });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Parent message templates (per teacher) ──────────────────────────────────
+
+// The teacher's editable parent-message templates + subject label. Seeds the
+// generalized defaults when the teacher hasn't saved any yet.
+router.get("/my-templates", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const me = await BehaviorTeacher.findById(req.membership._id).select("subject parentTemplates").lean();
+    const templates = (me?.parentTemplates && me.parentTemplates.length) ? me.parentTemplates : DEFAULT_PARENT_TEMPLATES;
+    res.json({ ok: true, subject: me?.subject || "", templates, teacherName: req.membership.name || req.user?.name || "" });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put("/my-templates", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const set = {};
+    if ("subject" in b) set.subject = String(b.subject || "").trim().slice(0, 120);
+    if (Array.isArray(b.templates)) {
+      set.parentTemplates = b.templates
+        .map((t) => ({
+          name: String(t?.name || "").trim().slice(0, 80),
+          body: String(t?.body || "").slice(0, 4000),
+          kind: t?.kind === "corrective" ? "corrective" : "encouraging",
+        }))
+        .filter((t) => t.name || t.body)
+        .slice(0, 40);
+    }
+    if (!Object.keys(set).length) return res.status(400).json({ ok: false, error: "Nothing to update." });
+    await BehaviorTeacher.updateOne({ _id: req.membership._id }, { $set: set });
+    const me = await BehaviorTeacher.findById(req.membership._id).select("subject parentTemplates").lean();
+    res.json({ ok: true, subject: me.subject || "", templates: me.parentTemplates || [] });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Generate a parent message for a student from one of the teacher's templates:
+// fill the placeholders, LOG it as a documented action, and return the text for
+// the teacher to paste into their own email. Never sends anything itself.
+router.post("/students/:id/parent-message", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const student = await BehaviorStudent.findOne({ _id: req.params.id, schoolId: req.schoolId }).lean();
+    if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
+    const name = String(req.body?.name || "").trim();
+    const me = await BehaviorTeacher.findById(req.membership._id).select("subject parentTemplates name").lean();
+    const templates = (me?.parentTemplates && me.parentTemplates.length) ? me.parentTemplates : DEFAULT_PARENT_TEMPLATES;
+    const tpl = templates.find((t) => t.name === name) || templates[0];
+    if (!tpl) return res.status(400).json({ ok: false, error: "No template selected." });
+
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("branding.schoolName").lean();
+    const school = await BehaviorSchool.findById(req.schoolId).select("name").lean();
+    const teacherName = req.membership.name || req.user?.name || "";
+    const message = fillTemplate(tpl.body, {
+      student,
+      teacher: teacherName,
+      subject: me?.subject || "",
+      schoolName: config?.branding?.schoolName || school?.name || "",
+    });
+
+    // Log that the teacher sent a parent message. Encouraging notes are recorded
+    // as "encouraging" (shown under the student's Encouragements); corrective ones
+    // as "corrective" (shown under Consequences). Never a strike.
+    const kind = tpl.kind === "encouraging" ? "encouraging" : "corrective";
+    await BehaviorConsequence.create({
+      schoolId: req.schoolId, studentId: student._id,
+      type: `Parent message: ${tpl.name}`, detail: "Copied to send by the teacher",
+      byTeacherId: req.membership._id, byName: teacherName, status: "issued", kind,
+      issuedByTeacherId: req.membership._id, issuedByName: teacherName, issuedAt: new Date(),
+    });
+    await audit(req.schoolId, "parent_message.generated", req, { studentId: String(student._id), meta: { template: tpl.name } });
+    // `html` is a rich version of the same message: the UI copies it to the
+    // clipboard as text/html so pasting into Edsby keeps the bold + bullets.
+    res.json({ ok: true, message, html: noteToHtml(message), template: tpl.name });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Bulk parent messages: for each selected student, fill the template, EMAIL the
+// filled message to the teacher (one email per student, ready to forward), and
+// log it separately. Never emails a parent directly.
+router.post("/parent-message/bulk", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const name = String(req.body?.name || "").trim();
+    const ids = (Array.isArray(req.body?.studentIds) ? req.body.studentIds : []).map((x) => String(x)).slice(0, 60);
+    if (!ids.length) return res.status(400).json({ ok: false, error: "No students selected." });
+
+    const teacherEmail = String(req.user?.email || "").trim();
+    if (!teacherEmail) return res.status(400).json({ ok: false, error: "No email on your account to send to." });
+
+    const me = await BehaviorTeacher.findById(req.membership._id).select("subject parentTemplates name").lean();
+    const templates = (me?.parentTemplates && me.parentTemplates.length) ? me.parentTemplates : DEFAULT_PARENT_TEMPLATES;
+    const tpl = templates.find((t) => t.name === name) || templates[0];
+    if (!tpl) return res.status(400).json({ ok: false, error: "No template selected." });
+    const kind = tpl.kind === "encouraging" ? "encouraging" : "corrective";
+
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("branding.schoolName").lean();
+    const school = await BehaviorSchool.findById(req.schoolId).select("name").lean();
+    const schoolName = config?.branding?.schoolName || school?.name || "";
+    const teacherName = req.membership.name || req.user?.name || "";
+    const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+
+    const students = await BehaviorStudent.find({ _id: { $in: ids }, schoolId: req.schoolId, active: true }).lean();
+    let sent = 0, logged = 0;
+    for (const student of students) {
+      const message = fillTemplate(tpl.body, { student, teacher: teacherName, subject: me?.subject || "", schoolName });
+      const studentName = `${student.preferredName || student.firstName} ${student.lastName || ""}`.trim();
+      try {
+        await sendEmail({
+          from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
+          to: teacherEmail,
+          subject: `Parent message — ${studentName} (${tpl.name})`,
+          text: message,
+          html: emailShell({
+            title: `Parent message — ${escapeHtml(studentName)}`,
+            schoolName: schoolName || "Behaviours",
+            preheader: `Ready to paste into Edsby — ${tpl.name}`,
+            accent: kind === "encouraging" ? "#16a34a" : "#0f172a",
+            footnote: "This copy goes only to you. Paste it into Edsby to send it to the family.",
+            contentHtml: pasteableNote(noteToHtml(message)),
+          }),
+        });
+        sent += 1;
+      } catch (e) { console.warn("[behavior] bulk parent-message email failed:", e?.message || e); }
+      try {
+        await BehaviorConsequence.create({
+          schoolId: req.schoolId, studentId: student._id,
+          type: `Parent message: ${tpl.name}`, detail: "Emailed to the teacher to send",
+          byTeacherId: req.membership._id, byName: teacherName, status: "issued", kind,
+          issuedByTeacherId: req.membership._id, issuedByName: teacherName, issuedAt: new Date(),
+        });
+        logged += 1;
+      } catch (e) { console.warn("[behavior] bulk parent-message log failed:", e?.message || e); }
+    }
+    await audit(req.schoolId, "parent_message.bulk", req, { meta: { template: tpl.name, requested: ids.length, sent, logged } });
+    res.json({ ok: true, template: tpl.name, requested: ids.length, matched: students.length, sent, logged, to: teacherEmail });
   } catch (err) {
     next(err);
   }
@@ -1542,7 +1694,8 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
     const guddOn = gcfg.enabled !== false;
     let gcnt = {};
     if (guddOn) {
-      const gCutoff = new Date(Date.now() - (gcfg.fadeWindowDays ?? 30) * DAY_MS);
+      const gReset = gcfg.resetAt ? new Date(gcfg.resetAt).getTime() : 0;
+      const gCutoff = new Date(Math.max(Date.now() - (gcfg.fadeWindowDays ?? 30) * DAY_MS, gReset));
       const gagg = await BehaviorIncident.aggregate([
         { $match: { schoolId: req.schoolId, studentId: { $in: students.map((s) => s._id) }, "behaviorSnapshot.uniform": true, timestamp: { $gt: gCutoff } } },
         { $group: { _id: "$studentId", n: { $sum: 1 } } },
@@ -2392,12 +2545,13 @@ async function composeAndCreateNotice({
           title: `Your copy — ${isPositive ? "good-news note" : "notice"} for ${escapeHtml(studentName)}`,
           schoolName: schoolName || "Behaviours",
           preheader: "Review it before it goes out.",
+          accent: isPositive ? "#16a34a" : "#0f172a",
           footnote: "This copy goes only to you (the logging teacher). Parents are contacted over the school's chosen channel.",
           contentHtml:
             `<p style="margin:0 0 10px;color:#334155">This is <strong>your copy</strong> of a ${isPositive ? "good-news note" : "notice"} just queued for <strong>${escapeHtml(studentName)}</strong>. ${escapeHtml(willSend)}</p>` +
             `<p style="margin:0 0 12px;color:#64748b;font-size:13px"><strong>Recipients:</strong> ${escapeHtml(recipNames)} &middot; <strong>Channel:</strong> ${escapeHtml(chanLabel)}</p>` +
             `<hr style="border:none;border-top:1px solid #e2e8f0;margin:12px 0">` +
-            noteToHtml(text),
+            pasteableNote(noteToHtml(text), { channel: chanLabel.includes("Edsby") ? "Edsby" : "your message" }),
         }),
       });
     }
@@ -2536,9 +2690,20 @@ router.post("/notices/:id/send", authAny, loadMembership, canLog, async (req, re
       notice.includeEvidence = !!req.body.includeEvidence;
       await notice.save();
     }
-    const result = await dispatchNotice(notice._id, { force: true }); // explicit send — bypass the edit-defer window
-    await audit(req.schoolId, "notice.sent_manual", req, { studentId: notice.studentId, noticeId: notice._id });
-    res.json({ ok: result.ok !== false, status: result.status || (result.ok ? "sent" : "failed") });
+    // With no automatic parent channel, the teacher sends the note themselves and
+    // this just RECORDS it as sent (consuming strikes, advancing the counter) —
+    // rather than attempting a delivery that would only "fail".
+    const cfg = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("edsby.enabled channels.emailToParents").lean();
+    const autoSend = !!cfg?.edsby?.enabled || !!cfg?.channels?.emailToParents;
+    let result;
+    if (req.body?.recordOnly === true || !autoSend) {
+      result = await recordNoticeAsSent(notice._id);
+      await audit(req.schoolId, "notice.recorded_sent", req, { studentId: notice.studentId, noticeId: notice._id });
+    } else {
+      result = await dispatchNotice(notice._id, { force: true }); // explicit send — bypass the edit-defer window
+      await audit(req.schoolId, "notice.sent_manual", req, { studentId: notice.studentId, noticeId: notice._id });
+    }
+    res.json({ ok: result.ok !== false, status: result.status || (result.ok ? "sent" : "failed"), recorded: !!result.recorded });
   } catch (err) {
     next(err);
   }
@@ -4007,7 +4172,7 @@ async function buildSchoolInsights(schoolId, config) {
   const gcfg = config?.gudd || {};
   if (gcfg.enabled !== false) {
     const gThreshold = gcfg.threshold ?? 3;
-    const gCutoff = now - (gcfg.fadeWindowDays ?? 30) * DAY_MS;
+    const gCutoff = Math.max(now - (gcfg.fadeWindowDays ?? 30) * DAY_MS, gcfg.resetAt ? new Date(gcfg.resetAt).getTime() : 0);
     const gEsc = (Array.isArray(gcfg.escalations) ? gcfg.escalations : []).map((s) => String(s || "").trim()).filter(Boolean);
     const gCount = {}; const gLast = {};
     for (const i of incs) {
@@ -4051,6 +4216,67 @@ router.get("/intervention", authAny, loadMembership, requireAdmin, async (req, r
   }
 });
 
+// ── GUDD disqualification report + period reset (admins) ─────────────────────
+
+// On-demand list of who has lost the GUDD this period (and who's at risk).
+router.get("/gudd/report", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    const g = config?.gudd || {};
+    if (g.enabled === false) return res.json({ ok: true, enabled: false, lost: [], atRisk: [] });
+    const threshold = g.threshold ?? 3;
+    const escalations = (Array.isArray(g.escalations) ? g.escalations : []).map((s) => String(s || "").trim()).filter(Boolean);
+    const lastEsc = escalations.length ? escalations[escalations.length - 1] : "";
+    const resetAt = g.resetAt ? new Date(g.resetAt).getTime() : 0;
+    const cutoff = new Date(Math.max(Date.now() - (g.fadeWindowDays ?? 30) * DAY_MS, resetAt));
+
+    const students = await BehaviorStudent.find({ schoolId: req.schoolId, active: true })
+      .select("firstName preferredName lastName classGroup grade").lean();
+    const sById = Object.fromEntries(students.map((s) => [String(s._id), s]));
+    const agg = await BehaviorIncident.aggregate([
+      { $match: { schoolId: req.schoolId, studentId: { $in: students.map((s) => s._id) }, "behaviorSnapshot.uniform": true, timestamp: { $gt: cutoff } } },
+      { $group: { _id: "$studentId", n: { $sum: 1 }, last: { $max: "$timestamp" } } },
+    ]);
+    const rows = agg
+      .filter((a) => sById[String(a._id)])
+      .map((a) => {
+        const s = sById[String(a._id)];
+        const overBy = Math.max(0, a.n - threshold);
+        return {
+          studentId: String(a._id),
+          name: `${s.preferredName || s.firstName} ${s.lastName || ""}`.trim(),
+          classGroup: s.classGroup || "", grade: s.grade || "",
+          count: a.n, threshold, lost: a.n >= threshold,
+          consequence: overBy > 0 ? (escalations[overBy - 1] || lastEsc) : "",
+          lastAt: a.last,
+        };
+      })
+      .sort((x, y) => y.count - x.count || new Date(y.lastAt) - new Date(x.lastAt) || x.name.localeCompare(y.name));
+
+    res.json({
+      ok: true, enabled: true, name: g.name || "GUDD", threshold,
+      since: cutoff, resetAt: g.resetAt || null, autoResetFriday: !!g.autoResetFriday,
+      lost: rows.filter((r) => r.lost), atRisk: rows.filter((r) => !r.lost),
+      generatedAt: new Date(),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Clear the GUDD list — starts a fresh period. Earlier uniform infractions stay
+// in history but stop counting toward the GUDD.
+router.post("/gudd/reset", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const at = new Date();
+    await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: { "gudd.resetAt": at } });
+    await audit(req.schoolId, "gudd.cleared", req, {});
+    res.json({ ok: true, resetAt: at });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Compose the weekly admin digest email (subject/text/html) for a school.
 async function composeAdminDigest(schoolId, config) {
   const insights = await buildSchoolInsights(schoolId, config);
@@ -4069,7 +4295,7 @@ async function composeAdminDigest(schoolId, config) {
   // Consequences issued (white slips, detentions, calls home, …) in the last 7
   // days. These aren't incident-threshold events, so they'd otherwise never show
   // in this digest — an admin should still see them.
-  const consRows = await BehaviorConsequence.find({ schoolId, at: { $gt: since7 } })
+  const consRows = await BehaviorConsequence.find({ schoolId, at: { $gt: since7 }, kind: { $ne: "encouraging" } })
     .select("type detail byName studentId at").sort({ at: -1 }).lean();
   const consStudents = consRows.length
     ? await BehaviorStudent.find({ _id: { $in: consRows.map((c) => c.studentId) } })
@@ -4094,6 +4320,21 @@ async function composeAdminDigest(schoolId, config) {
     : [];
   const ptName = Object.fromEntries(posTeachers.map((t) => [String(t._id), t.name]));
 
+  // Encouraging parent messages are logged as "encouraging" consequences — they
+  // belong in the Encouragements list, not under Consequences.
+  const encRows = await BehaviorConsequence.find({ schoolId, at: { $gt: since7 }, kind: "encouraging" })
+    .select("type byName studentId at").sort({ at: -1 }).lean();
+  const encStudents = encRows.length
+    ? await BehaviorStudent.find({ _id: { $in: encRows.map((c) => c.studentId) } }).select("firstName preferredName lastName classGroup").lean()
+    : [];
+  const eName = Object.fromEntries(encStudents.map((s) =>
+    [String(s._id), `${s.preferredName || s.firstName} ${s.lastName || ""}`.trim() + (s.classGroup ? ` (${s.classGroup})` : "")]));
+  // Combined encouragements: positive behaviours + encouraging parent messages.
+  const encItems = [
+    ...posIncs.map((i) => ({ name: pName[String(i.studentId)] || "—", label: i.behaviorSnapshot?.name || "Encouragement", by: ptName[String(i.teacherId)] || "" })),
+    ...encRows.map((c) => ({ name: eName[String(c.studentId)] || "—", label: c.type || "Parent message", by: c.byName || "" })),
+  ];
+
   const li = (s) => `<li style="margin:3px 0">${s}</li>`;
   const section = (title, inner) => `<h3 style="margin:18px 0 6px;font-size:15px;color:#0f172a">${title}</h3>${inner}`;
   const flagged = insights.teachers.filter((t) => t.flag);
@@ -4114,8 +4355,8 @@ async function composeAdminDigest(schoolId, config) {
         ? `<ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6">${consRows.slice(0, 15).map((c) => li(`<strong>${escapeHtml(cName[String(c.studentId)] || "—")}</strong> — ${escapeHtml(c.type || "consequence")}${c.detail ? `: ${escapeHtml(c.detail)}` : ""} <span style="color:#94a3b8">· ${escapeHtml(c.byName || "")}</span>`)).join("")}</ul>`
         : `<p style="margin:0;color:#64748b">None.</p>`) +
     section("Encouragements (last 7 days)",
-      posIncs.length
-        ? `<ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6">${posIncs.slice(0, 15).map((i) => li(`<strong>${escapeHtml(pName[String(i.studentId)] || "—")}</strong> — ${escapeHtml(i.behaviorSnapshot?.name || "Encouragement")}${ptName[String(i.teacherId)] ? ` <span style="color:#94a3b8">· ${escapeHtml(ptName[String(i.teacherId)])}</span>` : ""}`)).join("")}</ul>`
+      encItems.length
+        ? `<ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6">${encItems.slice(0, 15).map((e) => li(`<strong>${escapeHtml(e.name)}</strong> — ${escapeHtml(e.label)}${e.by ? ` <span style="color:#94a3b8">· ${escapeHtml(e.by)}</span>` : ""}`)).join("")}</ul>`
         : `<p style="margin:0;color:#64748b">None logged — encourage staff to catch the good too.</p>`) +
     section("Students to get ahead of (rising lately)", top(insights.proactive, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.recent} in 2 weeks${r.prior ? ` (was ${r.prior})` : ""}`)) +
     section("Most-logged (60 days)", top(insights.topRepeat, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.count}`)) +
@@ -4128,7 +4369,7 @@ async function composeAdminDigest(schoolId, config) {
     `${wkNeg} incidents · ${wkPos} encouragements · ${wkInt} interactions · ${wkWhiteSlips} white slips · ${wkNotices} notices sent (last 7 days).\n\n` +
     `At/near a notice: ${insights.atThreshold.slice(0, 6).map((r) => `${r.name} (${r.strikes}/${r.triggerCount})`).join(", ") || "none"}.\n` +
     `Consequences issued / recommended: ${consRows.slice(0, 8).map((c) => `${cName[String(c.studentId)] || "—"} — ${c.type}`).join("; ") || "none"}.\n` +
-    `Encouragements: ${posIncs.slice(0, 8).map((i) => `${pName[String(i.studentId)] || "—"} — ${i.behaviorSnapshot?.name || "Encouragement"}`).join("; ") || "none"}.\n` +
+    `Encouragements: ${encItems.slice(0, 8).map((e) => `${e.name} — ${e.label}`).join("; ") || "none"}.\n` +
     `Rising lately: ${insights.proactive.slice(0, 6).map((r) => `${r.name} (${r.recent}/2wk)`).join(", ") || "none"}.\n` +
     `Staff who may welcome support: ${flagged.map((t) => t.name).join(", ") || "none"}.\n\n` +
     `Open the dashboard → School insights for the full picture.`;
@@ -4346,6 +4587,8 @@ router.put("/houses/:id", authAny, loadMembership, canManageHouses, async (req, 
     if ("sortOrder" in b) $set.sortOrder = Number(b.sortOrder) || 0;
     if ("roomGroup1" in b) $set.roomGroup1 = String(b.roomGroup1 || "").trim();
     if ("roomGroup2" in b) $set.roomGroup2 = String(b.roomGroup2 || "").trim();
+    if ("teacher1" in b) $set.teacher1 = String(b.teacher1 || "").trim().slice(0, 80);
+    if ("teacher2" in b) $set.teacher2 = String(b.teacher2 || "").trim().slice(0, 80);
     if ("image" in b) {
       const img = String(b.image || "");
       if (img === "") $set.image = "";

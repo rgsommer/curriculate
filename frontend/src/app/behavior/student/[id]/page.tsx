@@ -50,7 +50,7 @@ type StudentDetail = {
     deliveries?: Array<{ channel: string; ok: boolean; error?: string }>;
     fromTeachers: Array<{ name: string; behaviorName: string }>;
   }>;
-  consequences?: Array<{ _id: string; type: string; detail?: string; byName?: string; at: string }>;
+  consequences?: Array<{ _id: string; type: string; detail?: string; byName?: string; at: string; kind?: "encouraging" | "corrective" }>;
 };
 
 const fmtDT = (d: string) =>
@@ -525,9 +525,9 @@ export default function StudentPage() {
           </button>
         </div>
         {consMsg && <p className={`mt-2 text-sm ${consMsg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{consMsg}</p>}
-        {(data.consequences || []).length > 0 && (
+        {(data.consequences || []).filter((c) => c.kind !== "encouraging").length > 0 && (
           <ul className="mt-3 divide-y divide-slate-100">
-            {data.consequences!.map((c) => (
+            {data.consequences!.filter((c) => c.kind !== "encouraging").map((c) => (
               <li key={c._id} className="flex items-center justify-between gap-2 py-1.5 text-sm">
                 <span>
                   <span className="font-medium text-slate-900">{c.type}</span>
@@ -540,6 +540,24 @@ export default function StudentPage() {
           </ul>
         )}
       </section>
+
+      {/* Encouraging notes home (logged encouraging parent messages) */}
+      {(data.consequences || []).some((c) => c.kind === "encouraging") && (
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="font-semibold text-green-800">Encouragements — notes home</h2>
+          <ul className="mt-2 divide-y divide-slate-100">
+            {data.consequences!.filter((c) => c.kind === "encouraging").map((c) => (
+              <li key={c._id} className="flex items-center justify-between gap-2 py-1.5 text-sm">
+                <span>
+                  <span className="font-medium text-slate-900">{c.type}</span>
+                  <span className="ml-2 text-xs text-slate-400">{fmtDT(c.at)}{c.byName ? ` · ${c.byName}` : ""}</span>
+                </span>
+                <button onClick={() => removeConsequence(c._id)} className="no-print shrink-0 text-xs text-red-600">remove</button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* Trend over time */}
       {Object.keys(byMonth).length > 0 && (

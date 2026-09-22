@@ -322,6 +322,49 @@ export async function dispatchNotice(noticeId, { providers, force = false } = {}
 }
 
 /**
+ * Record a notice as sent WITHOUT any provider delivery. For schools with no
+ * automatic parent channel, the teacher sends the note themselves (from the copy
+ * they receive) and confirms it here. Same side effects as a successful dispatch:
+ * consume the strikes, advance the notice counter, reset the threshold window.
+ */
+export async function recordNoticeAsSent(noticeId) {
+  const notice = await BehaviorNotice.findById(noticeId);
+  if (!notice) return { ok: false, error: "notice not found" };
+  if (notice.status === "cancelled") return { ok: false, error: "cancelled" };
+  if (notice.status === "sent") return { ok: true, alreadySent: true, status: "sent" };
+
+  notice.status = "sent";
+  notice.sentAt = new Date();
+  notice.deliveries = [{ channel: "teacher", ok: true, recorded: true }];
+  await notice.save();
+
+  if (notice.reason !== "positive") {
+    const ids = notice.triggeringIncidentIds || [];
+    const uncounted = ids.length
+      ? await BehaviorIncident.countDocuments({ _id: { $in: ids }, countedInNoticeId: null })
+      : 0;
+    if (uncounted > 0) {
+      await BehaviorIncident.updateMany(
+        { _id: { $in: ids }, countedInNoticeId: null },
+        { $set: { countedInNoticeId: notice._id } }
+      );
+      const upd = { $inc: { noticesHomeCount: 1 }, $set: { lastNoticeAt: new Date() } };
+      if (notice.reason === "threshold") upd.$set.thresholdResetAt = new Date();
+      await BehaviorStudent.updateOne({ _id: notice.studentId }, upd);
+    }
+  }
+
+  await BehaviorAuditLog.create({
+    schoolId: notice.schoolId,
+    type: "notice.sent",
+    studentId: notice.studentId,
+    noticeId: notice._id,
+    meta: { recorded: true, sequenceNo: notice.sequenceNo, ccVp: notice.ccVp },
+  });
+  return { ok: true, status: "sent", recorded: true };
+}
+
+/**
  * Schedule dispatch after the cancellable window (brief §8 send model). With
  * cancelWindowSeconds = 0 it dispatches immediately. Uses an in-process timer;
  * a queued notice that is still "queued" at fire time is dispatched. (A durable

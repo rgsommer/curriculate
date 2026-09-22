@@ -11,9 +11,11 @@ type Props = {
   noteText: string;
   requestMeeting: boolean;
   onToggleMeeting: (v: boolean) => void;
+  showMeeting?: boolean; // hide the meeting option on a first notice
   evidenceCount?: number; // photo/video files available on the incident(s)
   includeEvidence?: boolean;
   onToggleEvidence?: (v: boolean) => void;
+  recordOnly?: boolean; // no auto channel: the teacher sends it; we just record it
   busy?: boolean;
   onConfirm: () => void;
   onClose: () => void;
@@ -21,7 +23,8 @@ type Props = {
 
 export default function SendNoticeModal({
   open, studentName, channelLabel, noteText, requestMeeting, onToggleMeeting,
-  evidenceCount = 0, includeEvidence = false, onToggleEvidence, busy, onConfirm, onClose,
+  showMeeting = true, evidenceCount = 0, includeEvidence = false, onToggleEvidence,
+  recordOnly = false, busy, onConfirm, onClose,
 }: Props) {
   if (!open) return null;
   return (
@@ -31,20 +34,24 @@ export default function SendNoticeModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="border-b border-slate-200 px-5 py-3">
-          <h2 className="font-semibold text-slate-900">Send this note to the parent?</h2>
+          <h2 className="font-semibold text-slate-900">{recordOnly ? "Mark this note as sent to the parent?" : "Send this note to the parent?"}</h2>
           <p className="mt-0.5 text-xs text-slate-500">
-            This is exactly what {studentName ? `${studentName}'s` : "the"} parent will receive{channelLabel ? ` via ${channelLabel}` : ""}. Please read it before sending.
+            {recordOnly
+              ? `No automatic parent channel is set up, so you send this note yourself. Confirming files it in ${studentName ? `${studentName}'s` : "the"} record as sent — only confirm once you've sent it (or are about to).`
+              : `This is exactly what ${studentName ? `${studentName}'s` : "the"} parent will receive${channelLabel ? ` via ${channelLabel}` : ""}. Please read it before sending.`}
           </p>
         </div>
         <div className="flex-1 overflow-auto px-5 py-3">
           <pre className="whitespace-pre-wrap font-sans text-sm text-slate-700">{noteText || "(no content)"}</pre>
         </div>
         <div className="border-t border-slate-200 px-5 py-3">
-          <label className="flex items-center gap-2 text-sm text-slate-700">
-            <input type="checkbox" checked={requestMeeting} onChange={(e) => onToggleMeeting(e.target.checked)} />
-            Also request a meeting with the parents
-          </label>
-          {evidenceCount > 0 && onToggleEvidence && (
+          {showMeeting && (
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" checked={requestMeeting} onChange={(e) => onToggleMeeting(e.target.checked)} />
+              Also request a meeting with the parents
+            </label>
+          )}
+          {!recordOnly && evidenceCount > 0 && onToggleEvidence && (
             <label className="mt-2 flex items-start gap-2 text-sm text-slate-700">
               <input type="checkbox" checked={includeEvidence} onChange={(e) => onToggleEvidence(e.target.checked)} className="mt-0.5" />
               <span>
@@ -58,7 +65,7 @@ export default function SendNoticeModal({
               Cancel
             </button>
             <button onClick={onConfirm} disabled={busy} className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">
-              {busy ? "Sending…" : "Confirm & send"}
+              {busy ? "Saving…" : recordOnly ? "Confirm — I've sent it" : "Confirm & send"}
             </button>
           </div>
         </div>
