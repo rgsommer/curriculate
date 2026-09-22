@@ -152,7 +152,7 @@ export function saveMyTemplates(body: { subject?: string; templates?: ParentTemp
 // Build a parent message for a student from a template, log it, and return the
 // filled text to copy. The teacher sends it themselves.
 export function generateParentMessage(studentId: string, name: string) {
-  return api<{ message: string; template: string }>(`/students/${studentId}/parent-message`, { method: "POST", body: { name } });
+  return api<{ message: string; html?: string; template: string }>(`/students/${studentId}/parent-message`, { method: "POST", body: { name } });
 }
 // Bulk: email the teacher one personalised message per selected student and log
 // each separately.

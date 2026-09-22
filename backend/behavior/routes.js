@@ -44,7 +44,7 @@ import { DEFAULT_PARENT_TEMPLATES, fillTemplate } from "./lib/parentTemplates.js
 import { STANDARD_BEHAVIORS } from "./lib/standardBehaviors.js";
 import { composeNotice, composePositiveNotice, makeDefaultAiClient, deterministicNote, deterministicPositiveNote } from "./lib/aiNote.js";
 import { buildAvgsRouter } from "./avgsRoutes.js";
-import { emailShell, emailButton, noteToHtml, mdToHtml, monthlyKindChartHtml } from "./lib/emailTemplate.js";
+import { emailShell, emailButton, noteToHtml, mdToHtml, monthlyKindChartHtml, pasteableNote } from "./lib/emailTemplate.js";
 import { scheduleDispatch, dispatchNotice, sendHomeworkMessage, recordNoticeAsSent } from "./lib/notify.js";
 import { uploadEvidence, signEvidenceKey, deleteEvidenceKey, isAllowedType, evidenceStorageAvailable } from "./lib/evidenceStore.js";
 
@@ -712,7 +712,9 @@ router.post("/students/:id/parent-message", authAny, loadMembership, canLog, asy
       issuedByTeacherId: req.membership._id, issuedByName: teacherName, issuedAt: new Date(),
     });
     await audit(req.schoolId, "parent_message.generated", req, { studentId: String(student._id), meta: { template: tpl.name } });
-    res.json({ ok: true, message, template: tpl.name });
+    // `html` is a rich version of the same message: the UI copies it to the
+    // clipboard as text/html so pasting into Edsby keeps the bold + bullets.
+    res.json({ ok: true, message, html: noteToHtml(message), template: tpl.name });
   } catch (err) {
     next(err);
   }
@@ -753,7 +755,14 @@ router.post("/parent-message/bulk", authAny, loadMembership, canLog, async (req,
           to: teacherEmail,
           subject: `Parent message — ${studentName} (${tpl.name})`,
           text: message,
-          html: `<pre style="font-family:inherit;white-space:pre-wrap;margin:0">${escapeHtml(message)}</pre>`,
+          html: emailShell({
+            title: `Parent message — ${escapeHtml(studentName)}`,
+            schoolName: schoolName || "Behaviours",
+            preheader: `Ready to paste into Edsby — ${tpl.name}`,
+            accent: kind === "encouraging" ? "#16a34a" : "#0f172a",
+            footnote: "This copy goes only to you. Paste it into Edsby to send it to the family.",
+            contentHtml: pasteableNote(noteToHtml(message)),
+          }),
         });
         sent += 1;
       } catch (e) { console.warn("[behavior] bulk parent-message email failed:", e?.message || e); }
@@ -2536,12 +2545,13 @@ async function composeAndCreateNotice({
           title: `Your copy — ${isPositive ? "good-news note" : "notice"} for ${escapeHtml(studentName)}`,
           schoolName: schoolName || "Behaviours",
           preheader: "Review it before it goes out.",
+          accent: isPositive ? "#16a34a" : "#0f172a",
           footnote: "This copy goes only to you (the logging teacher). Parents are contacted over the school's chosen channel.",
           contentHtml:
             `<p style="margin:0 0 10px;color:#334155">This is <strong>your copy</strong> of a ${isPositive ? "good-news note" : "notice"} just queued for <strong>${escapeHtml(studentName)}</strong>. ${escapeHtml(willSend)}</p>` +
             `<p style="margin:0 0 12px;color:#64748b;font-size:13px"><strong>Recipients:</strong> ${escapeHtml(recipNames)} &middot; <strong>Channel:</strong> ${escapeHtml(chanLabel)}</p>` +
             `<hr style="border:none;border-top:1px solid #e2e8f0;margin:12px 0">` +
-            noteToHtml(text),
+            pasteableNote(noteToHtml(text), { channel: chanLabel.includes("Edsby") ? "Edsby" : "your message" }),
         }),
       });
     }

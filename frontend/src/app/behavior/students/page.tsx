@@ -10,6 +10,21 @@ function rowNameColor(count: number, trigger: number) {
   return "";
 }
 
+// Copy a message to the clipboard as BOTH rich HTML and plain text, so pasting
+// into Edsby (or an email) keeps the bold/bullets. Falls back to plain text when
+// the browser can't write HTML (older browsers, insecure context).
+async function copyRich(html: string | undefined, text: string) {
+  if (html && typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+    const item = new ClipboardItem({
+      "text/html": new Blob([html], { type: "text/html" }),
+      "text/plain": new Blob([text], { type: "text/plain" }),
+    });
+    await navigator.clipboard.write([item]);
+    return;
+  }
+  await navigator.clipboard.writeText(text);
+}
+
 export default function StudentsPage() {
   const [students, setStudents] = useState<StudentSummary[]>([]);
   const [trigger, setTrigger] = useState(3);
@@ -51,7 +66,7 @@ export default function StudentsPage() {
     try {
       const r = await generateParentMessage(s._id, tpl);
       setLastMsg({ text: r.message, label: `${r.template} → ${s.firstName} ${s.lastName}` });
-      try { await navigator.clipboard.writeText(r.message); setPmMsg(`✓ Copied & logged “${r.template}” for ${s.firstName} — paste it into your email.`); }
+      try { await copyRich(r.html, r.message); setPmMsg(`✓ Copied & logged “${r.template}” for ${s.firstName} — paste it into Edsby (formatting carries over).`); }
       catch { setPmMsg(`Logged “${r.template}” for ${s.firstName} — copy the text below to send.`); }
     } catch (e: any) { setPmMsg(`✗ ${e.message}`); }
   }
