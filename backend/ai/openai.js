@@ -3,7 +3,9 @@
 
 import OpenAI from "openai";
 
-const apiKey = process.env.OPENAI_API_KEY;
+// Trimmed — a key pasted into a hosting dashboard often carries a trailing
+// newline, which OpenAI rejects indistinguishably from a wrong key.
+const apiKey = process.env.OPENAI_API_KEY?.trim();
 
 if (!apiKey) {
   console.warn("[openai] OPENAI_API_KEY is not set — AI features will fail at runtime.");

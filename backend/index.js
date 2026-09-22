@@ -12691,7 +12691,10 @@ app.get("/grading/capture/:submissionId/:file", async (req, res) => {
 let _openaiInstance = null;
 function getOpenAIInstance() {
   if (_openaiInstance) return _openaiInstance;
-  const apiKey = process.env.OPENAI_API_KEY;
+  // Trimmed: a key pasted into a dashboard env field often carries a trailing
+  // newline, and OpenAI rejects it as "Incorrect API key provided" — identical
+  // to a genuinely wrong key, with nothing to distinguish the two.
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) throw new Error("[index] OPENAI_API_KEY is not set");
   return (_openaiInstance = new OpenAI({ apiKey }));
 }
@@ -17529,6 +17532,25 @@ function safeErrDetail(err, fallback = "unknown error") {
   return fallback;
 }
 
+// Describe the loaded API key well enough to tell WHICH key the running process
+// has, without ever printing one. Rotating a key and still getting 401 has two
+// very different causes — the service never restarted and is holding the old
+// key, or the new key is itself rejected — and the last four characters
+// separate them at a glance. Whitespace is called out because a key pasted with
+// a trailing newline is rejected as "incorrect" with no other clue.
+function describeKey(raw) {
+  if (raw == null) return "MISSING (env var not set on this service)";
+  const s = String(raw);
+  if (!s) return "EMPTY (env var set to an empty string)";
+  const trimmed = s.trim();
+  const notes = [];
+  if (trimmed !== s) notes.push("HAS SURROUNDING WHITESPACE");
+  if (/\s/.test(trimmed)) notes.push("HAS INTERNAL WHITESPACE");
+  if (/^["']|["']$/.test(trimmed)) notes.push("WRAPPED IN QUOTES");
+  const shape = trimmed.startsWith("sk-proj-") ? "sk-proj-" : trimmed.startsWith("sk-") ? "sk-" : "unrecognised prefix";
+  return `${shape}…${trimmed.slice(-4)} (len ${trimmed.length})${notes.length ? " ⚠ " + notes.join(", ") : ""}`;
+}
+
 // Generate a short human-shareable correlation id for a failed request and log
 // the underlying error prefixed with that id. In production the client sees
 // only { errorId, code } — pasting the id lets us grep the server logs to the
@@ -17599,6 +17621,11 @@ function reportServerErr(tag, err, extra = {}) {
   // come from env so they can't be read off the source.
   if (code === "openai_model") {
     console.error(`   configured models: AI_MODEL=${AI_MODEL} AI_MODEL_FULL=${AI_MODEL_FULL}`);
+  }
+  // Same reasoning as the model names: on an auth failure the identity of the
+  // loaded key IS the diagnosis, and it can't be read off the source.
+  if (code === "openai_auth") {
+    console.error(`   OPENAI_API_KEY in use: ${describeKey(process.env.OPENAI_API_KEY)}`);
   }
   if (err?.stack && process.env.NODE_ENV !== "production") console.error(err.stack);
   return { errorId, code, details: safeErrDetail(err), ...extra };
