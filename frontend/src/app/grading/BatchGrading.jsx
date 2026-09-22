@@ -647,7 +647,7 @@ export default function BatchGrading({
   const [rosterUploading, setRosterUploading] = useState(false);
   // What the last upload did, so replacing an existing class is visible rather
   // than looking like nothing happened.
-  const [rosterNotice, setRosterNotice] = useState("");
+  const [rosterNotice, setRosterNotice] = useState(null); // { kind, text, errors[] }
   const [rosterLoading, setRosterLoading] = useState(false);
   const rosterFileRef = useRef(null);
 
@@ -3318,7 +3318,7 @@ export default function BatchGrading({
     }
 
     setRosterUploading(true);
-    setRosterNotice("");
+    setRosterNotice(null);
     const rosterBase = gradingUrl.replace(/\/grading$/, "/class-roster");
     const errors = [];
     const replaced = [];
@@ -3336,8 +3336,15 @@ export default function BatchGrading({
           }),
         });
         const data = await res.json();
-        if (!res.ok) errors.push(`${file.name}: ${data.error || "failed"}`);
-        else (data.replacedCount > 0 ? replaced : added).push(data.className || file.name);
+        if (!res.ok) {
+          // Keep the server's own wording — "requires a PLUS plan" is the whole
+          // answer, and "failed" would have hidden it.
+          const why = data.error || `failed (${res.status})`;
+          const plan = data.currentPlan ? ` You're on ${data.currentPlan}.` : "";
+          errors.push(`${file.name}: ${why}${plan}`);
+        } else {
+          (data.replacedCount > 0 ? replaced : added).push(data.className || file.name);
+        }
       } catch (err) {
         errors.push(`${file.name}: ${err?.message || "failed"}`);
       }
@@ -3350,16 +3357,22 @@ export default function BatchGrading({
         setRosterClasses(listData.rosters || []);
       }
     } catch {}
-    if (errors.length) alert("Some files failed:\n" + errors.join("\n"));
-    else {
+    if (!errors.length) {
       try { if (window.gtag) window.gtag("event", "roster_uploaded", { file_count: files.length }); } catch {}
     }
+    // Failures stay on the page. An alert() is dismissed and gone, which is how
+    // an upload rejected outright — every file refused by the plan gate, say —
+    // reads afterwards as "the upload just didn't do anything".
     const bits = [];
     if (replaced.length) bits.push(`Replaced ${replaced.join(", ")}`);
     if (added.length) bits.push(`Added ${added.join(", ")}`);
-    setRosterNotice(bits.join(" · "));
+    setRosterNotice({
+      kind: errors.length ? (replaced.length || added.length ? "partial" : "error") : "ok",
+      text: bits.join(" · "),
+      errors,
+    });
     setRosterUploading(false);
-  }, [gradingUrl]);
+  }, [gradingUrl, parentTeacherEmail]);
 
   const deleteRoster = useCallback(async (rosterId) => {
     if (!confirm("Delete this class roster?")) return;
@@ -3536,14 +3549,25 @@ export default function BatchGrading({
 
             {rosterNotice && (
               <div
-                role="status"
+                role={rosterNotice.kind === "ok" ? "status" : "alert"}
                 style={{
-                  fontSize: 12, color: "#166534", background: "rgba(22,101,52,0.08)",
-                  border: "1px solid rgba(22,101,52,0.2)", borderRadius: 6,
-                  padding: "5px 9px", marginBottom: 8,
+                  fontSize: 12, marginBottom: 8, padding: "6px 9px", borderRadius: 6,
+                  ...(rosterNotice.kind === "ok"
+                    ? { color: "#166534", background: "rgba(22,101,52,0.08)", border: "1px solid rgba(22,101,52,0.2)" }
+                    : { color: "#7c2d12", background: "rgba(234,88,12,0.10)", border: "1px solid rgba(234,88,12,0.35)" }),
                 }}
               >
-                {rosterNotice}
+                {rosterNotice.text && <div>{rosterNotice.text}</div>}
+                {rosterNotice.errors?.length > 0 && (
+                  <>
+                    <div style={{ fontWeight: 700, marginTop: rosterNotice.text ? 4 : 0 }}>
+                      {rosterNotice.errors.length === 1 ? "This file was not uploaded:" : "These files were not uploaded:"}
+                    </div>
+                    {rosterNotice.errors.map((e, i) => (
+                      <div key={i} style={{ marginTop: 2 }}>{e}</div>
+                    ))}
+                  </>
+                )}
               </div>
             )}
 

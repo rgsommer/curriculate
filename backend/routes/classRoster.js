@@ -188,6 +188,19 @@ router.post("/upload", async (req, res) => {
     // Parent emails are not collateral here: StudentContact is its own
     // collection keyed by edsbyId, so contacts survive the roster document
     // being replaced and re-attach to the new one.
+    // ORDER MATTERS: create the replacement first, then remove what it
+    // supersedes. Deleting first and creating second loses the roster outright
+    // whenever the create fails — the teacher is left with no class list at
+    // all, which is far worse than the duplicate this is preventing. Creating
+    // first fails safe: the worst case is briefly holding two rosters, and the
+    // delete that follows resolves it.
+    const roster = await ClassRoster.create({
+      teacherEmail: email,
+      className: derivedClassName,
+      sourceFile: sourceFile || "",
+      students,
+    });
+
     const replaceMatch = [];
     if (sourceFile) replaceMatch.push({ sourceFile });
     if (derivedClassName !== FALLBACK_CLASS_NAME) {
@@ -195,16 +208,16 @@ router.post("/upload", async (req, res) => {
     }
     let replacedCount = 0;
     if (replaceMatch.length) {
-      const del = await ClassRoster.deleteMany({ teacherEmail: email, $or: replaceMatch });
+      const del = await ClassRoster.deleteMany({
+        teacherEmail: email,
+        _id: { $ne: roster._id }, // never the one just created
+        $or: replaceMatch,
+      });
       replacedCount = del?.deletedCount || 0;
     }
-
-    const roster = await ClassRoster.create({
-      teacherEmail: email,
-      className: derivedClassName,
-      sourceFile: sourceFile || "",
-      students,
-    });
+    console.log(
+      `[classRoster] ${email} uploaded "${derivedClassName}" (${students.length} students), replaced ${replacedCount}`
+    );
 
     return res.json({
       ok: true,
