@@ -524,6 +524,42 @@ function buildBatchPayloadText(result, refCode, gradeBandForKita) {
   return lines.join("\n").trim();
 }
 
+// ── Service faults: the failures that will hit every student identically ────
+// A bad OpenAI key, an exhausted quota, a retired model or dead AWS credentials
+// are properties of the deployment, not of the page being graded. Retrying the
+// next student cannot succeed. Left unchecked a 19-student batch uploads 19
+// times, waits a minute each time and prints 19 identical red rows — so the
+// batch stops at the first one instead, and says what is actually wrong.
+const SERVICE_FAULT_CODES = new Set([
+  "openai_auth",   // key missing, revoked or rejected
+  "openai_quota",  // out of credit / billing stopped
+  "openai_model",  // AI_MODEL / AI_MODEL_FULL names a model the account can't use
+  "aws_auth",      // S3 access key wrong or deactivated
+  "aws_denied",
+  "aws_no_bucket",
+]);
+
+const SERVICE_FAULT_HINTS = {
+  openai_auth: "The grading service's OpenAI key is missing or has been rejected.",
+  openai_quota: "The grading service's OpenAI account is out of credit.",
+  openai_model: "The grading service is configured to use an AI model it can't reach.",
+  aws_auth: "The grading service's storage credentials have been rejected.",
+  aws_denied: "The grading service was denied access to its storage.",
+  aws_no_bucket: "The grading service's storage bucket is missing.",
+};
+
+// Read the server's classification off a result row. `raw` is the parsed
+// response body; a row that failed before the fetch returned has none.
+function serviceFaultOf(result) {
+  const code = result?.raw?.code;
+  if (!code || !SERVICE_FAULT_CODES.has(code)) return null;
+  return {
+    code,
+    hint: SERVICE_FAULT_HINTS[code] || "The grading service is misconfigured.",
+    errorId: result?.raw?.errorId || null,
+  };
+}
+
 export default function BatchGrading({
   gradingUrl,
   resultsUrl,
@@ -557,6 +593,9 @@ export default function BatchGrading({
   const [extractedAnswerKey, setExtractedAnswerKey] = useState(answerKeyOverride || "");
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
+  // Set when a grade comes back with a deployment-level fault, which halts the
+  // run — see SERVICE_FAULT_CODES. { code, hint, errorId, stoppedAt }
+  const [serviceFault, setServiceFault] = useState(null);
 
   const [grading, setGrading] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0, current: "" });
@@ -1025,6 +1064,7 @@ export default function BatchGrading({
 
     abortRef.current = false;
     abortControllerRef.current = new AbortController();
+    setServiceFault(null); // a fresh run gets a fresh verdict on the service
     setGrading(true);
     // Wrap the whole run so an unexpected throw (or early return) can never leave
     // the UI stuck in the "grading" state — finally always clears it.
@@ -1354,6 +1394,9 @@ export default function BatchGrading({
         });
         const result = await gradeOneStudent(i, group);
         passes.push(result);
+        // No point running pass 2 and 3 against a rejected key — the caller
+        // checks the merged result and will stop the run anyway.
+        if (serviceFaultOf(result)) break;
       }
       return mergeMultiPassResults(passes);
     };
@@ -1361,6 +1404,9 @@ export default function BatchGrading({
     // Grade first student solo for fast initial feedback, then batches of 3
     const CONCURRENCY = precisionMode ? 1 : 3; // serialize in precision mode to avoid API overload
     let start = 0;
+    // Distinct from abortRef, which means the teacher pressed Stop. This means
+    // the service itself is down and continuing is pointless.
+    let halted = false;
 
     // First student — solo so the teacher sees a result quickly
     if (total > 0 && !abortRef.current) {
@@ -1369,11 +1415,21 @@ export default function BatchGrading({
       batchResults.push(first);
       setResults([...batchResults]);
       start = 1;
+
+      // The first student is graded solo precisely so a problem shows up before
+      // the rest are committed. A service fault here will repeat for all of
+      // them, so stop: uploading 18 more papers to a rejected API key wastes
+      // the teacher's time and tells them nothing new.
+      const fault = serviceFaultOf(first);
+      if (fault) {
+        setServiceFault({ ...fault, stoppedAt: 1, total });
+        halted = true;
+      }
     }
 
     // Remaining students in parallel batches
     for (; start < total; start += CONCURRENCY) {
-      if (abortRef.current) break;
+      if (abortRef.current || halted) break;
 
       const batchEnd = Math.min(start + CONCURRENCY, total);
       const batchSlice = studentGroups.slice(start, batchEnd);
@@ -1398,6 +1454,12 @@ export default function BatchGrading({
       settled.forEach((outcome, offset) => {
         if (outcome.status === "fulfilled") {
           batchResults.push(outcome.value);
+          // A quota can run dry, or a key be revoked, partway through a batch.
+          const fault = serviceFaultOf(outcome.value);
+          if (fault && !halted) {
+            setServiceFault({ ...fault, stoppedAt: batchResults.length, total });
+            halted = true;
+          }
         } else {
           console.error(`[batch] student ${start + offset + 1} grade threw:`, outcome.reason);
           batchResults.push({
@@ -3629,6 +3691,38 @@ export default function BatchGrading({
       {loadError && (
         <div style={{ ...batchStyles.statusBox, color: "#dc2626", background: "rgba(220,38,38,0.08)" }}>
           {loadError}
+        </div>
+      )}
+
+      {/* A deployment-level fault stopped the run. Say so plainly: the teacher
+          did nothing wrong and re-uploading will not help. */}
+      {serviceFault && (
+        <div
+          role="alert"
+          style={{
+            ...batchStyles.statusBox,
+            textAlign: "left",
+            color: "#7c2d12",
+            background: "rgba(234,88,12,0.10)",
+            border: "1px solid rgba(234,88,12,0.35)",
+          }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>
+            Grading stopped — this is a problem with the service, not your papers.
+          </div>
+          <div style={{ marginBottom: 6 }}>{serviceFault.hint}</div>
+          <div style={{ marginBottom: 6 }}>
+            {serviceFault.stoppedAt >= serviceFault.total
+              ? "No students were graded."
+              : `Stopped after student ${serviceFault.stoppedAt} of ${serviceFault.total} — the remaining ${
+                  serviceFault.total - serviceFault.stoppedAt
+                } were not uploaded or graded. Nothing has been published.`}
+            {" "}Your file is still loaded: once the service is fixed, press Start again.
+          </div>
+          <div style={{ fontSize: 12, opacity: 0.8, fontFamily: "ui-monospace, monospace" }}>
+            {serviceFault.code}
+            {serviceFault.errorId ? ` · ${serviceFault.errorId}` : ""}
+          </div>
         </div>
       )}
 
