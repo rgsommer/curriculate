@@ -548,6 +548,16 @@ const SERVICE_FAULT_HINTS = {
   aws_no_bucket: "The grading service's storage bucket is missing.",
 };
 
+// When a roster was last uploaded. The year is always shown: telling this
+// year's class list from last year's is the whole reason the date is there, and
+// "Sep 22" alone doesn't.
+function formatUploadDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
 // Read the server's classification off a result row. `raw` is the parsed
 // response body; a row that failed before the fetch returned has none.
 function serviceFaultOf(result) {
@@ -3628,6 +3638,16 @@ export default function BatchGrading({
                       <span style={{ color: "#94a3b8", marginLeft: 8, fontSize: 12 }}>
                         {rc.studentCount} student{rc.studentCount !== 1 ? "s" : ""}
                       </span>
+                      {/* Ahead of the filename, which is long and gets clipped on
+                          a narrow panel — the date is the part worth keeping. */}
+                      {formatUploadDate(rc.createdAt) && (
+                        <span
+                          style={{ color: "#64748b", marginLeft: 8, fontSize: 12 }}
+                          title={`Uploaded ${new Date(rc.createdAt).toLocaleString()}`}
+                        >
+                          uploaded {formatUploadDate(rc.createdAt)}
+                        </span>
+                      )}
                       {rc.sourceFile && (
                         <span style={{ color: "#cbd5e1", marginLeft: 6, fontSize: 11 }}>
                           ({rc.sourceFile})
