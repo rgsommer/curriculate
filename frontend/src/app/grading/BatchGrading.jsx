@@ -1267,7 +1267,19 @@ export default function BatchGrading({
           detectedTitle: data.detected_title || "",
           pageImages: images,
           refCode: null,
-          error: data.error ? (data.details ? `${data.error}: ${data.details}` : data.error) : null,
+          // Surface the server's error code and correlation id, not just the
+          // (deliberately vague in production) details string. "Grading failed:
+          // unknown error" across 19 rows tells you nothing; "openai_model
+          // [AB12CD]" tells you the model name is wrong and gives you the exact
+          // log line to look up.
+          error: data.error
+            ? [
+                data.error,
+                data.code && data.code !== "unknown" ? `(${data.code})` : null,
+                data.details && data.details !== "unknown error" ? `— ${data.details}` : null,
+                data.errorId ? `[${data.errorId}]` : null,
+              ].filter(Boolean).join(" ")
+            : null,
           raw: data,
         };
 

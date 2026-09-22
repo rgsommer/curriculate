@@ -2931,7 +2931,14 @@ export default function GradingPage() {
             setSubmitError("");
             return;
           }
-          const msg = parsed?.details || parsed?.error || `HTTP ${res.status} from grading endpoint`;
+          // Include the server's error code and correlation id — in production
+          // `details` is deliberately vague ("unknown error"), so on its own it
+          // leaves nothing to act on or look up.
+          const msg = [
+            parsed?.details && parsed.details !== "unknown error" ? parsed.details : (parsed?.error || `HTTP ${res.status} from grading endpoint`),
+            parsed?.code && parsed.code !== "unknown" ? `(${parsed.code})` : null,
+            parsed?.errorId ? `[${parsed.errorId}]` : null,
+          ].filter(Boolean).join(" ");
           throw new Error(msg);
         }
       } catch (err) {

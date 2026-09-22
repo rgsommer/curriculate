@@ -17564,6 +17564,22 @@ function classifyErr(err) {
 
   if (status === 429 || msg.includes("rate limit")) return "openai_rate_limited";
   if (status === 401 || status === 403 || msg.includes("api key")) return "openai_auth";
+
+  // A retired, renamed or misspelled model returns 404 "The model `x` does not
+  // exist or you do not have access to it". That used to fall through to
+  // "unknown" — which is the worst place to have a gap, because it is the
+  // failure mode where EVERY request dies identically and the code is the only
+  // clue as to why.
+  if (status === 404
+      || (msg.includes("model") && (msg.includes("does not exist") || msg.includes("not found") || msg.includes("deprecat")))) {
+    return "openai_model";
+  }
+  // Out of credit / billing stopped. Distinct from a rate limit: waiting
+  // doesn't fix it.
+  if (status === 402 || msg.includes("insufficient_quota") || msg.includes("exceeded your current quota") || msg.includes("billing")) {
+    return "openai_quota";
+  }
+
   if (status === 400 && msg.includes("token")) return "openai_too_large";
   if (status === 400) return "openai_bad_request";
   if (status === 408 || msg.includes("timeout") || msg.includes("timed out")) return "openai_timeout";
@@ -17579,6 +17595,11 @@ function reportServerErr(tag, err, extra = {}) {
   const code = classifyErr(err);
   // Log the id, code, and the actual message + stack — always, in every env.
   console.error(`🔥 ${tag} failed [${errorId}] code=${code}:`, err?.message || err);
+  // For a model error the configured model names ARE the diagnosis, and they
+  // come from env so they can't be read off the source.
+  if (code === "openai_model") {
+    console.error(`   configured models: AI_MODEL=${AI_MODEL} AI_MODEL_FULL=${AI_MODEL_FULL}`);
+  }
   if (err?.stack && process.env.NODE_ENV !== "production") console.error(err.stack);
   return { errorId, code, details: safeErrDetail(err), ...extra };
 }
