@@ -981,6 +981,27 @@ check("column letters", P.columnName(4) === "D" && P.columnName(43) === "AQ" && 
     P.birthdaysToday({ bdays: [{ top: 1, left: 1, width: 24, height: 2, values: [
       weekend(1, "Ella Brown", "7A", "12", ""),
     ] }] }, new Date(2026, 8, 19)).map((b) => b.name).join() === "Ella Brown");
+  // The tab has helper cells at the top holding today's date for the sheet's
+  // own lookups. One of them matched the "kept on" column and put the heading
+  // ten columns along on the projector: "Happy birthday, Billing!". A row
+  // matched through K has to carry a birthday key of its own.
+  const helper = new Array(24).fill("");
+  helper[10] = "Thu, Sep 18, 2026"; // K, as a helper cell showing today
+  helper[22] = "Billing";           // the heading the board read as a name
+  check("birthdays: a helper row with today in K but no key of its own is not a birthday",
+    P.birthdaysToday({ bdays: [{ top: 1, left: 1, width: 24, height: 1, values: [helper] }] }, day).length === 0,
+    P.birthdaysToday({ bdays: [{ top: 1, left: 1, width: 24, height: 1, values: [helper] }] }, day));
+  // And a heading sitting where the name should be is not read as one either.
+  const heading = row(1, "Billing", "7A");
+  heading[11] = "Ella Brown"; // the real name, further along the row
+  check("birthdays: a heading where the name should be is passed over",
+    P.birthdaysToday({ bdays: [{ top: 1, left: 14, width: 12, height: 1, values: [heading] }] }, day)
+      .map((b) => b.name).join() === "Ella Brown");
+  check("birthdays: with nothing that reads like a name, the row says nothing",
+    P.birthdaysToday({ bdays: [{ top: 1, left: 14, width: 12, height: 1, values: [row(1, "Billing", "7A")] }] }, day).length === 0);
+  check("birthdays: where the name came from is recorded for ?debug=1",
+    /row 1 .* name from/.test(all[0].where || ""), all[0].where);
+
   check("names: one, two and three read properly",
     P.joinNames(["Mia"]) === "Mia"
     && P.joinNames(["Mia", "Sam"]) === "Mia and Sam"

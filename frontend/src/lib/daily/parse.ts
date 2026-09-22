@@ -2273,12 +2273,33 @@ export function testWeekday(plan: Record<number, unknown[]>): number | null {
  * board simply does not know whose class to put the balloons over.
  * ------------------------------------------------------------------ */
 
-export type Birthday = { name: string; grade: string; note: string };
+export type Birthday = { name: string; grade: string; note: string; where?: string };
 
 const BDAY_NAME_OFFSET = 9; // the tenth column of the block, as the rule uses
 const BDAY_DAY_COL = 11;    // K — the school day a weekend birthday is kept on
 const BDAY_NOTE_COL = 12;   // L — what to say about it
 const GRADE_CELL = /^([78])\s*[A-C]?$/;
+const BDAY_KEY = /^\d{5}\s+\d+$/;
+
+/**
+ * Whether a cell is a person's name rather than the heading above one.
+ *
+ * The tenth column of the block is where the sheet's own lookup takes the name,
+ * and a row that matched some other way can put a heading there instead — the
+ * board once wished a happy birthday to "Billing". A name is letters, with the
+ * spaces, hyphens and apostrophes names have; a word with no lower case in it
+ * at all reads as a heading, and so does one of the words a spreadsheet puts in
+ * a header row.
+ */
+const NOT_A_NAME = /^(billing|name|names|student|students|grade|class|date|dates|birthday|birthdays|bday|bdays|month|day|year|total|notes?|column|header|today|tomorrow|true|false|n\/a|none)$/i;
+function looksLikeName(v: string): boolean {
+  const text = String(v || "").trim();
+  if (!text || text.length < 2) return false;
+  if (!/[A-Za-z]{2}/.test(text)) return false;
+  if (NOT_A_NAME.test(text)) return false;
+  if (/\d/.test(text)) return false;
+  return /[a-z]/.test(text);
+}
 
 /**
  * A date out of a cell, however the sheet wrote it: a serial, the "<serial> n"
@@ -2345,8 +2366,9 @@ export function birthdaysToday(book: Book, at: Date): Birthday[] {
   const seen = new Set<string>();
   for (const g of grids) {
     const left = g.left || 1;
+    const top = g.top || 1;
     const keyCol = bdayKeyColumn(g.values || []);
-    for (const row of g.values || []) {
+    (g.values || []).forEach((row, r) => {
       const cells = (row || []).map((c) => String(c ?? "").trim());
       const col = (n: number) => (n - left >= 0 ? cells[n - left] || "" : "");
       const kept = dayFromCell(col(BDAY_DAY_COL));
@@ -2354,19 +2376,33 @@ export function birthdaysToday(book: Book, at: Date): Birthday[] {
       // date has nothing to say: a Saturday birthday is not put on the board on
       // the Saturday, and not missed on the Friday either.
       const at0 = cells.findIndex((c) => key.test(c));
-      if (kept ? !sameDay(kept, midnight) : at0 < 0) continue;
+      if (kept ? !sameDay(kept, midnight) : at0 < 0) return;
+      // A row matched through K has to be a birthday row: it must carry a
+      // birthday key of its own. The tab has helper cells at the top holding
+      // today's date for the sheet's own lookups, and one of those matched K
+      // and put a column heading on the projector — "Happy birthday, Billing!"
+      if (at0 < 0 && !(keyCol >= 0 && BDAY_KEY.test(cells[keyCol] || ""))) return;
       const from = at0 >= 0 ? at0 : keyCol;
-      const name = (from >= 0 ? cells[from + BDAY_NAME_OFFSET] || "" : "")
-        || cells.slice(Math.max(0, from) + 1).find((c) => /[A-Za-z]{2}/.test(c) && !GRADE_CELL.test(c) && !dayFromCell(c))
-        || "";
-      if (!name) continue;
+      const found = from >= 0 ? cells[from + BDAY_NAME_OFFSET] || "" : "";
+      const name = looksLikeName(found)
+        ? found
+        : cells.slice(Math.max(0, from) + 1).find((c) => looksLikeName(c) && !GRADE_CELL.test(c) && !dayFromCell(c))
+          || "";
+      if (!name) return;
       const gradeCell = cells.find((c) => GRADE_CELL.test(c)) || "";
       const grade = (gradeCell.match(GRADE_CELL) || [, ""])[1] || "";
       const id = `${name}|${grade}`;
-      if (seen.has(id)) continue;
+      if (seen.has(id)) return;
       seen.add(id);
-      out.push({ name, grade, note: col(BDAY_NOTE_COL) });
-    }
+      const nameAt = cells.indexOf(name);
+      out.push({
+        name,
+        grade,
+        note: col(BDAY_NOTE_COL),
+        where: `row ${top + r} · matched on ${at0 >= 0 ? `its own key in ${columnName(left + at0)}` : `${columnName(BDAY_DAY_COL)} (kept on)`}`
+          + ` · name from ${nameAt >= 0 ? columnName(left + nameAt) : "?"}${found && found !== name ? ` (${columnName(left + from + BDAY_NAME_OFFSET)} held "${found}")` : ""}`,
+      });
+    });
   }
   return out;
 }

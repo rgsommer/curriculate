@@ -1520,8 +1520,11 @@ export default function DailyPage() {
                     .map((g) => `${(g.values || []).filter((r) => (r || []).some((c) => String(c ?? "").trim())).length} rows with something in them, from ${columnName(g.left)}${g.top}`)
                     .join("   ·   ");
                 })())}
+              {/* Where each name came from, cell by cell: the board once wished
+                  a happy birthday to "Billing", and a name that is wrong is
+                  only answerable from the row it was taken out of. */}
               {row("birthdays today",
-                (birthdays || []).map((b) => `${b.name || "?"} (grade ${b.grade || "not found in the row"})${b.note ? ` — ${b.note}` : ""}`).join("   ")
+                (birthdays || []).map((b) => `${b.name || "?"} (grade ${b.grade || "not found in the row"})${b.note ? ` — ${b.note}` : ""}${b.where ? `  [${b.where}]` : ""}`).join("   ")
                   || "nothing in the BDays rows for today")}
               {row("Benefit 3 earned (the extra Formal Discussion)",
                 `${(points.b3 || []).join(", ") || "none"}  ·  ${points.b3Note || "—"}`)}
