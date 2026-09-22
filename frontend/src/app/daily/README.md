@@ -95,13 +95,14 @@ remembered and left out of later batches (`readRangesSafe`).
 | O Canada for (C) | The anthem holds the screen for N minutes after the announcements — the words and the flag from the day's column of `Poems!F1:J3` — 5 if the row is missing, which it is in the sheet today. The announcements before it carry the same screen rather than a blank one. The flag may be written into the cell or picked by a rule (`=IMAGE(INDEX(Flags!B:B, …))`), which is run at the board's clock |
 | Blank screen during announcements (C:D) | The feature cell has the screen to itself between those times — the flag for the anthem, scaled to fill — with "Please listen" underneath; a blank screen when E1 holds no picture |
 | Show Dismissal List (D) | Dismissal screen with the "Before you head out" list from that time |
-| Stand ready for dismissal (C) | "Get ready for dismissal" block appears N minutes before the last bell — five if the row is missing, which it is in the sheet today |
+| Stand ready for dismissal (C) | The moment the room has to be standing: **minutes before the last bell, or the time itself** ("3:25 PM"). Five minutes if the row is missing, which it is in the sheet today. The note on the board names that moment, not the bell |
 | Show pregnancy weeks during (D) | Grace window (minutes) for the status chips at each end of a period |
 | Can go to washroom x min before (D) | "Washroom" chip switches off N minutes before the end |
 | Snacks are allowed with B2 (C) | "Snacks" chip for N minutes once B2 is on |
 | Memory verse for (C) | The memory verse and the hymn hold the CE period's right-hand half for N minutes — 10 if the row is missing, which it is in the sheet today |
 | Verse of the day for (C) | The verse of the day holds the right-hand half for N minutes before the work takes it — 10 if the row is missing, which it is in the sheet today |
 | Prayercast for (C) | The day's "Pray for …" video holds the right-hand half for N minutes from the end of O Canada — 5 if the row is missing, which it is in the sheet today |
+| Lesson picture for (C) | The lesson's own picture and video hold the right-hand half for N minutes after the verse — 15 if the row is missing, which it is in the sheet today |
 
 The opening window (question and warm-up instead of the bullet list) is fixed at
 5 minutes in `parse.ts` (`DEFAULT_SETUP.openMin`); there is no Setup row for it yet.
@@ -198,14 +199,22 @@ tile never expanded properly either. Both now open over the whole board.
 The half beside the lesson is shared out by the clock, and the verse of the day
 is only ever in one place at a time.
 
-On a **class** it goes, in order: the lesson picture for its window
-(`picSeconds`, 10 min), the memory work in CE for `memoryMin` (10 min), then the
-**verse of the day for `verseMin`** — its own ten minutes start when it actually
-appears, not when the class does — and after that the half turns over to **the
-work**: the class's assignment, else its homework. Where the panel is already
-saying that (the Assign block, or "Write in your agenda") the verse simply steps
-aside; where there is nothing to turn over to it stays, because an empty half
-helps no one.
+On a **class** it goes, in order: the memory work in CE for `memoryMin`
+(10 min), the **verse of the day for `verseMin`** (10 min), then **the lesson's
+own picture and video for `mediaMin`** (15 min) — columns I to K of the Lessons
+row, the picture filling the column and the video as a poster that opens over
+the whole board — and after that the half turns over to **the work**: the
+class's assignment, else its homework. Where the panel is already saying that
+(the Assign block, or "Write in your agenda") the verse simply steps aside;
+where there is nothing to turn over to it stays, because an empty half helps no
+one.
+
+The verse leads because it is the same few lines every day and the room reads
+them while it settles; the lesson's own material follows, while the class is
+still on the introduction. `?debug=1`'s **right-hand half** line gives all four
+windows by the clock and says which is up, and whether the row's picture and
+video were found at all — a picture *inserted into* a cell is invisible to the
+Sheets API, so it reads "empty" there and needs the mirror script below.
 
 On the **day's own screens** — before school, between classes — there is no
 beginning to measure from, so the two alternate on the board's own clock:

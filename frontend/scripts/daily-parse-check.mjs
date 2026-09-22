@@ -1394,6 +1394,24 @@ check(
   "setup: a row can change the verse window",
   P.parseSetup([["", "Verse of the day for", "6", "minutes"]]).verseMin === 6,
 );
+// The lesson's own picture and video follow the verse on the right-hand half.
+check("setup: the lesson media window defaults to fifteen minutes", P.parseSetup([]).mediaMin === 15);
+check(
+  "setup: a row can change it",
+  P.parseSetup([["", "Lesson picture for", "12", "minutes"]]).mediaMin === 12,
+);
+// "Stand ready for dismissal" may name the minutes or the moment itself.
+check(
+  "setup: stand ready as minutes",
+  P.parseSetup([["", "Stand ready for dismissal", "8", "minutes"]]).dismissalReadyMin === 8
+    && P.parseSetup([["", "Stand ready for dismissal", "8", "minutes"]]).dismissalReadyAt === null,
+);
+check(
+  "setup: stand ready as a time",
+  P.parseSetup([["", "Stand ready for dismissal", "3:25 PM", ""]]).dismissalReadyAt === 15 * 60 + 25,
+  P.parseSetup([["", "Stand ready for dismissal", "3:25 PM", ""]]).dismissalReadyAt,
+);
+
 // The Prayercast holds the half for the minutes after O Canada.
 check("setup: the prayer window defaults to five minutes", P.parseSetup([]).prayerMin === 5);
 check(
