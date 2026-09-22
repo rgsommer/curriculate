@@ -50,7 +50,7 @@ type StudentDetail = {
     deliveries?: Array<{ channel: string; ok: boolean; error?: string }>;
     fromTeachers: Array<{ name: string; behaviorName: string }>;
   }>;
-  consequences?: Array<{ _id: string; type: string; detail?: string; byName?: string; at: string; kind?: "encouraging" | "corrective" }>;
+  consequences?: Array<{ _id: string; type: string; detail?: string; byName?: string; at: string; kind?: "encouraging" | "corrective"; completed?: boolean; completedByName?: string; completedAt?: string }>;
 };
 
 const fmtDT = (d: string) =>
@@ -312,6 +312,12 @@ export default function StudentPage() {
     try { await api(`/consequences/${id}`, { method: "DELETE" }); load(); } catch (e: any) { setConsMsg(`✗ ${e.message}`); }
   }
 
+  // Mark a consequence completed (or undo). At the threshold notice, completed
+  // ones show as already carried out.
+  async function markConsequenceDone(id: string, completed: boolean) {
+    try { await api(`/consequences/${id}/complete`, { body: { completed } }); load(); } catch (e: any) { setConsMsg(`✗ ${e.message}`); }
+  }
+
   async function logMeeting() {
     const text = meetingNote.trim();
     if (!text) return;
@@ -533,8 +539,18 @@ export default function StudentPage() {
                   <span className="font-medium text-slate-900">{c.type}</span>
                   {c.detail ? <span className="text-slate-600"> — {c.detail}</span> : null}
                   <span className="ml-2 text-xs text-slate-400">{fmtDT(c.at)}{c.byName ? ` · ${c.byName}` : ""}</span>
+                  {c.completed && (
+                    <span className="ml-2 rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-700">
+                      ✓ Completed{c.completedByName ? ` · ${c.completedByName}` : ""}
+                    </span>
+                  )}
                 </span>
-                <button onClick={() => removeConsequence(c._id)} className="no-print shrink-0 text-xs text-red-600">remove</button>
+                <span className="no-print flex shrink-0 items-center gap-2">
+                  {c.completed
+                    ? <button onClick={() => markConsequenceDone(c._id, false)} className="text-xs text-slate-500 hover:underline">undo</button>
+                    : <button onClick={() => markConsequenceDone(c._id, true)} className="rounded-lg border border-green-300 px-2 py-0.5 text-xs font-medium text-green-700 hover:bg-green-50">Mark done</button>}
+                  <button onClick={() => removeConsequence(c._id)} className="text-xs text-red-600">remove</button>
+                </span>
               </li>
             ))}
           </ul>

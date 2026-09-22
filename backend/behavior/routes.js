@@ -168,6 +168,90 @@ async function fireWhiteSlip({ req, student, config, behaviorName, detailText, a
   } catch (e) { console.warn("[behavior] white-slip email failed:", e?.message || e); }
 }
 
+// Compose a short, STUDENT-directed message spelling out the consequence, to
+// post to Edsby now — so a strike-1/2 consequence is communicated to the family
+// straight away, not only when the threshold notice fires. It states the actual
+// task ("write the following 10×", "hand-write an apology by 9am") from the
+// behaviour's consequenceText, plus the follow-up deadline. Deterministic: normal
+// logging is high-volume, so no AI cost.
+function buildConsequenceMessage({ studentName, behaviorName, detailText, consequenceText, when, followUpType, teacherName, schoolName }) {
+  const date = new Date(when || Date.now()).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: SCHOOL_TZ });
+  const deadline =
+    followUpType === "next_school_day" ? "Please complete this and hand it in by 9:00 AM the next school day." :
+    followUpType === "custom_deadline" ? "Please complete this by the deadline your teacher gave." : "";
+  const lines = [];
+  lines.push(`Dear ${studentName} (and parents),`);
+  lines.push("");
+  lines.push(`This is to let you know about a consequence from ${date} for ${behaviorName}${detailText ? ` — ${detailText}` : ""}.`);
+  lines.push("");
+  lines.push(`What to do:`);
+  lines.push(`  • ${consequenceText}`);
+  if (deadline) { lines.push(""); lines.push(deadline); }
+  lines.push("");
+  lines.push(`Thank you,`);
+  lines.push(`${teacherName}${schoolName ? `\n${schoolName}` : ""}`);
+  return lines.join("\n");
+}
+
+// Record a logged (non-white-slip) consequence on the student record so it shows
+// immediately and can be marked done. Returns the created doc (or null on error).
+async function recordLoggedConsequence({ req, student, behavior, detailText, at, incidentId }) {
+  const teacherName = req.membership?.name || req.user?.name || "Teacher";
+  try {
+    return await BehaviorConsequence.create({
+      schoolId: req.schoolId, studentId: student._id,
+      type: behavior.consequenceText, detail: behavior.name + (detailText ? ` — ${detailText}` : ""),
+      byTeacherId: req.membership._id, byName: teacherName, relatedIncidentId: incidentId || null,
+      at: new Date(at || Date.now()),
+      status: "issued", kind: "corrective",
+    });
+  } catch (e) { console.warn("[behavior] logged-consequence record failed:", e?.message || e); return null; }
+}
+
+// Email the logging teacher a rich, ready-to-paste Edsby message informing the
+// student/parents of the consequence. Never sent to a parent directly.
+async function sendConsequenceMessage({ req, student, config, behavior, detailText, at }) {
+  const teacherEmail = req.user?.email || "";
+  if (!teacherEmail) return;
+  const studentName = `${student.preferredName || student.firstName} ${student.lastName || ""}`.trim();
+  const teacherName = req.membership?.name || req.user?.name || "Teacher";
+  const schoolName = config?.branding?.schoolName || "";
+  const message = buildConsequenceMessage({
+    studentName, behaviorName: behavior.name, detailText,
+    consequenceText: behavior.consequenceText, when: at,
+    followUpType: behavior.followUpType, teacherName, schoolName,
+  });
+  const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+  try {
+    await sendEmail({
+      from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
+      to: teacherEmail,
+      subject: `Consequence to post — ${studentName} (${behavior.name})`,
+      text: message,
+      html: emailShell({
+        title: `Consequence — ${escapeHtml(studentName)}`,
+        schoolName: schoolName || "Behaviours",
+        preheader: `Ready to paste into Edsby — ${behavior.name}`,
+        footnote: "This copy goes only to you. Paste it into Edsby so the student and parents see the consequence now, rather than waiting for a notice home.",
+        contentHtml: pasteableNote(noteToHtml(message)),
+      }),
+    });
+  } catch (e) { console.warn("[behavior] consequence message email failed:", e?.message || e); }
+}
+
+// Does logging this behaviour carry a consequence the family should hear about
+// now? THRESHOLD offences with a consequence, that aren't white slips (those have
+// their own flow). IMMEDIATE offences already fire a notice; INTERACTION never
+// notifies; positives have no consequence.
+function shouldSendConsequenceNote(behavior) {
+  return (
+    behavior?.kind !== "positive" &&
+    behavior?.triggerMode === "THRESHOLD" &&
+    !behavior?.immediateWhiteSlip &&
+    !!String(behavior?.consequenceText || "").trim()
+  );
+}
+
 function appBase() {
   return (process.env.APP_BASE_URL || "https://www.curriculate.net").replace(/\/+$/, "");
 }
@@ -2010,6 +2094,12 @@ router.post("/behaviors", authAny, loadMembership, canLog, async (req, res, next
     const triggerMode = kind === "positive"
       ? "INTERACTION"
       : ["THRESHOLD", "IMMEDIATE", "INTERACTION"].includes(req.body?.triggerMode) ? req.body.triggerMode : "THRESHOLD";
+    // Every offence must carry at least one category — it drives reporting + the
+    // white-slip/GUDD rules. Positive behaviours never have categories.
+    const categories = cleanCategories(withBehaviourIfWhiteSlip(req.body?.categories, req.body?.immediateWhiteSlip), kind);
+    if (kind === "negative" && !categories.length) {
+      return res.status(400).json({ ok: false, error: "Pick at least one category (Class preparedness, Behaviour and/or Uniform)." });
+    }
     const doc = await Behavior.create({
       schoolId: req.schoolId,
       name: String(req.body?.name || "").trim(),
@@ -2019,7 +2109,7 @@ router.post("/behaviors", authAny, loadMembership, canLog, async (req, res, next
       triggerMode,
       consequenceText: kind === "positive" ? "" : String(req.body?.consequenceText || ""),
       points: Number(req.body?.points) || 0,
-      categories: cleanCategories(withBehaviourIfWhiteSlip(req.body?.categories, req.body?.immediateWhiteSlip), kind),
+      categories,
       uniform: kind === "negative" && Array.isArray(req.body?.categories) && req.body.categories.includes("uniform"),
       immediateWhiteSlip: kind === "negative" && !!req.body?.immediateWhiteSlip,
       followUpType: ["none", "next_school_day", "custom_deadline"].includes(req.body?.followUpType)
@@ -2073,6 +2163,9 @@ router.put("/behaviors/:id", authAny, loadMembership, canLog, async (req, res, n
     if (["none", "next_school_day", "custom_deadline"].includes(b.followUpType)) beh.followUpType = b.followUpType;
     if (typeof b.sortOrder === "number") beh.sortOrder = b.sortOrder;
     if (!beh.name) return res.status(400).json({ ok: false, error: "name required" });
+    if (beh.kind === "negative" && !(beh.categories || []).length) {
+      return res.status(400).json({ ok: false, error: "Pick at least one category (Class preparedness, Behaviour and/or Uniform)." });
+    }
     await beh.save();
     await audit(req.schoolId, "behavior.updated", req, { meta: { name: beh.name, scope: beh.scope } });
     res.json({ ok: true, behavior: beh });
@@ -2128,6 +2221,7 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
     // Create one append-only incident per selected behaviour, snapshotting the
     // behaviour wording so later edits don't rewrite history (§5a).
     const createdIncidents = [];
+    const consequenceNotes = []; // non-white-slip consequences to post to Edsby
     for (const bId of behaviorIds) {
       const behavior = await Behavior.findOne({ _id: bId, schoolId: req.schoolId }).lean();
       if (!behavior) continue;
@@ -2156,6 +2250,12 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
       // Immediate white slip: email the teacher (CC VP) + record the consequence.
       if (behavior.immediateWhiteSlip) {
         await fireWhiteSlip({ req, student, config, behaviorName: behavior.name, detailText, at: timestamp, relatedIncidentId: inc._id });
+      } else if (shouldSendConsequenceNote(behavior)) {
+        // A non-white-slip consequence: record it now (shows on the record, can be
+        // marked done) and queue a "post to Edsby" message so the family hears
+        // about it now — not only if/when the threshold notice fires.
+        await recordLoggedConsequence({ req, student, behavior, detailText, at: timestamp, incidentId: inc._id });
+        consequenceNotes.push({ incidentId: inc._id, behavior, detailText, at: timestamp });
       }
 
       // House points: this behaviour's value scaled by the intensity weight.
@@ -2225,6 +2325,15 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
     let positiveNotice = null;
     if (createdIncidents.some((i) => (i.behaviorSnapshot?.points || 0) > 0)) {
       positiveNotice = await maybeFirePositiveNotice({ req, student, config });
+    }
+
+    // Post-to-Edsby consequence messages. Skip any incident whose consequence is
+    // already carried by a notice firing now (it would list the same consequence),
+    // so the family isn't told twice.
+    const noticeCovered = notice ? new Set((notice.triggeringIncidentIds || []).map(String)) : new Set();
+    for (const cn of consequenceNotes) {
+      if (noticeCovered.has(String(cn.incidentId))) continue;
+      await sendConsequenceMessage({ req, student, config, behavior: cn.behavior, detailText: cn.detailText, at: cn.at });
     }
 
     // The incidents that make up the CURRENT trigger, for the teacher to review:
@@ -2327,8 +2436,11 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
         });
       }
 
+      const wantConsequenceNote = !behavior.immediateWhiteSlip && shouldSendConsequenceNote(behavior);
       if (behavior.immediateWhiteSlip) {
         await fireWhiteSlip({ req, student, config, behaviorName: behavior.name, detailText, at: timestamp, relatedIncidentId: inc._id });
+      } else if (wantConsequenceNote) {
+        await recordLoggedConsequence({ req, student, behavior, detailText, at: timestamp, incidentId: inc._id });
       }
 
       const priorIncidents = await BehaviorIncident.find({ studentId: student._id }).lean();
@@ -2355,6 +2467,13 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
       let positiveNotice = null;
       if ((behavior.points || 0) > 0) {
         positiveNotice = await maybeFirePositiveNotice({ req, student, config });
+      }
+
+      // Post-to-Edsby consequence message, unless a notice firing now already
+      // carries this consequence (avoids telling the family twice).
+      if (wantConsequenceNote) {
+        const covered = notice && (notice.triggeringIncidentIds || []).some((x) => String(x) === String(inc._id));
+        if (!covered) await sendConsequenceMessage({ req, student, config, behavior, detailText, at: timestamp });
       }
 
       results.push({
@@ -2605,7 +2724,17 @@ async function fireNotice({ req, student, config, decision, awaitDecision = fals
     name: teacherById[String(i.teacherId)]?.name || "",
     behaviorName: i.behaviorSnapshot?.name || "",
   }));
-  const consequenceTexts = [...new Set(contributing.map((i) => i.behaviorSnapshot?.consequenceText).filter(Boolean))];
+  // List the consequences, preferring the actually-logged consequence records
+  // (so completion shows) and falling back to the snapshotted wording. A
+  // consequence marked done is annotated "(already completed)" for the note.
+  const consRecs = await BehaviorConsequence.find({ schoolId: req.schoolId, relatedIncidentId: { $in: contribIds } }).lean();
+  const recByInc = new Map(consRecs.map((r) => [String(r.relatedIncidentId), r]));
+  const consequenceTexts = [...new Set(contributing.map((i) => {
+    const rec = recByInc.get(String(i._id));
+    const base = String(rec?.type || i.behaviorSnapshot?.consequenceText || "").trim();
+    if (!base) return "";
+    return rec?.completed ? `${base} (already completed)` : base;
+  }).filter(Boolean))];
   const channels = resolveChannels(config, req.body?.channelOverride);
 
   const notice = await composeAndCreateNotice({
@@ -3997,6 +4126,26 @@ router.post("/consequences/:id/issue", authAny, loadMembership, canLog, async (r
         await audit(req.schoolId, "consequence.issued", req, { studentId: String(c.studentId), meta: { type: c.type } });
       }
     }
+    res.json({ ok: true, consequence: c.toObject() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Mark a consequence as completed (or not). Any teacher can confirm follow-
+// through; the threshold notice then shows the consequence as already done.
+router.post("/consequences/:id/complete", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const c = await BehaviorConsequence.findOne({ _id: req.params.id, schoolId: req.schoolId });
+    if (!c) return res.status(404).json({ ok: false, error: "Not found" });
+    const done = req.body?.completed === false ? false : true;
+    const who = req.membership.name || req.user?.name || "";
+    c.completed = done;
+    c.completedByTeacherId = done ? req.membership._id : null;
+    c.completedByName = done ? who : "";
+    c.completedAt = done ? new Date() : null;
+    await c.save();
+    await audit(req.schoolId, "consequence.completed", req, { studentId: String(c.studentId), meta: { type: c.type, completed: done } });
     res.json({ ok: true, consequence: c.toObject() });
   } catch (err) {
     next(err);

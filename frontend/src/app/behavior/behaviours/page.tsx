@@ -131,6 +131,10 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
 
   async function save() {
     if (!name.trim()) return;
+    if (kind !== "positive" && categories.length === 0 && !immediateWhiteSlip) {
+      setErr("Pick at least one category (Class preparedness, Behaviour and/or Uniform).");
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
@@ -159,6 +163,8 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
 
   const interaction = triggerMode === "INTERACTION";
   const positive = kind === "positive";
+  // Every offence must carry a category (white slip implies Behaviour).
+  const needsCategory = !positive && categories.length === 0 && !immediateWhiteSlip;
   // Unsaved-changes detection for an existing behaviour (drives the Save/Saved button).
   const origCats = (b?.categories && b.categories.length ? b.categories : (b?.uniform ? ["uniform"] : [])) as string[];
   const dirty = !add && (
@@ -222,6 +228,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
                 </label>
               ))}
             </div>
+            {needsCategory && <p className="mt-1 text-rose-600">Pick at least one category before saving.</p>}
             {categories.includes("uniform") && (
               <p className="mt-1 text-slate-400">Uniform → counts as a strike <em>and</em> toward losing the Good Uniform Dress Down (threshold/fade/escalations in Setup).</p>
             )}
@@ -238,9 +245,9 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
             </label>
           )}
           {add ? (
-            <button onClick={save} disabled={!name.trim() || busy} className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white disabled:opacity-40">Add</button>
+            <button onClick={save} disabled={!name.trim() || busy || needsCategory} title={needsCategory ? "Pick at least one category first" : ""} className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white disabled:opacity-40">Add</button>
           ) : (
-            <button onClick={save} disabled={busy || !dirty}
+            <button onClick={save} disabled={busy || !dirty || needsCategory} title={needsCategory ? "Pick at least one category first" : ""}
               className={`rounded-lg px-3 py-1.5 text-sm font-medium text-white disabled:opacity-100 ${dirty ? "bg-amber-500" : "bg-green-600"}`}>
               {busy ? "Saving…" : dirty ? "Save" : "Saved"}
             </button>

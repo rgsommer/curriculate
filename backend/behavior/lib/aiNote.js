@@ -264,7 +264,7 @@ export function buildPrompt(ctx) {
     `The note should be ABOUT only these current incidents:\n${incidentLines}`,
     historyBlock,
     positivesBlock,
-    (ctx.consequences || []).length ? `Consequence(s) to state: ${ctx.consequences.join("; ")}.` : "",
+    (ctx.consequences || []).length ? `Consequence(s) to state: ${ctx.consequences.join("; ")}. If any is marked "(already completed)", make clear that consequence has already been carried out (do not repeat the "(already completed)" text verbatim).` : "",
     hasUniform ? `One or more of the items above are uniform/dress-code matters (marked "[uniform/dress-code]" in the list). When you list those items, KEEP them clearly marked as a uniform/dress-code item (e.g. append " (uniform)"), and briefly and kindly note that repeated uniform issues also affect the student's uniform standing (the school's "Good Uniform Dress Down"). Only reference "items marked uniform" if you have actually marked them. Keep it factual, not a threat.` : "",
     ctx.ccVp ? `Mention that the Vice-Principal has been copied.` : "",
     `Formatting: use **double asterisks** to bold ONLY the few most important items — the student's name the first time it appears, the specific consequence(s), and any date or deadline the parent must act on. Bold sparingly; never bold a whole sentence or paragraph, and use no other markdown.`,
