@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { api, getToken, loginHref, type Me, type GuddStatus } from "../../_lib/api";
+import { api, getToken, loginHref, getMyTemplates, generateParentMessage, type Me, type GuddStatus, type ParentTemplate } from "../../_lib/api";
 import GuddChip from "../../_components/GuddChip";
 import { Markdown } from "../../_lib/Markdown";
 import { Timeline, buildByMonth } from "../../_components/Timeline";
@@ -56,6 +56,18 @@ type StudentDetail = {
 const fmtDT = (d: string) =>
   new Date(d).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
+// Copy as rich HTML + plain text so pasting into Edsby keeps formatting.
+async function copyRich(html: string | undefined, text: string) {
+  if (html && typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+    await navigator.clipboard.write([new ClipboardItem({
+      "text/html": new Blob([html], { type: "text/html" }),
+      "text/plain": new Blob([text], { type: "text/plain" }),
+    })]);
+    return;
+  }
+  await navigator.clipboard.writeText(text);
+}
+
 export default function StudentPage() {
   const params = useParams<{ id: string }>();
   const [data, setData] = useState<StudentDetail | null>(null);
@@ -95,6 +107,13 @@ export default function StudentPage() {
   const [meetingBusy, setMeetingBusy] = useState(false);
   const [meetingMsg, setMeetingMsg] = useState("");
 
+  // Send a parent template message (same flow as the students list ✉)
+  const [pmTemplates, setPmTemplates] = useState<ParentTemplate[]>([]);
+  const [pmTpl, setPmTpl] = useState("");
+  const [pmBusy, setPmBusy] = useState(false);
+  const [pmMsg, setPmMsg] = useState("");
+  const [pmLast, setPmLast] = useState<string | null>(null);
+
   // Document a consequence actually applied (work detention, white slip, …)
   const [consType, setConsType] = useState("");
   const [consDetail, setConsDetail] = useState("");
@@ -112,7 +131,14 @@ export default function StudentPage() {
   }, [params?.id]);
 
   useEffect(() => {
-    if (getToken()) api<Me>("/me").then(setMe).catch(() => {});
+    if (!getToken()) return;
+    api<Me>("/me").then(setMe).catch(() => {});
+    getMyTemplates().then((d) => {
+      setPmTemplates(d.templates || []);
+      const names = (d.templates || []).map((t) => t.name);
+      let saved = ""; try { saved = localStorage.getItem("pm_template") || ""; } catch { /* ignore */ }
+      setPmTpl(names.includes(saved) ? saved : (names[0] || ""));
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -312,6 +338,37 @@ export default function StudentPage() {
     try { await api(`/consequences/${id}`, { method: "DELETE" }); load(); } catch (e: any) { setConsMsg(`✗ ${e.message}`); }
   }
 
+  // Send a parent template message for this student (same flow as the list ✉):
+  // asks about a new student on encouraging notes, warns on a yearly duplicate,
+  // AI-rewrites for uniqueness, and copies rich text for pasting into Edsby.
+  async function sendParentMessage(force = false, newStudentArg?: boolean) {
+    if (!pmTpl) { setPmMsg("Pick a message template first."); return; }
+    if (!data) return;
+    const first = data.student.preferredName || data.student.firstName;
+    const isEncouraging = (pmTemplates.find((t) => t.name === pmTpl)?.kind ?? "encouraging") !== "corrective";
+    const newStudent = newStudentArg !== undefined
+      ? newStudentArg
+      : (isEncouraging && window.confirm(`Is ${first} a new student?\n\nOK = add a warm welcome (“so glad to have them”); Cancel = a normal note.`));
+    setPmBusy(true); setPmMsg("");
+    try {
+      const r = await generateParentMessage(params.id, pmTpl, force, newStudent);
+      if (r.duplicate) {
+        const when = r.lastSentAt ? new Date(r.lastSentAt).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" }) : "earlier this year";
+        setPmBusy(false);
+        if (window.confirm(`You already sent this message to ${first} on ${when}. Send another anyway?`)) {
+          await sendParentMessage(true, newStudent);
+        } else { setPmMsg(`Skipped — already sent this ${when}.`); }
+        return;
+      }
+      const msg = r.message || "";
+      setPmLast(msg);
+      try { await copyRich(r.html, msg); setPmMsg(`✓ Copied & logged “${r.template}” — paste it into Edsby (formatting carries over).`); }
+      catch { setPmMsg(`Logged “${r.template}” — copy the text below to send.`); }
+      load(); // refresh so the logged message appears under Encouragements/Consequences
+    } catch (e: any) { setPmMsg(`✗ ${e.message}`); }
+    finally { setPmBusy(false); }
+  }
+
   // Mark a consequence completed (or undo). At the threshold notice, completed
   // ones show as already carried out.
   async function markConsequenceDone(id: string, completed: boolean) {
@@ -489,6 +546,39 @@ export default function StudentPage() {
           </section>
         );
       })()}
+
+      {/* Send a parent template message (copy → paste into Edsby, and log it) */}
+      {pmTemplates.length > 0 && (
+        <section className="no-print rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="font-semibold">Send a parent message</h2>
+          <p className="text-xs text-slate-400">Fills a template for {s.preferredName || s.firstName}, copies it (rich text, ready for Edsby), and logs it. Nothing is sent automatically.</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+            <select value={pmTpl} onChange={(e) => { setPmTpl(e.target.value); try { localStorage.setItem("pm_template", e.target.value); } catch { /* ignore */ } }}
+              className="rounded-lg border border-slate-300 px-2 py-1.5">
+              {pmTemplates.some((t) => (t.kind || "encouraging") === "encouraging") && (
+                <optgroup label="Encouraging">
+                  {pmTemplates.filter((t) => (t.kind || "encouraging") === "encouraging").map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
+                </optgroup>
+              )}
+              {pmTemplates.some((t) => t.kind === "corrective") && (
+                <optgroup label="Corrective">
+                  {pmTemplates.filter((t) => t.kind === "corrective").map((t) => <option key={t.name} value={t.name}>{t.name}</option>)}
+                </optgroup>
+              )}
+            </select>
+            <button onClick={() => sendParentMessage()} disabled={pmBusy || !pmTpl}
+              className="rounded-lg bg-slate-900 px-3 py-1.5 font-semibold text-white disabled:opacity-40">
+              {pmBusy ? "Generating…" : "✉ Generate, copy & log"}
+            </button>
+            <Link href="/behavior/setup#templates" className="text-xs text-slate-500 underline">edit templates</Link>
+          </div>
+          {pmMsg && <p className="mt-2 text-sm text-slate-700">{pmMsg}</p>}
+          {pmLast && (
+            <textarea readOnly value={pmLast} onFocus={(e) => e.currentTarget.select()}
+              className="mt-2 h-32 w-full rounded-lg border border-slate-300 p-2 font-mono text-xs" />
+          )}
+        </section>
+      )}
 
       {/* Log a parent meeting / contact (interaction — no strike, nothing home) */}
       <section className="no-print rounded-xl border border-slate-200 bg-white p-5">
