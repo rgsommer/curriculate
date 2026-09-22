@@ -40,6 +40,7 @@ export default function StudentsPage() {
   const [lastMsg, setLastMsg] = useState<{ text: string; label: string } | null>(null);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkNew, setBulkNew] = useState(false);
   const [sortBy, setSortBy] = useState<"name" | "grade" | "room" | "gender">("name");
 
   useEffect(() => {
@@ -94,7 +95,7 @@ export default function StudentsPage() {
     if (!tpl || !targetIds.length) return;
     setBulkBusy(true); setPmMsg("");
     try {
-      const r = await bulkParentMessage(tpl, targetIds, force);
+      const r = await bulkParentMessage(tpl, targetIds, force, bulkNew);
       const skippedNames = (r.skipped || []).map((s) => s.name);
       let msg = `✓ Emailed ${r.sent} message(s) to ${r.to} (“${r.template}”) and logged ${r.logged}. Forward each to the parent.`;
       if (skippedNames.length) {
@@ -251,6 +252,12 @@ export default function StudentsPage() {
             </button>
             <span>— one personalised email per student, ready to forward.</span>
             {selectedIds.length > 0 && <button type="button" onClick={() => setSelected({})} className="underline">clear</button>}
+            {(templates.find((t) => t.name === tpl)?.kind ?? "encouraging") !== "corrective" && (
+              <label className="flex items-center gap-1.5 text-slate-600">
+                <input type="checkbox" checked={bulkNew} onChange={(e) => setBulkNew(e.target.checked)} />
+                these are all new students (add a welcome)
+              </label>
+            )}
           </div>
           {pmMsg && <p className="mt-1 text-xs text-slate-700">{pmMsg}</p>}
           {lastMsg && (

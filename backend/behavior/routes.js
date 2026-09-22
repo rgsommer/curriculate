@@ -281,6 +281,15 @@ function derivePronoun(student) {
   return "";
 }
 
+// Insert a warm "new student" welcome after the greeting of a filled encouraging
+// note, using the student's pronoun (they/them when unknown) and school name.
+function injectWelcome(filled, { student, studentName, schoolName }) {
+  const pron = derivePronoun(student);
+  const him = pron.startsWith("he") ? "him" : pron.startsWith("she") ? "her" : "them";
+  const welcome = `We're so glad to have ${studentName} join us${schoolName ? ` at ${schoolName}` : ""} — it's a real joy to have ${him} in our class.`;
+  return String(filled || "").includes("\n\n") ? String(filled).replace("\n\n", `\n\n${welcome}\n\n`) : `${welcome}\n\n${filled}`;
+}
+
 /** Load the caller's school membership; 404 if they have none yet. */
 async function loadMembership(req, res, next) {
   try {
@@ -802,11 +811,7 @@ router.post("/students/:id/parent-message", authAny, loadMembership, canLog, asy
     // New student on an encouraging note: add a warm welcome saying how glad we
     // are to have them. Inserted after the greeting so the AI rewrite keeps it.
     if (req.body?.newStudent === true && kind === "encouraging") {
-      const pron = derivePronoun(student);
-      const him = pron.startsWith("he") ? "him" : pron.startsWith("she") ? "her" : "them";
-      const sn = config?.branding?.schoolName || school?.name || "";
-      const welcome = `We're so glad to have ${studentName} join us${sn ? ` at ${sn}` : ""} — it's a real joy to have ${him} in our class.`;
-      filled = filled.includes("\n\n") ? filled.replace("\n\n", `\n\n${welcome}\n\n`) : `${welcome}\n\n${filled}`;
+      filled = injectWelcome(filled, { student, studentName, schoolName: config?.branding?.schoolName || school?.name || "" });
     }
     // Rewrite the filled template so each note is unique (not an obvious form
     // letter), keeping its Christian character — a verse in, a verse out.
@@ -878,9 +883,14 @@ router.post("/parent-message/bulk", authAny, loadMembership, canLog, async (req,
     for (const student of students) {
       const studentName = `${student.preferredName || student.firstName} ${student.lastName || ""}`.trim();
       if (alreadySent.has(String(student._id))) { skipped.push({ id: String(student._id), name: studentName }); continue; }
-      const filled = fillTemplate(tpl.body, { student, teacher: teacherName, subject: me?.subject || "", schoolName });
+      const firstName = student.preferredName || student.firstName || "";
+      let filled = fillTemplate(tpl.body, { student, teacher: teacherName, subject: me?.subject || "", schoolName });
+      // "These are all new students": add the warm welcome to each encouraging note.
+      if (req.body?.newStudent === true && kind === "encouraging") {
+        filled = injectWelcome(filled, { student, studentName: firstName, schoolName });
+      }
       const { text: message } = await composeParentMessage(
-        { filled, studentName: student.preferredName || student.firstName || "", teacherName, keepVerse },
+        { filled, studentName: firstName, teacherName, keepVerse },
         { aiClient }
       );
       try {

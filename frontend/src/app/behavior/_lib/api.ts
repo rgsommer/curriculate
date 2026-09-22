@@ -161,9 +161,9 @@ export function generateParentMessage(studentId: string, name: string, force = f
 // Bulk: email the teacher one personalised message per selected student and log
 // each separately. Encouraging duplicates within a year are skipped (reported in
 // `skipped`) unless force is set.
-export function bulkParentMessage(name: string, studentIds: string[], force = false) {
+export function bulkParentMessage(name: string, studentIds: string[], force = false, newStudent = false) {
   return api<{ template: string; requested: number; matched: number; sent: number; logged: number; skipped: { id: string; name: string }[]; to: string }>(
-    "/parent-message/bulk", { method: "POST", body: { name, studentIds, force } });
+    "/parent-message/bulk", { method: "POST", body: { name, studentIds, force, newStudent } });
 }
 
 // Resolve a recommended white slip (any teacher may click). Omit `other` to
