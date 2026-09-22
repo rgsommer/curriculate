@@ -585,6 +585,7 @@ export default function BatchGrading({
   setTeacherEmail: parentSetTeacherEmail,
   rosterClasses: parentRosterClasses,
   setRosterClasses: parentSetRosterClasses,
+  rosterAccess,
   onClose,
 }) {
   // Preload jsPDF + qrcode CDN scripts as soon as batch mode opens
@@ -3464,6 +3465,9 @@ export default function BatchGrading({
   }, [manualRosterPreview, manualClassName, gradingUrl]);
 
   const totalRosterStudents = rosterClasses.reduce((s, r) => s + (r.studentCount || 0), 0);
+  // Only lock on an explicit "no". A null rosterAccess means an older backend
+  // that doesn't report the tier, and guessing would lock out paying teachers.
+  const rosterLocked = rosterAccess?.canLinkClasses === false;
 
   // ---------- Render ----------
   return (
@@ -3515,6 +3519,26 @@ export default function BatchGrading({
               Upload a class CSV (from Edsby or any spreadsheet with First Name, Last Name, Student ID columns), or click "Create Roster" to type names and auto-generate IDs. Students are auto-matched by name after grading. Note: you'll need to upload rosters on each device until login is available.
             </div>
 
+            {/* State the plan gate before any files are chosen. Finding out via a
+                403 after picking nine CSVs is the wrong moment to learn it — and
+                an upload that refuses every file otherwise just looks inert. */}
+            {rosterAccess && !rosterAccess.canLinkClasses && (
+              <div
+                role="note"
+                style={{
+                  fontSize: 12, color: "#7c2d12", background: "rgba(234,88,12,0.10)",
+                  border: "1px solid rgba(234,88,12,0.35)", borderRadius: 6,
+                  padding: "7px 10px", marginBottom: 8, lineHeight: 1.5,
+                }}
+              >
+                <b>Class rosters need a {rosterAccess.requiredPlan} plan.</b>{" "}
+                You're on {rosterAccess.tier || "FREE"}, so uploading is turned off — grading
+                works as normal, but results won't link to named students or reach the
+                progress portal.
+                {rosterClasses.length > 0 && " Rosters you've already uploaded still work, and you can still remove them."}
+              </div>
+            )}
+
             <input
               ref={rosterFileRef}
               type="file"
@@ -3525,22 +3549,28 @@ export default function BatchGrading({
             />
             <button
               onClick={() => rosterFileRef.current?.click()}
-              disabled={rosterUploading}
+              disabled={rosterUploading || rosterLocked}
               type="button"
+              title={rosterLocked ? `Requires a ${rosterAccess.requiredPlan} plan` : undefined}
               style={{
                 background: "#2563eb", color: "#fff", border: "none", borderRadius: 6,
-                padding: "6px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer",
-                opacity: rosterUploading ? 0.6 : 1, marginBottom: 8,
+                padding: "6px 14px", fontSize: 13, fontWeight: 700,
+                cursor: rosterLocked ? "not-allowed" : "pointer",
+                opacity: rosterUploading || rosterLocked ? 0.5 : 1, marginBottom: 8,
               }}
             >
               {rosterUploading ? "Uploading..." : "Upload CSVs"}
             </button>
             <button
               onClick={() => setShowManualRoster(!showManualRoster)}
+              disabled={rosterLocked}
               type="button"
+              title={rosterLocked ? `Requires a ${rosterAccess.requiredPlan} plan` : undefined}
               style={{
                 background: "none", color: "#2563eb", border: "1px solid #2563eb", borderRadius: 6,
-                padding: "6px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+                padding: "6px 14px", fontSize: 13, fontWeight: 700,
+                cursor: rosterLocked ? "not-allowed" : "pointer",
+                opacity: rosterLocked ? 0.5 : 1,
                 marginBottom: 8, marginLeft: 8,
               }}
             >

@@ -254,8 +254,17 @@ router.get("/list", async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
+    // Tell the UI whether uploading is even allowed, so the gate can be stated
+    // up front instead of only as a 403 after a teacher has picked their files.
+    // Listing stays ungated: a teacher whose plan lapsed must still be able to
+    // see — and delete — the rosters they already have.
+    const tier = await lookupTeacherTierByEmail(email);
+
     return res.json({
       ok: true,
+      tier,
+      canLinkClasses: hasTierAtLeast(tier, "PLUS"),
+      requiredPlan: "PLUS",
       rosters: rosters.map((r) => ({
         id: r._id,
         className: r.className,
