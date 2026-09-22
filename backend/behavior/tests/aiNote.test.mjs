@@ -12,6 +12,8 @@ import {
   composePositiveNotice,
   deterministicPositiveNote,
   buildPositivePrompt,
+  hasBibleVerse,
+  composeParentMessage,
 } from "../lib/aiNote.js";
 
 const ctx = {
@@ -136,4 +138,25 @@ test("Deterministic note adapts tone: first vs repeat", () => {
   assert.match(first, /work with you/);
   assert.match(repeat, /notice #2/);
   assert.match(repeat, /Vice-Principal has been copied/);
+});
+
+test("hasBibleVerse detects scripture references, ignores plain times", () => {
+  assert.equal(hasBibleVerse("As it says in Philippians 4:13, we can do all things."), true);
+  assert.equal(hasBibleVerse("See 1 John 4:7-8 for more."), true);
+  assert.equal(hasBibleVerse("Please have it in by 9:00 tomorrow."), false);
+  assert.equal(hasBibleVerse("Great work in class this week!"), false);
+});
+
+test("composeParentMessage without an AI client returns the filled template unchanged", async () => {
+  const filled = "Dear Smith family,\n\nGreat week!\n\nMr. Lee";
+  const r = await composeParentMessage({ filled, studentName: "Sam", teacherName: "Mr. Lee" }, { aiClient: null });
+  assert.equal(r.aiUsed, false);
+  assert.equal(r.text, filled);
+});
+
+test("composeParentMessage uses the AI rewrite when a client is provided", async () => {
+  const aiClient = { async complete() { return "A unique, warm rewrite."; } };
+  const r = await composeParentMessage({ filled: "Dear family, good week.", studentName: "Sam", teacherName: "Mr. Lee" }, { aiClient });
+  assert.equal(r.aiUsed, true);
+  assert.equal(r.text, "A unique, warm rewrite.");
 });

@@ -42,7 +42,7 @@ import { seedBehaviorDocs } from "./lib/seedBehaviors.js";
 import { parseRoster, parseRosterFile } from "./lib/rosterImport.js";
 import { DEFAULT_PARENT_TEMPLATES, fillTemplate } from "./lib/parentTemplates.js";
 import { STANDARD_BEHAVIORS } from "./lib/standardBehaviors.js";
-import { composeNotice, composePositiveNotice, makeDefaultAiClient, deterministicNote, deterministicPositiveNote } from "./lib/aiNote.js";
+import { composeNotice, composePositiveNotice, makeDefaultAiClient, deterministicNote, deterministicPositiveNote, composeParentMessage, hasBibleVerse } from "./lib/aiNote.js";
 import { buildAvgsRouter } from "./avgsRoutes.js";
 import { emailShell, emailButton, noteToHtml, mdToHtml, monthlyKindChartHtml, pasteableNote } from "./lib/emailTemplate.js";
 import { scheduleDispatch, dispatchNotice, sendHomeworkMessage, recordNoticeAsSent } from "./lib/notify.js";
@@ -775,20 +775,41 @@ router.post("/students/:id/parent-message", authAny, loadMembership, canLog, asy
     const tpl = templates.find((t) => t.name === name) || templates[0];
     if (!tpl) return res.status(400).json({ ok: false, error: "No template selected." });
 
-    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("branding.schoolName").lean();
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("branding.schoolName aiProvider aiModel").lean();
     const school = await BehaviorSchool.findById(req.schoolId).select("name").lean();
     const teacherName = req.membership.name || req.user?.name || "";
-    const message = fillTemplate(tpl.body, {
+    const kind = tpl.kind === "encouraging" ? "encouraging" : "corrective";
+    const studentName = student.preferredName || student.firstName || "";
+
+    // Don't let the same encouraging message go to a student twice in a year —
+    // alert the teacher (they can still send with force after confirming). Keeps
+    // praise from ringing hollow / looking like a form letter.
+    if (kind === "encouraging" && req.body?.force !== true) {
+      const prior = await BehaviorConsequence.findOne({
+        schoolId: req.schoolId, studentId: student._id,
+        type: `Parent message: ${tpl.name}`,
+        at: { $gt: new Date(Date.now() - 365 * DAY_MS) },
+      }).sort({ at: -1 }).select("at").lean();
+      if (prior) return res.json({ ok: true, duplicate: true, lastSentAt: prior.at, template: tpl.name });
+    }
+
+    const filled = fillTemplate(tpl.body, {
       student,
       teacher: teacherName,
       subject: me?.subject || "",
       schoolName: config?.branding?.schoolName || school?.name || "",
     });
+    // Rewrite the filled template so each note is unique (not an obvious form
+    // letter), keeping its Christian character — a verse in, a verse out.
+    const aiClient = makeDefaultAiClient(config || {});
+    const { text: message } = await composeParentMessage(
+      { filled, studentName, teacherName, keepVerse: hasBibleVerse(tpl.body) },
+      { aiClient }
+    );
 
     // Log that the teacher sent a parent message. Encouraging notes are recorded
     // as "encouraging" (shown under the student's Encouragements); corrective ones
     // as "corrective" (shown under Consequences). Never a strike.
-    const kind = tpl.kind === "encouraging" ? "encouraging" : "corrective";
     await BehaviorConsequence.create({
       schoolId: req.schoolId, studentId: student._id,
       type: `Parent message: ${tpl.name}`, detail: "Copied to send by the teacher",
@@ -822,17 +843,37 @@ router.post("/parent-message/bulk", authAny, loadMembership, canLog, async (req,
     if (!tpl) return res.status(400).json({ ok: false, error: "No template selected." });
     const kind = tpl.kind === "encouraging" ? "encouraging" : "corrective";
 
-    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("branding.schoolName").lean();
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("branding.schoolName aiProvider aiModel").lean();
     const school = await BehaviorSchool.findById(req.schoolId).select("name").lean();
     const schoolName = config?.branding?.schoolName || school?.name || "";
     const teacherName = req.membership.name || req.user?.name || "";
     const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+    const aiClient = makeDefaultAiClient(config || {});
+    const keepVerse = hasBibleVerse(tpl.body);
 
     const students = await BehaviorStudent.find({ _id: { $in: ids }, schoolId: req.schoolId, active: true }).lean();
+
+    // Skip students who already got this encouraging message in the last year
+    // (unless the teacher forces it), and report them so nothing goes silently.
+    let alreadySent = new Set();
+    if (kind === "encouraging" && req.body?.force !== true) {
+      const priors = await BehaviorConsequence.find({
+        schoolId: req.schoolId, studentId: { $in: students.map((s) => s._id) },
+        type: `Parent message: ${tpl.name}`, at: { $gt: new Date(Date.now() - 365 * DAY_MS) },
+      }).select("studentId").lean();
+      alreadySent = new Set(priors.map((p) => String(p.studentId)));
+    }
+
     let sent = 0, logged = 0;
+    const skipped = [];
     for (const student of students) {
-      const message = fillTemplate(tpl.body, { student, teacher: teacherName, subject: me?.subject || "", schoolName });
       const studentName = `${student.preferredName || student.firstName} ${student.lastName || ""}`.trim();
+      if (alreadySent.has(String(student._id))) { skipped.push({ id: String(student._id), name: studentName }); continue; }
+      const filled = fillTemplate(tpl.body, { student, teacher: teacherName, subject: me?.subject || "", schoolName });
+      const { text: message } = await composeParentMessage(
+        { filled, studentName: student.preferredName || student.firstName || "", teacherName, keepVerse },
+        { aiClient }
+      );
       try {
         await sendEmail({
           from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
@@ -860,8 +901,9 @@ router.post("/parent-message/bulk", authAny, loadMembership, canLog, async (req,
         logged += 1;
       } catch (e) { console.warn("[behavior] bulk parent-message log failed:", e?.message || e); }
     }
-    await audit(req.schoolId, "parent_message.bulk", req, { meta: { template: tpl.name, requested: ids.length, sent, logged } });
-    res.json({ ok: true, template: tpl.name, requested: ids.length, matched: students.length, sent, logged, to: teacherEmail });
+    await audit(req.schoolId, "parent_message.bulk", req, { meta: { template: tpl.name, requested: ids.length, sent, logged, skipped: skipped.length } });
+    // `skipped` carries {id,name} so the UI can re-send only those on a force.
+    res.json({ ok: true, template: tpl.name, requested: ids.length, matched: students.length, sent, logged, skipped, to: teacherEmail });
   } catch (err) {
     next(err);
   }
@@ -1795,7 +1837,30 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
     ]);
     const pend = Object.fromEntries(pendAgg.map((a) => [String(a._id), String(a.id)]));
 
-    const out = students.map((s) => ({ ...s, activeCount: cnt[String(s._id)] || 0, guddCount: gcnt[String(s._id)] || 0, pendingWhiteSlipId: pend[String(s._id)] || null }));
+    // Consequences given but not yet marked done → a "Mark done" to-do surfaced
+    // on the dashboard. Corrective, issued, not completed; parent-message records
+    // aren't tasks, so exclude them.
+    const openCons = await BehaviorConsequence.find({
+      schoolId: req.schoolId,
+      studentId: { $in: students.map((s) => s._id) },
+      kind: "corrective",
+      completed: false,
+      status: { $in: ["issued", "other"] },
+      type: { $not: /^Parent message/i },
+    }).select("studentId type at").sort({ at: -1 }).lean();
+    const consByStudent = {};
+    for (const c of openCons) {
+      const k = String(c.studentId);
+      (consByStudent[k] ||= []).push({ id: String(c._id), type: c.type });
+    }
+
+    const out = students.map((s) => ({
+      ...s,
+      activeCount: cnt[String(s._id)] || 0,
+      guddCount: gcnt[String(s._id)] || 0,
+      pendingWhiteSlipId: pend[String(s._id)] || null,
+      pendingConsequences: (consByStudent[String(s._id)] || []).slice(0, 6),
+    }));
     res.json({
       ok: true, students: out, triggerCount,
       gudd: guddOn ? { enabled: true, name: gcfg.name || "GUDD", threshold: gcfg.threshold ?? 3 } : { enabled: false },

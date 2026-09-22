@@ -316,6 +316,48 @@ function withTimeout(promise, ms) {
   ]);
 }
 
+/** Does this text contain a Bible verse reference (e.g. "John 3:16", "1 Cor 13:4-7")? */
+export function hasBibleVerse(text) {
+  return /\b(?:[1-3]\s?)?[A-Z][a-z]+\.?\s+\d{1,3}:\d{1,3}(?:\s?[-–]\s?\d{1,3})?\b/.test(String(text || ""));
+}
+
+/**
+ * Rewrite a filled parent-message template so each note reads as a unique,
+ * personal message rather than an obvious form letter — preserving its meaning,
+ * warmth and Christian character. If the source template carried a Bible verse,
+ * the rewrite MUST include an appropriate verse (a different fitting one is
+ * allowed). Fails safe: returns the filled template unchanged when the AI is
+ * unavailable or errors, so a message always comes back.
+ *
+ * @param {object} o { filled, studentName, teacherName, keepVerse }
+ * @param {object} opts { aiClient, timeoutMs }
+ */
+export async function composeParentMessage({ filled, studentName = "", teacherName = "", keepVerse = false }, opts = {}) {
+  const aiClient = opts.aiClient;
+  if (!aiClient) return { text: filled, aiUsed: false };
+  const prompt = [
+    `Rewrite the note home below to a parent so it reads as a natural, personal message — NOT a template or form letter. Keep the same meaning, warmth and tone, and keep it about the same length (concise).`,
+    `Student's name: ${studentName}. Teacher / sign-off: ${teacherName}.`,
+    `Keep the greeting and the sign-off names exactly as given. Do NOT invent facts, grades, dates or events that aren't in the original.`,
+    keepVerse
+      ? `The original includes a Bible verse, so this note must keep its Christian character: include ONE appropriate Bible verse, quoted accurately with its reference. You MAY choose a different, fitting verse rather than the original one.`
+      : `Do not add a Bible verse if the original has none.`,
+    `NEVER output a bracketed placeholder like [Name]. Output only the final note body — no preamble, no subject line.`,
+    ``,
+    `--- NOTE TO REWRITE ---`,
+    filled,
+  ].join("\n");
+  try {
+    const text = await withTimeout(aiClient.complete(prompt), opts.timeoutMs || DEFAULT_TIMEOUT_MS);
+    const trimmed = sanitizeNote(text, { studentName });
+    if (!trimmed) throw new Error("empty AI response");
+    return { text: trimmed, aiUsed: true };
+  } catch (err) {
+    console.warn("[behavior/aiNote] parent-message rewrite failed, using template:", err?.message || err);
+    return { text: filled, aiUsed: false };
+  }
+}
+
 /**
  * Build the default AI client from config + env, or null when no key is set
  * (which makes composeNotice fall back deterministically). Provider/model are

@@ -138,6 +138,8 @@ export type StudentSummary = {
   // Id of a recommended-but-not-yet-issued white slip (null if none) — drives the
   // "White slip — issued? Yes" indicator any teacher can confirm.
   pendingWhiteSlipId?: string | null;
+  // Consequences given but not yet marked done — a dashboard "Mark done" to-do.
+  pendingConsequences?: { id: string; type: string }[];
 };
 
 export type ParentTemplate = { name: string; body: string; kind?: "encouraging" | "corrective" };
@@ -152,14 +154,16 @@ export function saveMyTemplates(body: { subject?: string; templates?: ParentTemp
 }
 // Build a parent message for a student from a template, log it, and return the
 // filled text to copy. The teacher sends it themselves.
-export function generateParentMessage(studentId: string, name: string) {
-  return api<{ message: string; html?: string; template: string }>(`/students/${studentId}/parent-message`, { method: "POST", body: { name } });
+export function generateParentMessage(studentId: string, name: string, force = false) {
+  return api<{ message?: string; html?: string; template: string; duplicate?: boolean; lastSentAt?: string }>(
+    `/students/${studentId}/parent-message`, { method: "POST", body: { name, force } });
 }
 // Bulk: email the teacher one personalised message per selected student and log
-// each separately.
-export function bulkParentMessage(name: string, studentIds: string[]) {
-  return api<{ template: string; requested: number; matched: number; sent: number; logged: number; to: string }>(
-    "/parent-message/bulk", { method: "POST", body: { name, studentIds } });
+// each separately. Encouraging duplicates within a year are skipped (reported in
+// `skipped`) unless force is set.
+export function bulkParentMessage(name: string, studentIds: string[], force = false) {
+  return api<{ template: string; requested: number; matched: number; sent: number; logged: number; skipped: { id: string; name: string }[]; to: string }>(
+    "/parent-message/bulk", { method: "POST", body: { name, studentIds, force } });
 }
 
 // Resolve a recommended white slip (any teacher may click). Omit `other` to
@@ -167,6 +171,11 @@ export function bulkParentMessage(name: string, studentIds: string[]) {
 // given instead (logged as its own consequence).
 export function issueWhiteSlip(consequenceId: string, other?: string) {
   return api(`/consequences/${consequenceId}/issue`, { method: "POST", body: other ? { other } : {} });
+}
+
+// Mark a consequence completed (or undo). Any teacher can confirm follow-through.
+export function completeConsequence(consequenceId: string, completed = true) {
+  return api(`/consequences/${consequenceId}/complete`, { method: "POST", body: { completed } });
 }
 
 // GUDD (Good Uniform Dress Down) status for a student.

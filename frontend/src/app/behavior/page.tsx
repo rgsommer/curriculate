@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, getToken, loginHref, issueWhiteSlip, type Me, type StudentSummary } from "./_lib/api";
+import { api, getToken, loginHref, issueWhiteSlip, completeConsequence, type Me, type StudentSummary } from "./_lib/api";
 import { Markdown } from "./_lib/Markdown";
 import SendNoticeModal from "./_components/SendNoticeModal";
 
@@ -374,7 +374,7 @@ function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: st
         // recommended white slip awaiting confirmation (so it can be acted on here
         // even if they're not otherwise on probation-watch).
         const watch = (d.students || [])
-          .filter((s) => s.pendingWhiteSlipId || ((s.noticesHomeCount || 0) >= 1 && (s.activeCount || 0) >= t - 1))
+          .filter((s) => s.pendingWhiteSlipId || (s.pendingConsequences && s.pendingConsequences.length > 0) || ((s.noticesHomeCount || 0) >= 1 && (s.activeCount || 0) >= t - 1))
           .sort((a, b) => (b.pendingWhiteSlipId ? 1 : 0) - (a.pendingWhiteSlipId ? 1 : 0) || (b.noticesHomeCount || 0) - (a.noticesHomeCount || 0) || (b.activeCount || 0) - (a.activeCount || 0));
         setRows(watch);
       })
@@ -390,6 +390,17 @@ function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: st
     setRows((list) => (list || []).filter((x) => x._id !== s._id));
     try { await issueWhiteSlip(id, other); }
     catch { setRows((list) => [...(list || []), s]); }
+  }
+
+  // Mark a given consequence done. Optimistically drop it from the student's
+  // to-do list; if that leaves the student with nothing else to action, they fall
+  // off the watch list on the next load.
+  async function markDone(s: StudentSummary, consId: string) {
+    setRows((list) => (list || []).map((x) => x._id === s._id
+      ? { ...x, pendingConsequences: (x.pendingConsequences || []).filter((c) => c.id !== consId) }
+      : x));
+    try { await completeConsequence(consId, true); }
+    catch { setRows((list) => (list || []).map((x) => x._id === s._id ? s : x)); }
   }
 
   if (!rows || rows.length === 0) return null;
@@ -431,6 +442,13 @@ function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: st
                     className="rounded-md border border-slate-300 px-2 py-0.5 font-semibold text-slate-700 hover:bg-slate-50">Other…</button>
                 </div>
               )}
+              {(s.pendingConsequences || []).map((c) => (
+                <div key={c.id} className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="text-slate-500">Consequence: <span className="font-medium text-slate-700">{c.type}</span></span>
+                  <button type="button" onClick={() => markDone(s, c.id)}
+                    className="rounded-md border border-green-300 px-2 py-0.5 font-semibold text-green-700 hover:bg-green-50">Mark done</button>
+                </div>
+              ))}
             </li>
           );
         })}
