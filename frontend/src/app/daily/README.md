@@ -101,6 +101,7 @@ remembered and left out of later batches (`readRangesSafe`).
 | Snacks are allowed with B2 (C) | "Snacks" chip for N minutes once B2 is on |
 | Memory verse for (C) | The memory verse and the hymn hold the CE period's right-hand half for N minutes — 10 if the row is missing, which it is in the sheet today |
 | Verse of the day for (C) | The verse of the day holds the right-hand half for N minutes before the work takes it — 10 if the row is missing, which it is in the sheet today |
+| Prayercast for (C) | The day's "Pray for …" video holds the right-hand half for N minutes from the end of O Canada — 5 if the row is missing, which it is in the sheet today |
 
 The opening window (question and warm-up instead of the bullet list) is fixed at
 5 minutes in `parse.ts` (`DEFAULT_SETUP.openMin`); there is no Setup row for it yet.
@@ -171,6 +172,26 @@ The bubble says **what the benefit is**, not the sheet's shorthand
 | FD | Extra FD | the same window as the pass | Benefit 3 — a week's average at that level: an extra Formal Discussion |
 | all three | All 3 | the whole class, from the first minute — it is the class's own reward | the "both" column, orange |
 | trailing ` 4` | `+2` | with whatever else shows | the bonus of two for being perfect the whole class |
+
+### The Prayercast, straight after the anthem
+
+The room is still standing and still together in the minutes after O Canada,
+which is the moment for the day's Prayercast. For `prayerMin` minutes from the
+anthem's end (Setup "Prayercast for", 5) the **"Pray for …" cell** — the same
+header cell and link the bottom bar carries all day — has the right-hand half:
+the country's name and a tile big enough to press from across the room. Where
+the link is a video it plays on the board; where it is Prayercast's own page for
+the country, which will not sit in a frame, it is a card that opens in a tab.
+While it is up the bar shows the country in plain text, because two tiles of one
+video are two players.
+
+The player itself is rendered at the **foot of the board**, not inside the
+panel. The header and the lesson area both carry a transform (the settle
+animation), which makes them the containing block for anything absolutely
+positioned inside them — even a `position: fixed` overlay — and `.vid`'s own
+`align-self: center` then sized the expanded tile to its content and centred it:
+four pixels of border with the insets ignored. That is why the lesson video's
+tile never expanded properly either. Both now open over the whole board.
 
 ### The right-hand half, and where the verse is
 

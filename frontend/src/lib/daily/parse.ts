@@ -63,6 +63,7 @@ export type Setup = {
   openMin: number;
   memoryMin: number; // how long the memory verse and the hymn hold the panel in CE
   verseMin: number; // how long the verse of the day holds the right-hand half before the work takes it
+  prayerMin: number; // how long the Prayercast video holds the half after O Canada
   picSeconds: number;
 };
 
@@ -131,6 +132,7 @@ export const DEFAULT_SETUP: Setup = {
   openMin: 5,
   memoryMin: 10,
   verseMin: 10,
+  prayerMin: 5,
   picSeconds: 600,
 };
 
@@ -1130,6 +1132,9 @@ export function parseSetup(rows: string[][]): Setup {
     // No such row in the sheet yet; add one labelled "Verse of the day for"
     // with the minutes in column C to change it from ten.
     else if (/^(verse of the day|day verse|verse panel)/.test(label)) out.verseMin = num(c, out.verseMin);
+    // No such row in the sheet yet; add one labelled "Prayercast for" with the
+    // minutes in column C to change it from five.
+    else if (/^(prayercast|prayer video|prayer for)/.test(label)) out.prayerMin = num(c, out.prayerMin);
   }
   return out;
 }

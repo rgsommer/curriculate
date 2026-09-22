@@ -1394,6 +1394,12 @@ check(
   "setup: a row can change the verse window",
   P.parseSetup([["", "Verse of the day for", "6", "minutes"]]).verseMin === 6,
 );
+// The Prayercast holds the half for the minutes after O Canada.
+check("setup: the prayer window defaults to five minutes", P.parseSetup([]).prayerMin === 5);
+check(
+  "setup: a row can change the prayer window",
+  P.parseSetup([["", "Prayercast for", "8", "minutes"]]).prayerMin === 8,
+);
 check(
   "setup: the memory verse row does not change the verse window",
   P.parseSetup([["", "Memory verse for", "12", "minutes"]]).verseMin === 10

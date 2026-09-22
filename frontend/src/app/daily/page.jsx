@@ -973,7 +973,7 @@ export default function DailyPage() {
             <div className="peek">Next: <b>{peekNext.subj}</b> · {peekNext.room} · {fmt(peekNext.start)}</div>
           ) : null}
         </div>
-        {period && !period.duty ? <VideoTile url={period.video} big={vidBig} setBig={setVidBig} /> : <span />}
+        {period && !period.duty ? (() => { if (period.video) headerVideo = period.video; return <VideoTile url={period.video} big={false} setBig={setVidBig} />; })() : <span />}
         <div className={`clockbox${red ? " red" : ""}`}>
           <div className="clock">{fmt(t)}</div>
           <div className="left">{leftHtml}</div>
@@ -985,8 +985,58 @@ export default function DailyPage() {
   // "Pray for Albania" from the header rows: a small player when it links to a
   // video, otherwise a link the teacher can open.
   const pray = meta.pray && meta.pray.text ? meta.pray : null;
+  // Right after O Canada the room is still standing and still together, which
+  // is the moment for the day's Prayercast — so for `prayerMin` minutes from
+  // the anthem's end the country's video has the right-hand half, big enough to
+  // press from across the room. It is the same link the bottom bar carries all
+  // day, and only where that link is a video.
+  const anthemEnd = setup.blankTo != null ? setup.blankTo + setup.anthemMin : null;
+  const prayerOn = anthemEnd != null
+    && t >= anthemEnd && t < anthemEnd + setup.prayerMin
+    && !!pray && !!pray.url;
+  const prayerPanel = () => {
+    if (!prayerOn) return null;
+    const label = pray.text.replace(/\s*↗\s*$/, "");
+    return (
+      <div className="panel prayerside">
+        <div className="block prayercast">
+          <h3>{label}</h3>
+          {/* A video plays on the board; anything else — Prayercast's own page
+              for the country, which will not sit in a frame — is a card big
+              enough to press, and opens in a tab. */}
+          {isVideoUrl(pray.url) ? (
+            <>
+              {/* A poster, not the player. The lesson area carries a transform
+                  (the settle animation), which makes it the containing block
+                  even for a fixed overlay, so the player itself is rendered at
+                  the foot of the board where it can cover the screen. */}
+              <div
+                className="vid poster"
+                role="button"
+                tabIndex={0}
+                aria-label="Play the Prayercast video"
+                onClick={() => setPrayBig(true)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setPrayBig(true); } }}
+              >
+                <div className="thumb">▶</div>
+              </div>
+              <p className="summary">Press to play</p>
+            </>
+          ) : (
+            <a className="praycard" href={pray.url} target="_blank" rel="noreferrer">
+              <span className="thumb">▶</span>
+              <span className="open">Open Prayercast ↗</span>
+            </a>
+          )}
+        </div>
+      </div>
+    );
+  };
   const prayEl = () => {
     if (!pray) return null;
+    // The big one is on screen; two tiles of the same video would be two
+    // players, both playing.
+    if (prayerOn) return <span className="pray">{pray.text}</span>;
     if (pray.url && isVideoUrl(pray.url)) {
       return (
         <span className="prayrow">
@@ -1022,6 +1072,10 @@ export default function DailyPage() {
   // words sweeping along the bottom underneath it are only a distraction. The
   // panels set this as they render, which is the one place that knows.
   let verseUp = false;
+  // The lesson's video, so the board can open it at its own foot: the header is
+  // transformed by the settle animation, so an overlay inside it is measured
+  // against the header's own box — a strip a few pixels tall.
+  let headerVideo = null;
   const tipNow = () => {
     const d = new Date();
     const n = d.getFullYear() * 372 + d.getMonth() * 31 + d.getDate()
@@ -1417,6 +1471,8 @@ export default function DailyPage() {
   // Whichever of the two has the half this minute, falling back to the other
   // when there is nothing to show — an empty half is worse than either.
   const dayAside = () => {
+    const prayer = prayerPanel();
+    if (prayer) return prayer;
     const verse = () => {
       const v = versePanel();
       if (v) verseUp = true;
@@ -1540,6 +1596,9 @@ export default function DailyPage() {
               {row("slots", (sources.slots || []).filter((x) => x.name).map((x) => `${x.name}=${x.priority ?? "-"}${x.value || x.formula ? "*" : ""}`).join("  "))}
               {row("E1 picture (as read)", meta.featureImage)}
               {row("E1 text (as read)", meta.feature)}
+              {row("prayercast window", anthemEnd != null
+                ? `${fmt(anthemEnd)} to ${fmt(anthemEnd + setup.prayerMin)}  ·  ${prayerOn ? "on now" : "not now"}  ·  ${pray && pray.url ? (isVideoUrl(pray.url) ? "the link is a video" : "the link is not a video, so the half is left alone") : "no link on the Pray cell"}`
+                : "no announcements window in Setup, so there is no anthem to follow")}
               {row("pray text", meta.pray && meta.pray.text)}
               {row("pray link", meta.pray && meta.pray.url)}
               {row("lesson picture", data.picture && data.picture.url)}
@@ -1889,7 +1948,12 @@ export default function DailyPage() {
     );
 
     let side;
-    if (memoryOn) {
+    if (prayerOn) {
+      // The minutes straight after the anthem: the Prayercast has the half,
+      // over the memory work and the lesson picture, which have their own
+      // windows later in the class.
+      side = prayerPanel();
+    } else if (memoryOn) {
       // For those minutes the right-hand half is the memory work — over the
       // lesson picture, which has its own window later in the class. The bottom
       // bar gives up the verse for them as well: scripture along the bottom of
@@ -1983,8 +2047,8 @@ export default function DailyPage() {
         })}
         {calendarBanner()}
         {birthdayBand(cur)}
-        <div className={`main${side ? "" : " solo"}${picOn && !memoryOn && !endOfDaySoon ? ` pic-${opts.pic}` : ""}${featureImage && !memoryOn && !endOfDaySoon ? " pic-feature" : ""}`}>
-          {picOn && !memoryOn && !endOfDaySoon && opts.pic === "left" ? <>{side}{leftCol}</> : <>{leftCol}{side}</>}
+        <div className={`main${side ? "" : " solo"}${picOn && !memoryOn && !prayerOn && !endOfDaySoon ? ` pic-${opts.pic}` : ""}${featureImage && !memoryOn && !prayerOn && !endOfDaySoon ? " pic-feature" : ""}`}>
+          {picOn && !memoryOn && !prayerOn && !endOfDaySoon && opts.pic === "left" ? <>{side}{leftCol}</> : <>{leftCol}{side}</>}
         </div>
         {footer(left <= setup.nextAdvance)}
       </>
@@ -2001,6 +2065,13 @@ export default function DailyPage() {
       data-tick={tick}
     >
       {body}
+      {/* The videos, expanded over the whole board rather than inside the
+          header or the lesson area, both of which are transformed and so become
+          the containing block for anything absolutely positioned inside them. */}
+      {vidBig && headerVideo ? <VideoTile url={headerVideo} big setBig={setVidBig} /> : null}
+      {prayerOn && prayBig && pray && isVideoUrl(pray.url)
+        ? <VideoTile url={pray.url} big setBig={setPrayBig} />
+        : null}
     </div>
   );
 }
