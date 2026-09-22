@@ -276,7 +276,15 @@ function HousesCard({ canLog, isAdmin, portalCode, events = [] }: { canLog: bool
   // Hide the card entirely until houses are defined in Setup.
   if (houses === null || houses.length === 0) return null;
 
-  const max = Math.max(1, ...houses.map((h) => Math.abs(h.points || 0)));
+  // Bar length reflects STANDING, not magnitude: the leader (highest total) gets
+  // the longest bar and the lowest the shortest — normalized across the real
+  // [low, high] range (0 always included). This stops negative totals from
+  // looking like they're "ahead". Negative bars are also faded as a cue.
+  const ptVals = houses.map((h) => h.points || 0);
+  const hiPts = Math.max(0, ...ptVals);
+  const loPts = Math.min(0, ...ptVals);
+  const ptSpan = Math.max(1, hiPts - loPts);
+  const barPct = (p: number) => Math.max(3, Math.round((((p || 0) - loPts) / ptSpan) * 100));
 
   return (
     <Card>
@@ -336,7 +344,7 @@ function HousesCard({ canLog, isAdmin, portalCode, events = [] }: { canLog: bool
             <span className="inline-block h-3 w-3 shrink-0 rounded-full" style={{ background: h.color || "#0f172a" }} />
             <span className="w-28 shrink-0 text-sm font-medium">{h.name}</span>
             <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
-              <div className="h-full rounded-full" style={{ width: `${Math.max(2, (Math.abs(h.points || 0) / max) * 100)}%`, background: h.color || "#0f172a" }} />
+              <div className="h-full rounded-full" style={{ width: `${barPct(h.points)}%`, background: h.color || "#0f172a", opacity: (h.points || 0) < 0 ? 0.45 : 1 }} />
             </div>
             <span className="w-12 shrink-0 text-right text-sm tabular-nums font-semibold">{h.points || 0}</span>
           </li>

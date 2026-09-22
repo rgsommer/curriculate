@@ -2506,9 +2506,12 @@ async function composeAndCreateNotice({
     ccVp,
   };
   const aiClient = makeDefaultAiClient(config || {});
-  const { text, aiUsed } = isPositive
+  // `text` is clean plain prose (stored + dispatched to parents); `markdown`
+  // keeps the composer's **bold** for the teacher's rich, pasteable copy only.
+  const { text, markdown, aiUsed } = isPositive
     ? await composePositiveNotice(ctx, { aiClient })
     : await composeNotice(ctx, { aiClient });
+  const richText = markdown || text;
 
   const cancelWindow = config?.cancelWindowSeconds ?? 60;
   // A teacher-triggered notice waits for an explicit Send decision — it NEVER
@@ -2551,7 +2554,7 @@ async function composeAndCreateNotice({
             `<p style="margin:0 0 10px;color:#334155">This is <strong>your copy</strong> of a ${isPositive ? "good-news note" : "notice"} just queued for <strong>${escapeHtml(studentName)}</strong>. ${escapeHtml(willSend)}</p>` +
             `<p style="margin:0 0 12px;color:#64748b;font-size:13px"><strong>Recipients:</strong> ${escapeHtml(recipNames)} &middot; <strong>Channel:</strong> ${escapeHtml(chanLabel)}</p>` +
             `<hr style="border:none;border-top:1px solid #e2e8f0;margin:12px 0">` +
-            pasteableNote(noteToHtml(text), { channel: chanLabel.includes("Edsby") ? "Edsby" : "your message" }),
+            pasteableNote(noteToHtml(richText), { channel: chanLabel.includes("Edsby") ? "Edsby" : "your message" }),
         }),
       });
     }

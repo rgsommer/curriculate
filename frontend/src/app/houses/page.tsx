@@ -142,7 +142,13 @@ export default function HousesPortal() {
     );
   }
 
-  const max = Math.max(1, ...(board?.houses || []).map((h) => Math.abs(h.points)));
+  // Bar length reflects STANDING (leader longest), normalized across the real
+  // [low, high] range so negative totals never look like they're "ahead".
+  const ptVals = (board?.houses || []).map((h) => h.points || 0);
+  const hiPts = Math.max(0, ...ptVals);
+  const loPts = Math.min(0, ...ptVals);
+  const ptSpan = Math.max(1, hiPts - loPts);
+  const barPct = (p: number) => Math.max(3, Math.round((((p || 0) - loPts) / ptSpan) * 100));
 
   // ── Leaderboard ────────────────────────────────────────────────────────────
   return (
@@ -210,7 +216,7 @@ export default function HousesPortal() {
                     <span className="ml-2 shrink-0 tabular-nums font-bold">{h.points.toLocaleString()}</span>
                   </div>
                   <div className="mt-1 h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
-                    <div className="h-full rounded-full" style={{ width: `${Math.max(3, (Math.abs(h.points) / max) * 100)}%`, background: h.color }} />
+                    <div className="h-full rounded-full" style={{ width: `${barPct(h.points)}%`, background: h.color, opacity: (h.points || 0) < 0 ? 0.45 : 1 }} />
                   </div>
                   {h.captains && h.captains.length > 0 && (
                     <div className="mt-1 text-xs text-slate-400">© {h.captains.join(", ")}</div>
