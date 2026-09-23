@@ -650,11 +650,11 @@ export default function DailyPage() {
     }
     // A class is not under way while the room is standing for the anthem. The
     // day's first teaching period therefore begins when the opening is over —
-    // at the first bell in Vertical column A at or after it (9:05 in the
-    // sheet), not at whatever earlier time its own row carries.
-    const openEnd = data.setup && data.setup.blankTo != null
-      ? data.setup.blankTo + (data.setup.anthemMin || 0)
-      : null;
+    // at the first bell in Vertical column A at or after it — not at whatever
+    // earlier time its own row carries. The opening ends when the blank window
+    // does (9:00 in the sheet): the anthem is the last minutes of it, not five
+    // more after it.
+    const openEnd = data.setup && data.setup.blankTo != null ? data.setup.blankTo : null;
     const first = kept.find((p) => !p.duty && !p.empty);
     if (first) first.start = firstClassStart(first.start, first.end, openEnd, bell, MIN_PERIOD_MIN);
     const classes = kept.filter((p) => !p.duty && !p.empty);
@@ -1000,7 +1000,7 @@ export default function DailyPage() {
   // the anthem's end the country's video has the right-hand half, big enough to
   // press from across the room. It is the same link the bottom bar carries all
   // day, and only where that link is a video.
-  const anthemEnd = setup.blankTo != null ? setup.blankTo + setup.anthemMin : null;
+  const anthemEnd = setup.blankTo != null ? setup.blankTo : null;
   const prayerOn = anthemEnd != null
     && t >= anthemEnd && t < anthemEnd + setup.prayerMin
     && !!pray && !!pray.url;
@@ -1562,7 +1562,7 @@ export default function DailyPage() {
               {row("points classes", (sources.pointsClasses || []).map((c) => `${c.name}=${c.letter}${c.digits.join("")}`).join("  "))}
               {row("points labels", (sources.pointsLabels || []).join(", ") || "—")}
               {row("recorded pictures", Object.entries(sources.cellImages || {}).map(([k, v]) => `${k} → ${v}`).join("  ·  ") || "none — run the Apps Script in apps-script/mirror-cell-images.gs")}
-              {row("O Canada", `${setup.blankTo != null ? `${fmt(setup.blankTo)} for ${setup.anthemMin} min` : "no window"}  ·  flag: ${anthem.image || "none the API can read"}  ·  ${anthem.lines.length} line(s) of words`)}
+              {row("O Canada", `${anthemFrom != null ? `${fmt(anthemFrom)} to ${fmt(setup.blankTo)} (${setup.anthemMin} min, ending with the blank window)` : "no window"}  ·  flag: ${anthem.image || "none the API can read"}  ·  ${anthem.lines.length} line(s) of words`)}
               {row("O Canada column", (() => {
                 const col = weekday - 2;
                 if (col < 0 || col > 4) return "not a school day";
@@ -1746,7 +1746,14 @@ export default function DailyPage() {
   let body;
   let redState = false;
 
-  if (setup.blankFrom != null && setup.blankTo != null && t >= setup.blankFrom && t < setup.blankTo) {
+  // O Canada is the last `anthemMin` minutes of the opening, ending when the
+  // blank window does — the anthem finishes at 9:00 and the day starts, rather
+  // than running five minutes past it and pushing the first class back.
+  const anthemFrom = setup.blankFrom != null && setup.blankTo != null
+    ? Math.max(setup.blankFrom, setup.blankTo - setup.anthemMin)
+    : null;
+  if (setup.blankFrom != null && setup.blankTo != null && t >= setup.blankFrom
+    && t < (anthem.image || anthem.lines.length ? anthemFrom : setup.blankTo)) {
     body = (
       <>
         {header({ title: "Announcements", chips: null, when: `Screen blank until ${fmt(setup.blankTo)}`, leftHtml: <b>Please listen</b>, pct: 0 })}
@@ -1764,12 +1771,12 @@ export default function DailyPage() {
         {footer(false)}
       </>
     );
-  } else if (setup.blankTo != null && t >= setup.blankTo && t < setup.blankTo + setup.anthemMin && (anthem.image || anthem.lines.length)) {
+  } else if (anthemFrom != null && t >= anthemFrom && t < setup.blankTo && (anthem.image || anthem.lines.length)) {
     // O Canada, straight after the announcements: the flag and the words, in
     // whichever language the day's column of Poems carries them.
     body = (
       <>
-        {header({ title: "O Canada", chips: null, when: `Until ${fmt(setup.blankTo + setup.anthemMin)}`, leftHtml: <b>Please stand</b>, pct: 0 })}
+        {header({ title: "O Canada", chips: null, when: `Until ${fmt(setup.blankTo)}`, leftHtml: <b>Please stand</b>, pct: 0 })}
         {calendarBanner()}
         {anthemMain()}
         {footer(false)}
