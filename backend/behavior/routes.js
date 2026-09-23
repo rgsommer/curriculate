@@ -4778,6 +4778,11 @@ export async function sendAdminDigestForSchool(schoolId, { force = false } = {})
     const admins = await BehaviorTeacher.find({ schoolId, role: { $in: ["originator", "admin"] } }).select("email").lean();
     to = [...new Set(admins.map((a) => a.email).filter(Boolean))];
   }
+  // Always include the VP: the digest carries the GUDD list + its "Reset the
+  // list" button, which is the VP's to action — so the VP gets it regardless of
+  // who the digest recipient is set to.
+  const vpEmail = (config.vp?.email || "").trim().toLowerCase();
+  if (vpEmail) to = [...new Set([...to, vpEmail])];
   if (!to.length) return { ok: false, error: "no recipient" };
 
   const { subject, html, text } = await composeAdminDigest(schoolId, config);
