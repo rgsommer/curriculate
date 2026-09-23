@@ -4119,6 +4119,49 @@ router.post("/students/:id/meeting", authAny, loadMembership, canLog, async (req
   }
 });
 
+// One-click homeroom follow-up: log that the homeroom teacher will discuss the
+// situation with the student to steer them right — a supportive, relational step
+// taken before formal consequences. Recorded as a neutral documented interaction
+// (like a meeting): it shows in the record + AI summary as a staff response, does
+// NOT count as a strike, sends nothing home, and never escalates the student.
+router.post("/students/:id/homeroom-followup", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const student = await BehaviorStudent.findOne({ _id: req.params.id, schoolId: req.schoolId });
+    if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
+    const who = req.membership?.name || req.user?.name || "";
+    const note = String(req.body?.detailText || "").trim()
+      || `Homeroom follow-up flagged${who ? ` by ${who}` : ""} — homeroom teacher to discuss with the student and steer them in the right direction.`;
+
+    let beh = await Behavior.findOne({ schoolId: req.schoolId, name: "Homeroom follow-up" });
+    if (!beh) {
+      beh = await Behavior.create({
+        schoolId: req.schoolId,
+        name: "Homeroom follow-up",
+        keyword: "homeroom",
+        kind: "negative",
+        triggerMode: "INTERACTION",
+        description: "A relational check-in: the homeroom teacher discusses the situation with the student to steer them right. Supportive — does not count as a strike and sends nothing home.",
+        consequenceText: "",
+        points: 0,
+      });
+    }
+    const inc = await BehaviorIncident.create({
+      schoolId: req.schoolId,
+      studentId: student._id,
+      teacherId: req.membership._id,
+      behaviorId: beh._id,
+      behaviorSnapshot: { name: beh.name, description: beh.description, triggerMode: "INTERACTION", kind: "negative", consequenceText: "", points: 0 },
+      detailText: note,
+      immediateFlag: false,
+      timestamp: new Date(),
+    });
+    await audit(req.schoolId, "homeroom_followup.log", req, { studentId: String(student._id), incidentId: String(inc._id) });
+    res.json({ ok: true, incident: inc.toObject() });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Document a consequence actually applied to a student (work detention, white
 // slip, call home, …). Separate from the consequence wording auto-included in a
 // notice. White-slip rule: when tied to an incident, that incident must be a

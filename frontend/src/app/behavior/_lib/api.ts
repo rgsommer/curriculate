@@ -178,6 +178,11 @@ export function completeConsequence(consequenceId: string, completed = true) {
   return api(`/consequences/${consequenceId}/complete`, { method: "POST", body: { completed } });
 }
 
+// Log a homeroom follow-up (supportive relational check-in) for a student.
+export function homeroomFollowup(studentId: string) {
+  return api(`/students/${studentId}/homeroom-followup`, { method: "POST", body: {} });
+}
+
 // GUDD (Good Uniform Dress Down) status for a student.
 export type GuddStatus = {
   enabled: boolean;

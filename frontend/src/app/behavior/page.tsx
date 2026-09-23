@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, getToken, loginHref, issueWhiteSlip, completeConsequence, type Me, type StudentSummary } from "./_lib/api";
+import { api, getToken, loginHref, issueWhiteSlip, completeConsequence, homeroomFollowup, type Me, type StudentSummary } from "./_lib/api";
 import { Markdown } from "./_lib/Markdown";
 import SendNoticeModal from "./_components/SendNoticeModal";
 
@@ -361,6 +361,27 @@ function HousesCard({ canLog, isAdmin, portalCode, events = [] }: { canLog: bool
 // Students who've already had a notice home AND are back at/near the trigger —
 // heading for a further (VP-CC'd) notice. Shows the objective rule-based next
 // consequence (from the admin ladder); per-student AI coaching is on their page.
+// A one-click "homeroom follow-up" nudge: logs a supportive relational check-in
+// (homeroom teacher to steer the student) as a documented interaction. Green so
+// it reads as encouragement, not punishment. Sits beside a watch-list row.
+function HrButton({ studentId }: { studentId: string }) {
+  const [state, setState] = useState<"idle" | "busy" | "done">("idle");
+  async function click() {
+    if (state !== "idle") return;
+    setState("busy");
+    try { await homeroomFollowup(studentId); setState("done"); }
+    catch { setState("idle"); }
+  }
+  return (
+    <button type="button" disabled={state !== "idle"}
+      onClick={(e) => { e.preventDefault(); e.stopPropagation(); click(); }}
+      title="Homeroom follow-up: flag that the homeroom teacher will talk with this student to steer them in the right direction. Logged as a supportive check-in — not a strike, nothing sent home."
+      className={`shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold ${state === "done" ? "border border-green-300 bg-green-50 text-green-700" : "bg-green-600 text-white hover:bg-green-700"}`}>
+      {state === "done" ? "HR ✓" : state === "busy" ? "…" : "HR"}
+    </button>
+  );
+}
+
 function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: string }[] }) {
   const [rows, setRows] = useState<StudentSummary[] | null>(null);
   const [trigger, setTrigger] = useState(3);
@@ -418,12 +439,15 @@ function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: st
           const action = nextAction(s.noticesHomeCount || 0);
           return (
             <li key={s._id} className="py-2">
-              <Link href={`/behavior/student/${s._id}`} className="flex items-center justify-between gap-2 text-sm hover:text-slate-600">
-                <span className="min-w-0">
-                  <span className="font-medium">{s.lastName}, {s.firstName}</span> <span className="text-slate-400">{s.classGroup}</span>
-                  {s.pendingWhiteSlipId
-                    ? <span className="mt-0.5 block text-xs text-red-700">Next: White slip recommended</span>
-                    : action && <span className="mt-0.5 block text-xs text-red-700">Next: {action}</span>}
+              <div className="flex items-center justify-between gap-2 text-sm">
+                <span className="flex min-w-0 items-center gap-2">
+                  <Link href={`/behavior/student/${s._id}`} className="min-w-0 hover:text-slate-600">
+                    <span className="font-medium">{s.lastName}, {s.firstName}</span> <span className="text-slate-400">{s.classGroup}</span>
+                    {s.pendingWhiteSlipId
+                      ? <span className="mt-0.5 block text-xs text-red-700">Next: White slip recommended</span>
+                      : action && <span className="mt-0.5 block text-xs text-red-700">Next: {action}</span>}
+                  </Link>
+                  <HrButton studentId={s._id} />
                 </span>
                 <span className="flex shrink-0 items-center gap-3">
                   <span className="text-xs text-slate-400">{s.noticesHomeCount} notice{(s.noticesHomeCount || 0) === 1 ? "" : "s"}</span>
@@ -431,7 +455,7 @@ function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: st
                     {s.activeCount}/{trigger} →
                   </span>
                 </span>
-              </Link>
+              </div>
               {s.pendingWhiteSlipId && (
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
                   <span className="text-slate-500">Confirm the consequence given:</span>
@@ -485,15 +509,16 @@ function StudentsToWatch({ fadeDays }: { fadeDays?: number }) {
       </p>
       <ul className="mt-2 divide-y divide-slate-100">
         {rows.map((s) => (
-          <li key={s._id}>
-            <Link href={`/behavior/student/${s._id}`} className="flex items-center justify-between py-2 text-sm hover:text-slate-600">
-              <span className="font-medium">
+          <li key={s._id} className="flex items-center justify-between gap-2 py-2 text-sm">
+            <span className="flex min-w-0 items-center gap-2">
+              <Link href={`/behavior/student/${s._id}`} className="min-w-0 truncate font-medium hover:text-slate-600">
                 {s.lastName}, {s.firstName} <span className="text-slate-400">{s.classGroup}</span>
-              </span>
-              <span className={`shrink-0 font-semibold tabular-nums ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
-                {s.activeCount}/{trigger} →
-              </span>
-            </Link>
+              </Link>
+              <HrButton studentId={s._id} />
+            </span>
+            <span className={`shrink-0 font-semibold tabular-nums ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
+              {s.activeCount}/{trigger} →
+            </span>
           </li>
         ))}
       </ul>
