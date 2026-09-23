@@ -776,12 +776,11 @@ export default function StudentPage() {
           {data.incidents.map((inc) => (
             <li key={inc._id} className="py-3 text-sm">
               <div className="flex items-start justify-between gap-2">
-                <span>
+                <span className="min-w-0 flex-1 break-words">
                   {inc.behaviorSnapshot.name}
                   {inc.weight && inc.weight !== 1 ? <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">×{inc.weight.toFixed(1)}</span> : null}
                   {inc.behaviorSnapshot.triggerMode === "IMMEDIATE" && <span className="ml-2 text-xs text-amber-600">immediate</span>}
                   {inc.teacherName ? <span className="text-slate-400"> · {inc.teacherName}</span> : null}
-                  {editIncId !== inc._id && inc.detailText ? <span className="text-slate-400"> — {inc.detailText}</span> : null}
                 </span>
                 <span className="flex shrink-0 items-center gap-2 pl-2 text-slate-400">
                   {fmtDT(inc.timestamp)}
@@ -793,6 +792,9 @@ export default function StudentPage() {
                   )}
                 </span>
               </div>
+              {editIncId !== inc._id && inc.detailText ? (
+                <p className="mt-0.5 break-words text-slate-500">— {inc.detailText}</p>
+              ) : null}
               {editIncId === inc._id && (
                 <div className="mt-1 flex gap-2 pl-3">
                   <input value={editDetail} onChange={(e) => setEditDetail(e.target.value)}
