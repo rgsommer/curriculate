@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Children, isValidElement, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { api, getToken, loginHref, API_BASE, getMyTemplates, saveMyTemplates, type Me, type ParentTemplate } from "../_lib/api";
 
@@ -2163,8 +2163,67 @@ function Field({ label, children, hint }: { label: string; children: React.React
   );
 }
 
-function Card({ children }: { children: React.ReactNode }) {
-  return <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">{children}</section>;
+// Pull the plain text out of a React node (used to key a section's open state).
+function nodeText(node: ReactNode): string {
+  if (node == null || typeof node === "boolean") return "";
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(nodeText).join("");
+  if (isValidElement(node)) return nodeText((node.props as { children?: ReactNode }).children);
+  return "";
+}
+
+// A setup section. It's collapsible when it opens with an <h2> title — either
+// as the first child, or as the first child of a header-row <div> (title + a
+// control like an On/Off toggle). The title becomes a clickable header and the
+// body folds away, so the (long) setup page stays short. Open/closed is
+// remembered per section, and the body stays mounted while hidden so in-progress
+// edits aren't lost. Sections that manage their own collapse (a leading <button>
+// or <details>) or lead with an <h1> are left as-is.
+function Card({ children }: { children: ReactNode }) {
+  const arr = Children.toArray(children);
+  const head = arr[0];
+  const isH2 = (n: ReactNode) => isValidElement(n) && n.type === "h2";
+
+  let titleNode: ReactNode = null; // the <h2>
+  let headerExtras: ReactNode = null; // e.g. an On/Off toggle beside the title
+  let body: ReactNode[] = arr.slice(1);
+  if (isH2(head)) {
+    titleNode = head;
+  } else if (isValidElement(head) && head.type === "div") {
+    const divKids = Children.toArray((head.props as { children?: ReactNode }).children);
+    if (isH2(divKids[0])) {
+      titleNode = divKids[0];
+      headerExtras = divKids.slice(1);
+      body = arr.slice(1);
+    }
+  }
+
+  const storeKey = "bx_setup_open_" + nodeText(titleNode).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!titleNode) return;
+    try { setOpen(localStorage.getItem(storeKey) === "1"); } catch { /* ignore */ }
+  }, [titleNode, storeKey]);
+
+  if (!titleNode) {
+    return <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">{children}</section>;
+  }
+  function toggle() {
+    setOpen((o) => { const n = !o; try { localStorage.setItem(storeKey, n ? "1" : "0"); } catch { /* ignore */ } return n; });
+  }
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-center justify-between gap-3 p-5">
+        <button type="button" onClick={toggle} aria-expanded={open}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left">
+          <span className="min-w-0">{titleNode}</span>
+          <span className={`shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden>▾</span>
+        </button>
+        {headerExtras}
+      </div>
+      <div className={open ? "px-5 pb-5" : "hidden"}>{body}</div>
+    </section>
+  );
 }
 
 // Shared save-button UX: amber "Save changes" when dirty → "Saving…" → green
