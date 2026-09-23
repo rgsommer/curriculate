@@ -256,6 +256,32 @@ function appBase() {
   return (process.env.APP_BASE_URL || "https://www.curriculate.net").replace(/\/+$/, "");
 }
 
+// A signed, unauthenticated capability link for the "Reset the GUDD list" button
+// in the admin digest — so the VP can reset without logging in. Bound to the
+// school AND the current week, so an old email's link stops working after ~3
+// weeks. Low-stakes + reversible (it just stamps a fresh period start).
+function guddResetSecret() {
+  return process.env.BEHAVIOR_SECRET_KEY || process.env.JWT_SECRET || "";
+}
+function guddResetToken(schoolId, wk = mondayKey()) {
+  const secret = guddResetSecret();
+  if (!secret) return "";
+  const sig = crypto.createHmac("sha256", secret).update(`gudd-reset:${schoolId}:${wk}`).digest("hex").slice(0, 32);
+  return `${wk}.${sig}`;
+}
+function verifyGuddResetToken(schoolId, token) {
+  const secret = guddResetSecret();
+  if (!secret || !token) return false;
+  const [wk, sig] = String(token).split(".");
+  if (!wk || !sig) return false;
+  const expected = crypto.createHmac("sha256", secret).update(`gudd-reset:${schoolId}:${wk}`).digest("hex").slice(0, 32);
+  let ok = false;
+  try { ok = sig.length === expected.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected)); } catch { ok = false; }
+  if (!ok) return false;
+  const wkTime = Date.parse(wk + "T00:00:00Z");
+  return !isNaN(wkTime) && Date.now() - wkTime <= 21 * DAY_MS; // link valid ~3 weeks
+}
+
 function escapeHtml(s) {
   return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
@@ -4582,6 +4608,36 @@ router.post("/gudd/reset", authAny, loadMembership, requireAdmin, async (req, re
   }
 });
 
+// Public (signed-link) GUDD reset for the button in the admin digest — no login.
+// The confirm page fetches this to show the school name + whether the link is
+// still valid, then POSTs to /gudd/reset-link to actually reset.
+router.get("/gudd/reset-info", async (req, res, next) => {
+  try {
+    const schoolId = String(req.query.school || "").trim();
+    const token = String(req.query.token || "").trim();
+    const valid = !!schoolId && verifyGuddResetToken(schoolId, token);
+    let schoolName = "";
+    if (valid) {
+      try { const sc = await BehaviorSchool.findById(schoolId).select("name").lean(); schoolName = sc?.name || ""; } catch { /* ignore */ }
+    }
+    res.json({ ok: true, valid, schoolName, name: "GUDD" });
+  } catch (err) { next(err); }
+});
+
+router.post("/gudd/reset-link", async (req, res, next) => {
+  try {
+    const schoolId = String(req.body?.school || "").trim();
+    const token = String(req.body?.token || "").trim();
+    if (!schoolId || !verifyGuddResetToken(schoolId, token)) {
+      return res.status(403).json({ ok: false, error: "This reset link is invalid or has expired. Reset the list from Setup instead." });
+    }
+    const at = new Date();
+    await BehaviorConfig.updateOne({ schoolId }, { $set: { "gudd.resetAt": at } });
+    await audit(schoolId, "gudd.cleared_via_link", { userId: null, user: { email: "" } }, {});
+    res.json({ ok: true, resetAt: at });
+  } catch (err) { next(err); }
+});
+
 // Compose the weekly admin digest email (subject/text/html) for a school.
 async function composeAdminDigest(schoolId, config) {
   const insights = await buildSchoolInsights(schoolId, config);
@@ -4651,6 +4707,23 @@ async function composeAdminDigest(schoolId, config) {
 
   const top = (arr, fmt) => arr.length ? `<ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6">${arr.slice(0, 6).map((x) => li(fmt(x))).join("")}</ul>` : `<p style="margin:0;color:#64748b">None.</p>`;
 
+  // GUDD (uniform standing) section + a "Reset the list" button that resets
+  // without logging in (signed link → confirm page). Only when GUDD is on.
+  const gName = insights.gudd?.name || "GUDD";
+  const gStuds = insights.gudd?.enabled ? (insights.gudd.students || []) : [];
+  const gLost = gStuds.filter((s) => s.lost);
+  const gRisk = gStuds.filter((s) => s.atRisk);
+  const gList = (arr) => `<ul style="margin:0 0 4px;padding-left:18px;color:#334155;line-height:1.6">${arr.map((s) => li(`<strong>${escapeHtml(s.name)}</strong> <span style="color:#94a3b8">${escapeHtml(s.classGroup)}</span> — ${s.count}/${s.threshold}${s.consequence ? ` · next: ${escapeHtml(s.consequence)}` : ""}`)).join("")}</ul>`;
+  const gResetToken = guddResetToken(String(schoolId));
+  const gResetUrl = `${appBase()}/behavior/gudd-reset?school=${schoolId}&token=${encodeURIComponent(gResetToken)}`;
+  const guddSection = !insights.gudd?.enabled ? "" : section(`${escapeHtml(gName)} — uniform standing`,
+    gStuds.length
+      ? (gLost.length ? `<p style="margin:6px 0 2px;font-size:13px;font-weight:600;color:#b91c1c">Lost the ${escapeHtml(gName)}</p>${gList(gLost)}` : "") +
+        (gRisk.length ? `<p style="margin:8px 0 2px;font-size:13px;font-weight:600;color:#b45309">At risk</p>${gList(gRisk)}` : "") +
+        (gResetToken ? emailButton(`Reset the ${gName} list`, gResetUrl, "#0f172a") +
+          `<p style="margin:2px 0 0;font-size:12px;color:#94a3b8">Starts a fresh period — earlier infractions stay in history but stop counting.</p>` : "")
+      : `<p style="margin:0;color:#64748b">No uniform infractions this period. 👍</p>`);
+
   const contentHtml =
     `<p style="margin:0 0 4px;color:#334155">Week in review for <strong>${escapeHtml(school?.name || "your school")}</strong>.</p>` +
     `<p style="margin:0 0 12px;color:#64748b;font-size:13px">${wkNeg} incident(s) · ${wkPos} encouragement(s) · ${wkInt} documented interaction(s) · ${wkWhiteSlips} white slip(s) · ${wkNotices} notice(s) sent home (last 7 days).</p>` +
@@ -4664,6 +4737,7 @@ async function composeAdminDigest(schoolId, config) {
         ? `<ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6">${encItems.slice(0, 15).map((e) => li(`<strong>${escapeHtml(e.name)}</strong> — ${escapeHtml(e.label)}${e.by ? ` <span style="color:#94a3b8">· ${escapeHtml(e.by)}</span>` : ""}`)).join("")}</ul>`
         : `<p style="margin:0;color:#64748b">None logged — encourage staff to catch the good too.</p>`) +
     section("Students to get ahead of (rising lately)", top(insights.proactive, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.recent} in 2 weeks${r.prior ? ` (was ${r.prior})` : ""}`)) +
+    guddSection +
     section("Most-logged (60 days)", top(insights.topRepeat, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.count}`)) +
     section("Suggested support for staff", suggestions) +
     `<hr style="border:none;border-top:1px solid #e2e8f0;margin:18px 0">` +
@@ -4676,6 +4750,7 @@ async function composeAdminDigest(schoolId, config) {
     `Consequences issued / recommended: ${consRows.slice(0, 8).map((c) => `${cName[String(c.studentId)] || "—"} — ${c.type}`).join("; ") || "none"}.\n` +
     `Encouragements: ${encItems.slice(0, 8).map((e) => `${e.name} — ${e.label}`).join("; ") || "none"}.\n` +
     `Rising lately: ${insights.proactive.slice(0, 6).map((r) => `${r.name} (${r.recent}/2wk)`).join(", ") || "none"}.\n` +
+    (insights.gudd?.enabled ? `${gName}: ${gStuds.length ? `${gLost.length} lost, ${gRisk.length} at risk — reset the list from the emailed report.` : "no infractions this period."}\n` : "") +
     `Staff who may welcome support: ${flagged.map((t) => t.name).join(", ") || "none"}.\n\n` +
     `Open the dashboard → School insights for the full picture.`;
 
