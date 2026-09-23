@@ -95,8 +95,19 @@ export async function api<T = any>(path: string, opts: ApiOptions = {}): Promise
   return data as T;
 }
 
-export const loginHref = (returnTo: string) =>
-  `/login?returnTo=${encodeURIComponent(returnTo)}`;
+export const loginHref = (returnTo: string, opts?: { mode?: "login" | "signup"; email?: string }) => {
+  const p = new URLSearchParams({ returnTo });
+  if (opts?.mode) p.set("mode", opts.mode);
+  if (opts?.email) p.set("email", opts.email);
+  return `/login?${p.toString()}`;
+};
+
+// Public lookup of a pending invite by token (invited email + school), so the
+// accept flow can jump straight to setting a password with the email prefilled.
+export function inviteInfo(token: string) {
+  return api<{ ok: boolean; email?: string; schoolName?: string; role?: string; error?: string }>(
+    `/invite/info?token=${encodeURIComponent(token)}`);
+}
 
 // ── Shared types (subset used by the UI) ─────────────────────────────────────
 

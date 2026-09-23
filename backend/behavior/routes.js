@@ -1624,6 +1624,22 @@ router.put("/team/houses-committee", authAny, loadMembership, requireAdmin, asyn
 
 // Accept an invite: the signed-in user (who set a password via the existing
 // signup flow) becomes a member. Their email must match the invite.
+// Public: look up a pending invite by its token so the accept/sign-in flow can
+// prefill the invited email + school and route straight to setting a password.
+// The token IS the secret (it comes from the emailed invite link), so returning
+// the invited email to whoever holds it is fine; nothing else is exposed.
+router.get("/invite/info", async (req, res, next) => {
+  try {
+    const token = String(req.query.token || "").trim();
+    if (!token) return res.status(400).json({ ok: false, error: "token required" });
+    const invite = await BehaviorInvite.findOne({ token, status: "pending" }).lean();
+    if (!invite) return res.json({ ok: false, error: "Invite not found or already used" });
+    let schoolName = "";
+    try { const sc = await BehaviorSchool.findById(invite.schoolId).select("name").lean(); schoolName = sc?.name || ""; } catch { /* ignore */ }
+    res.json({ ok: true, email: invite.email, role: invite.role, schoolName });
+  } catch (err) { next(err); }
+});
+
 router.post("/invite/accept", authAny, async (req, res, next) => {
   try {
     const token = String(req.body?.token || "").trim();

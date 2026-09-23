@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || process.env.NEXT_PUBLIC_BACKEND_URL || "https://api.curriculate.net";
 
@@ -12,6 +12,17 @@ export default function LoginPage() {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [name, setName] = useState("");
   const [success, setSuccess] = useState<string | null>(null);
+  const [emailLocked, setEmailLocked] = useState(false);
+
+  // Invite hints from the URL (read after mount to avoid a hydration mismatch):
+  // ?mode=signup opens the "set a password" form, and ?email=… prefills + locks
+  // the address, since an invite must be accepted with the exact invited email.
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const invitedEmail = p.get("email") || "";
+    if (invitedEmail) { setEmail(invitedEmail); setEmailLocked(true); }
+    if (p.get("mode") === "signup") setMode("signup");
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -58,6 +69,14 @@ export default function LoginPage() {
       const data = await res.json().catch(() => null);
 
       if (!res.ok) {
+        // Invited teacher who already has an account: signup fails on the
+        // duplicate email — flip them to Sign In (email stays prefilled) rather
+        // than dead-ending on an error they can't act on.
+        if (mode === "signup" && /exist|already|registered|in use|duplicate/i.test(String(data?.error || ""))) {
+          setMode("login");
+          setError("You already have an account — enter your password to sign in.");
+          return;
+        }
         setError(data?.error || `${mode === "login" ? "Login" : "Sign up"} failed (${res.status}).`);
         return;
       }
@@ -143,7 +162,8 @@ export default function LoginPage() {
               placeholder="you@school.ca"
               autoComplete="email"
               required
-              style={inputStyle}
+              readOnly={emailLocked}
+              style={emailLocked ? { ...inputStyle, background: "#f1f5f9", color: "#475569" } : inputStyle}
             />
           </label>
 
