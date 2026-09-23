@@ -1873,12 +1873,22 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
       (consByStudent[k] ||= []).push({ id: String(c._id), type: c.type });
     }
 
+    // Homeroom follow-ups logged THIS WEEK (since Monday) → drives the dashboard
+    // HR button's red (not yet) / green (done) flag, resetting each week.
+    const weekStart = new Date(mondayKey() + "T00:00:00Z");
+    const hrAgg = await BehaviorIncident.aggregate([
+      { $match: { schoolId: req.schoolId, studentId: { $in: students.map((s) => s._id) }, "behaviorSnapshot.name": "Homeroom follow-up", timestamp: { $gte: weekStart } } },
+      { $group: { _id: "$studentId", n: { $sum: 1 } } },
+    ]);
+    const hrWeek = new Set(hrAgg.map((a) => String(a._id)));
+
     const out = students.map((s) => ({
       ...s,
       activeCount: cnt[String(s._id)] || 0,
       guddCount: gcnt[String(s._id)] || 0,
       pendingWhiteSlipId: pend[String(s._id)] || null,
       pendingConsequences: (consByStudent[String(s._id)] || []).slice(0, 6),
+      hrFollowedUpThisWeek: hrWeek.has(String(s._id)),
     }));
     res.json({
       ok: true, students: out, triggerCount,

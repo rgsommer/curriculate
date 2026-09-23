@@ -364,20 +364,25 @@ function HousesCard({ canLog, isAdmin, portalCode, events = [] }: { canLog: bool
 // A one-click "homeroom follow-up" nudge: logs a supportive relational check-in
 // (homeroom teacher to steer the student) as a documented interaction. Green so
 // it reads as encouragement, not punishment. Sits beside a watch-list row.
-function HrButton({ studentId }: { studentId: string }) {
-  const [state, setState] = useState<"idle" | "busy" | "done">("idle");
+function HrButton({ studentId, done }: { studentId: string; done?: boolean }) {
+  const [state, setState] = useState<"idle" | "busy" | "done">(done ? "done" : "idle");
   async function click() {
-    if (state !== "idle") return;
+    if (state === "busy") return;
     setState("busy");
     try { await homeroomFollowup(studentId); setState("done"); }
-    catch { setState("idle"); }
+    catch { setState(done ? "done" : "idle"); }
   }
+  const isDone = state === "done";
   return (
-    <button type="button" disabled={state !== "idle"}
+    <button type="button" disabled={state === "busy" || isDone}
       onClick={(e) => { e.preventDefault(); e.stopPropagation(); click(); }}
-      title="Homeroom follow-up: flag that the homeroom teacher will talk with this student to steer them in the right direction. Logged as a supportive check-in — not a strike, nothing sent home."
-      className={`shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold ${state === "done" ? "border border-green-300 bg-green-50 text-green-700" : "bg-green-600 text-white hover:bg-green-700"}`}>
-      {state === "done" ? "HR ✓" : state === "busy" ? "…" : "HR"}
+      title={isDone
+        ? "Homeroom follow-up already logged this week. It resets each week."
+        : "Homeroom follow-up: flag that the homeroom teacher will talk with this student to steer them in the right direction. Logged as a supportive check-in — not a strike, nothing sent home."}
+      className={`shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold ${isDone
+        ? "border border-green-300 bg-green-50 text-green-700"
+        : "bg-blue-600 text-white hover:bg-blue-700"}`}>
+      {isDone ? "HR ✓" : state === "busy" ? "…" : "HR"}
     </button>
   );
 }
@@ -447,7 +452,7 @@ function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: st
                       ? <span className="mt-0.5 block text-xs text-red-700">Next: White slip recommended</span>
                       : action && <span className="mt-0.5 block text-xs text-red-700">Next: {action}</span>}
                   </Link>
-                  <HrButton studentId={s._id} />
+                  <HrButton studentId={s._id} done={s.hrFollowedUpThisWeek} />
                 </span>
                 <span className="flex shrink-0 items-center gap-3">
                   <span className="text-xs text-slate-400">{s.noticesHomeCount} notice{(s.noticesHomeCount || 0) === 1 ? "" : "s"}</span>
@@ -514,7 +519,7 @@ function StudentsToWatch({ fadeDays }: { fadeDays?: number }) {
               <Link href={`/behavior/student/${s._id}`} className="min-w-0 truncate font-medium hover:text-slate-600">
                 {s.lastName}, {s.firstName} <span className="text-slate-400">{s.classGroup}</span>
               </Link>
-              <HrButton studentId={s._id} />
+              <HrButton studentId={s._id} done={s.hrFollowedUpThisWeek} />
             </span>
             <span className={`shrink-0 font-semibold tabular-nums ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
               {s.activeCount}/{trigger} →

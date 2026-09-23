@@ -140,6 +140,8 @@ export type StudentSummary = {
   pendingWhiteSlipId?: string | null;
   // Consequences given but not yet marked done — a dashboard "Mark done" to-do.
   pendingConsequences?: { id: string; type: string }[];
+  // Whether a homeroom follow-up has been logged for this student this week.
+  hrFollowedUpThisWeek?: boolean;
 };
 
 export type ParentTemplate = { name: string; body: string; kind?: "encouraging" | "corrective" };
