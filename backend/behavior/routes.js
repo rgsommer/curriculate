@@ -1867,6 +1867,7 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
           schoolId: req.schoolId,
           studentId: { $in: students.map((s) => s._id) },
           countedInNoticeId: null,
+          whiteSlip: { $ne: true }, // a white-slip incident isn't a strike
           "behaviorSnapshot.triggerMode": "THRESHOLD",
           timestamp: { $gt: cutoff },
         },
@@ -1962,6 +1963,7 @@ router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
       const mode = inc.behaviorSnapshot?.triggerMode || (inc.immediateFlag ? "IMMEDIATE" : "THRESHOLD");
       return (
         mode === "THRESHOLD" &&
+        !inc.whiteSlip && // its white slip was the consequence — not a strike
         !inc.countedInNoticeId &&
         new Date(inc.timestamp).getTime() > resetAt &&
         new Date(inc.timestamp).getTime() > cutoff
@@ -1976,7 +1978,7 @@ router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
     // trigger (white slips apply to behaviour offences). Reasons = those offences.
     const activeBehaviour = incidents.filter((inc) => {
       const mode = inc.behaviorSnapshot?.triggerMode || (inc.immediateFlag ? "IMMEDIATE" : "THRESHOLD");
-      return mode === "THRESHOLD" && !inc.countedInNoticeId &&
+      return mode === "THRESHOLD" && !inc.whiteSlip && !inc.countedInNoticeId &&
         new Date(inc.timestamp).getTime() > resetAt && new Date(inc.timestamp).getTime() > cutoff &&
         (inc.behaviorSnapshot?.categories || []).includes("behaviour");
     });
@@ -2379,6 +2381,7 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
         detailText,
         weight,
         immediateFlag: behavior.triggerMode === "IMMEDIATE",
+        whiteSlip: !!behavior.immediateWhiteSlip,
         timestamp,
       });
       createdIncidents.push(inc.toObject());
@@ -2560,6 +2563,7 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
         detailText,
         weight,
         immediateFlag: behavior.triggerMode === "IMMEDIATE",
+        whiteSlip: !!behavior.immediateWhiteSlip,
         timestamp,
       });
 
@@ -4422,7 +4426,7 @@ async function buildSchoolInsights(schoolId, config) {
   // Current strike load → at/near the threshold.
   const strikes = {}; const lastStrike = {};
   for (const i of incs) {
-    if (i.countedInNoticeId || i.behaviorSnapshot?.triggerMode !== "THRESHOLD" || new Date(i.timestamp).getTime() <= fadeCutoff) continue;
+    if (i.whiteSlip || i.countedInNoticeId || i.behaviorSnapshot?.triggerMode !== "THRESHOLD" || new Date(i.timestamp).getTime() <= fadeCutoff) continue;
     const sid = String(i.studentId);
     strikes[sid] = (strikes[sid] || 0) + 1;
     const t = new Date(i.timestamp).getTime();

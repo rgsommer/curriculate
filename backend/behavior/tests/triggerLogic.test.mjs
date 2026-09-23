@@ -105,6 +105,26 @@ test("SPENT: incidents already attributed to a prior notice are excluded", () =>
   assert.equal(active[0]._id, "b");
 });
 
+test("WHITE SLIP: an incident that fired a white slip does not count as a strike", () => {
+  const all = [{ ...inc({ id: "w", daysAgo: 2 }), whiteSlip: true }, inc({ id: "b", daysAgo: 1 })];
+  const active = activeThresholdIncidents(all, { fadeWindowDays: 30, thresholdResetAt: null, asOf: now });
+  assert.equal(active.length, 1);
+  assert.equal(active[0]._id, "b");
+});
+
+test("WHITE SLIP: a white-slip incident does not push the threshold trigger", () => {
+  // Two ordinary strikes + one white-slip incident would be 3 raw, but the white
+  // slip doesn't count, so it stays below a trigger of 3 and does not fire.
+  const d = evaluateIncident({
+    newIncident: inc({ id: "c", daysAgo: 0 }),
+    priorIncidents: [inc({ id: "a", daysAgo: 2 }), { ...inc({ id: "w", daysAgo: 1 }), whiteSlip: true }],
+    config: { triggerCount: 3, fadeWindowDays: 30 },
+    student: { noticesHomeCount: 0 },
+    asOf: now,
+  });
+  assert.equal(d.shouldNotify, false);
+});
+
 test("IMMEDIATE: a single occurrence fires regardless of count", () => {
   const d = evaluateIncident({
     newIncident: inc({ id: "x", mode: "IMMEDIATE", daysAgo: 0 }),
