@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, getToken, loginHref, issueWhiteSlip, type Me, type StudentSummary } from "./_lib/api";
+import { api, getToken, loginHref, issueWhiteSlip, completeConsequence, homeroomFollowup, type Me, type StudentSummary } from "./_lib/api";
 import { Markdown } from "./_lib/Markdown";
 import SendNoticeModal from "./_components/SendNoticeModal";
 
@@ -361,6 +361,32 @@ function HousesCard({ canLog, isAdmin, portalCode, events = [] }: { canLog: bool
 // Students who've already had a notice home AND are back at/near the trigger —
 // heading for a further (VP-CC'd) notice. Shows the objective rule-based next
 // consequence (from the admin ladder); per-student AI coaching is on their page.
+// A one-click "homeroom follow-up" nudge: logs a supportive relational check-in
+// (homeroom teacher to steer the student) as a documented interaction. Green so
+// it reads as encouragement, not punishment. Sits beside a watch-list row.
+function HrButton({ studentId, done }: { studentId: string; done?: boolean }) {
+  const [state, setState] = useState<"idle" | "busy" | "done">(done ? "done" : "idle");
+  async function click() {
+    if (state === "busy") return;
+    setState("busy");
+    try { await homeroomFollowup(studentId); setState("done"); }
+    catch { setState(done ? "done" : "idle"); }
+  }
+  const isDone = state === "done";
+  return (
+    <button type="button" disabled={state === "busy" || isDone}
+      onClick={(e) => { e.preventDefault(); e.stopPropagation(); click(); }}
+      title={isDone
+        ? "Homeroom follow-up already logged this week. It resets each week."
+        : "Homeroom follow-up: flag that the homeroom teacher will talk with this student to steer them in the right direction. Logged as a supportive check-in — not a strike, nothing sent home."}
+      className={`shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold ${isDone
+        ? "border border-green-300 bg-green-50 text-green-700"
+        : "bg-blue-600 text-white hover:bg-blue-700"}`}>
+      {isDone ? "HR ✓" : state === "busy" ? "…" : "HR"}
+    </button>
+  );
+}
+
 function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: string }[] }) {
   const [rows, setRows] = useState<StudentSummary[] | null>(null);
   const [trigger, setTrigger] = useState(3);
@@ -374,7 +400,7 @@ function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: st
         // recommended white slip awaiting confirmation (so it can be acted on here
         // even if they're not otherwise on probation-watch).
         const watch = (d.students || [])
-          .filter((s) => s.pendingWhiteSlipId || ((s.noticesHomeCount || 0) >= 1 && (s.activeCount || 0) >= t - 1))
+          .filter((s) => s.pendingWhiteSlipId || (s.pendingConsequences && s.pendingConsequences.length > 0) || ((s.noticesHomeCount || 0) >= 1 && (s.activeCount || 0) >= t - 1))
           .sort((a, b) => (b.pendingWhiteSlipId ? 1 : 0) - (a.pendingWhiteSlipId ? 1 : 0) || (b.noticesHomeCount || 0) - (a.noticesHomeCount || 0) || (b.activeCount || 0) - (a.activeCount || 0));
         setRows(watch);
       })
@@ -392,6 +418,17 @@ function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: st
     catch { setRows((list) => [...(list || []), s]); }
   }
 
+  // Mark a given consequence done. Optimistically drop it from the student's
+  // to-do list; if that leaves the student with nothing else to action, they fall
+  // off the watch list on the next load.
+  async function markDone(s: StudentSummary, consId: string) {
+    setRows((list) => (list || []).map((x) => x._id === s._id
+      ? { ...x, pendingConsequences: (x.pendingConsequences || []).filter((c) => c.id !== consId) }
+      : x));
+    try { await completeConsequence(consId, true); }
+    catch { setRows((list) => (list || []).map((x) => x._id === s._id ? s : x)); }
+  }
+
   if (!rows || rows.length === 0) return null;
   // The consequence the next notice would carry = ladder step for (notices + 1).
   const nextAction = (notices: number) => ladder.find((l) => l.noticeNumber === notices + 1)?.action || null;
@@ -407,12 +444,15 @@ function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: st
           const action = nextAction(s.noticesHomeCount || 0);
           return (
             <li key={s._id} className="py-2">
-              <Link href={`/behavior/student/${s._id}`} className="flex items-center justify-between gap-2 text-sm hover:text-slate-600">
-                <span className="min-w-0">
-                  <span className="font-medium">{s.lastName}, {s.firstName}</span> <span className="text-slate-400">{s.classGroup}</span>
-                  {s.pendingWhiteSlipId
-                    ? <span className="mt-0.5 block text-xs text-red-700">Next: White slip recommended</span>
-                    : action && <span className="mt-0.5 block text-xs text-red-700">Next: {action}</span>}
+              <div className="flex items-center justify-between gap-2 text-sm">
+                <span className="flex min-w-0 items-center gap-2">
+                  <Link href={`/behavior/student/${s._id}`} className="min-w-0 hover:text-slate-600">
+                    <span className="font-medium">{s.lastName}, {s.firstName}</span> <span className="text-slate-400">{s.classGroup}</span>
+                    {s.pendingWhiteSlipId
+                      ? <span className="mt-0.5 block text-xs text-red-700">Next: White slip recommended</span>
+                      : action && <span className="mt-0.5 block text-xs text-red-700">Next: {action}</span>}
+                  </Link>
+                  <HrButton studentId={s._id} done={s.hrFollowedUpThisWeek} />
                 </span>
                 <span className="flex shrink-0 items-center gap-3">
                   <span className="text-xs text-slate-400">{s.noticesHomeCount} notice{(s.noticesHomeCount || 0) === 1 ? "" : "s"}</span>
@@ -420,7 +460,7 @@ function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: st
                     {s.activeCount}/{trigger} →
                   </span>
                 </span>
-              </Link>
+              </div>
               {s.pendingWhiteSlipId && (
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
                   <span className="text-slate-500">Confirm the consequence given:</span>
@@ -431,6 +471,13 @@ function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: st
                     className="rounded-md border border-slate-300 px-2 py-0.5 font-semibold text-slate-700 hover:bg-slate-50">Other…</button>
                 </div>
               )}
+              {(s.pendingConsequences || []).map((c) => (
+                <div key={c.id} className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="text-slate-500">Consequence: <span className="font-medium text-slate-700">{c.type}</span></span>
+                  <button type="button" onClick={() => markDone(s, c.id)}
+                    className="rounded-md border border-green-300 px-2 py-0.5 font-semibold text-green-700 hover:bg-green-50">Mark done</button>
+                </div>
+              ))}
             </li>
           );
         })}
@@ -467,15 +514,16 @@ function StudentsToWatch({ fadeDays }: { fadeDays?: number }) {
       </p>
       <ul className="mt-2 divide-y divide-slate-100">
         {rows.map((s) => (
-          <li key={s._id}>
-            <Link href={`/behavior/student/${s._id}`} className="flex items-center justify-between py-2 text-sm hover:text-slate-600">
-              <span className="font-medium">
+          <li key={s._id} className="flex items-center justify-between gap-2 py-2 text-sm">
+            <span className="flex min-w-0 items-center gap-2">
+              <Link href={`/behavior/student/${s._id}`} className="min-w-0 truncate font-medium hover:text-slate-600">
                 {s.lastName}, {s.firstName} <span className="text-slate-400">{s.classGroup}</span>
-              </span>
-              <span className={`shrink-0 font-semibold tabular-nums ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
-                {s.activeCount}/{trigger} →
-              </span>
-            </Link>
+              </Link>
+              <HrButton studentId={s._id} done={s.hrFollowedUpThisWeek} />
+            </span>
+            <span className={`shrink-0 font-semibold tabular-nums ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
+              {s.activeCount}/{trigger} →
+            </span>
           </li>
         ))}
       </ul>

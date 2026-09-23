@@ -98,6 +98,18 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
   const [scopeStandard, setScopeStandard] = useState(!!allowStandard);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Editable rows start collapsed to a compact summary so the list stays short;
+  // click Edit to expand the full form.
+  const [expanded, setExpanded] = useState(false);
+  // Reset the form fields back to the saved behaviour (used on Cancel).
+  function resetFields() {
+    setName(b?.name || ""); setKeyword(b?.keyword || "");
+    setKind(b?.kind || ((b?.points ?? 0) > 0 ? "positive" : "negative"));
+    setTriggerMode(b?.triggerMode || "THRESHOLD"); setConsequenceText(b?.consequenceText || "");
+    setFollowUpType(b?.followUpType || "none"); setPoints(b?.points ?? 0);
+    setCategories(Array.isArray(b?.categories) ? b.categories : (b?.uniform ? ["uniform"] : []));
+    setImmediateWhiteSlip(!!b?.immediateWhiteSlip); setErr(null);
+  }
 
   const tint = add
     ? "border-dashed border-slate-300"
@@ -129,8 +141,38 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
     );
   }
 
+  // Editable but collapsed: a compact summary with an Edit button. Keeps the
+  // behaviours list short instead of showing every full editor at once.
+  if (!add && !expanded) {
+    return (
+      <div className={`rounded-lg border p-3 ${tint}`}>
+        <div className="flex items-center justify-between gap-2 text-sm">
+          <span className="min-w-0 font-medium">
+            <span className={(b.kind === "positive" || (b.points ?? 0) > 0) ? "text-green-600" : "text-red-600"}>{(b.kind === "positive" || (b.points ?? 0) > 0) ? "✓" : "✕"}</span>{" "}
+            {b.name}
+            {b.keyword ? <span className="ml-2 text-xs text-slate-400">#{b.keyword}</span> : null}
+            {b.points ? <PointsBadge points={b.points} /> : null}
+            {(b.categories || (b.uniform ? ["uniform"] : [])).map((c: string) => (
+              <span key={c} className={`ml-2 rounded px-1.5 py-0.5 text-[10px] font-semibold ${c === "uniform" ? "bg-indigo-100 text-indigo-700" : c === "behaviour" ? "bg-rose-100 text-rose-700" : "bg-sky-100 text-sky-700"}`}>
+                {c === "uniform" ? "Uniform" : c === "behaviour" ? "Behaviour" : "Prep"}
+              </span>
+            ))}
+            {b.immediateWhiteSlip ? <span className="ml-2 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">White slip</span> : null}
+          </span>
+          <button type="button" onClick={() => { resetFields(); setExpanded(true); }}
+            className="shrink-0 rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50">Edit</button>
+        </div>
+        {b.consequenceText && <p className="mt-1 text-xs text-slate-500">{b.consequenceText}</p>}
+      </div>
+    );
+  }
+
   async function save() {
     if (!name.trim()) return;
+    if (kind !== "positive" && categories.length === 0 && !immediateWhiteSlip) {
+      setErr("Pick at least one category (Class preparedness, Behaviour and/or Uniform).");
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
@@ -139,6 +181,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
         setName(""); setKeyword(""); setKind("negative"); setConsequenceText(""); setTriggerMode("THRESHOLD"); setFollowUpType("none"); setPoints(0); setCategories([]); setImmediateWhiteSlip(false);
       } else {
         await api(`/behaviors/${b._id}`, { method: "PUT", body: { name, keyword, kind, triggerMode, consequenceText, followUpType, points: Number(points) || 0, categories, immediateWhiteSlip } });
+        setExpanded(false); // collapse back to the compact summary after saving
       }
       onChanged();
     } catch (e: any) {
@@ -159,6 +202,8 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
 
   const interaction = triggerMode === "INTERACTION";
   const positive = kind === "positive";
+  // Every offence must carry a category (white slip implies Behaviour).
+  const needsCategory = !positive && categories.length === 0 && !immediateWhiteSlip;
   // Unsaved-changes detection for an existing behaviour (drives the Save/Saved button).
   const origCats = (b?.categories && b.categories.length ? b.categories : (b?.uniform ? ["uniform"] : [])) as string[];
   const dirty = !add && (
@@ -222,6 +267,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
                 </label>
               ))}
             </div>
+            {needsCategory && <p className="mt-1 text-rose-600">Pick at least one category before saving.</p>}
             {categories.includes("uniform") && (
               <p className="mt-1 text-slate-400">Uniform → counts as a strike <em>and</em> toward losing the Good Uniform Dress Down (threshold/fade/escalations in Setup).</p>
             )}
@@ -238,14 +284,15 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
             </label>
           )}
           {add ? (
-            <button onClick={save} disabled={!name.trim() || busy} className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white disabled:opacity-40">Add</button>
+            <button onClick={save} disabled={!name.trim() || busy || needsCategory} title={needsCategory ? "Pick at least one category first" : ""} className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white disabled:opacity-40">Add</button>
           ) : (
-            <button onClick={save} disabled={busy || !dirty}
+            <button onClick={save} disabled={busy || !dirty || needsCategory} title={needsCategory ? "Pick at least one category first" : ""}
               className={`rounded-lg px-3 py-1.5 text-sm font-medium text-white disabled:opacity-100 ${dirty ? "bg-amber-500" : "bg-green-600"}`}>
               {busy ? "Saving…" : dirty ? "Save" : "Saved"}
             </button>
           )}
           {!add && <button onClick={remove} className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-700">Remove</button>}
+          {!add && <button type="button" onClick={() => { resetFields(); setExpanded(false); }} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600">Close</button>}
         </div>
       </div>
     </div>

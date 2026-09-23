@@ -40,6 +40,7 @@ export default function StudentsPage() {
   const [lastMsg, setLastMsg] = useState<{ text: string; label: string } | null>(null);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkNew, setBulkNew] = useState(false);
   const [sortBy, setSortBy] = useState<"name" | "grade" | "room" | "gender">("name");
 
   useEffect(() => {
@@ -62,24 +63,51 @@ export default function StudentsPage() {
 
   // Generate a parent message for one student from the chosen template: copy it
   // to the clipboard and log it. The selected template persists across students.
-  async function sendParentMessage(s: StudentSummary) {
+  async function sendParentMessage(s: StudentSummary, force = false, newStudentArg?: boolean) {
     if (!tpl) { setPmMsg("Pick a message template first."); return; }
+    // On an encouraging note, offer to add a warm welcome for a new student.
+    const isEncouraging = (templates.find((t) => t.name === tpl)?.kind ?? "encouraging") !== "corrective";
+    const newStudent = newStudentArg !== undefined
+      ? newStudentArg
+      : (isEncouraging && window.confirm(`Is ${s.firstName} a new student?\n\nOK = add a warm welcome (“so glad to have them”); Cancel = a normal note.`));
     try {
-      const r = await generateParentMessage(s._id, tpl);
-      setLastMsg({ text: r.message, label: `${r.template} → ${s.firstName} ${s.lastName}` });
-      try { await copyRich(r.html, r.message); setPmMsg(`✓ Copied & logged “${r.template}” for ${s.firstName} — paste it into Edsby (formatting carries over).`); }
+      const r = await generateParentMessage(s._id, tpl, force, newStudent);
+      if (r.duplicate) {
+        const when = r.lastSentAt ? new Date(r.lastSentAt).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" }) : "earlier this year";
+        if (window.confirm(`You already sent this message to ${s.firstName} ${s.lastName} on ${when}. Send another anyway?`)) {
+          await sendParentMessage(s, true, newStudent);
+        } else {
+          setPmMsg(`Skipped ${s.firstName} — already sent this ${when}.`);
+        }
+        return;
+      }
+      const msg = r.message || "";
+      setLastMsg({ text: msg, label: `${r.template} → ${s.firstName} ${s.lastName}` });
+      try { await copyRich(r.html, msg); setPmMsg(`✓ Copied & logged “${r.template}” for ${s.firstName} — paste it into Edsby (formatting carries over).`); }
       catch { setPmMsg(`Logged “${r.template}” for ${s.firstName} — copy the text below to send.`); }
     } catch (e: any) { setPmMsg(`✗ ${e.message}`); }
   }
 
   const selectedIds = Object.keys(selected).filter((id) => selected[id]);
   // Bulk: email the teacher one personalised message per selected student + log each.
-  async function sendBulk() {
-    if (!tpl || !selectedIds.length) return;
+  async function sendBulk(ids?: string[], force = false) {
+    const targetIds = ids && ids.length ? ids : selectedIds;
+    if (!tpl || !targetIds.length) return;
     setBulkBusy(true); setPmMsg("");
     try {
-      const r = await bulkParentMessage(tpl, selectedIds);
-      setPmMsg(`✓ Emailed ${r.sent} message(s) to ${r.to} (“${r.template}”) and logged ${r.logged}. Forward each to the parent.`);
+      const r = await bulkParentMessage(tpl, targetIds, force, bulkNew);
+      const skippedNames = (r.skipped || []).map((s) => s.name);
+      let msg = `✓ Emailed ${r.sent} message(s) to ${r.to} (“${r.template}”) and logged ${r.logged}. Forward each to the parent.`;
+      if (skippedNames.length) {
+        msg += ` Skipped ${skippedNames.length} already sent this year: ${skippedNames.slice(0, 6).join(", ")}${skippedNames.length > 6 ? "…" : ""}.`;
+        setPmMsg(msg);
+        setBulkBusy(false);
+        if (window.confirm(`${skippedNames.length} student(s) already got this message this year (${skippedNames.slice(0, 6).join(", ")}${skippedNames.length > 6 ? "…" : ""}). Send it to them anyway?`)) {
+          await sendBulk(r.skipped.map((s) => s.id), true); // re-send ONLY the skipped ones
+        }
+        return;
+      }
+      setPmMsg(msg);
       setSelected({});
       setLastMsg(null);
     } catch (e: any) { setPmMsg(`✗ ${e.message}`); }
@@ -218,12 +246,18 @@ export default function StudentsPage() {
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
             Several students: tick the boxes, then
-            <button type="button" onClick={sendBulk} disabled={bulkBusy || !tpl || selectedIds.length === 0}
+            <button type="button" onClick={() => sendBulk()} disabled={bulkBusy || !tpl || selectedIds.length === 0}
               className="rounded-lg bg-slate-900 px-2.5 py-1 font-semibold text-white disabled:opacity-40">
               {bulkBusy ? "Sending…" : `✉ Email me each & log (${selectedIds.length})`}
             </button>
             <span>— one personalised email per student, ready to forward.</span>
             {selectedIds.length > 0 && <button type="button" onClick={() => setSelected({})} className="underline">clear</button>}
+            {(templates.find((t) => t.name === tpl)?.kind ?? "encouraging") !== "corrective" && (
+              <label className="flex items-center gap-1.5 text-slate-600">
+                <input type="checkbox" checked={bulkNew} onChange={(e) => setBulkNew(e.target.checked)} />
+                these are all new students (add a welcome)
+              </label>
+            )}
           </div>
           {pmMsg && <p className="mt-1 text-xs text-slate-700">{pmMsg}</p>}
           {lastMsg && (
