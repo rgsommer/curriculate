@@ -135,14 +135,23 @@ export default function BehaviorDashboard() {
               </Link>
             )}
           </div>
-          <ReferColleague />
+          <ReferColleague canInviteAdmin />
+        </Card>
+      )}
+
+      {/* Non-admin teachers can still tell a colleague about Behaviours. */}
+      {!isAdmin && canLog && (
+        <Card>
+          <h2 className="font-semibold">Tell a colleague</h2>
+          <p className="mt-0.5 text-xs text-slate-500">Know a teacher who&apos;d find this useful? Send them an intro (you&apos;re cc&apos;d).</p>
+          <div className="mt-2"><ReferColleague standalone /></div>
         </Card>
       )}
     </div>
   );
 }
 
-function ReferColleague() {
+function ReferColleague({ canInviteAdmin = false, standalone = false }: { canInviteAdmin?: boolean; standalone?: boolean }) {
   const [kind, setKind] = useState<"" | "colleague" | "admin">("");
   const [email, setEmail] = useState("");
   const [note, setNote] = useState("");
@@ -182,12 +191,14 @@ function ReferColleague() {
   }
 
   return (
-    <div className="mt-3 border-t border-slate-100 pt-3">
+    <div className={standalone ? "" : "mt-3 border-t border-slate-100 pt-3"}>
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm text-slate-600">Spread the word — you&apos;ll be cc&apos;d on whatever you send.</p>
         <div className="flex shrink-0 gap-1.5">
           <button onClick={() => { setKind(kind === "colleague" ? "" : "colleague"); setMsg(""); }} className={`rounded-lg border px-2.5 py-1.5 text-xs ${kind === "colleague" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300"}`}>Tell a teacher</button>
-          <button onClick={() => { setKind(kind === "admin" ? "" : "admin"); setMsg(""); }} className={`rounded-lg border px-2.5 py-1.5 text-xs ${kind === "admin" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300"}`}>Invite an admin</button>
+          {canInviteAdmin && (
+            <button onClick={() => { setKind(kind === "admin" ? "" : "admin"); setMsg(""); }} className={`rounded-lg border px-2.5 py-1.5 text-xs ${kind === "admin" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300"}`}>Invite an admin</button>
+          )}
         </div>
       </div>
       {kind && (

@@ -1293,7 +1293,7 @@ router.post("/invite", authAny, loadMembership, async (req, res, next) => {
 // admin at ANY school, so they can try it for their own division. This is NOT a
 // join-invite (no token, no membership, no domain restriction); it just points
 // them at the overview + setup pages. Admin-only to keep it from being abused.
-router.post("/refer", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+router.post("/refer", authAny, loadMembership, canLog, async (req, res, next) => {
   try {
     const emails = (Array.isArray(req.body?.emails) ? req.body.emails : [req.body?.email])
       .map((e) => {
