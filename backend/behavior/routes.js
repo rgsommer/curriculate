@@ -4794,6 +4794,55 @@ router.post("/gudd/reset-link", async (req, res, next) => {
 });
 
 // Compose the weekly admin digest email (subject/text/html) for a school.
+// A short, grounded AI overview for the top of the weekly digest — makes clear
+// to the VP which students are on the verge of a notice or need attention, plus
+// staff to support and a positive to acknowledge. Fed ONLY the computed lists;
+// fails safe to a deterministic sentence when the AI is unavailable.
+async function composeDigestOverview({ config, schoolName, counts, insights }) {
+  const verge = (insights.atThreshold || []).slice(0, 10).map((r) => `${r.name} (${r.strikes}/${r.triggerCount})`);
+  const notResp = (insights.notResponding || []).slice(0, 10).map((r) => `${r.name} (${r.notices} notices, ${r.strikes} strikes)`);
+  const rising = (insights.proactive || []).slice(0, 10).map((r) => `${r.name} (${r.recent} in 2 wks)`);
+  const guddLost = insights.gudd?.enabled ? (insights.gudd.students || []).filter((s) => s.lost).map((s) => s.name) : [];
+  const flagged = (insights.teachers || []).filter((t) => t.flag).map((t) => t.name);
+
+  const det = (() => {
+    const bits = [`This week: ${counts.neg} incident(s), ${counts.pos} encouragement(s), ${counts.notices} notice(s) home.`];
+    if (notResp.length) bits.push(`Needs attention: ${notResp.join(", ")}.`);
+    if (verge.length) bits.push(`On the verge of a notice: ${verge.join(", ")}.`);
+    if (rising.length) bits.push(`Rising lately: ${rising.join(", ")}.`);
+    if (guddLost.length) bits.push(`Lost the ${insights.gudd?.name || "GUDD"}: ${guddLost.join(", ")}.`);
+    if (flagged.length) bits.push(`Staff who may welcome support: ${flagged.join(", ")}.`);
+    if (verge.length + notResp.length + rising.length === 0) bits.push("No students stand out as needing attention right now.");
+    return bits.join(" ");
+  })();
+
+  const aiClient = makeDefaultAiClient(config || {});
+  if (!aiClient) return det;
+  const prompt = [
+    `You are writing a short overview paragraph at the top of a weekly behaviour briefing for a school Vice-Principal about ${schoolName || "the school"}.`,
+    `Write 3–5 plain sentences. It must make CLEAR which students are on the verge of a notice home or otherwise need attention (name them), note any staff who may welcome support, and acknowledge one positive if there is one. Warm, factual, and concise — no bullet points, no heading.`,
+    `Use ONLY the data below. Do NOT invent students, numbers, or events. If a list is empty, don't mention it. Do not output placeholders.`,
+    ``,
+    `This week (last 7 days): ${counts.neg} incidents, ${counts.pos} encouragements, ${counts.whiteSlips} white slips, ${counts.notices} notices sent home.`,
+    `Already had notices home yet still accumulating strikes (needs attention): ${notResp.join("; ") || "none"}.`,
+    `At or near the ${insights.triggerCount}-strike notice threshold (on the verge): ${verge.join("; ") || "none"}.`,
+    `Rising in the last two weeks (get ahead of): ${rising.join("; ") || "none"}.`,
+    guddLost.length ? `Lost the ${insights.gudd?.name || "GUDD"}: ${guddLost.join(", ")}.` : "",
+    `Staff logging many incidents with few encouragements (may welcome support): ${flagged.join(", ") || "none"}.`,
+  ].filter(Boolean).join("\n");
+  try {
+    const text = await Promise.race([
+      aiClient.complete(prompt),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("AI timeout")), 15000)),
+    ]);
+    const trimmed = String(text || "").trim();
+    return trimmed || det;
+  } catch (e) {
+    console.warn("[behavior] digest overview AI failed, using template:", e?.message || e);
+    return det;
+  }
+}
+
 async function composeAdminDigest(schoolId, config) {
   const insights = await buildSchoolInsights(schoolId, config);
   const school = await BehaviorSchool.findById(schoolId).select("name").lean();
@@ -4879,9 +4928,21 @@ async function composeAdminDigest(schoolId, config) {
           `<p style="margin:2px 0 0;font-size:12px;color:#94a3b8">Starts a fresh period — earlier infractions stay in history but stop counting.</p>` : "")
       : `<p style="margin:0;color:#64748b">No uniform infractions this period. 👍</p>`);
 
+  // AI overview paragraph (grounded in the lists above) — leads the briefing so
+  // it's immediately clear who's on the verge / needs attention.
+  const overview = await composeDigestOverview({
+    config, schoolName: school?.name,
+    counts: { neg: wkNeg, pos: wkPos, whiteSlips: wkWhiteSlips, notices: wkNotices },
+    insights,
+  });
+  const overviewHtml = `<div style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;margin:0 0 14px">` +
+    `<div style="font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#64748b;margin:0 0 6px">This week at a glance</div>` +
+    noteToHtml(overview) + `</div>`;
+
   const contentHtml =
     `<p style="margin:0 0 4px;color:#334155">Week in review for <strong>${escapeHtml(school?.name || "your school")}</strong>.</p>` +
     `<p style="margin:0 0 12px;color:#64748b;font-size:13px">${wkNeg} incident(s) · ${wkPos} encouragement(s) · ${wkInt} documented interaction(s) · ${wkWhiteSlips} white slip(s) · ${wkNotices} notice(s) sent home (last 7 days).</p>` +
+    overviewHtml +
     section("At or near a notice", top(insights.atThreshold, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.strikes}/${r.triggerCount} strikes`)) +
     section("Consequences issued / recommended (last 7 days)",
       consRows.length
@@ -4901,6 +4962,7 @@ async function composeAdminDigest(schoolId, config) {
   const text =
     `Week in review for ${school?.name || "your school"}.\n` +
     `${wkNeg} incidents · ${wkPos} encouragements · ${wkInt} interactions · ${wkWhiteSlips} white slips · ${wkNotices} notices sent (last 7 days).\n\n` +
+    `${overview}\n\n` +
     `At/near a notice: ${insights.atThreshold.slice(0, 6).map((r) => `${r.name} (${r.strikes}/${r.triggerCount})`).join(", ") || "none"}.\n` +
     `Consequences issued / recommended: ${consRows.slice(0, 8).map((c) => `${cName[String(c.studentId)] || "—"} — ${c.type}`).join("; ") || "none"}.\n` +
     `Encouragements: ${encItems.slice(0, 8).map((e) => `${e.name} — ${e.label}`).join("; ") || "none"}.\n` +
