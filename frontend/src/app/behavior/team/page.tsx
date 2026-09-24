@@ -49,6 +49,16 @@ export default function TeamPage() {
       .catch((e) => setErr(e.message));
   }, []);
 
+  async function renameMember(userId: string, currentName: string) {
+    const name = window.prompt("Name to show for this member in Behaviours:", currentName || "");
+    if (name === null) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setData((d) => d && { ...d, teachers: d.teachers.map((t) => (t.userId === userId ? { ...t, name: trimmed } : t)) });
+    try { await api("/team/name", { method: "PUT", body: { userId, name: trimmed } }); }
+    catch (e: any) { setErr(e.message); }
+  }
+
   async function setSetupAccess(userId: string, canEditSetup: boolean) {
     setSavingSetup(userId);
     // optimistic
@@ -142,7 +152,12 @@ export default function TeamPage() {
               {teachers.map((t) => (
                 <tr key={t._id} className={t.status === "pending" ? "text-slate-400" : ""}>
                   <td className="py-2 pr-3">
-                    <div className="font-medium">{t.name || t.email.split("@")[0]}</div>
+                    <div className="font-medium">
+                      {t.name || <span className="italic text-slate-400">{t.email.split("@")[0]} (no name set)</span>}
+                      {isAdmin && t.status !== "pending" && (
+                        <button onClick={() => renameMember(t.userId, t.name || "")} className="ml-2 text-xs font-normal text-slate-500 underline">edit</button>
+                      )}
+                    </div>
                     <div className="text-xs text-slate-400">{t.email}</div>
                   </td>
                   <td className="py-2 pr-3 capitalize">{t.role}</td>

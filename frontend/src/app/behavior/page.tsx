@@ -77,6 +77,10 @@ export default function BehaviorDashboard() {
         <p className="mt-1 text-sm text-slate-500 capitalize">Role: {membership.role}</p>
       </Card>
 
+      {!membership.name?.trim() && (
+        <SetMyName onSaved={(n) => setMe((m) => (m && m.membership ? { ...m, membership: { ...m.membership, name: n } } : m))} />
+      )}
+
       {canLog && (
         <Link
           href="/behavior/log"
@@ -148,6 +152,34 @@ export default function BehaviorDashboard() {
         </Card>
       )}
     </div>
+  );
+}
+
+// Prompt an invited teacher (who joined by email with no name) to choose the
+// name they want shown in Behaviours. Appears until a name is set.
+function SetMyName({ onSaved }: { onSaved: (name: string) => void }) {
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  async function save() {
+    if (!name.trim()) return;
+    setBusy(true); setErr("");
+    try { await api("/my-name", { method: "PUT", body: { name: name.trim() } }); onSaved(name.trim()); }
+    catch (e: any) { setErr(e.message); setBusy(false); }
+  }
+  return (
+    <Card>
+      <h2 className="font-semibold">What name should appear in Behaviours?</h2>
+      <p className="mt-0.5 text-sm text-slate-500">This is how you&apos;ll be shown (e.g. &ldquo;logged by …&rdquo;). You can change it later, or an admin can.</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save()}
+          placeholder="e.g. Mr. Lee / Ms. Grewal" className="min-w-[14rem] flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" autoFocus />
+        <button onClick={save} disabled={busy || !name.trim()} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">
+          {busy ? "Saving…" : "Save name"}
+        </button>
+      </div>
+      {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
+    </Card>
   );
 }
 

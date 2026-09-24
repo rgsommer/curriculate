@@ -1725,6 +1725,32 @@ router.put("/team/houses-committee", authAny, loadMembership, requireAdmin, asyn
   }
 });
 
+// Set MY own display name in Behaviours (the name shown as "logged by …" etc.).
+// Any member can set it — handy for a teacher invited by email with no name.
+router.put("/my-name", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const name = String(req.body?.name || "").trim().slice(0, 80);
+    if (!name) return res.status(400).json({ ok: false, error: "Please enter a name." });
+    await BehaviorTeacher.updateOne({ _id: req.membership._id }, { $set: { name } });
+    await audit(req.schoolId, "team.self_name_set", req, { meta: { name } });
+    res.json({ ok: true, name });
+  } catch (err) { next(err); }
+});
+
+// Admin: set a member's display name (e.g. for someone who never set their own).
+router.put("/team/name", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const userId = String(req.body?.userId || "").trim();
+    const name = String(req.body?.name || "").trim().slice(0, 80);
+    if (!userId || !name) return res.status(400).json({ ok: false, error: "Missing userId or name." });
+    const target = await BehaviorTeacher.findOne({ schoolId: req.schoolId, userId });
+    if (!target) return res.status(404).json({ ok: false, error: "Member not found in this school." });
+    await BehaviorTeacher.updateOne({ _id: target._id }, { $set: { name } });
+    await audit(req.schoolId, "team.name_changed", req, { meta: { target: target.email, name } });
+    res.json({ ok: true, userId, name });
+  } catch (err) { next(err); }
+});
+
 // Accept an invite: the signed-in user (who set a password via the existing
 // signup flow) becomes a member. Their email must match the invite.
 // Public: look up a pending invite by its token so the accept/sign-in flow can
