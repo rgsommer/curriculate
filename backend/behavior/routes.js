@@ -4110,6 +4110,28 @@ router.get("/stats", authAny, loadMembership, async (req, res, next) => {
       consequences: consByMonth[mk] || 0,
     }));
 
+    // Weekly buckets (by Monday) — the frontend uses these for a real trend when
+    // only a month or two is in, where a monthly line is just a dot or two.
+    const incByWeek = {}, posByWeek = {}, consByWeek = {}, notByWeek = {};
+    for (const i of incidents) {
+      const wk = mondayKey(new Date(i.timestamp));
+      incByWeek[wk] = (incByWeek[wk] || 0) + 1;
+      if (i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0) posByWeek[wk] = (posByWeek[wk] || 0) + 1;
+    }
+    for (const c of consequences) { const wk = mondayKey(new Date(c.at)); consByWeek[wk] = (consByWeek[wk] || 0) + 1; }
+    for (const n of notices) { const wk = mondayKey(new Date(n.createdAt)); notByWeek[wk] = (notByWeek[wk] || 0) + 1; }
+    const weekAxis = [];
+    for (let t = new Date(mondayKey(cutoff) + "T00:00:00Z"); t <= now; t.setUTCDate(t.getUTCDate() + 7)) {
+      weekAxis.push(t.toISOString().slice(0, 10));
+    }
+    const weekly = weekAxis.map((wk) => ({
+      week: new Date(wk + "T00:00:00Z").toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: "UTC" }),
+      incidents: incByWeek[wk] || 0,
+      positives: posByWeek[wk] || 0,
+      notices: notByWeek[wk] || 0,
+      consequences: consByWeek[wk] || 0,
+    }));
+
     // Current strike load (shared count).
     const agg = await BehaviorIncident.aggregate([
       { $match: { schoolId: req.schoolId, countedInNoticeId: null, "behaviorSnapshot.triggerMode": "THRESHOLD", timestamp: { $gt: new Date(Date.now() - fadeDays * DAY_MS) } } },
@@ -4139,6 +4161,7 @@ router.get("/stats", authAny, loadMembership, async (req, res, next) => {
         interactions: byMode.INTERACTION,
       },
       monthly,
+      weekly,
       topTypes: Object.entries(byType).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([type, count]) => ({ type, count })),
       classCounts: Object.entries(byClass).sort((a, b) => a[0].localeCompare(b[0])).map(([cls, count]) => ({ class: cls, count })),
       modePie: [
