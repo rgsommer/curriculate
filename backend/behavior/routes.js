@@ -299,6 +299,36 @@ function appBase() {
   return (process.env.APP_BASE_URL || "https://www.curriculate.net").replace(/\/+$/, "");
 }
 
+// Start of the current "notices home" period (school year by default: most
+// recent Sept 1). Notices sent before this stay in history but don't count
+// toward the current period's sequence number, CC-VP rule, or escalation.
+function periodStartMs(config, now = Date.now()) {
+  const mode = config?.noticesResetMode || "year";
+  if (mode === "term" && Array.isArray(config?.termStartDates) && config.termStartDates.length) {
+    const past = config.termStartDates.map((t) => new Date(t).getTime()).filter((t) => !isNaN(t) && t <= now).sort((a, b) => b - a);
+    if (past.length) return past[0];
+  }
+  if (mode === "fade") return now - (config?.fadeWindowDays ?? 30) * DAY_MS;
+  const d = new Date(now);
+  const y = d.getMonth() >= 8 ? d.getFullYear() : d.getFullYear() - 1; // Sept (month 8) = school-year start
+  return new Date(y, 8, 1).getTime();
+}
+// Count of disciplinary notices actually sent home THIS PERIOD for one student.
+async function countPeriodNotices(schoolId, studentId, config) {
+  return BehaviorNotice.countDocuments({
+    schoolId, studentId, reason: { $ne: "positive" }, status: "sent",
+    sentAt: { $gte: new Date(periodStartMs(config)) },
+  });
+}
+// Bulk: notices sent this period per student (for the list + insights).
+async function periodNoticesByStudent(schoolId, studentIds, config) {
+  const rows = await BehaviorNotice.aggregate([
+    { $match: { schoolId, studentId: { $in: studentIds }, reason: { $ne: "positive" }, status: "sent", sentAt: { $gte: new Date(periodStartMs(config)) } } },
+    { $group: { _id: "$studentId", n: { $sum: 1 } } },
+  ]);
+  return Object.fromEntries(rows.map((r) => [String(r._id), r.n]));
+}
+
 // A signed, unauthenticated capability link for the "Reset the GUDD list" button
 // in the admin digest — so the VP can reset without logging in. Bound to the
 // school AND the current week, so an old email's link stops working after ~3
@@ -1972,8 +2002,12 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
     ]);
     const hrWeek = new Set(hrAgg.map((a) => String(a._id)));
 
+    // Notices home THIS PERIOD per student (prior-year notices don't count).
+    const noticesPeriod = await periodNoticesByStudent(req.schoolId, students.map((s) => s._id), config);
+
     const out = students.map((s) => ({
       ...s,
+      noticesHomeCount: noticesPeriod[String(s._id)] || 0,
       activeCount: cnt[String(s._id)] || 0,
       guddCount: gcnt[String(s._id)] || 0,
       pendingWhiteSlipId: pend[String(s._id)] || null,
@@ -2020,6 +2054,11 @@ router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
     const notices = await BehaviorNotice.find({ studentId: student._id }).sort({ createdAt: -1 }).lean();
     const consequences = await BehaviorConsequence.find({ studentId: student._id }).sort({ at: -1 }).lean();
 
+    // Notices home THIS PERIOD (school year by default). Earlier notices stay in
+    // the record + history but don't count toward the current period.
+    const psMs = periodStartMs(config);
+    const noticesThisPeriod = notices.filter((n) => n.reason !== "positive" && n.status === "sent" && new Date(n.sentAt || n.createdAt).getTime() >= psMs).length;
+
     const triggerCount = config?.triggerCount ?? 3;
     // White-slip eligibility: active BEHAVIOUR-category strikes have reached the
     // trigger (white slips apply to behaviour offences). Reasons = those offences.
@@ -2038,7 +2077,7 @@ router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
     // measures (notices home + documented consequences) have been applied yet the
     // student is still offending AFTER the most recent one. Threshold kept at 3+
     // so it doesn't fire after just an early notice + consequence.
-    const interventions = (student.noticesHomeCount || 0) + consequences.length;
+    const interventions = noticesThisPeriod + consequences.length;
     const lastInterventionAt = Math.max(
       0,
       ...notices.map((n) => new Date(n.sentAt || n.createdAt).getTime()).filter((t) => t && !isNaN(t)),
@@ -2073,7 +2112,7 @@ router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
       student,
       activeCount,
       triggerCount: config?.triggerCount ?? 3,
-      noticesHomeCount: student.noticesHomeCount || 0,
+      noticesHomeCount: noticesThisPeriod,
       gudd: guddStatus(incidents, config),
       whiteSlipEligible,
       whiteSlipReasons,
@@ -2402,6 +2441,10 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
     if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
 
     const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    // Sequence numbering counts only THIS PERIOD's notices — prior-year notices
+    // stay in history but don't escalate this year. (In-memory only; the stored
+    // lifetime counter is untouched.)
+    student.noticesHomeCount = await countPeriodNotices(req.schoolId, student._id, config);
 
     // Create one append-only incident per selected behaviour, snapshotting the
     // behaviour wording so later edits don't rewrite history (§5a).
@@ -2595,6 +2638,7 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
     for (const sid of studentIds) {
       const student = await BehaviorStudent.findOne({ _id: sid, schoolId: req.schoolId });
       if (!student) continue;
+      student.noticesHomeCount = await countPeriodNotices(req.schoolId, student._id, config); // this-period sequence only
 
       const inc = await BehaviorIncident.create({
         schoolId: req.schoolId,
@@ -3173,6 +3217,7 @@ async function escalateMissedConsequence(fu, req) {
   const config = await BehaviorConfig.findOne({ schoolId: fu.schoolId }).lean();
   const student = await BehaviorStudent.findOne({ _id: fu.studentId });
   if (!student) return null;
+  student.noticesHomeCount = await countPeriodNotices(fu.schoolId, student._id, config); // this-period sequence only
   const beh = fu.behaviorId ? await Behavior.findById(fu.behaviorId).lean() : null;
   const sender = await BehaviorTeacher.findById(fu.assignedByTeacherId).lean();
 
@@ -4121,7 +4166,7 @@ router.get("/students/:id/recommend", authAny, loadMembership, async (req, res, 
     const student = await BehaviorStudent.findOne({ _id: req.params.id, schoolId: req.schoolId }).lean();
     if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
     const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
-    const noticesHomeCount = student.noticesHomeCount || 0;
+    const noticesHomeCount = await countPeriodNotices(req.schoolId, student._id, config); // this period only
 
     // Objective ladder: the step at the student's current notice level, + next.
     const ladder = (config?.consequenceLadder || []).slice().sort((a, b) => a.noticeNumber - b.noticeNumber);
@@ -4458,6 +4503,9 @@ async function buildSchoolInsights(schoolId, config) {
 
   const students = await BehaviorStudent.find({ schoolId, active: true })
     .select("firstName preferredName lastName grade classGroup noticesHomeCount").lean();
+  // Count notices THIS PERIOD only (prior-year notices stay in history).
+  const noticesPeriodMap = await periodNoticesByStudent(schoolId, students.map((s) => s._id), config);
+  for (const s of students) s.noticesHomeCount = noticesPeriodMap[String(s._id)] || 0;
   const sById = Object.fromEntries(students.map((s) => [String(s._id), s]));
   const nameOf = (s) => (s ? `${s.preferredName || s.firstName} ${s.lastName || ""}`.trim() : "—");
 
