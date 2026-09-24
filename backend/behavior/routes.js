@@ -1190,7 +1190,7 @@ router.post("/invite", authAny, loadMembership, async (req, res, next) => {
       const token = crypto.randomBytes(24).toString("hex");
       await BehaviorInvite.findOneAndUpdate(
         { schoolId: req.schoolId, email },
-        { $set: { token, role, status: "pending", invitedByEmail: req.user.email } },
+        { $set: { token, role, status: "pending", invitedByEmail: req.user.email, lastSentAt: new Date() } },
         { upsert: true, new: true }
       );
       const link = `${appBase()}/behavior/accept?token=${token}`;
@@ -1496,6 +1496,7 @@ router.post("/invites/resend", authAny, loadMembership, requireAdmin, async (req
     const invite = await BehaviorInvite.findOne({ schoolId: req.schoolId, email, status: "pending" });
     if (!invite) return res.status(404).json({ ok: false, error: "No pending invite for that address" });
     invite.token = crypto.randomBytes(24).toString("hex");
+    invite.lastSentAt = new Date();
     await invite.save();
 
     const school = await BehaviorSchool.findById(req.schoolId).lean();
@@ -1528,7 +1529,7 @@ router.post("/invites/resend", authAny, loadMembership, requireAdmin, async (req
       emailError = e?.message || String(e);
     }
     await audit(req.schoolId, "invite.resent", req, { meta: { email, emailed } });
-    res.json({ ok: true, emailed, emailError });
+    res.json({ ok: true, emailed, emailError, lastSentAt: invite.lastSentAt });
   } catch (err) {
     next(err);
   }
@@ -1626,7 +1627,7 @@ router.get("/team", authAny, loadMembership, async (req, res, next) => {
     // originator, or someone invited then created/accepted separately).
     const memberEmails = new Set(teachers.map((t) => (t.email || "").toLowerCase()));
     const pendingInvites = (await BehaviorInvite.find({ schoolId: req.schoolId, status: "pending" })
-      .select("email role invitedByEmail createdAt")
+      .select("email role invitedByEmail createdAt lastSentAt")
       .sort({ createdAt: -1 })
       .lean()
     ).filter((p) => !memberEmails.has((p.email || "").toLowerCase()));
@@ -1638,7 +1639,7 @@ router.get("/team", authAny, loadMembership, async (req, res, next) => {
     res.json({
       ok: true,
       teachers: rows,
-      pending: pendingInvites.map((p) => ({ email: p.email, role: p.role, invitedBy: p.invitedByEmail, invitedAt: p.createdAt })),
+      pending: pendingInvites.map((p) => ({ email: p.email, role: p.role, invitedBy: p.invitedByEmail, invitedAt: p.createdAt, lastSentAt: p.lastSentAt || p.createdAt })),
       stats: { members: rows.length, pending: pendingInvites.length, activeLast30, totalIncidents, totalNotices },
       // Who's viewing — the UI shows the setup-access toggle only to the originator.
       viewerRole: req.membership.role,

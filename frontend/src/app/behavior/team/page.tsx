@@ -18,7 +18,7 @@ type TeamRow = {
   notices: number;
   lastActiveAt: string | null;
 };
-type Pending = { email: string; role: string; invitedBy: string; invitedAt: string };
+type Pending = { email: string; role: string; invitedBy: string; invitedAt: string; lastSentAt?: string };
 type Stats = { members: number; pending: number; activeLast30: number; totalIncidents: number; totalNotices: number };
 type TeamResp = { teachers: TeamRow[]; pending: Pending[]; stats: Stats; viewerRole: string; viewerUserId: string };
 
@@ -77,8 +77,12 @@ export default function TeamPage() {
   async function resendInvite(email: string) {
     setNoteByEmail((n) => ({ ...n, [email]: "Sending…" }));
     try {
-      const r = await api<{ emailed: boolean; emailError?: string }>("/invites/resend", { body: { email } });
+      const r = await api<{ emailed: boolean; emailError?: string; lastSentAt?: string }>("/invites/resend", { body: { email } });
       setNoteByEmail((n) => ({ ...n, [email]: r.emailed ? "Reminder sent ✓" : `Failed: ${r.emailError || "email error"}` }));
+      if (r.emailed) {
+        const when = r.lastSentAt || new Date().toISOString();
+        setData((d) => d && { ...d, pending: d.pending.map((p) => (p.email === email ? { ...p, lastSentAt: when } : p)) });
+      }
     } catch (e: any) {
       setNoteByEmail((n) => ({ ...n, [email]: e.message }));
     }
@@ -217,7 +221,7 @@ export default function TeamPage() {
                 <div className="min-w-0">
                   <div className="truncate font-medium">{p.email}</div>
                   <div className="text-xs text-slate-400">
-                    {p.role} · invited {ago(p.invitedAt)}{p.invitedBy ? ` by ${p.invitedBy}` : ""}
+                    {p.role} · invited {ago(p.invitedAt)}{p.lastSentAt && new Date(p.lastSentAt).getTime() - new Date(p.invitedAt).getTime() > 60000 ? `, resent ${ago(p.lastSentAt)}` : ""}{p.invitedBy ? ` by ${p.invitedBy}` : ""}
                     {noteByEmail[p.email] ? <span className="ml-2 text-green-700">{noteByEmail[p.email]}</span> : null}
                   </div>
                 </div>

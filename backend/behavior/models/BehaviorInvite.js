@@ -20,6 +20,9 @@ const BehaviorInviteSchema = new mongoose.Schema(
     role: { type: String, enum: ["admin", "teacher", "principal"], default: "teacher" },
     status: { type: String, enum: ["pending", "accepted", "revoked"], default: "pending", index: true },
     invitedByEmail: { type: String, default: "", lowercase: true, trim: true },
+    // When the invite email was last sent (first send + each resend), so the UI
+    // can show an accurate "last sent" date that updates on resend.
+    lastSentAt: { type: Date, default: null },
   },
   { timestamps: true }
 );
