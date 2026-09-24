@@ -127,6 +127,7 @@ const SCHOOL_TZ = process.env.SCHOOL_TZ || "America/Toronto";
 // (CC the VP) — "White Slip: reason, teacher, date". Never sent to a parent.
 async function fireWhiteSlip({ req, student, config, behaviorName, detailText, at, relatedIncidentId = null }) {
   const studentName = `${student.preferredName || student.firstName} ${student.lastName}`.trim();
+  const first = student.preferredName || student.firstName || studentName;
   const teacherName = req.membership?.name || req.user?.name || "Teacher";
   const teacherEmail = req.user?.email || "";
   const vpEmail = (config?.vp?.email || "").trim();
@@ -162,10 +163,35 @@ async function fireWhiteSlip({ req, student, config, behaviorName, detailText, a
           (detailText ? `<tr><td style="padding:4px 0;color:#64748b">Detail</td><td style="padding:4px 0">${escapeHtml(detailText)}</td></tr>` : "") +
           `<tr><td style="padding:4px 0;color:#64748b">Teacher</td><td style="padding:4px 0">${escapeHtml(teacherName)}</td></tr>` +
           `<tr><td style="padding:4px 0;color:#64748b">Date</td><td style="padding:4px 0">${escapeHtml(when.toLocaleString("en-CA", { timeZone: SCHOOL_TZ }))}</td></tr>` +
-          `</table>`,
+          `</table>` +
+          emailButton(`View ${first} & strikes`, `${appBase()}/behavior/student/${student._id}#incident-log`, "#0f172a"),
       }),
     });
   } catch (e) { console.warn("[behavior] white-slip email failed:", e?.message || e); }
+}
+
+// Auto-recommend a white slip when a student reaches the threshold of active
+// behaviour-category strikes — the same action as the manual "Recommend White
+// slip" button (records it + emails the teacher, CC the VP). Fires at most once
+// until the pending recommendation is resolved. Returns true if it fired.
+async function maybeAutoRecommendWhiteSlip({ req, student, config, incidents }) {
+  const triggerCount = config?.triggerCount ?? 3;
+  const fadeDays = config?.fadeWindowDays ?? 30;
+  const resetAt = student.thresholdResetAt ? new Date(student.thresholdResetAt).getTime() : 0;
+  const cutoff = Date.now() - fadeDays * DAY_MS;
+  const activeBehaviour = (incidents || []).filter((inc) => {
+    const mode = inc.behaviorSnapshot?.triggerMode || (inc.immediateFlag ? "IMMEDIATE" : "THRESHOLD");
+    return mode === "THRESHOLD" && !inc.whiteSlip && !inc.countedInNoticeId &&
+      new Date(inc.timestamp).getTime() > resetAt && new Date(inc.timestamp).getTime() > cutoff &&
+      (inc.behaviorSnapshot?.categories || []).includes("behaviour");
+  });
+  if (activeBehaviour.length < triggerCount) return false;
+  const already = await BehaviorConsequence.exists({ schoolId: req.schoolId, studentId: student._id, type: "White slip", status: "recommended" });
+  if (already) return false;
+  const n = activeBehaviour.length;
+  await fireWhiteSlip({ req, student, config, behaviorName: `Recommended (${n} behaviour offence${n === 1 ? "" : "s"})`, detailText: "", at: new Date() });
+  await audit(req.schoolId, "white_slip.auto_recommended", req, { studentId: String(student._id) });
+  return true;
 }
 
 // Compose a short, STUDENT-directed message spelling out the consequence, to
@@ -250,6 +276,22 @@ function shouldSendConsequenceNote(behavior) {
     !behavior?.immediateWhiteSlip &&
     !!String(behavior?.consequenceText || "").trim()
   );
+}
+
+// Positive reinforcement: an encouraging note home also earns the student a few
+// house points. No-op unless the message is encouraging and the student has a
+// house. The per-student positive cap (if set) is applied when totals are read.
+const ENCOURAGING_MSG_POINTS = 5;
+async function awardEncouragingMessagePoints({ schoolId, student, teacherId, kind, template }) {
+  if (kind !== "encouraging" || !student?.houseId) return;
+  try {
+    await HousePointEvent.create({
+      schoolId, houseId: student.houseId, studentId: student._id,
+      points: ENCOURAGING_MSG_POINTS,
+      reason: `Encouraging note home${template ? ` (${template})` : ""}`,
+      awardedByTeacherId: teacherId, at: new Date(),
+    });
+  } catch (e) { console.warn("[behavior] encouraging-message points failed:", e?.message || e); }
 }
 
 function appBase() {
@@ -856,6 +898,7 @@ router.post("/students/:id/parent-message", authAny, loadMembership, canLog, asy
       byTeacherId: req.membership._id, byName: teacherName, status: "issued", kind,
       issuedByTeacherId: req.membership._id, issuedByName: teacherName, issuedAt: new Date(),
     });
+    await awardEncouragingMessagePoints({ schoolId: req.schoolId, student, teacherId: req.membership._id, kind, template: tpl.name });
     await audit(req.schoolId, "parent_message.generated", req, { studentId: String(student._id), meta: { template: tpl.name } });
     // `html` is a rich version of the same message: the UI copies it to the
     // clipboard as text/html so pasting into Edsby keeps the bold + bullets.
@@ -945,6 +988,7 @@ router.post("/parent-message/bulk", authAny, loadMembership, canLog, async (req,
         });
         logged += 1;
       } catch (e) { console.warn("[behavior] bulk parent-message log failed:", e?.message || e); }
+      await awardEncouragingMessagePoints({ schoolId: req.schoolId, student, teacherId: req.membership._id, kind, template: tpl.name });
     }
     await audit(req.schoolId, "parent_message.bulk", req, { meta: { template: tpl.name, requested: ids.length, sent, logged, skipped: skipped.length } });
     // `skipped` carries {id,name} so the UI can re-send only those on a force.
@@ -2475,6 +2519,10 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
       await sendConsequenceMessage({ req, student, config, behavior: cn.behavior, detailText: cn.detailText, at: cn.at });
     }
 
+    // Auto-recommend a white slip if this submission pushed the student to the
+    // behaviour-strike threshold (no more waiting for a manual click).
+    await maybeAutoRecommendWhiteSlip({ req, student, config, incidents: priorIncidents });
+
     // The incidents that make up the CURRENT trigger, for the teacher to review:
     // if a notice just fired, the incidents that fed it; otherwise the running
     // set still accumulating toward the threshold (cross-teacher). Enriched with
@@ -2615,6 +2663,9 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
         const covered = notice && (notice.triggeringIncidentIds || []).some((x) => String(x) === String(inc._id));
         if (!covered) await sendConsequenceMessage({ req, student, config, behavior, detailText, at: timestamp });
       }
+
+      // Auto-recommend a white slip if this pushed the student to the threshold.
+      await maybeAutoRecommendWhiteSlip({ req, student, config, incidents: priorIncidents });
 
       results.push({
         studentId: String(student._id),
