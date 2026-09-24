@@ -281,13 +281,14 @@ function shouldSendConsequenceNote(behavior) {
 // Positive reinforcement: an encouraging note home also earns the student a few
 // house points. No-op unless the message is encouraging and the student has a
 // house. The per-student positive cap (if set) is applied when totals are read.
-const ENCOURAGING_MSG_POINTS = 5;
-async function awardEncouragingMessagePoints({ schoolId, student, teacherId, kind, template }) {
-  if (kind !== "encouraging" || !student?.houseId) return;
+const ENCOURAGING_MSG_POINTS = 5; // fallback when the school hasn't set a value
+async function awardEncouragingMessagePoints({ schoolId, student, teacherId, kind, template, points }) {
+  const pts = Number.isFinite(points) ? points : ENCOURAGING_MSG_POINTS;
+  if (kind !== "encouraging" || !student?.houseId || pts <= 0) return;
   try {
     await HousePointEvent.create({
       schoolId, houseId: student.houseId, studentId: student._id,
-      points: ENCOURAGING_MSG_POINTS,
+      points: pts,
       reason: `Encouraging note home${template ? ` (${template})` : ""}`,
       awardedByTeacherId: teacherId, at: new Date(),
     });
@@ -537,6 +538,7 @@ router.put("/config", authAny, loadMembership, requireAdmin, async (req, res, ne
       "noticesResetMode", "termStartDates", "repeatScopeDays",
       "reminderTime", "manualNonSchoolDays", "houseReport", "housesEnabled", "housePointsResetAt",
       "homework", "vpNotify", "teacherDraft", "consequenceLadder", "consequenceWhitelist", "adminDigest", "houseCaps", "houseEvents", "houseRewards",
+      "encouragingMessagePoints",
     ];
     const update = {};
     for (const k of allowed) if (k in (req.body || {})) update[k] = req.body[k];
@@ -852,7 +854,7 @@ router.post("/students/:id/parent-message", authAny, loadMembership, canLog, asy
     const tpl = templates.find((t) => t.name === name) || templates[0];
     if (!tpl) return res.status(400).json({ ok: false, error: "No template selected." });
 
-    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("branding.schoolName aiProvider aiModel").lean();
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("branding.schoolName aiProvider aiModel encouragingMessagePoints").lean();
     const school = await BehaviorSchool.findById(req.schoolId).select("name").lean();
     const teacherName = req.membership.name || req.user?.name || "";
     const kind = tpl.kind === "encouraging" ? "encouraging" : "corrective";
@@ -898,7 +900,7 @@ router.post("/students/:id/parent-message", authAny, loadMembership, canLog, asy
       byTeacherId: req.membership._id, byName: teacherName, status: "issued", kind,
       issuedByTeacherId: req.membership._id, issuedByName: teacherName, issuedAt: new Date(),
     });
-    await awardEncouragingMessagePoints({ schoolId: req.schoolId, student, teacherId: req.membership._id, kind, template: tpl.name });
+    await awardEncouragingMessagePoints({ schoolId: req.schoolId, student, teacherId: req.membership._id, kind, template: tpl.name, points: config?.encouragingMessagePoints });
     await audit(req.schoolId, "parent_message.generated", req, { studentId: String(student._id), meta: { template: tpl.name } });
     // `html` is a rich version of the same message: the UI copies it to the
     // clipboard as text/html so pasting into Edsby keeps the bold + bullets.
@@ -926,7 +928,7 @@ router.post("/parent-message/bulk", authAny, loadMembership, canLog, async (req,
     if (!tpl) return res.status(400).json({ ok: false, error: "No template selected." });
     const kind = tpl.kind === "encouraging" ? "encouraging" : "corrective";
 
-    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("branding.schoolName aiProvider aiModel").lean();
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("branding.schoolName aiProvider aiModel encouragingMessagePoints").lean();
     const school = await BehaviorSchool.findById(req.schoolId).select("name").lean();
     const schoolName = config?.branding?.schoolName || school?.name || "";
     const teacherName = req.membership.name || req.user?.name || "";
@@ -988,7 +990,7 @@ router.post("/parent-message/bulk", authAny, loadMembership, canLog, async (req,
         });
         logged += 1;
       } catch (e) { console.warn("[behavior] bulk parent-message log failed:", e?.message || e); }
-      await awardEncouragingMessagePoints({ schoolId: req.schoolId, student, teacherId: req.membership._id, kind, template: tpl.name });
+      await awardEncouragingMessagePoints({ schoolId: req.schoolId, student, teacherId: req.membership._id, kind, template: tpl.name, points: config?.encouragingMessagePoints });
     }
     await audit(req.schoolId, "parent_message.bulk", req, { meta: { template: tpl.name, requested: ids.length, sent, logged, skipped: skipped.length } });
     // `skipped` carries {id,name} so the UI can re-send only those on a force.
@@ -4952,6 +4954,7 @@ router.put("/houses/config", authAny, loadMembership, canManageHouses, async (re
     if (Array.isArray(b.houseEvents)) $set.houseEvents = b.houseEvents.map((e) => ({ name: String(e.name || "").trim(), points: Number(e.points) || 0 })).filter((e) => e.name);
     if (Array.isArray(b.houseRewards)) $set.houseRewards = b.houseRewards.map((r) => ({ points: Number(r.points) || 0, reward: String(r.reward || "").trim() })).filter((r) => r.reward && r.points);
     if (b.houseReport) $set.houseReport = { enabled: !!b.houseReport.enabled, recipientEmail: String(b.houseReport.recipientEmail || "").trim().toLowerCase() };
+    if ("encouragingMessagePoints" in b) $set.encouragingMessagePoints = Math.max(0, Number(b.encouragingMessagePoints) || 0);
     if (!Object.keys($set).length) return res.status(400).json({ ok: false, error: "Nothing to update" });
     const config = await BehaviorConfig.findOneAndUpdate({ schoolId: req.schoolId }, { $set }, { new: true, upsert: true }).lean();
     await audit(req.schoolId, "houses.config_updated", req, { meta: { keys: Object.keys($set) } });

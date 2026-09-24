@@ -200,6 +200,10 @@ const BehaviorConfigSchema = new mongoose.Schema(
       autoResetFriday: { type: Boolean, default: false },
     },
 
+    // House points awarded to a student's house when a teacher sends them an
+    // encouraging parent message (positive reinforcement). 0 = award none.
+    encouragingMessagePoints: { type: Number, default: 5 },
+
     // Per-student caps on how much any ONE student can move their house total
     // (0 = unlimited). Positive and negative contributions are capped separately;
     // house-level event awards (no student) are never capped.
