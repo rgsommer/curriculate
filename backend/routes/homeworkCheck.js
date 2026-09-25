@@ -1000,8 +1000,16 @@ THE MOST IMPORTANT DISTINCTION — printed ink is the book, handwriting is the s
 writing short formative feedback the student will read and act on.
 ${surfaceBlock}
 
-THE ASSIGNED QUESTIONS — report on exactly these and no others:
-${assigned.map((q) => `  ${q}`).join("\n")}
+${assigned.length ? `THE ASSIGNED QUESTIONS — report on exactly these and no others:
+${assigned.map((q) => `  ${q}`).join("\n")}` : `THE ASSIGNED QUESTIONS — the teacher did not supply a list, because the
+questions are printed on these pages. Read them off the page yourself:
+  - Report on every printed question on these pages, in the order they appear.
+  - Use the question's own printed number as its label, exactly as printed
+    (including any part letter: "3b", not "3 b" or "question 3b").
+  - A question printed on the page but left blank is "not_attempted". Do not
+    leave it out — a skipped question is the finding, and omitting it would
+    silently shrink the denominator and flatter the student.
+  - Do not invent questions that are not printed on these pages.`}
 
 For each assigned question set "work" to one of:
   attempted      handwriting is present showing an answer or working
@@ -1207,10 +1215,16 @@ router.post("/check", async (req, res) => {
       assigned = p.questions;
       unparsed = p.unparsed;
     }
-    if (!assigned.length) {
+    // On printed pages the questions are ON the student's own sheets, so the
+    // assignment photo is a convenience, not a prerequisite: with no list the
+    // model reports every question printed on the pages it is given. Loose
+    // paper is the genuine exception — there the questions are nowhere in the
+    // images, so without a list there is nothing to report against.
+    const discoverQuestions = !assigned.length && workSurface !== "loose";
+    if (!assigned.length && !discoverQuestions) {
       return res.status(400).json({
         ok: false,
-        error: "No assigned questions were supplied. Shoot the assignment page first, or type a list like \"1ab, 3bc, 5bc\".",
+        error: "This work is on loose paper, so the questions aren't in the photos. Shoot the assignment page, or type a list like \"1ab, 3bc, 5bc\".",
         unparsed,
       });
     }

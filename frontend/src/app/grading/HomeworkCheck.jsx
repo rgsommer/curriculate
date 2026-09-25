@@ -19,6 +19,25 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { isPdf, pdfToDataUrls } from "./pdfToImages";
+
+// Turn a mixed pick of photos and PDFs into page images. A PDF becomes one
+// image per page, so a key or a textbook page that already exists as a PDF
+// doesn't have to be exported to images by hand first.
+async function filesToPageImages(files, { maxEdge = 2000, maxPages = 40, downscale, onNote } = {}) {
+  const images = [];
+  for (const f of files) {
+    if (isPdf(f)) {
+      const { dataUrls, skipped } = await pdfToDataUrls(f, { maxEdge, maxPages });
+      images.push(...dataUrls);
+      if (skipped) onNote?.(`${f.name}: only the first ${maxPages} pages were used (${skipped} skipped).`);
+    } else {
+      const { dataUrl } = await downscale(f, maxEdge);
+      images.push(dataUrl);
+    }
+  }
+  return images;
+}
 
 // Long edge, in px, that photos are downscaled to before upload. A textbook
 // page at 1600px still reads handwriting clearly; the originals are 3-4k and a
@@ -361,6 +380,12 @@ export default function HomeworkCheck({
     return all;
   }, [assignment, subsetMode, customSubset]);
 
+  // On printed pages the questions are in the students' own photos, so a list
+  // is a refinement rather than a requirement — the model reads the questions
+  // off the page. On loose paper they are nowhere in the images, so without a
+  // list there is genuinely nothing to report against.
+  const canRunCheck = assignedQuestions.length > 0 || workSurface !== "loose";
+
   // ---- key coverage ----
   const [coverage, setCoverage] = useState(null);
   const [coverageBusy, setCoverageBusy] = useState(false);
@@ -392,11 +417,12 @@ export default function HomeworkCheck({
     setAssignmentBusy(true);
     setAssignmentError("");
     try {
-      const images = [];
-      for (const f of list) {
-        const { dataUrl } = await downscaleToDataUrl(f, 2000); // a bit sharper — we're reading printed text
-        images.push(dataUrl);
-      }
+      // A bit sharper than the photo path — we're reading printed text. A PDF
+      // is capped at 3 pages here because /assignment accepts at most 3.
+      const images = (await filesToPageImages(list, {
+        maxEdge: 2000, maxPages: 3, downscale: downscaleToDataUrl,
+      })).slice(0, 3);
+      if (!images.length) throw new Error("Nothing readable in that file.");
       const res = await fetch(hwUrl("/assignment"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -417,6 +443,8 @@ export default function HomeworkCheck({
   const [keys, setKeys] = useState([]);
   const [keyBusy, setKeyBusy] = useState(false);
   const [keyMsg, setKeyMsg] = useState("");
+  const [showKeys, setShowKeys] = useState(false);
+  const [keyDeleting, setKeyDeleting] = useState("");
   const keyInputRef = useRef(null);
 
   const refreshKeys = useCallback(() => {
@@ -429,6 +457,29 @@ export default function HomeworkCheck({
   }, [teacherEmail, backendBase]);
   useEffect(() => { refreshKeys(); }, [refreshKeys]);
 
+  async function deleteAnswerKey(k) {
+    const id = k?._id || k?.id;
+    if (!id || !teacherEmail) return;
+    const label = k.lessonCode || "this key";
+    if (!confirm(`Remove the answer key for ${label}? Grading already done is unaffected.`)) return;
+    setKeyDeleting(id);
+    setKeyMsg("");
+    try {
+      const res = await fetch(
+        hwUrl(`/answer-key/${encodeURIComponent(id)}?teacherEmail=${encodeURIComponent(teacherEmail)}`),
+        { method: "DELETE" }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ok) throw new Error(data?.error || `Server error ${res.status}`);
+      setKeyMsg(data.deleted ? `Removed the key for ${label}.` : "That key was already gone.");
+      refreshKeys();
+    } catch (err) {
+      setKeyMsg(err?.message || "Could not remove that key.");
+    } finally {
+      setKeyDeleting("");
+    }
+  }
+
   async function uploadAnswerKey(files) {
     const list = Array.from(files || []).slice(0, 40);
     if (!list.length) return;
@@ -436,11 +487,13 @@ export default function HomeworkCheck({
     setKeyBusy(true);
     setKeyMsg("");
     try {
-      const images = [];
-      for (const f of list) {
-        const { dataUrl } = await downscaleToDataUrl(f, 2000);
-        images.push(dataUrl);
-      }
+      let note = "";
+      const images = await filesToPageImages(list, {
+        maxEdge: 2000, maxPages: 40,
+        downscale: downscaleToDataUrl,
+        onNote: (m) => { note = m; },
+      });
+      if (!images.length) throw new Error("Nothing readable in that file.");
       const res = await fetch(hwUrl("/answer-key"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -448,7 +501,10 @@ export default function HomeworkCheck({
       });
       const data = await res.json();
       if (!res.ok || !data?.ok) throw new Error(data?.error || `Server error ${res.status}`);
-      setKeyMsg(`Saved ${data.lessons.length} lesson(s): ${data.lessons.map((l) => l.lessonCode).join(", ")}`);
+      setKeyMsg(
+        `Saved ${data.lessons.length} lesson(s): ${data.lessons.map((l) => l.lessonCode).join(", ")}`
+        + (note ? ` — ${note}` : "")
+      );
       refreshKeys();
     } catch (err) {
       setKeyMsg(err?.message || "Answer-key upload failed.");
@@ -900,9 +956,9 @@ export default function HomeworkCheck({
       <div style={S.section}>
         <div style={S.sectionTitle}>2 · Answer key <span style={S.optional}>one-time per book</span></div>
         <div style={S.hint}>
-          Photograph the answers section at the back of the book (or export the key pages from a
-          PDF as images). Most books print odd answers only — that's fine, anything not in the key
-          is marked “no key” and left out of the correctness score.
+          Photograph the answers section at the back of the book, or upload the PDF — its pages
+          are read straight off it. Most books print odd answers only — that's fine, anything not
+          in the key is marked “no key” and left out of the correctness score.
         </div>
         <div style={{ ...S.row, marginTop: 8 }}>
           <button
@@ -916,27 +972,78 @@ export default function HomeworkCheck({
           <input
             ref={keyInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,application/pdf"
             multiple
             style={{ display: "none" }}
             onChange={(e) => { uploadAnswerKey(e.target.files); e.target.value = ""; }}
           />
           {keys.length > 0 && (
-            <div style={S.keyBadge}>
+            <button
+              type="button"
+              onClick={() => setShowKeys((v) => !v)}
+              style={{ ...S.keyBadge, cursor: "pointer", border: "1px solid rgba(37,99,235,0.35)" }}
+              aria-expanded={showKeys}
+              title="Show the keys on file, and remove any that are wrong"
+            >
               {keys.length} lesson{keys.length === 1 ? "" : "s"} on file
-              {bookName ? ` for ${bookName}` : ""}
-            </div>
+              {bookName ? ` for ${bookName}` : ""} {showKeys ? "▲" : "▼"}
+            </button>
           )}
         </div>
+
+        {/* A key read off the wrong page is worse than no key — every question
+            it covers is then marked against the wrong answers. There was no way
+            to take one back, so an upload could only ever be added to. */}
+        {showKeys && keys.length > 0 && (
+          <div style={{ marginTop: 8, border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
+            {keys.map((k) => (
+              <div
+                key={k._id || k.id}
+                style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  gap: 8, padding: "6px 10px", fontSize: 12,
+                  borderBottom: "1px solid #f1f5f9", background: "#fff",
+                }}
+              >
+                <span style={{ minWidth: 0 }}>
+                  <b>{k.lessonCode || "(no lesson code)"}</b>
+                  {k.bookName ? <span style={{ color: "#64748b" }}> · {k.bookName}</span> : null}
+                  {typeof k.questionCount === "number" && (
+                    <span style={{ color: "#94a3b8" }}> · {k.questionCount} answer{k.questionCount === 1 ? "" : "s"}</span>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  disabled={keyDeleting === (k._id || k.id)}
+                  onClick={() => deleteAnswerKey(k)}
+                  style={{
+                    background: "none", border: "none", color: "#dc2626",
+                    fontSize: 12, fontWeight: 700, cursor: "pointer", padding: "2px 6px",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {keyDeleting === (k._id || k.id) ? "Removing…" : "Remove"}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         {keyMsg && <div style={S.hint}>{keyMsg}</div>}
       </div>
 
       {/* ---------- Assignment page ---------- */}
       <div style={S.section}>
-        <div style={S.sectionTitle}>3 · The assignment</div>
+        <div style={S.sectionTitle}>
+          3 · The assignment <span style={S.optional}>optional</span>
+        </div>
         <div style={S.hint}>
-          Shoot 1–3 photos of the textbook page you're assigning. This reads the question numbers
-          and labels the batch — do it before you start the lap.
+          Only needed when the questions <i>aren't</i> on the pages you're photographing — work
+          done on loose paper or in a notebook, where nothing in the photo says what was asked.
+          Add 1–3 photos (or a PDF) of the textbook page and it reads the question numbers, sets
+          the subset and labels the batch.
+          <br />
+          If your students write on <b>printed pages</b>, skip this — the questions are already in
+          their photos, and every question printed on the page will be reported.
         </div>
         <div style={{ ...S.row, marginTop: 8 }}>
           <button
@@ -950,7 +1057,7 @@ export default function HomeworkCheck({
           <input
             ref={assignmentInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,application/pdf"
             multiple
             style={{ display: "none" }}
             onChange={(e) => { readAssignmentPage(e.target.files); e.target.value = ""; }}
@@ -1246,13 +1353,17 @@ export default function HomeworkCheck({
           <button
             type="button"
             style={{ ...S.primaryBtn, marginTop: 12 }}
-            disabled={!!job || !assignedQuestions.length}
+            disabled={!!job || !canRunCheck}
             onClick={runCheck}
           >
             {job ? "Checking…" : `Check ${groups.filter((g) => !g.superseded).length} students`}
           </button>
           {!assignedQuestions.length && (
-            <div style={S.hint}>Add the assignment page above first — there's nothing to check against.</div>
+            <div style={S.hint}>
+              {workSurface === "loose"
+                ? "This work is on loose paper, so the questions aren't in the photos — add the assignment page above, or type the list, so there's something to check against."
+                : "No assignment page: every question printed on the students' pages will be reported. Add one above if you'd rather check against a specific list."}
+            </div>
           )}
           {checkError && <div style={S.error}>{checkError}</div>}
         </div>
