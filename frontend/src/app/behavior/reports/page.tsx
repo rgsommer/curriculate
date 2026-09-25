@@ -13,6 +13,7 @@ type Stats = {
   triggerCount: number;
   totals: { incidents: number; positives: number; consequences: number; notices: number; noticesSent: number; students: number; atOrNearThreshold: number; interactions: number };
   monthly: Array<{ month: string; incidents: number; positives: number; notices: number; consequences: number }>;
+  weekly?: Array<{ week: string; incidents: number; positives: number; notices: number; consequences: number }>;
   topTypes: Array<{ type: string; count: number }>;
   classCounts: Array<{ class: string; count: number }>;
   modePie: Array<{ name: string; value: number }>;
@@ -52,6 +53,12 @@ export default function ReportsPage() {
   if (!data) return <p className="text-slate-500">Loading…</p>;
 
   const t = data.totals;
+  // Plot by WEEK for the school-year view (and any time only a month or two is
+  // in, where a monthly line is just a dot or two). Numeric multi-month ranges
+  // stay monthly. ~40 weekly points render fine; the x-axis auto-thins labels.
+  const useWeekly = (data.months === "year" || data.monthly.length <= 2) && !!data.weekly?.length;
+  const activitySeries = (useWeekly ? data.weekly! : data.monthly).map((r: any) => ({ ...r, label: useWeekly ? r.week : r.month }));
+  const activityDot = activitySeries.length <= 1; // show a dot when there's a single point
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -78,18 +85,20 @@ export default function ReportsPage() {
         <Stat label={`At / near ${data.triggerCount}-strike`} value={t.atOrNearThreshold} accent={t.atOrNearThreshold > 0} />
       </div>
 
-      <ChartCard title="Activity over time (incidents, encouragements, consequences, notices)">
+      <ChartCard title={`Activity over time (incidents, encouragements, consequences, notices)${useWeekly ? " — by week" : ""}`}>
         <ResponsiveContainer width="100%" height={240}>
-          <LineChart data={data.monthly} margin={{ left: -20, right: 8, top: 8 }}>
+          {/* Early in the year a monthly line is just a dot or two, so plot by
+              WEEK until there are more than two months of data. */}
+          <LineChart data={activitySeries} margin={{ left: -20, right: 8, top: 8 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-            <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+            <XAxis dataKey="label" tick={{ fontSize: 11 }} interval="preserveStartEnd" minTickGap={24} />
             <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
             <Tooltip />
             <Legend />
-            <Line type="monotone" dataKey="incidents" stroke="#2a78d6" strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="positives" name="encouragements" stroke="#008300" strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="notices" stroke="#eb6834" strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="consequences" stroke="#4a3aa7" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="incidents" stroke="#2a78d6" strokeWidth={2} dot={activityDot} />
+            <Line type="monotone" dataKey="positives" name="encouragements" stroke="#008300" strokeWidth={2} dot={activityDot} />
+            <Line type="monotone" dataKey="notices" stroke="#eb6834" strokeWidth={2} dot={activityDot} />
+            <Line type="monotone" dataKey="consequences" stroke="#4a3aa7" strokeWidth={2} dot={activityDot} />
           </LineChart>
         </ResponsiveContainer>
       </ChartCard>

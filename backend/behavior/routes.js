@@ -127,6 +127,7 @@ const SCHOOL_TZ = process.env.SCHOOL_TZ || "America/Toronto";
 // (CC the VP) — "White Slip: reason, teacher, date". Never sent to a parent.
 async function fireWhiteSlip({ req, student, config, behaviorName, detailText, at, relatedIncidentId = null }) {
   const studentName = `${student.preferredName || student.firstName} ${student.lastName}`.trim();
+  const first = student.preferredName || student.firstName || studentName;
   const teacherName = req.membership?.name || req.user?.name || "Teacher";
   const teacherEmail = req.user?.email || "";
   const vpEmail = (config?.vp?.email || "").trim();
@@ -162,10 +163,35 @@ async function fireWhiteSlip({ req, student, config, behaviorName, detailText, a
           (detailText ? `<tr><td style="padding:4px 0;color:#64748b">Detail</td><td style="padding:4px 0">${escapeHtml(detailText)}</td></tr>` : "") +
           `<tr><td style="padding:4px 0;color:#64748b">Teacher</td><td style="padding:4px 0">${escapeHtml(teacherName)}</td></tr>` +
           `<tr><td style="padding:4px 0;color:#64748b">Date</td><td style="padding:4px 0">${escapeHtml(when.toLocaleString("en-CA", { timeZone: SCHOOL_TZ }))}</td></tr>` +
-          `</table>`,
+          `</table>` +
+          emailButton(`View ${first} & strikes`, `${appBase()}/behavior/student/${student._id}#incident-log`, "#0f172a"),
       }),
     });
   } catch (e) { console.warn("[behavior] white-slip email failed:", e?.message || e); }
+}
+
+// Auto-recommend a white slip when a student reaches the threshold of active
+// behaviour-category strikes — the same action as the manual "Recommend White
+// slip" button (records it + emails the teacher, CC the VP). Fires at most once
+// until the pending recommendation is resolved. Returns true if it fired.
+async function maybeAutoRecommendWhiteSlip({ req, student, config, incidents }) {
+  const triggerCount = config?.triggerCount ?? 3;
+  const fadeDays = config?.fadeWindowDays ?? 30;
+  const resetAt = student.thresholdResetAt ? new Date(student.thresholdResetAt).getTime() : 0;
+  const cutoff = Date.now() - fadeDays * DAY_MS;
+  const activeBehaviour = (incidents || []).filter((inc) => {
+    const mode = inc.behaviorSnapshot?.triggerMode || (inc.immediateFlag ? "IMMEDIATE" : "THRESHOLD");
+    return mode === "THRESHOLD" && !inc.whiteSlip && !inc.countedInNoticeId &&
+      new Date(inc.timestamp).getTime() > resetAt && new Date(inc.timestamp).getTime() > cutoff &&
+      (inc.behaviorSnapshot?.categories || []).includes("behaviour");
+  });
+  if (activeBehaviour.length < triggerCount) return false;
+  const already = await BehaviorConsequence.exists({ schoolId: req.schoolId, studentId: student._id, type: "White slip", status: "recommended" });
+  if (already) return false;
+  const n = activeBehaviour.length;
+  await fireWhiteSlip({ req, student, config, behaviorName: `Recommended (${n} behaviour offence${n === 1 ? "" : "s"})`, detailText: "", at: new Date() });
+  await audit(req.schoolId, "white_slip.auto_recommended", req, { studentId: String(student._id) });
+  return true;
 }
 
 // Compose a short, STUDENT-directed message spelling out the consequence, to
@@ -252,8 +278,81 @@ function shouldSendConsequenceNote(behavior) {
   );
 }
 
+// Positive reinforcement: an encouraging note home also earns the student a few
+// house points. No-op unless the message is encouraging and the student has a
+// house. The per-student positive cap (if set) is applied when totals are read.
+const ENCOURAGING_MSG_POINTS = 5; // fallback when the school hasn't set a value
+async function awardEncouragingMessagePoints({ schoolId, student, teacherId, kind, template, points }) {
+  const pts = Number.isFinite(points) ? points : ENCOURAGING_MSG_POINTS;
+  if (kind !== "encouraging" || !student?.houseId || pts <= 0) return;
+  try {
+    await HousePointEvent.create({
+      schoolId, houseId: student.houseId, studentId: student._id,
+      points: pts,
+      reason: `Encouraging note home${template ? ` (${template})` : ""}`,
+      awardedByTeacherId: teacherId, at: new Date(),
+    });
+  } catch (e) { console.warn("[behavior] encouraging-message points failed:", e?.message || e); }
+}
+
 function appBase() {
   return (process.env.APP_BASE_URL || "https://www.curriculate.net").replace(/\/+$/, "");
+}
+
+// Start of the current "notices home" period (school year by default: most
+// recent Sept 1). Notices sent before this stay in history but don't count
+// toward the current period's sequence number, CC-VP rule, or escalation.
+function periodStartMs(config, now = Date.now()) {
+  const mode = config?.noticesResetMode || "year";
+  if (mode === "term" && Array.isArray(config?.termStartDates) && config.termStartDates.length) {
+    const past = config.termStartDates.map((t) => new Date(t).getTime()).filter((t) => !isNaN(t) && t <= now).sort((a, b) => b - a);
+    if (past.length) return past[0];
+  }
+  if (mode === "fade") return now - (config?.fadeWindowDays ?? 30) * DAY_MS;
+  const d = new Date(now);
+  const y = d.getMonth() >= 8 ? d.getFullYear() : d.getFullYear() - 1; // Sept (month 8) = school-year start
+  return new Date(y, 8, 1).getTime();
+}
+// Count of disciplinary notices actually sent home THIS PERIOD for one student.
+async function countPeriodNotices(schoolId, studentId, config) {
+  return BehaviorNotice.countDocuments({
+    schoolId, studentId, reason: { $ne: "positive" }, status: "sent",
+    sentAt: { $gte: new Date(periodStartMs(config)) },
+  });
+}
+// Bulk: notices sent this period per student (for the list + insights).
+async function periodNoticesByStudent(schoolId, studentIds, config) {
+  const rows = await BehaviorNotice.aggregate([
+    { $match: { schoolId, studentId: { $in: studentIds }, reason: { $ne: "positive" }, status: "sent", sentAt: { $gte: new Date(periodStartMs(config)) } } },
+    { $group: { _id: "$studentId", n: { $sum: 1 } } },
+  ]);
+  return Object.fromEntries(rows.map((r) => [String(r._id), r.n]));
+}
+
+// A signed, unauthenticated capability link for the "Reset the GUDD list" button
+// in the admin digest — so the VP can reset without logging in. Bound to the
+// school AND the current week, so an old email's link stops working after ~3
+// weeks. Low-stakes + reversible (it just stamps a fresh period start).
+function guddResetSecret() {
+  return process.env.BEHAVIOR_SECRET_KEY || process.env.JWT_SECRET || "";
+}
+function guddResetToken(schoolId, wk = mondayKey()) {
+  const secret = guddResetSecret();
+  if (!secret) return "";
+  const sig = crypto.createHmac("sha256", secret).update(`gudd-reset:${schoolId}:${wk}`).digest("hex").slice(0, 32);
+  return `${wk}.${sig}`;
+}
+function verifyGuddResetToken(schoolId, token) {
+  const secret = guddResetSecret();
+  if (!secret || !token) return false;
+  const [wk, sig] = String(token).split(".");
+  if (!wk || !sig) return false;
+  const expected = crypto.createHmac("sha256", secret).update(`gudd-reset:${schoolId}:${wk}`).digest("hex").slice(0, 32);
+  let ok = false;
+  try { ok = sig.length === expected.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected)); } catch { ok = false; }
+  if (!ok) return false;
+  const wkTime = Date.parse(wk + "T00:00:00Z");
+  return !isNaN(wkTime) && Date.now() - wkTime <= 21 * DAY_MS; // link valid ~3 weeks
 }
 
 function escapeHtml(s) {
@@ -469,6 +568,7 @@ router.put("/config", authAny, loadMembership, requireAdmin, async (req, res, ne
       "noticesResetMode", "termStartDates", "repeatScopeDays",
       "reminderTime", "manualNonSchoolDays", "houseReport", "housesEnabled", "housePointsResetAt",
       "homework", "vpNotify", "teacherDraft", "consequenceLadder", "consequenceWhitelist", "adminDigest", "houseCaps", "houseEvents", "houseRewards",
+      "encouragingMessagePoints",
     ];
     const update = {};
     for (const k of allowed) if (k in (req.body || {})) update[k] = req.body[k];
@@ -784,7 +884,7 @@ router.post("/students/:id/parent-message", authAny, loadMembership, canLog, asy
     const tpl = templates.find((t) => t.name === name) || templates[0];
     if (!tpl) return res.status(400).json({ ok: false, error: "No template selected." });
 
-    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("branding.schoolName aiProvider aiModel").lean();
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("branding.schoolName aiProvider aiModel encouragingMessagePoints").lean();
     const school = await BehaviorSchool.findById(req.schoolId).select("name").lean();
     const teacherName = req.membership.name || req.user?.name || "";
     const kind = tpl.kind === "encouraging" ? "encouraging" : "corrective";
@@ -830,6 +930,7 @@ router.post("/students/:id/parent-message", authAny, loadMembership, canLog, asy
       byTeacherId: req.membership._id, byName: teacherName, status: "issued", kind,
       issuedByTeacherId: req.membership._id, issuedByName: teacherName, issuedAt: new Date(),
     });
+    await awardEncouragingMessagePoints({ schoolId: req.schoolId, student, teacherId: req.membership._id, kind, template: tpl.name, points: config?.encouragingMessagePoints });
     await audit(req.schoolId, "parent_message.generated", req, { studentId: String(student._id), meta: { template: tpl.name } });
     // `html` is a rich version of the same message: the UI copies it to the
     // clipboard as text/html so pasting into Edsby keeps the bold + bullets.
@@ -857,7 +958,7 @@ router.post("/parent-message/bulk", authAny, loadMembership, canLog, async (req,
     if (!tpl) return res.status(400).json({ ok: false, error: "No template selected." });
     const kind = tpl.kind === "encouraging" ? "encouraging" : "corrective";
 
-    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("branding.schoolName aiProvider aiModel").lean();
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("branding.schoolName aiProvider aiModel encouragingMessagePoints").lean();
     const school = await BehaviorSchool.findById(req.schoolId).select("name").lean();
     const schoolName = config?.branding?.schoolName || school?.name || "";
     const teacherName = req.membership.name || req.user?.name || "";
@@ -919,6 +1020,7 @@ router.post("/parent-message/bulk", authAny, loadMembership, canLog, async (req,
         });
         logged += 1;
       } catch (e) { console.warn("[behavior] bulk parent-message log failed:", e?.message || e); }
+      await awardEncouragingMessagePoints({ schoolId: req.schoolId, student, teacherId: req.membership._id, kind, template: tpl.name, points: config?.encouragingMessagePoints });
     }
     await audit(req.schoolId, "parent_message.bulk", req, { meta: { template: tpl.name, requested: ids.length, sent, logged, skipped: skipped.length } });
     // `skipped` carries {id,name} so the UI can re-send only those on a force.
@@ -1118,7 +1220,7 @@ router.post("/invite", authAny, loadMembership, async (req, res, next) => {
       const token = crypto.randomBytes(24).toString("hex");
       await BehaviorInvite.findOneAndUpdate(
         { schoolId: req.schoolId, email },
-        { $set: { token, role, status: "pending", invitedByEmail: req.user.email } },
+        { $set: { token, role, status: "pending", invitedByEmail: req.user.email, lastSentAt: new Date() } },
         { upsert: true, new: true }
       );
       const link = `${appBase()}/behavior/accept?token=${token}`;
@@ -1191,7 +1293,7 @@ router.post("/invite", authAny, loadMembership, async (req, res, next) => {
 // admin at ANY school, so they can try it for their own division. This is NOT a
 // join-invite (no token, no membership, no domain restriction); it just points
 // them at the overview + setup pages. Admin-only to keep it from being abused.
-router.post("/refer", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+router.post("/refer", authAny, loadMembership, canLog, async (req, res, next) => {
   try {
     const emails = (Array.isArray(req.body?.emails) ? req.body.emails : [req.body?.email])
       .map((e) => {
@@ -1424,6 +1526,7 @@ router.post("/invites/resend", authAny, loadMembership, requireAdmin, async (req
     const invite = await BehaviorInvite.findOne({ schoolId: req.schoolId, email, status: "pending" });
     if (!invite) return res.status(404).json({ ok: false, error: "No pending invite for that address" });
     invite.token = crypto.randomBytes(24).toString("hex");
+    invite.lastSentAt = new Date();
     await invite.save();
 
     const school = await BehaviorSchool.findById(req.schoolId).lean();
@@ -1456,7 +1559,7 @@ router.post("/invites/resend", authAny, loadMembership, requireAdmin, async (req
       emailError = e?.message || String(e);
     }
     await audit(req.schoolId, "invite.resent", req, { meta: { email, emailed } });
-    res.json({ ok: true, emailed, emailError });
+    res.json({ ok: true, emailed, emailError, lastSentAt: invite.lastSentAt });
   } catch (err) {
     next(err);
   }
@@ -1554,7 +1657,7 @@ router.get("/team", authAny, loadMembership, async (req, res, next) => {
     // originator, or someone invited then created/accepted separately).
     const memberEmails = new Set(teachers.map((t) => (t.email || "").toLowerCase()));
     const pendingInvites = (await BehaviorInvite.find({ schoolId: req.schoolId, status: "pending" })
-      .select("email role invitedByEmail createdAt")
+      .select("email role invitedByEmail createdAt lastSentAt")
       .sort({ createdAt: -1 })
       .lean()
     ).filter((p) => !memberEmails.has((p.email || "").toLowerCase()));
@@ -1566,7 +1669,7 @@ router.get("/team", authAny, loadMembership, async (req, res, next) => {
     res.json({
       ok: true,
       teachers: rows,
-      pending: pendingInvites.map((p) => ({ email: p.email, role: p.role, invitedBy: p.invitedByEmail, invitedAt: p.createdAt })),
+      pending: pendingInvites.map((p) => ({ email: p.email, role: p.role, invitedBy: p.invitedByEmail, invitedAt: p.createdAt, lastSentAt: p.lastSentAt || p.createdAt })),
       stats: { members: rows.length, pending: pendingInvites.length, activeLast30, totalIncidents, totalNotices },
       // Who's viewing — the UI shows the setup-access toggle only to the originator.
       viewerRole: req.membership.role,
@@ -1622,8 +1725,50 @@ router.put("/team/houses-committee", authAny, loadMembership, requireAdmin, asyn
   }
 });
 
+// Set MY own display name in Behaviours (the name shown as "logged by …" etc.).
+// Any member can set it — handy for a teacher invited by email with no name.
+router.put("/my-name", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const name = String(req.body?.name || "").trim().slice(0, 80);
+    if (!name) return res.status(400).json({ ok: false, error: "Please enter a name." });
+    await BehaviorTeacher.updateOne({ _id: req.membership._id }, { $set: { name } });
+    await audit(req.schoolId, "team.self_name_set", req, { meta: { name } });
+    res.json({ ok: true, name });
+  } catch (err) { next(err); }
+});
+
+// Admin: set a member's display name (e.g. for someone who never set their own).
+router.put("/team/name", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const userId = String(req.body?.userId || "").trim();
+    const name = String(req.body?.name || "").trim().slice(0, 80);
+    if (!userId || !name) return res.status(400).json({ ok: false, error: "Missing userId or name." });
+    const target = await BehaviorTeacher.findOne({ schoolId: req.schoolId, userId });
+    if (!target) return res.status(404).json({ ok: false, error: "Member not found in this school." });
+    await BehaviorTeacher.updateOne({ _id: target._id }, { $set: { name } });
+    await audit(req.schoolId, "team.name_changed", req, { meta: { target: target.email, name } });
+    res.json({ ok: true, userId, name });
+  } catch (err) { next(err); }
+});
+
 // Accept an invite: the signed-in user (who set a password via the existing
 // signup flow) becomes a member. Their email must match the invite.
+// Public: look up a pending invite by its token so the accept/sign-in flow can
+// prefill the invited email + school and route straight to setting a password.
+// The token IS the secret (it comes from the emailed invite link), so returning
+// the invited email to whoever holds it is fine; nothing else is exposed.
+router.get("/invite/info", async (req, res, next) => {
+  try {
+    const token = String(req.query.token || "").trim();
+    if (!token) return res.status(400).json({ ok: false, error: "token required" });
+    const invite = await BehaviorInvite.findOne({ token, status: "pending" }).lean();
+    if (!invite) return res.json({ ok: false, error: "Invite not found or already used" });
+    let schoolName = "";
+    try { const sc = await BehaviorSchool.findById(invite.schoolId).select("name").lean(); schoolName = sc?.name || ""; } catch { /* ignore */ }
+    res.json({ ok: true, email: invite.email, role: invite.role, schoolName });
+  } catch (err) { next(err); }
+});
+
 router.post("/invite/accept", authAny, async (req, res, next) => {
   try {
     const token = String(req.body?.token || "").trim();
@@ -1825,6 +1970,7 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
           schoolId: req.schoolId,
           studentId: { $in: students.map((s) => s._id) },
           countedInNoticeId: null,
+          whiteSlip: { $ne: true }, // a white-slip incident isn't a strike
           "behaviorSnapshot.triggerMode": "THRESHOLD",
           timestamp: { $gt: cutoff },
         },
@@ -1882,8 +2028,12 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
     ]);
     const hrWeek = new Set(hrAgg.map((a) => String(a._id)));
 
+    // Notices home THIS PERIOD per student (prior-year notices don't count).
+    const noticesPeriod = await periodNoticesByStudent(req.schoolId, students.map((s) => s._id), config);
+
     const out = students.map((s) => ({
       ...s,
+      noticesHomeCount: noticesPeriod[String(s._id)] || 0,
       activeCount: cnt[String(s._id)] || 0,
       guddCount: gcnt[String(s._id)] || 0,
       pendingWhiteSlipId: pend[String(s._id)] || null,
@@ -1920,6 +2070,7 @@ router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
       const mode = inc.behaviorSnapshot?.triggerMode || (inc.immediateFlag ? "IMMEDIATE" : "THRESHOLD");
       return (
         mode === "THRESHOLD" &&
+        !inc.whiteSlip && // its white slip was the consequence — not a strike
         !inc.countedInNoticeId &&
         new Date(inc.timestamp).getTime() > resetAt &&
         new Date(inc.timestamp).getTime() > cutoff
@@ -1929,12 +2080,17 @@ router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
     const notices = await BehaviorNotice.find({ studentId: student._id }).sort({ createdAt: -1 }).lean();
     const consequences = await BehaviorConsequence.find({ studentId: student._id }).sort({ at: -1 }).lean();
 
+    // Notices home THIS PERIOD (school year by default). Earlier notices stay in
+    // the record + history but don't count toward the current period.
+    const psMs = periodStartMs(config);
+    const noticesThisPeriod = notices.filter((n) => n.reason !== "positive" && n.status === "sent" && new Date(n.sentAt || n.createdAt).getTime() >= psMs).length;
+
     const triggerCount = config?.triggerCount ?? 3;
     // White-slip eligibility: active BEHAVIOUR-category strikes have reached the
     // trigger (white slips apply to behaviour offences). Reasons = those offences.
     const activeBehaviour = incidents.filter((inc) => {
       const mode = inc.behaviorSnapshot?.triggerMode || (inc.immediateFlag ? "IMMEDIATE" : "THRESHOLD");
-      return mode === "THRESHOLD" && !inc.countedInNoticeId &&
+      return mode === "THRESHOLD" && !inc.whiteSlip && !inc.countedInNoticeId &&
         new Date(inc.timestamp).getTime() > resetAt && new Date(inc.timestamp).getTime() > cutoff &&
         (inc.behaviorSnapshot?.categories || []).includes("behaviour");
     });
@@ -1947,7 +2103,7 @@ router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
     // measures (notices home + documented consequences) have been applied yet the
     // student is still offending AFTER the most recent one. Threshold kept at 3+
     // so it doesn't fire after just an early notice + consequence.
-    const interventions = (student.noticesHomeCount || 0) + consequences.length;
+    const interventions = noticesThisPeriod + consequences.length;
     const lastInterventionAt = Math.max(
       0,
       ...notices.map((n) => new Date(n.sentAt || n.createdAt).getTime()).filter((t) => t && !isNaN(t)),
@@ -1982,7 +2138,7 @@ router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
       student,
       activeCount,
       triggerCount: config?.triggerCount ?? 3,
-      noticesHomeCount: student.noticesHomeCount || 0,
+      noticesHomeCount: noticesThisPeriod,
       gudd: guddStatus(incidents, config),
       whiteSlipEligible,
       whiteSlipReasons,
@@ -2311,6 +2467,10 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
     if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
 
     const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    // Sequence numbering counts only THIS PERIOD's notices — prior-year notices
+    // stay in history but don't escalate this year. (In-memory only; the stored
+    // lifetime counter is untouched.)
+    student.noticesHomeCount = await countPeriodNotices(req.schoolId, student._id, config);
 
     // Create one append-only incident per selected behaviour, snapshotting the
     // behaviour wording so later edits don't rewrite history (§5a).
@@ -2337,6 +2497,7 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
         detailText,
         weight,
         immediateFlag: behavior.triggerMode === "IMMEDIATE",
+        whiteSlip: !!behavior.immediateWhiteSlip,
         timestamp,
       });
       createdIncidents.push(inc.toObject());
@@ -2430,6 +2591,10 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
       await sendConsequenceMessage({ req, student, config, behavior: cn.behavior, detailText: cn.detailText, at: cn.at });
     }
 
+    // Auto-recommend a white slip if this submission pushed the student to the
+    // behaviour-strike threshold (no more waiting for a manual click).
+    await maybeAutoRecommendWhiteSlip({ req, student, config, incidents: priorIncidents });
+
     // The incidents that make up the CURRENT trigger, for the teacher to review:
     // if a notice just fired, the incidents that fed it; otherwise the running
     // set still accumulating toward the threshold (cross-teacher). Enriched with
@@ -2499,6 +2664,7 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
     for (const sid of studentIds) {
       const student = await BehaviorStudent.findOne({ _id: sid, schoolId: req.schoolId });
       if (!student) continue;
+      student.noticesHomeCount = await countPeriodNotices(req.schoolId, student._id, config); // this-period sequence only
 
       const inc = await BehaviorIncident.create({
         schoolId: req.schoolId,
@@ -2518,6 +2684,7 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
         detailText,
         weight,
         immediateFlag: behavior.triggerMode === "IMMEDIATE",
+        whiteSlip: !!behavior.immediateWhiteSlip,
         timestamp,
       });
 
@@ -2569,6 +2736,9 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
         const covered = notice && (notice.triggeringIncidentIds || []).some((x) => String(x) === String(inc._id));
         if (!covered) await sendConsequenceMessage({ req, student, config, behavior, detailText, at: timestamp });
       }
+
+      // Auto-recommend a white slip if this pushed the student to the threshold.
+      await maybeAutoRecommendWhiteSlip({ req, student, config, incidents: priorIncidents });
 
       results.push({
         studentId: String(student._id),
@@ -3073,6 +3243,7 @@ async function escalateMissedConsequence(fu, req) {
   const config = await BehaviorConfig.findOne({ schoolId: fu.schoolId }).lean();
   const student = await BehaviorStudent.findOne({ _id: fu.studentId });
   if (!student) return null;
+  student.noticesHomeCount = await countPeriodNotices(fu.schoolId, student._id, config); // this-period sequence only
   const beh = fu.behaviorId ? await Behavior.findById(fu.behaviorId).lean() : null;
   const sender = await BehaviorTeacher.findById(fu.assignedByTeacherId).lean();
 
@@ -3965,6 +4136,28 @@ router.get("/stats", authAny, loadMembership, async (req, res, next) => {
       consequences: consByMonth[mk] || 0,
     }));
 
+    // Weekly buckets (by Monday) — the frontend uses these for a real trend when
+    // only a month or two is in, where a monthly line is just a dot or two.
+    const incByWeek = {}, posByWeek = {}, consByWeek = {}, notByWeek = {};
+    for (const i of incidents) {
+      const wk = mondayKey(new Date(i.timestamp));
+      incByWeek[wk] = (incByWeek[wk] || 0) + 1;
+      if (i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0) posByWeek[wk] = (posByWeek[wk] || 0) + 1;
+    }
+    for (const c of consequences) { const wk = mondayKey(new Date(c.at)); consByWeek[wk] = (consByWeek[wk] || 0) + 1; }
+    for (const n of notices) { const wk = mondayKey(new Date(n.createdAt)); notByWeek[wk] = (notByWeek[wk] || 0) + 1; }
+    const weekAxis = [];
+    for (let t = new Date(mondayKey(cutoff) + "T00:00:00Z"); t <= now; t.setUTCDate(t.getUTCDate() + 7)) {
+      weekAxis.push(t.toISOString().slice(0, 10));
+    }
+    const weekly = weekAxis.map((wk) => ({
+      week: new Date(wk + "T00:00:00Z").toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: "UTC" }),
+      incidents: incByWeek[wk] || 0,
+      positives: posByWeek[wk] || 0,
+      notices: notByWeek[wk] || 0,
+      consequences: consByWeek[wk] || 0,
+    }));
+
     // Current strike load (shared count).
     const agg = await BehaviorIncident.aggregate([
       { $match: { schoolId: req.schoolId, countedInNoticeId: null, "behaviorSnapshot.triggerMode": "THRESHOLD", timestamp: { $gt: new Date(Date.now() - fadeDays * DAY_MS) } } },
@@ -3994,6 +4187,7 @@ router.get("/stats", authAny, loadMembership, async (req, res, next) => {
         interactions: byMode.INTERACTION,
       },
       monthly,
+      weekly,
       topTypes: Object.entries(byType).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([type, count]) => ({ type, count })),
       classCounts: Object.entries(byClass).sort((a, b) => a[0].localeCompare(b[0])).map(([cls, count]) => ({ class: cls, count })),
       modePie: [
@@ -4021,7 +4215,7 @@ router.get("/students/:id/recommend", authAny, loadMembership, async (req, res, 
     const student = await BehaviorStudent.findOne({ _id: req.params.id, schoolId: req.schoolId }).lean();
     if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
     const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
-    const noticesHomeCount = student.noticesHomeCount || 0;
+    const noticesHomeCount = await countPeriodNotices(req.schoolId, student._id, config); // this period only
 
     // Objective ladder: the step at the student's current notice level, + next.
     const ladder = (config?.consequenceLadder || []).slice().sort((a, b) => a.noticeNumber - b.noticeNumber);
@@ -4358,6 +4552,9 @@ async function buildSchoolInsights(schoolId, config) {
 
   const students = await BehaviorStudent.find({ schoolId, active: true })
     .select("firstName preferredName lastName grade classGroup noticesHomeCount").lean();
+  // Count notices THIS PERIOD only (prior-year notices stay in history).
+  const noticesPeriodMap = await periodNoticesByStudent(schoolId, students.map((s) => s._id), config);
+  for (const s of students) s.noticesHomeCount = noticesPeriodMap[String(s._id)] || 0;
   const sById = Object.fromEntries(students.map((s) => [String(s._id), s]));
   const nameOf = (s) => (s ? `${s.preferredName || s.firstName} ${s.lastName || ""}`.trim() : "—");
 
@@ -4380,7 +4577,7 @@ async function buildSchoolInsights(schoolId, config) {
   // Current strike load → at/near the threshold.
   const strikes = {}; const lastStrike = {};
   for (const i of incs) {
-    if (i.countedInNoticeId || i.behaviorSnapshot?.triggerMode !== "THRESHOLD" || new Date(i.timestamp).getTime() <= fadeCutoff) continue;
+    if (i.whiteSlip || i.countedInNoticeId || i.behaviorSnapshot?.triggerMode !== "THRESHOLD" || new Date(i.timestamp).getTime() <= fadeCutoff) continue;
     const sid = String(i.studentId);
     strikes[sid] = (strikes[sid] || 0) + 1;
     const t = new Date(i.timestamp).getTime();
@@ -4566,7 +4763,86 @@ router.post("/gudd/reset", authAny, loadMembership, requireAdmin, async (req, re
   }
 });
 
+// Public (signed-link) GUDD reset for the button in the admin digest — no login.
+// The confirm page fetches this to show the school name + whether the link is
+// still valid, then POSTs to /gudd/reset-link to actually reset.
+router.get("/gudd/reset-info", async (req, res, next) => {
+  try {
+    const schoolId = String(req.query.school || "").trim();
+    const token = String(req.query.token || "").trim();
+    const valid = !!schoolId && verifyGuddResetToken(schoolId, token);
+    let schoolName = "";
+    if (valid) {
+      try { const sc = await BehaviorSchool.findById(schoolId).select("name").lean(); schoolName = sc?.name || ""; } catch { /* ignore */ }
+    }
+    res.json({ ok: true, valid, schoolName, name: "GUDD" });
+  } catch (err) { next(err); }
+});
+
+router.post("/gudd/reset-link", async (req, res, next) => {
+  try {
+    const schoolId = String(req.body?.school || "").trim();
+    const token = String(req.body?.token || "").trim();
+    if (!schoolId || !verifyGuddResetToken(schoolId, token)) {
+      return res.status(403).json({ ok: false, error: "This reset link is invalid or has expired. Reset the list from Setup instead." });
+    }
+    const at = new Date();
+    await BehaviorConfig.updateOne({ schoolId }, { $set: { "gudd.resetAt": at } });
+    await audit(schoolId, "gudd.cleared_via_link", { userId: null, user: { email: "" } }, {});
+    res.json({ ok: true, resetAt: at });
+  } catch (err) { next(err); }
+});
+
 // Compose the weekly admin digest email (subject/text/html) for a school.
+// A short, grounded AI overview for the top of the weekly digest — makes clear
+// to the VP which students are on the verge of a notice or need attention, plus
+// staff to support and a positive to acknowledge. Fed ONLY the computed lists;
+// fails safe to a deterministic sentence when the AI is unavailable.
+async function composeDigestOverview({ config, schoolName, counts, insights }) {
+  const verge = (insights.atThreshold || []).slice(0, 10).map((r) => `${r.name} (${r.strikes}/${r.triggerCount})`);
+  const notResp = (insights.notResponding || []).slice(0, 10).map((r) => `${r.name} (${r.notices} notices, ${r.strikes} strikes)`);
+  const rising = (insights.proactive || []).slice(0, 10).map((r) => `${r.name} (${r.recent} in 2 wks)`);
+  const guddLost = insights.gudd?.enabled ? (insights.gudd.students || []).filter((s) => s.lost).map((s) => s.name) : [];
+  const flagged = (insights.teachers || []).filter((t) => t.flag).map((t) => t.name);
+
+  const det = (() => {
+    const bits = [`This week: ${counts.neg} incident(s), ${counts.pos} encouragement(s), ${counts.notices} notice(s) home.`];
+    if (notResp.length) bits.push(`Needs attention: ${notResp.join(", ")}.`);
+    if (verge.length) bits.push(`On the verge of a notice: ${verge.join(", ")}.`);
+    if (rising.length) bits.push(`Rising lately: ${rising.join(", ")}.`);
+    if (guddLost.length) bits.push(`Lost the ${insights.gudd?.name || "GUDD"}: ${guddLost.join(", ")}.`);
+    if (flagged.length) bits.push(`Staff who may welcome support: ${flagged.join(", ")}.`);
+    if (verge.length + notResp.length + rising.length === 0) bits.push("No students stand out as needing attention right now.");
+    return bits.join(" ");
+  })();
+
+  const aiClient = makeDefaultAiClient(config || {});
+  if (!aiClient) return det;
+  const prompt = [
+    `You are writing a short overview paragraph at the top of a weekly behaviour briefing for a school Vice-Principal about ${schoolName || "the school"}.`,
+    `Write 3–5 plain sentences. It must make CLEAR which students are on the verge of a notice home or otherwise need attention (name them), note any staff who may welcome support, and acknowledge one positive if there is one. Warm, factual, and concise — no bullet points, no heading.`,
+    `Use ONLY the data below. Do NOT invent students, numbers, or events. If a list is empty, don't mention it. Do not output placeholders.`,
+    ``,
+    `This week (last 7 days): ${counts.neg} incidents, ${counts.pos} encouragements, ${counts.whiteSlips} white slips, ${counts.notices} notices sent home.`,
+    `Already had notices home yet still accumulating strikes (needs attention): ${notResp.join("; ") || "none"}.`,
+    `At or near the ${insights.triggerCount}-strike notice threshold (on the verge): ${verge.join("; ") || "none"}.`,
+    `Rising in the last two weeks (get ahead of): ${rising.join("; ") || "none"}.`,
+    guddLost.length ? `Lost the ${insights.gudd?.name || "GUDD"}: ${guddLost.join(", ")}.` : "",
+    `Staff logging many incidents with few encouragements (may welcome support): ${flagged.join(", ") || "none"}.`,
+  ].filter(Boolean).join("\n");
+  try {
+    const text = await Promise.race([
+      aiClient.complete(prompt),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("AI timeout")), 15000)),
+    ]);
+    const trimmed = String(text || "").trim();
+    return trimmed || det;
+  } catch (e) {
+    console.warn("[behavior] digest overview AI failed, using template:", e?.message || e);
+    return det;
+  }
+}
+
 async function composeAdminDigest(schoolId, config) {
   const insights = await buildSchoolInsights(schoolId, config);
   const school = await BehaviorSchool.findById(schoolId).select("name").lean();
@@ -4635,9 +4911,38 @@ async function composeAdminDigest(schoolId, config) {
 
   const top = (arr, fmt) => arr.length ? `<ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6">${arr.slice(0, 6).map((x) => li(fmt(x))).join("")}</ul>` : `<p style="margin:0;color:#64748b">None.</p>`;
 
+  // GUDD (uniform standing) section + a "Reset the list" button that resets
+  // without logging in (signed link → confirm page). Only when GUDD is on.
+  const gName = insights.gudd?.name || "GUDD";
+  const gStuds = insights.gudd?.enabled ? (insights.gudd.students || []) : [];
+  const gLost = gStuds.filter((s) => s.lost);
+  const gRisk = gStuds.filter((s) => s.atRisk);
+  const gList = (arr) => `<ul style="margin:0 0 4px;padding-left:18px;color:#334155;line-height:1.6">${arr.map((s) => li(`<strong>${escapeHtml(s.name)}</strong> <span style="color:#94a3b8">${escapeHtml(s.classGroup)}</span> — ${s.count}/${s.threshold}${s.consequence ? ` · next: ${escapeHtml(s.consequence)}` : ""}`)).join("")}</ul>`;
+  const gResetToken = guddResetToken(String(schoolId));
+  const gResetUrl = `${appBase()}/behavior/gudd-reset?school=${schoolId}&token=${encodeURIComponent(gResetToken)}`;
+  const guddSection = !insights.gudd?.enabled ? "" : section(`${escapeHtml(gName)} — uniform standing`,
+    gStuds.length
+      ? (gLost.length ? `<p style="margin:6px 0 2px;font-size:13px;font-weight:600;color:#b91c1c">Lost the ${escapeHtml(gName)}</p>${gList(gLost)}` : "") +
+        (gRisk.length ? `<p style="margin:8px 0 2px;font-size:13px;font-weight:600;color:#b45309">At risk</p>${gList(gRisk)}` : "") +
+        (gResetToken ? emailButton(`Reset the ${gName} list`, gResetUrl, "#0f172a") +
+          `<p style="margin:2px 0 0;font-size:12px;color:#94a3b8">Starts a fresh period — earlier infractions stay in history but stop counting.</p>` : "")
+      : `<p style="margin:0;color:#64748b">No uniform infractions this period. 👍</p>`);
+
+  // AI overview paragraph (grounded in the lists above) — leads the briefing so
+  // it's immediately clear who's on the verge / needs attention.
+  const overview = await composeDigestOverview({
+    config, schoolName: school?.name,
+    counts: { neg: wkNeg, pos: wkPos, whiteSlips: wkWhiteSlips, notices: wkNotices },
+    insights,
+  });
+  const overviewHtml = `<div style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;margin:0 0 14px">` +
+    `<div style="font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#64748b;margin:0 0 6px">This week at a glance</div>` +
+    noteToHtml(overview) + `</div>`;
+
   const contentHtml =
     `<p style="margin:0 0 4px;color:#334155">Week in review for <strong>${escapeHtml(school?.name || "your school")}</strong>.</p>` +
     `<p style="margin:0 0 12px;color:#64748b;font-size:13px">${wkNeg} incident(s) · ${wkPos} encouragement(s) · ${wkInt} documented interaction(s) · ${wkWhiteSlips} white slip(s) · ${wkNotices} notice(s) sent home (last 7 days).</p>` +
+    overviewHtml +
     section("At or near a notice", top(insights.atThreshold, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.strikes}/${r.triggerCount} strikes`)) +
     section("Consequences issued / recommended (last 7 days)",
       consRows.length
@@ -4648,6 +4953,7 @@ async function composeAdminDigest(schoolId, config) {
         ? `<ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6">${encItems.slice(0, 15).map((e) => li(`<strong>${escapeHtml(e.name)}</strong> — ${escapeHtml(e.label)}${e.by ? ` <span style="color:#94a3b8">· ${escapeHtml(e.by)}</span>` : ""}`)).join("")}</ul>`
         : `<p style="margin:0;color:#64748b">None logged — encourage staff to catch the good too.</p>`) +
     section("Students to get ahead of (rising lately)", top(insights.proactive, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.recent} in 2 weeks${r.prior ? ` (was ${r.prior})` : ""}`)) +
+    guddSection +
     section("Most-logged (60 days)", top(insights.topRepeat, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.count}`)) +
     section("Suggested support for staff", suggestions) +
     `<hr style="border:none;border-top:1px solid #e2e8f0;margin:18px 0">` +
@@ -4656,10 +4962,12 @@ async function composeAdminDigest(schoolId, config) {
   const text =
     `Week in review for ${school?.name || "your school"}.\n` +
     `${wkNeg} incidents · ${wkPos} encouragements · ${wkInt} interactions · ${wkWhiteSlips} white slips · ${wkNotices} notices sent (last 7 days).\n\n` +
+    `${overview}\n\n` +
     `At/near a notice: ${insights.atThreshold.slice(0, 6).map((r) => `${r.name} (${r.strikes}/${r.triggerCount})`).join(", ") || "none"}.\n` +
     `Consequences issued / recommended: ${consRows.slice(0, 8).map((c) => `${cName[String(c.studentId)] || "—"} — ${c.type}`).join("; ") || "none"}.\n` +
     `Encouragements: ${encItems.slice(0, 8).map((e) => `${e.name} — ${e.label}`).join("; ") || "none"}.\n` +
     `Rising lately: ${insights.proactive.slice(0, 6).map((r) => `${r.name} (${r.recent}/2wk)`).join(", ") || "none"}.\n` +
+    (insights.gudd?.enabled ? `${gName}: ${gStuds.length ? `${gLost.length} lost, ${gRisk.length} at risk — reset the list from the emailed report.` : "no infractions this period."}\n` : "") +
     `Staff who may welcome support: ${flagged.map((t) => t.name).join(", ") || "none"}.\n\n` +
     `Open the dashboard → School insights for the full picture.`;
 
@@ -4687,6 +4995,11 @@ export async function sendAdminDigestForSchool(schoolId, { force = false } = {})
     const admins = await BehaviorTeacher.find({ schoolId, role: { $in: ["originator", "admin"] } }).select("email").lean();
     to = [...new Set(admins.map((a) => a.email).filter(Boolean))];
   }
+  // Always include the VP: the digest carries the GUDD list + its "Reset the
+  // list" button, which is the VP's to action — so the VP gets it regardless of
+  // who the digest recipient is set to.
+  const vpEmail = (config.vp?.email || "").trim().toLowerCase();
+  if (vpEmail) to = [...new Set([...to, vpEmail])];
   if (!to.length) return { ok: false, error: "no recipient" };
 
   const { subject, html, text } = await composeAdminDigest(schoolId, config);
@@ -4801,6 +5114,7 @@ router.put("/houses/config", authAny, loadMembership, canManageHouses, async (re
     if (Array.isArray(b.houseEvents)) $set.houseEvents = b.houseEvents.map((e) => ({ name: String(e.name || "").trim(), points: Number(e.points) || 0 })).filter((e) => e.name);
     if (Array.isArray(b.houseRewards)) $set.houseRewards = b.houseRewards.map((r) => ({ points: Number(r.points) || 0, reward: String(r.reward || "").trim() })).filter((r) => r.reward && r.points);
     if (b.houseReport) $set.houseReport = { enabled: !!b.houseReport.enabled, recipientEmail: String(b.houseReport.recipientEmail || "").trim().toLowerCase() };
+    if ("encouragingMessagePoints" in b) $set.encouragingMessagePoints = Math.max(0, Number(b.encouragingMessagePoints) || 0);
     if (!Object.keys($set).length) return res.status(400).json({ ok: false, error: "Nothing to update" });
     const config = await BehaviorConfig.findOneAndUpdate({ schoolId: req.schoolId }, { $set }, { new: true, upsert: true }).lean();
     await audit(req.schoolId, "houses.config_updated", req, { meta: { keys: Object.keys($set) } });

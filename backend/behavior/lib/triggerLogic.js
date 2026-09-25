@@ -52,6 +52,7 @@ export function activeThresholdIncidents(incidents, { fadeWindowDays, thresholdR
       if (isPositiveIncident(inc)) return false;
       const mode = inc.behaviorSnapshot?.triggerMode || (inc.immediateFlag ? "IMMEDIATE" : "THRESHOLD");
       if (mode !== "THRESHOLD") return false;
+      if (inc.whiteSlip) return false; // the white slip is its consequence — not a strike
       if (inc.countedInNoticeId) return false; // already spent on a prior notice
       if (new Date(inc.timestamp).getTime() <= resetAt) return false;
       return isWithinFadeWindow(inc, fadeWindowDays, now);

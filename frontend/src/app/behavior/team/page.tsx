@@ -18,7 +18,7 @@ type TeamRow = {
   notices: number;
   lastActiveAt: string | null;
 };
-type Pending = { email: string; role: string; invitedBy: string; invitedAt: string };
+type Pending = { email: string; role: string; invitedBy: string; invitedAt: string; lastSentAt?: string };
 type Stats = { members: number; pending: number; activeLast30: number; totalIncidents: number; totalNotices: number };
 type TeamResp = { teachers: TeamRow[]; pending: Pending[]; stats: Stats; viewerRole: string; viewerUserId: string };
 
@@ -49,6 +49,16 @@ export default function TeamPage() {
       .catch((e) => setErr(e.message));
   }, []);
 
+  async function renameMember(userId: string, currentName: string) {
+    const name = window.prompt("Name to show for this member in Behaviours:", currentName || "");
+    if (name === null) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setData((d) => d && { ...d, teachers: d.teachers.map((t) => (t.userId === userId ? { ...t, name: trimmed } : t)) });
+    try { await api("/team/name", { method: "PUT", body: { userId, name: trimmed } }); }
+    catch (e: any) { setErr(e.message); }
+  }
+
   async function setSetupAccess(userId: string, canEditSetup: boolean) {
     setSavingSetup(userId);
     // optimistic
@@ -77,8 +87,12 @@ export default function TeamPage() {
   async function resendInvite(email: string) {
     setNoteByEmail((n) => ({ ...n, [email]: "Sending…" }));
     try {
-      const r = await api<{ emailed: boolean; emailError?: string }>("/invites/resend", { body: { email } });
+      const r = await api<{ emailed: boolean; emailError?: string; lastSentAt?: string }>("/invites/resend", { body: { email } });
       setNoteByEmail((n) => ({ ...n, [email]: r.emailed ? "Reminder sent ✓" : `Failed: ${r.emailError || "email error"}` }));
+      if (r.emailed) {
+        const when = r.lastSentAt || new Date().toISOString();
+        setData((d) => d && { ...d, pending: d.pending.map((p) => (p.email === email ? { ...p, lastSentAt: when } : p)) });
+      }
     } catch (e: any) {
       setNoteByEmail((n) => ({ ...n, [email]: e.message }));
     }
@@ -138,7 +152,12 @@ export default function TeamPage() {
               {teachers.map((t) => (
                 <tr key={t._id} className={t.status === "pending" ? "text-slate-400" : ""}>
                   <td className="py-2 pr-3">
-                    <div className="font-medium">{t.name || t.email.split("@")[0]}</div>
+                    <div className="font-medium">
+                      {t.name || <span className="italic text-slate-400">{t.email.split("@")[0]} (no name set)</span>}
+                      {isAdmin && t.status !== "pending" && (
+                        <button onClick={() => renameMember(t.userId, t.name || "")} className="ml-2 text-xs font-normal text-slate-500 underline">edit</button>
+                      )}
+                    </div>
                     <div className="text-xs text-slate-400">{t.email}</div>
                   </td>
                   <td className="py-2 pr-3 capitalize">{t.role}</td>
@@ -217,7 +236,7 @@ export default function TeamPage() {
                 <div className="min-w-0">
                   <div className="truncate font-medium">{p.email}</div>
                   <div className="text-xs text-slate-400">
-                    {p.role} · invited {ago(p.invitedAt)}{p.invitedBy ? ` by ${p.invitedBy}` : ""}
+                    {p.role} · invited {ago(p.invitedAt)}{p.lastSentAt && new Date(p.lastSentAt).getTime() - new Date(p.invitedAt).getTime() > 60000 ? `, resent ${ago(p.lastSentAt)}` : ""}{p.invitedBy ? ` by ${p.invitedBy}` : ""}
                     {noteByEmail[p.email] ? <span className="ml-2 text-green-700">{noteByEmail[p.email]}</span> : null}
                   </div>
                 </div>

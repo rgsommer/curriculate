@@ -1275,6 +1275,13 @@ function HousesSection({ config }: { config?: any }) {
     capsSave.run(async () => { await api("/houses/config", { method: "PUT", body: { houseCaps: { positive: Math.max(0, Number(posCap) || 0), negative: Math.max(0, Number(negCap) || 0) } } }); });
   }
 
+  // House points awarded when a teacher sends an encouraging parent message.
+  const [encPts, setEncPts] = useState<number | string>(config?.encouragingMessagePoints ?? 5);
+  const encSave = useSaveState([encPts]);
+  function saveEncPts() {
+    encSave.run(async () => { await api("/houses/config", { method: "PUT", body: { encouragingMessagePoints: Math.max(0, Number(encPts) || 0) } }); });
+  }
+
   // House events with preset points.
   const [events, setEvents] = useState<{ name: string; points: number }[]>(
     Array.isArray(config?.houseEvents) ? config.houseEvents.map((e: any) => ({ name: e.name || "", points: Number(e.points) || 0 })) : []
@@ -1667,6 +1674,17 @@ function HousesSection({ config }: { config?: any }) {
             <label className="flex items-center gap-1.5">Max − per student
               <input type="number" min={0} value={negCap} onChange={(e) => setNegCap(e.target.value)} className="w-20 rounded-lg border border-slate-300 px-2 py-1" /></label>
             <SaveButton state={capsSave} onClick={saveCaps} label="Save caps" />
+          </div>
+        </div>
+
+        {/* Encouraging-message reward */}
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <p className="text-sm font-medium text-slate-700">Encouraging message reward</p>
+          <p className="text-xs text-slate-400">House points added to a student&apos;s house when a teacher sends them an encouraging parent message (0 = none).</p>
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
+            <label className="flex items-center gap-1.5">Points per encouraging message
+              <input type="number" min={0} value={encPts} onChange={(e) => setEncPts(e.target.value)} className="w-20 rounded-lg border border-slate-300 px-2 py-1" /></label>
+            <SaveButton state={encSave} onClick={saveEncPts} label="Save" />
           </div>
         </div>
 

@@ -76,6 +76,11 @@ const BehaviorIncidentSchema = new mongoose.Schema(
     // Convenience flag mirroring the snapshot trigger mode at log time.
     immediateFlag: { type: Boolean, default: false },
 
+    // This incident triggered an immediate white slip. The white slip IS its
+    // consequence, so the incident does NOT also count toward the strike-notice
+    // threshold (it's still kept in history and shown in the log).
+    whiteSlip: { type: Boolean, default: false, index: true },
+
     // When a notice fires, the incidents that fed it are marked so they are not
     // re-counted toward the next threshold (history is kept, count is reset).
     countedInNoticeId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorNotice", default: null, index: true },

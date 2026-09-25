@@ -219,9 +219,13 @@ export async function composePositiveNotice(ctx, opts = {}) {
 /** Build the instruction prompt for the AI provider from de-identified context. */
 export function buildPrompt(ctx) {
   const incidentLines = (ctx.incidents || [])
-    .map((inc) => `- ${fmtDate(inc.date)}: ${inc.behaviorName}${inc.uniform ? " [uniform/dress-code]" : ""}${inc.detail ? ` (${inc.detail})` : ""}`)
+    .map((inc) => `- ${fmtDate(inc.date)}: ${inc.behaviorName}${inc.uniform ? " [uniform/dress-code]" : ""}${inc.teacherName ? ` [logged by ${inc.teacherName}]` : ""}${inc.detail ? ` (${inc.detail})` : ""}`)
     .join("\n");
   const hasUniform = (ctx.incidents || []).some((i) => i.uniform);
+  // When more than one teacher logged the incidents, the note should make that
+  // clear so it doesn't read as though a single teacher recorded everything.
+  const teacherNames = [...new Set((ctx.incidents || []).map((i) => i.teacherName).filter(Boolean))];
+  const multiTeacher = teacherNames.length > 1;
 
   // Background history is for the model's AWARENESS only — it shapes tone but is
   // NEVER summarized, listed, or quoted; at most an oblique reference is allowed.
@@ -262,6 +266,9 @@ export function buildPrompt(ctx) {
     `School: ${ctx.schoolName || ""}.`,
     ctx.daysSinceFirst ? `Days since first incident this period: ${ctx.daysSinceFirst}.` : "",
     `The note should be ABOUT only these current incidents:\n${incidentLines}`,
+    multiTeacher
+      ? `These incidents were logged by MORE THAN ONE teacher (${teacherNames.join(", ")}). Make it clear the concerns span multiple teachers/classes — attribute the relevant incidents to the teacher who logged them (naming the teacher in parentheses is fine, e.g. "…during science (Mr. Lee)"). Do NOT imply that a single teacher recorded everything or that the student only struggles in one class. Do not use the "[logged by …]" bracket format verbatim; weave the teacher names in naturally.`
+      : "",
     historyBlock,
     positivesBlock,
     (ctx.consequences || []).length ? `Consequence(s) to state: ${ctx.consequences.join("; ")}. If any is marked "(already completed)", make clear that consequence has already been carried out (do not repeat the "(already completed)" text verbatim).` : "",

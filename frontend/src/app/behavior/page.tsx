@@ -77,6 +77,10 @@ export default function BehaviorDashboard() {
         <p className="mt-1 text-sm text-slate-500 capitalize">Role: {membership.role}</p>
       </Card>
 
+      {!membership.name?.trim() && (
+        <SetMyName onSaved={(n) => setMe((m) => (m && m.membership ? { ...m, membership: { ...m.membership, name: n } } : m))} />
+      )}
+
       {canLog && (
         <Link
           href="/behavior/log"
@@ -135,14 +139,51 @@ export default function BehaviorDashboard() {
               </Link>
             )}
           </div>
-          <ReferColleague />
+          <ReferColleague canInviteAdmin />
+        </Card>
+      )}
+
+      {/* Non-admin teachers can still tell a colleague about Behaviours. */}
+      {!isAdmin && canLog && (
+        <Card>
+          <h2 className="font-semibold">Tell a colleague</h2>
+          <p className="mt-0.5 text-xs text-slate-500">Know a teacher who&apos;d find this useful? Send them an intro (you&apos;re cc&apos;d).</p>
+          <div className="mt-2"><ReferColleague standalone /></div>
         </Card>
       )}
     </div>
   );
 }
 
-function ReferColleague() {
+// Prompt an invited teacher (who joined by email with no name) to choose the
+// name they want shown in Behaviours. Appears until a name is set.
+function SetMyName({ onSaved }: { onSaved: (name: string) => void }) {
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  async function save() {
+    if (!name.trim()) return;
+    setBusy(true); setErr("");
+    try { await api("/my-name", { method: "PUT", body: { name: name.trim() } }); onSaved(name.trim()); }
+    catch (e: any) { setErr(e.message); setBusy(false); }
+  }
+  return (
+    <Card>
+      <h2 className="font-semibold">What name should appear in Behaviours?</h2>
+      <p className="mt-0.5 text-sm text-slate-500">This is how you&apos;ll be shown (e.g. &ldquo;logged by …&rdquo;). You can change it later, or an admin can.</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save()}
+          placeholder="e.g. Mr. Lee / Ms. Grewal" className="min-w-[14rem] flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" autoFocus />
+        <button onClick={save} disabled={busy || !name.trim()} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">
+          {busy ? "Saving…" : "Save name"}
+        </button>
+      </div>
+      {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
+    </Card>
+  );
+}
+
+function ReferColleague({ canInviteAdmin = false, standalone = false }: { canInviteAdmin?: boolean; standalone?: boolean }) {
   const [kind, setKind] = useState<"" | "colleague" | "admin">("");
   const [email, setEmail] = useState("");
   const [note, setNote] = useState("");
@@ -182,12 +223,14 @@ function ReferColleague() {
   }
 
   return (
-    <div className="mt-3 border-t border-slate-100 pt-3">
+    <div className={standalone ? "" : "mt-3 border-t border-slate-100 pt-3"}>
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm text-slate-600">Spread the word — you&apos;ll be cc&apos;d on whatever you send.</p>
         <div className="flex shrink-0 gap-1.5">
           <button onClick={() => { setKind(kind === "colleague" ? "" : "colleague"); setMsg(""); }} className={`rounded-lg border px-2.5 py-1.5 text-xs ${kind === "colleague" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300"}`}>Tell a teacher</button>
-          <button onClick={() => { setKind(kind === "admin" ? "" : "admin"); setMsg(""); }} className={`rounded-lg border px-2.5 py-1.5 text-xs ${kind === "admin" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300"}`}>Invite an admin</button>
+          {canInviteAdmin && (
+            <button onClick={() => { setKind(kind === "admin" ? "" : "admin"); setMsg(""); }} className={`rounded-lg border px-2.5 py-1.5 text-xs ${kind === "admin" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300"}`}>Invite an admin</button>
+          )}
         </div>
       </div>
       {kind && (

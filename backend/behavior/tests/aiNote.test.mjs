@@ -74,6 +74,19 @@ test("buildPrompt includes prior history as awareness-only (oblique, no summary)
   assert.match(p, /do not recount the background/i);
 });
 
+test("buildPrompt attributes incidents to multiple teachers when involved", () => {
+  const p = buildPrompt({ ...ctx, history: { priorNotices: 0, priorIncidentCount: 0, behaviourTypes: [], lastBeforeDays: null } });
+  assert.match(p, /MORE THAN ONE teacher/i);
+  assert.match(p, /Ms\. A/);
+  assert.match(p, /Mr\. B/);
+});
+
+test("buildPrompt does NOT add the multi-teacher note when one teacher logged all", () => {
+  const single = { ...ctx, incidents: ctx.incidents.map((i) => ({ ...i, teacherName: "Ms. A" })), history: { priorNotices: 0, priorIncidentCount: 0, behaviourTypes: [], lastBeforeDays: null } };
+  const p = buildPrompt(single);
+  assert.doesNotMatch(p, /MORE THAN ONE teacher/i);
+});
+
 test("buildPrompt omits the background block when there's no history", () => {
   const p = buildPrompt({ ...ctx, history: { priorNotices: 0, priorIncidentCount: 0, behaviourTypes: [], lastBeforeDays: null } });
   assert.doesNotMatch(p, /BACKGROUND/);
