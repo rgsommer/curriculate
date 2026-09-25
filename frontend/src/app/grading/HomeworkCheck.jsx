@@ -20,6 +20,33 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isPdf, pdfToDataUrls } from "./pdfToImages";
+import HomeworkCapture from "./HomeworkCapture";
+
+// Build the student groups straight from in-app capture, where every photo was
+// attributed the moment it was taken. Keyed by student rather than by runs of
+// consecutive photos, so going back to a student you'd moved past adds to their
+// group instead of creating a second one for the same person.
+function groupsFromCapture(attrib) {
+  const byStudent = new Map();
+  attrib.forEach((stu, idx) => {
+    const key = stu?.edsbyId || stu?.studentId
+      || `${stu?.firstName || ""}|${stu?.lastName || ""}`.toLowerCase();
+    if (!byStudent.has(key)) {
+      byStudent.set(key, {
+        studentName: `${stu?.firstName || ""} ${stu?.lastName || ""}`.trim(),
+        studentId: stu?.studentId || "",
+        edsbyId: stu?.edsbyId || "",
+        nameAsWritten: "",   // nothing was read off the page — the teacher said who this is
+        matched: true,
+        matchConfidence: 1,
+        superseded: false,
+        photoIndexes: [],
+      });
+    }
+    byStudent.get(key).photoIndexes.push(idx);
+  });
+  return [...byStudent.values()];
+}
 
 // Turn a mixed pick of photos and PDFs into page images. A PDF becomes one
 // image per page, so a key or a textbook page that already exists as a PDF
@@ -388,6 +415,8 @@ export default function HomeworkCheck({
 
   // ---- key coverage ----
   const [coverage, setCoverage] = useState(null);
+  // Which key this check marks against, chosen rather than inferred.
+  const [answerKeyId, setAnswerKeyId] = useState("");
   const [coverageBusy, setCoverageBusy] = useState(false);
   useEffect(() => {
     if (!assignedQuestions.length || !backendBase) { setCoverage(null); return; }
@@ -399,7 +428,7 @@ export default function HomeworkCheck({
       body: JSON.stringify({
         teacherEmail, bookName,
         lessonCode: lessonCode || assignment?.lessonCode || "",
-        assignedQuestions,
+        assignedQuestions, answerKeyId,
         workType: assignment?.workType || "unknown",
       }),
     })
@@ -409,7 +438,7 @@ export default function HomeworkCheck({
       .finally(() => { if (!cancelled) setCoverageBusy(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assignedQuestions, lessonCode, bookName, teacherEmail, backendBase, assignment?.workType]);
+  }, [assignedQuestions, lessonCode, bookName, teacherEmail, backendBase, assignment?.workType, answerKeyId]);
 
   async function readAssignmentPage(files) {
     const list = Array.from(files || []).slice(0, 3);
@@ -456,6 +485,13 @@ export default function HomeworkCheck({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teacherEmail, backendBase]);
   useEffect(() => { refreshKeys(); }, [refreshKeys]);
+
+  // One key on file is not a choice — select it. And a selection that has been
+  // deleted must not linger, or the check would silently mark against nothing.
+  useEffect(() => {
+    if (keys.length === 1 && !answerKeyId) { setAnswerKeyId(keys[0].id); return; }
+    if (answerKeyId && !keys.some((k) => k.id === answerKeyId)) setAnswerKeyId("");
+  }, [keys, answerKeyId]);
 
   async function deleteAnswerKey(k) {
     const id = k?._id || k?.id;
@@ -522,6 +558,29 @@ export default function HomeworkCheck({
   const [prepMsg, setPrepMsg] = useState("");
   const batchInputRef = useRef(null);
   const cancelUploadRef = useRef(false);
+  // In-app capture: the roster screen is open, and (once shot) who each photo
+  // belongs to, parallel to `photos`. Null means these photos came from files
+  // and still need the name-reading grouping pass.
+  const [showCapture, setShowCapture] = useState(false);
+  const [captureAttrib, setCaptureAttrib] = useState(null);
+
+  function acceptCapture(shots) {
+    setShowCapture(false);
+    if (!shots?.length) return;
+    setPhotos(shots.map((s, i) => ({
+      name: `capture-${String(i + 1).padStart(2, "0")}.jpg`,
+      dataUrl: s.dataUrl,
+      capturedAt: s.capturedAt,
+      issues: [],
+      status: "pending",
+    })));
+    setCaptureAttrib(shots.map((s) => s.student));
+    // A fresh set of photos invalidates any previous upload and grouping.
+    setUploadId("");
+    setGroups(null);
+    setGroupMeta(null);
+    setUploadError("");
+  }
 
   async function prepareFiles(files) {
     const list = Array.from(files || []);
@@ -531,6 +590,9 @@ export default function HomeworkCheck({
       return;
     }
     setUploadError("");
+    // These came from files, so they carry no attribution — grouping has to
+    // read the names off the pages as before.
+    setCaptureAttrib(null);
     setPrepMsg(`Reading ${list.length} photos…`);
 
     // 1) Capture time from EXIF, so we sort by when it was shot, not by filename.
@@ -680,6 +742,15 @@ export default function HomeworkCheck({
   const [groupBusy, setGroupBusy] = useState(false);
   const [groupError, setGroupError] = useState("");
 
+  // Photos shot in the app are already attributed, so the grouping pass — which
+  // exists to read a name off each page and guess the boundaries — has nothing
+  // left to work out. Skip straight to the groups the teacher themselves gave.
+  useEffect(() => {
+    if (!captureAttrib || !allUploaded || groups) return;
+    setGroups(groupsFromCapture(captureAttrib));
+    setGroupMeta({ warnings: [], missingStudents: [], modalPageCount: null, scans: [], fromCapture: true });
+  }, [captureAttrib, allUploaded, groups]);
+
   async function runGrouping() {
     if (!allUploaded) return;
     setGroupBusy(true);
@@ -783,6 +854,7 @@ export default function HomeworkCheck({
           uploadId, teacherEmail, className,
           lessonCode: lessonCode || assignment?.lessonCode || "",
           bookName,
+          answerKeyId,
           assignedQuestions,
           subsetMode,
           workSurface,
@@ -954,12 +1026,43 @@ export default function HomeworkCheck({
 
       {/* ---------- Answer key ---------- */}
       <div style={S.section}>
-        <div style={S.sectionTitle}>2 · Answer key <span style={S.optional}>one-time per book</span></div>
+        <div style={S.sectionTitle}>2 · Answer key <span style={S.optional}>upload once, pick per check</span></div>
         <div style={S.hint}>
           Photograph the answers section at the back of the book, or upload the PDF — its pages
           are read straight off it. Most books print odd answers only — that's fine, anything not
           in the key is marked “no key” and left out of the correctness score.
         </div>
+
+        {/* Say which key this check marks against, rather than inferring it from
+            a book name and lesson code. A teacher holding keys for several
+            subjects shouldn't have to spell the label the same way twice to get
+            the right answers used. */}
+        {keys.length > 0 && (
+          <label style={{ ...S.label, marginTop: 8, display: "block" }}>
+            Mark this check against
+            <select
+              value={answerKeyId}
+              onChange={(e) => setAnswerKeyId(e.target.value)}
+              style={{ ...S.input, marginTop: 4, width: "100%" }}
+            >
+              <option value="">
+                {keys.length === 1 ? "— choose a key —" : "— choose a key —"}
+              </option>
+              {keys.map((k) => (
+                <option key={k.id} value={k.id}>
+                  {k.lessonCode || "(no lesson code)"}
+                  {k.bookName ? ` · ${k.bookName}` : ""}
+                  {typeof k.questionCount === "number" ? ` · ${k.questionCount} answers` : ""}
+                </option>
+              ))}
+            </select>
+            {!answerKeyId && (
+              <span style={S.hint}>
+                No key chosen — this batch reports completeness only, with no correctness score.
+              </span>
+            )}
+          </label>
+        )}
         <div style={{ ...S.row, marginTop: 8 }}>
           <button
             type="button"
@@ -1171,12 +1274,37 @@ export default function HomeworkCheck({
       <div style={S.section}>
         <div style={S.sectionTitle}>4 · The photos</div>
         <div style={S.hint}>
-          Shoot the room with your normal camera app, then pick the whole set here. Photos are
-          ordered by capture time, shrunk for upload, and sent one at a time so a dropped
-          connection only costs one photo.
+          <b>On a phone:</b> shoot here. Tap a student, take their pages — one, three, however
+          many — then the next student. Each photo is filed as it's taken, so there's nothing to
+          sort out afterwards.
+          <br />
+          <b>On a computer:</b> pick photos you've already taken. They're ordered by capture time,
+          grouped by the name on each page, and you confirm the grouping in step 5.
         </div>
 
+        {showCapture ? (
+          <div style={{ marginTop: 10 }}>
+            <HomeworkCapture
+              students={roster}
+              className={className}
+              onDone={acceptCapture}
+              onCancel={() => setShowCapture(false)}
+            />
+          </div>
+        ) : null}
+
         <div style={{ ...S.row, marginTop: 8 }}>
+          {!showCapture && (
+            <button
+              type="button"
+              style={S.secondaryBtn}
+              onClick={() => setShowCapture(true)}
+              title={roster.length ? "" : "Pick a class with a roster first"}
+              disabled={!roster.length}
+            >
+              📷 Shoot in app
+            </button>
+          )}
           <button type="button" style={S.secondaryBtn} onClick={() => batchInputRef.current?.click()}>
             {photos.length ? `Replace photos (${photos.length})` : "Choose photos"}
           </button>

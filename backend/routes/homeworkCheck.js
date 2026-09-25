@@ -702,7 +702,10 @@ router.post("/coverage", async (req, res) => {
 
     const fit = assessSubjectFit({ workType, hasAnswerKey: true });
 
-    if (!teacherEmail || !lessonCode) {
+    // A key chosen by the teacher answers this outright; the lessonCode lookup
+    // is only the fallback for a batch labelled from an assignment page.
+    const answerKeyId = String(req.body?.answerKeyId || "").trim();
+    if (!teacherEmail || (!lessonCode && !answerKeyId)) {
       return res.json({
         ok: true, hasAnswerKey: false, covered: 0, total: assigned.length,
         coveredQuestions: [], uncovered: assigned,
@@ -712,9 +715,14 @@ router.post("/coverage", async (req, res) => {
       });
     }
 
-    const q = { teacherEmail, lessonCode };
-    if (bookName) q.bookName = bookName;
-    const doc = await HomeworkAnswerKey.findOne(q).lean();
+    let doc = null;
+    if (answerKeyId) {
+      doc = await HomeworkAnswerKey.findOne({ _id: answerKeyId, teacherEmail }).lean().catch(() => null);
+    } else {
+      const q = { teacherEmail, lessonCode };
+      if (bookName) q.bookName = bookName;
+      doc = await HomeworkAnswerKey.findOne(q).lean();
+    }
     const keyQs = doc?.questions || [];
     const keySet = new Set(keyQs.map((k) => String(k.q).trim().toLowerCase()));
 
@@ -1252,16 +1260,26 @@ router.post("/check", async (req, res) => {
 
     const { roster, rosterId } = await loadRoster({ teacherEmail, className, rosterIn: b.roster });
 
+    // The teacher can name the key outright. Matching on (bookName, lessonCode)
+    // is a guess that only works when the batch is labelled from an assignment
+    // page — and with the assignment page optional, and a teacher holding keys
+    // for several subjects, picking one from the list is the plain way to say
+    // which answers this check should be marked against.
     let keyQuestions = [];
     let keyIdea = String(b.keyIdea || "").trim();
-    if (lessonCode) {
+    const answerKeyId = String(b.answerKeyId || "").trim();
+    let keyDoc = null;
+    if (answerKeyId) {
+      // Scoped to the teacher: an id alone must not reach another teacher's key.
+      keyDoc = await HomeworkAnswerKey.findOne({ _id: answerKeyId, teacherEmail }).lean().catch(() => null);
+    } else if (lessonCode) {
       const kq = { teacherEmail, lessonCode };
       if (bookName) kq.bookName = bookName;
-      const keyDoc = await HomeworkAnswerKey.findOne(kq).lean();
-      if (keyDoc) {
-        keyQuestions = keyDoc.questions || [];
-        if (!keyIdea) keyIdea = keyDoc.keyIdea || "";
-      }
+      keyDoc = await HomeworkAnswerKey.findOne(kq).lean();
+    }
+    if (keyDoc) {
+      keyQuestions = keyDoc.questions || [];
+      if (!keyIdea) keyIdea = keyDoc.keyIdea || "";
     }
 
     // Key coverage: most textbooks print odd answers only, so this is usually
