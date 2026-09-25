@@ -140,6 +140,10 @@ const homeworkCheckBatchSchema = new mongoose.Schema(
     rosterId: { type: mongoose.Schema.Types.ObjectId, ref: "ClassRoster", default: null },
 
     // What was checked.
+    // What the teacher called this assignment. With the assignment page now
+    // optional, the lesson code may be the only other label a batch carries —
+    // and "NS7-3" is not what a teacher recognises their own homework by.
+    assignmentName: { type: String, default: "" },
     lessonCode: { type: String, default: "", index: true },
     bookName: { type: String, default: "" },
     batchDate: { type: Date, default: Date.now, index: true },

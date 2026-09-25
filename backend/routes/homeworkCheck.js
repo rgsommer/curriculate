@@ -1314,6 +1314,7 @@ router.post("/check", async (req, res) => {
 
     runCheckJob({
       jobId, teacherEmail, className, rosterId, lessonCode, bookName,
+      assignmentName: String(b.assignmentName || "").trim().slice(0, 120),
       assignedRaw, assigned, groups, images: mat.images, roster,
       keyQuestions, hasAnswerKey: correctnessAvailable, keyIdea,
       keyCoverage: { covered: coveredQuestions.length, total: assigned.length, uncovered },
@@ -1688,7 +1689,10 @@ function buildStudentPayloadText(batch, r, code) {
   else lines.push("Homework check");
   lines.push("");
 
-  const label = [batch.lessonCode, batch.assignment?.pageLabel].filter(Boolean).join(" · ");
+  // The teacher's own name for it first — it is what the student was told in
+  // class. The code and page label stay behind it for anyone cross-referencing.
+  const label = [batch.assignmentName, batch.lessonCode, batch.assignment?.pageLabel]
+    .filter(Boolean).join(" · ");
   if (label) { lines.push(`Assignment: ${label}`); lines.push(""); }
 
   // Counts, never percentages — "you finished 4 of 6", not "67%".
@@ -1774,7 +1778,7 @@ async function publishBatchToPortal(batch) {
       studentName: r.studentName,
       className: batch.className || "",
       teacherEmail: batch.teacherEmail,
-      title: `Homework ${batch.lessonCode || batch.assignment?.pageLabel || ""}`.trim(),
+      title: `Homework ${batch.assignmentName || batch.lessonCode || batch.assignment?.pageLabel || ""}`.trim(),
       subject: batch.assignment?.subjectGuess || "",
       assessmentType: "Homework",
       score: r.completeness,

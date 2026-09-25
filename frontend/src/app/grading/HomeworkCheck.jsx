@@ -354,6 +354,9 @@ export default function HomeworkCheck({
     return rc?.students || [];
   }, [rosterClasses, className]);
 
+  // Optional free-text label. The lesson code alone is enough to identify a
+  // batch; this is for when a code isn't what you'd recognise it by later.
+  const [assignmentName, setAssignmentName] = useState("");
   const [bookName, setBookName] = useState("");
   useEffect(() => {
     try { const v = localStorage.getItem("curriculate_hw_book_v1"); if (v) setBookName(v); } catch {}
@@ -854,6 +857,7 @@ export default function HomeworkCheck({
           uploadId, teacherEmail, className,
           lessonCode: lessonCode || assignment?.lessonCode || "",
           bookName,
+          assignmentName,
           answerKeyId,
           assignedQuestions,
           subsetMode,
@@ -1022,6 +1026,31 @@ export default function HomeworkCheck({
             />
           </div>
         </div>
+
+        {/* Lesson code labels the batch on its own. The name is only for when a
+            code isn't what you'd recognise the homework by later. */}
+        <div style={{ ...S.row, marginTop: 8 }}>
+          <div style={{ flex: 1, minWidth: 140 }}>
+            <label style={S.label}>Lesson code</label>
+            <input
+              style={S.input}
+              value={lessonCode}
+              onChange={(e) => setLessonCode(e.target.value.toUpperCase())}
+              placeholder="NS7-3"
+            />
+          </div>
+          <div style={{ flex: 1, minWidth: 180 }}>
+            <label style={S.label}>
+              Assignment name <span style={S.optional}>optional</span>
+            </label>
+            <input
+              style={S.input}
+              value={assignmentName}
+              onChange={(e) => setAssignmentName(e.target.value)}
+              placeholder="Leave blank to use the lesson code"
+            />
+          </div>
+        </div>
       </div>
 
       {/* ---------- Answer key ---------- */}
@@ -1142,8 +1171,8 @@ export default function HomeworkCheck({
         <div style={S.hint}>
           Only needed when the questions <i>aren't</i> on the pages you're photographing — work
           done on loose paper or in a notebook, where nothing in the photo says what was asked.
-          Add 1–3 photos (or a PDF) of the textbook page and it reads the question numbers, sets
-          the subset and labels the batch.
+          Add 1–3 photos (or a PDF) of the textbook page and it reads the question numbers and
+          sets the subset.
           <br />
           If your students write on <b>printed pages</b>, skip this — the questions are already in
           their photos, and every question printed on the page will be reported.
@@ -1165,14 +1194,6 @@ export default function HomeworkCheck({
             style={{ display: "none" }}
             onChange={(e) => { readAssignmentPage(e.target.files); e.target.value = ""; }}
           />
-          <div style={{ flex: 1, minWidth: 140 }}>
-            <input
-              style={S.input}
-              value={lessonCode}
-              onChange={(e) => setLessonCode(e.target.value.toUpperCase())}
-              placeholder="Lesson code (NS7-3)"
-            />
-          </div>
         </div>
         {assignmentError && <div style={S.error}>{assignmentError}</div>}
 
