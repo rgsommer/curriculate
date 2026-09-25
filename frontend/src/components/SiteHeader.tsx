@@ -232,6 +232,15 @@ export default function SiteHeader() {
               <span className="hidden sm:inline text-xs text-gray-400">
                 Grading is free &mdash; no sign-up
               </span>
+              {/* Sign-up isn't required, but signing in has to be possible:
+                  rosters and published results are keyed to an account, and on
+                  a new computer there was previously no way back to them. */}
+              <Link
+                href="/login?returnTo=/grading"
+                className="text-sm font-semibold text-gray-600 hover:text-gray-900"
+              >
+                Sign in
+              </Link>
               <Link
                 href="/features"
                 className="hidden lg:inline text-sm font-semibold text-gray-600 hover:text-gray-900"
@@ -252,6 +261,12 @@ export default function SiteHeader() {
                 className="hidden lg:inline text-sm font-semibold text-gray-600 hover:text-gray-900"
               >
                 Demo
+              </Link>
+              <Link
+                href="/login"
+                className="text-sm font-semibold text-gray-600 hover:text-gray-900"
+              >
+                Sign in
               </Link>
               <Link
                 href="/freetrial"

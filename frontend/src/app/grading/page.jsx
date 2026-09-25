@@ -109,6 +109,9 @@ const PER_QUESTION_AUDIT_KEY = "curriculate_per_question_audit_v1";
 const SESSION_ID_KEY = "curriculate_session_id_v1";
 const ANON_ID_KEY = "curriculate_anon_id_v1";
 const TEACHER_EMAIL_KEY = "curriculate_report_email";
+// Written by /login. This page has no session of its own — the email field is
+// the identity — so the token is only used to find out which account that is.
+const AUTH_TOKEN_KEY = "curriculate_auth_token";
 
 const DEFAULT_MAX_W = 1800;
 const DEFAULT_QUALITY = 0.85;
@@ -1419,6 +1422,10 @@ export default function GradingPage() {
       if (teacherEmail) try { localStorage.setItem(TEACHER_EMAIL_KEY, teacherEmail); } catch {}
     }, [teacherEmail]);
 
+    // Set from /api/me once backendBase exists — see the effect further down,
+    // which has to live below backendBase's own declaration.
+    const [signedInEmail, setSignedInEmail] = useState(null); // null = unknown/not signed in
+
     // Input mode: photo vs paste vs batch
     const [inputMode, setInputMode] = useState("photo"); // "photo" | "paste" | "batch" | "video" | "audio"
     
@@ -1695,6 +1702,31 @@ export default function GradingPage() {
       () => stripTrailingSlash(process.env.NEXT_PUBLIC_BACKEND_URL),
       []
     );
+
+    // Adopt the signed-in account's email on a device that has never been used.
+    // /login stores a JWT and redirects straight here, but this page only ever
+    // read the email out of localStorage — so signing in on a new computer
+    // landed on a grading page that still knew nobody, showed no rosters, and
+    // (below five uses) didn't even render the email field. The token is the
+    // answer to "who is this", so ask it.
+    useEffect(() => {
+      let token = "";
+      try { token = localStorage.getItem(AUTH_TOKEN_KEY) || ""; } catch {}
+      if (!token || !backendBase) return;
+      let cancelled = false;
+      fetch(`${backendBase}/api/me`, { headers: { Authorization: `Bearer ${token}` } })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          const email = data?.user?.email;
+          if (cancelled || !email) return;
+          setSignedInEmail(email);
+          // Never overwrite an address already typed on this device: a shared
+          // staffroom machine may be signed in as somebody else entirely.
+          setTeacherEmail((cur) => cur || email);
+        })
+        .catch(() => {});
+      return () => { cancelled = true; };
+    }, [backendBase]);
 
     // user feedback
     const [feedbackName, setFeedbackName] = useState("");
@@ -3797,6 +3829,24 @@ export default function GradingPage() {
             </label>
           </div>
         </label>
+
+        {/* A returning teacher on a new computer has nothing here: the email
+            field is hidden below five uses, so there was no way to say who you
+            were and nothing to click. One quiet line, only while this device
+            knows nobody — a first-time visitor still sees an uncluttered page,
+            and it disappears the moment an email is set or adopted. */}
+        {!teacherEmail && !signedInEmail && gradingUses < 5 && (
+          <div style={{ flex: "1 1 220px", alignSelf: "flex-end", fontSize: 12, color: "#64748b", paddingBottom: 6 }}>
+            Used Pulse before?{" "}
+            <a
+              href="/login?returnTo=/grading"
+              style={{ color: "#2563eb", fontWeight: 700, textDecoration: "underline" }}
+            >
+              Sign in
+            </a>{" "}
+            to load your classes and rosters.
+          </div>
+        )}
 
         {/* ── Teacher email (beside Feedback Voice) — hidden until 5 uses unless already set ── */}
         {(gradingUses >= 5 || teacherEmail) && (
