@@ -1400,6 +1400,13 @@ check(
   "setup: a row can change it",
   P.parseSetup([["", "Lesson picture for", "12", "minutes"]]).mediaMin === 12,
 );
+// A message window holds past its own time, for a class that runs over.
+check("setup: the run-over allowance defaults to five minutes", P.parseSetup([]).runOverMin === 5);
+check(
+  "setup: a row can change the run-over allowance",
+  P.parseSetup([["", "Run over", "3", "minutes"]]).runOverMin === 3,
+);
+
 // "Stand ready for dismissal" may name the minutes or the moment itself.
 check(
   "setup: stand ready as minutes",
