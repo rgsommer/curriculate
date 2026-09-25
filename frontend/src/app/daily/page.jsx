@@ -53,12 +53,34 @@ const FIT_MAX = 1.9;
 const FIT_SLACK = 0.05;
 // The shortest a period may be cut to by the bell schedule.
 const MIN_PERIOD_MIN = 10;
-// A riddle for the bottom bar at the end of the day, for the days the sheet has
-// none of its own. Picked by the date so it does not change while it is up.
-// Said before lunch, where the end-of-day benediction used to appear.
-const LUNCH_GRACE =
+// A grace before lunch, where the end-of-day benediction used to appear. One
+// for each day of the week rather than the same words every noon, picked by the
+// date so it holds still while it is on the screen — a prayer the room can say
+// by heart before Tuesday is a prayer nobody is listening to.
+const HOUSE_GRACES = [
   "For food in a world where many walk in hunger, for faith in a world where many walk in fear, "
-  + "and for friends in a world where many walk alone \u2014 we give You thanks.";
+    + "and for friends in a world where many walk alone \u2014 we give You thanks.",
+  "Bless this food to our use, and us to Your service, and make us ever mindful of the needs of others.",
+  "For every cup and plateful, Lord, make us truly grateful \u2014 and make us as ready to share as we are to eat.",
+  "Father, thank You for this table, for the hands that prepared what is on it, "
+    + "and for the friends we are about to sit beside.",
+  "For the day behind us and the food before us, we give You thanks. Keep us kind through the rest of it.",
+  "Lord, You open Your hand and satisfy the desire of every living thing. Thank You for this meal, and for one another.",
+  "We thank You for what we are about to eat, and we ask that nobody here goes back to class hungry \u2014 or unkind.",
+];
+
+// A blessing to end the day on, where the sheet has none of its own. Also one a
+// day, for the same reason: the last words of the day are the ones the room
+// carries out of the door.
+const HOUSE_BLESSINGS = [
+  "\u201cThe Lord bless you and keep you; the Lord make His face shine upon you and be gracious to you.\u201d",
+  "\u201cNow may the God of peace equip you with everything good, that you may do His will.\u201d",
+  "\u201cMay the God of hope fill you with all joy and peace as you trust in Him.\u201d",
+  "\u201cLet the favour of the Lord our God be upon us, and establish the work of our hands.\u201d",
+  "\u201cGo out in joy and be led forth in peace.\u201d",
+  "\u201cBe strong and courageous. The Lord your God is with you wherever you go.\u201d",
+  "\u201cMay the grace of our Lord Jesus Christ be with your spirit.\u201d",
+];
 const HOUSE_RIDDLES = [
   ["What has to be broken before you can use it?", "An egg."],
   ["I am tall when I am young and short when I am old. What am I?", "A candle."],
@@ -913,7 +935,12 @@ export default function DailyPage() {
       : endOfDayAt - readyMin;
   const endOfDaySoon = endOfDayAt != null
     && t >= Math.min(readyAt, endOfDayAt - readyMin) && t < endOfDayAt;
-  const msgNear = dismissal.times.find((m) => t >= m.at - dismissal.advanceMin && t < m.at) || null;
+  // A message window holds for a few minutes past its own time. A class that
+  // runs over by a minute or two is the normal case, not the exception, and the
+  // grace before lunch was vanishing at the bell with the room still in it.
+  const msgNear = dismissal.times.find(
+    (m) => t >= m.at - dismissal.advanceMin && t < m.at + (setup.runOverMin || 0)
+  ) || null;
   const msgSoon = endOfDaySoon || !!msgNear;
   // The last minutes before lunch get a grace, not the end-of-day benediction.
   const lunchSoon = !endOfDaySoon && !!msgNear && /lunch/i.test(msgNear.label);
@@ -1062,19 +1089,31 @@ export default function DailyPage() {
   };
   // At the end of the day the verse is already large on the screen, so the bar
   // carries the unscramble if the sheet has one and a riddle otherwise.
-  const jokeOfDay = () => {
+  // One a day, by the date, so it holds still while it is up and tomorrow's is
+  // a different one.
+  const byDay = (list) => {
     const d = new Date();
-    return HOUSE_JOKES[(d.getFullYear() * 372 + d.getMonth() * 31 + d.getDate()) % HOUSE_JOKES.length];
+    return list[(d.getFullYear() * 372 + d.getMonth() * 31 + d.getDate()) % list.length];
   };
+  const graceOfDay = () => byDay(HOUSE_GRACES);
+  const blessingOfDay = () => byDay(HOUSE_BLESSINGS);
   const riddleOfDay = () => {
     const own = (meta.riddle || "").replace(/^Q:\s*/, "").trim();
     // The sheet's own riddle, with the answer from the column beside it.
     if (own && own !== (featureText || "").replace(/^Q:\s*/, "").trim()) {
-      return { q: own, a: (sources.riddleAnswer || "").replace(/^A:\s*/, "").trim() };
+      return { q: own, a: (sources.riddleAnswer || "").replace(/^A:\s*/, "").trim(), kind: "Riddle" };
     }
+    // Failing the sheet's own: a riddle one day and a joke the next, so the
+    // board's own material does not become the same line every afternoon. The
+    // blessing has the big line on that screen now, which is where the joke
+    // used to be.
     const d = new Date();
-    const pair = HOUSE_RIDDLES[(d.getFullYear() * 372 + d.getMonth() * 31 + d.getDate()) % HOUSE_RIDDLES.length];
-    return { q: pair[0], a: pair[1] };
+    const n = d.getFullYear() * 372 + d.getMonth() * 31 + d.getDate();
+    const joke = n % 2 === 1;
+    const pair = joke
+      ? HOUSE_JOKES[n % HOUSE_JOKES.length]
+      : HOUSE_RIDDLES[n % HOUSE_RIDDLES.length];
+    return { q: pair[0], a: pair[1], kind: joke ? "Joke" : "Riddle" };
   };
   // Where the verse of the day is at this minute. It has the right-hand panel
   // for its first minutes and the bottom bar for the rest of the day, and never
@@ -1131,7 +1170,7 @@ export default function DailyPage() {
                     onKeyDown={onSweepKey}
                   >
                     <span className="vtext" key={sweepKey}>
-                      Riddle: {r.q}
+                      {r.kind}: {r.q}
                       {/* The answer rides at the far end of the line: out of
                           sight until the sweep reaches it, so the room gets a
                           moment to think before it arrives. */}
@@ -1487,6 +1526,13 @@ export default function DailyPage() {
       `showing now: ${showing}`,
     ].join("  ·  ");
   };
+  // The grace before lunch. It belongs to the window rather than to the class,
+  // so it stays up through the change of class: the bell goes, the board moves
+  // to "Lunch", and the room is only then standing to say it.
+  const graceBlock = () => (
+    <div key="l" className="block sun"><h3>Before lunch</h3><p>{graceOfDay()}</p></div>
+  );
+  const gracePanel = () => (lunchSoon ? <div className="panel">{graceBlock()}</div> : null);
   // The day's own screens have no beginning to measure from — a morning is not
   // a class — so the half alternates on the board's own clock: the verse for
   // `verseMin` minutes, the work for the same, and the scrubber moves it like
@@ -1497,6 +1543,8 @@ export default function DailyPage() {
   const dayAside = () => {
     const prayer = prayerPanel();
     if (prayer) return prayer;
+    const grace = gracePanel();
+    if (grace) return grace;
     const verse = () => {
       const v = versePanel();
       if (v) verseUp = true;
@@ -1796,15 +1844,10 @@ export default function DailyPage() {
                 bar all day and the last word of it belongs to the blessing —
                 then the standing-ready note, and last what to take home. */}
             <p className="script">Well done, {(greeting.match(/,\s*(.*?)!?$/) || [, "everyone"])[1]}.</p>
-            {meta.blessing
-              ? <p className="question blessing">{meta.blessing}</p>
-              : (() => {
-                // A joke rather than the verse, which has had the bottom bar all
-                // day. The day's own, picked by the date so the room gets the
-                // same one all afternoon and a different one tomorrow.
-                const [q, a] = jokeOfDay();
-                return <p className="question joke"><span>{q}</span> <b>{a}</b></p>;
-              })()}
+            {/* The sheet's blessing where it has one, otherwise the day's.
+                Either way the room goes out on a blessing rather than on a
+                footnote about the verse it has had all day. */}
+            <p className="question blessing">{meta.blessing || blessingOfDay()}</p>
             <p className="summary">Tidy your area, tuck your chair in and stand behind it, ready for your homeroom teacher.</p>
             {(() => {
               // The blessing is already the line above, in full and in the
@@ -2089,7 +2132,7 @@ export default function DailyPage() {
       // "Before you head out" belongs to the end of the day, and the end of the
       // day is the dismissal time — not simply the last class on the board,
       // which is what used to put the benediction up before lunch.
-      if (lunchSoon) blocks.push(<div key="l" className="block sun"><h3>Before lunch</h3><p>{LUNCH_GRACE}</p></div>);
+      if (lunchSoon) blocks.push(graceBlock());
       // Last, under whatever the class needs first: the verse is for the whole
       // day and the time-sensitive blocks above it are not. It has the slot for
       // its own minutes and then hands it to the work — what has been set for

@@ -66,6 +66,7 @@ export type Setup = {
   verseMin: number; // how long the verse of the day holds the right-hand half before the work takes it
   prayerMin: number; // how long the Prayercast video holds the half after O Canada
   mediaMin: number; // how long the lesson's own picture and video hold the half, after the verse
+  runOverMin: number; // how long a message window stays up past its time, for a class that runs over
   picSeconds: number;
 };
 
@@ -137,6 +138,7 @@ export const DEFAULT_SETUP: Setup = {
   verseMin: 10,
   prayerMin: 5,
   mediaMin: 15,
+  runOverMin: 5,
   picSeconds: 600,
 };
 
@@ -1149,6 +1151,9 @@ export function parseSetup(rows: string[][]): Setup {
     // No such row in the sheet yet; add one labelled "Lesson picture for" with
     // the minutes in column C to change it from fifteen.
     else if (/^(lesson picture|lesson media|lesson video)/.test(label)) out.mediaMin = num(c, out.mediaMin);
+    // No such row in the sheet yet; add one labelled "Run over" with the
+    // minutes in column C to change it from five.
+    else if (/^(run over|runs over|message grace|grace after)/.test(label)) out.runOverMin = num(c, out.runOverMin);
   }
   return out;
 }

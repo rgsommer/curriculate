@@ -103,6 +103,7 @@ remembered and left out of later batches (`readRangesSafe`).
 | Verse of the day for (C) | The verse of the day holds the right-hand half for N minutes before the work takes it — 10 if the row is missing, which it is in the sheet today |
 | Prayercast for (C) | The day's "Pray for …" video holds the right-hand half for N minutes from the end of O Canada — 5 if the row is missing, which it is in the sheet today |
 | Lesson picture for (C) | The lesson's own picture and video hold the right-hand half for N minutes after the verse — 15 if the row is missing, which it is in the sheet today |
+| Run over (C) | A message window — the grace before lunch, the highlighted "Pray for …" line — stays up N minutes past its own time, because a class that runs over by a minute or two is the normal case. 5 if the row is missing, which it is in the sheet today |
 
 The opening window (question and warm-up instead of the bullet list) is fixed at
 5 minutes in `parse.ts` (`DEFAULT_SETUP.openMin`); there is no Setup row for it yet.
@@ -173,6 +174,22 @@ The bubble says **what the benefit is**, not the sheet's shorthand
 | FD | Extra FD | the same window as the pass | Benefit 3 — a week's average at that level: an extra Formal Discussion |
 | all three | All 3 | the whole class, from the first minute — it is the class's own reward | the "both" column, orange |
 | trailing ` 4` | `+2` | with whatever else shows | the bonus of two for being perfect the whole class |
+
+### The grace, and the blessing
+
+The grace before lunch belongs to **the window, not to the class**. The bell
+goes at noon, the board moves to "Lunch", and only then is the room standing to
+say it — so it stays on the right-hand half through the change of class, and for
+`runOverMin` minutes past the message time, because a class that runs over by a
+minute or two is the normal case and the prayer was vanishing at the bell with
+the room still in it.
+
+Both prayers are **one a day** rather than one for the year: `HOUSE_GRACES` and
+`HOUSE_BLESSINGS`, picked by the date so each holds still while it is up and
+tomorrow's is a different one. The sheet's own blessing (the end of the head-out
+cell) still wins where it has one. The board's joke moved to the bottom bar and
+alternates there with the riddle by the day, since the blessing now has the big
+line on the dismissal screen.
 
 ### The Prayercast, straight after the anthem
 
