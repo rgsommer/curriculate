@@ -924,17 +924,35 @@ export default function DailyPage() {
   // The minutes before the last bell: the class tidies up and stands ready for
   // the homeroom teacher. The end-of-day package comes up with it.
   const readyMin = Math.max(setup.dismissalReadyMin || 5, dismissal.advanceMin || 0);
-  // The moment the room has to be standing — which is not the bell. Setup's
-  // "Stand ready for dismissal" row names it, either as minutes before the end
-  // or as the time itself; the note on the board says that time, since "ready
-  // for your homeroom teacher by 3:30" is the bell, and by 3:30 it is too late.
+  // When the room actually goes home, which is not when the dismissal screen
+  // comes up. The last class ends and the screen turns over — 3:25 — and the
+  // homeroom teacher arrives at the end of the dismissal window, 3:30. So the
+  // home time is the latest thing the sheet says about dismissal at or after
+  // the screen's own time, not the first.
+  // Only what the sheet says about dismissal in so many words: the message
+  // block's own "Dismissal" time and Setup's "Show Dismissal List". Not the
+  // last bell, and not the dismissal row's end either — both of those run to
+  // the next time in Vertical's column, which carries on past the school day
+  // (4:25 in this sheet), and the room does not stand for three quarters of an
+  // hour. Nor anything more than an hour past the screen, for the same reason.
+  const homeAt = endOfDayAt == null ? null : [
+    (dismissal.times.find((m) => /dismiss/i.test(m.label)) || {}).at,
+    setup.dismissalAt,
+  ].reduce(
+    (best, x) => (x != null && x >= endOfDayAt && x <= endOfDayAt + 60 && x > best ? x : best),
+    endOfDayAt
+  );
+  // The moment the room has to be standing: when the homeroom teacher comes for
+  // them. Setup's "Stand ready for dismissal" row names it outright where it
+  // carries a time; otherwise it is the home time, because "stand ready by
+  // 3:20" is five minutes before the last class has even finished.
   const readyAt = endOfDayAt == null
     ? null
-    : setup.dismissalReadyAt != null && setup.dismissalReadyAt < endOfDayAt
+    : setup.dismissalReadyAt != null
       ? setup.dismissalReadyAt
-      : endOfDayAt - readyMin;
+      : homeAt;
   const endOfDaySoon = endOfDayAt != null
-    && t >= Math.min(readyAt, endOfDayAt - readyMin) && t < endOfDayAt;
+    && t >= endOfDayAt - readyMin && t < endOfDayAt;
   // A message window holds for a few minutes past its own time. A class that
   // runs over by a minute or two is the normal case, not the exception, and the
   // grace before lunch was vanishing at the bell with the room still in it.
@@ -1692,7 +1710,8 @@ export default function DailyPage() {
               ].join("   ·   "))}
               {row("stand ready by", readyAt == null
                 ? "no end of day"
-                : `${fmt(readyAt)}  ·  ${setup.dismissalReadyAt != null ? "Setup names the time" : `Setup names ${setup.dismissalReadyMin} min before the bell`}`)}
+                : `${fmt(readyAt)}  ·  ${setup.dismissalReadyAt != null ? "Setup's own time" : "the home time, the latest the sheet names"}`
+                  + `  ·  dismissal screen from ${fmt(endOfDayAt)}, package from ${fmt(endOfDayAt - readyMin)}`)}
               {row("dismissal messages", dismissal.times.map((m) => `${m.label} ${fmt(m.at)}`).join("  ") + `  · ${dismissal.advanceMin} min before`)}
               {row("Kiss & Ride waiting", waiting.length ? waiting.join(" | ") : "")}
               {row("verse (as read)", meta.verse)}
@@ -1848,7 +1867,10 @@ export default function DailyPage() {
                 Either way the room goes out on a blessing rather than on a
                 footnote about the verse it has had all day. */}
             <p className="question blessing">{meta.blessing || blessingOfDay()}</p>
-            <p className="summary">Tidy your area, tuck your chair in and stand behind it, ready for your homeroom teacher.</p>
+            <p className="summary">
+              Tidy your area, tuck your chair in and stand behind it, ready for your homeroom teacher
+              {readyAt != null && readyAt > endOfDayAt ? ` by ${fmt(readyAt)}` : ""}.
+            </p>
             {(() => {
               // The blessing is already the line above, in full and in the
               // serif. A copy of it at the foot of the list is the same words
