@@ -1204,6 +1204,13 @@ questions are printed on these pages. Read them off the page yourself:
   - Report on every printed question on these pages, in the order they appear.
   - Use the question's own printed number as its label, exactly as printed
     (including any part letter: "3b", not "3 b" or "question 3b").
+  - A LABEL IS A NUMBER, not a description. Never write "5 (operations)",
+    "5 (undo in backwards order)" or "5 (Did you finish...)". If question 5 has
+    several parts and the book letters them, use "5a", "5b". If the book does
+    NOT letter them, question 5 is ONE question labelled "5" — report it once,
+    attempted if the student did any of it. Whatever the part was about belongs
+    in the note, never in the label: these labels are printed back to the
+    student and pasted into a gradebook.
   - A question printed on the page but left blank is "not_attempted". Do not
     leave it out — a skipped question is the finding, and omitting it would
     silently shrink the denominator and flatter the student.
