@@ -795,8 +795,21 @@ export default function HomeworkCheck({
 
   const allUploaded = photos.length > 0 && photos.every((p) => p.status === "sent");
 
+  useEffect(() => {
+    if (zoom === null) return;
+    function onKey(e) {
+      if (e.key === "Escape") { setZoom(null); return; }
+      if (e.key === "ArrowRight") setZoom((i) => Math.min((i ?? 0) + 1, photos.length - 1));
+      if (e.key === "ArrowLeft") setZoom((i) => Math.max((i ?? 0) - 1, 0));
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [zoom, photos.length]);
+
   // ---- phase 2: grouping ----
   const [groups, setGroups] = useState(null);
+  // Photo index shown full-size, or null. Identifying a page means reading it.
+  const [zoom, setZoom] = useState(null);
   const [groupMeta, setGroupMeta] = useState(null); // { warnings, missingStudents, modalPageCount, scans }
   const [groupBusy, setGroupBusy] = useState(false);
   const [groupError, setGroupError] = useState("");
@@ -1573,8 +1586,16 @@ export default function HomeworkCheck({
                         style={S.thumbWrap}
                         title={p?.name || `Photo ${pi + 1}`}
                       >
+                        {/* A 90px thumbnail can't be read, and deciding whose
+                            work this is — the whole point of this screen — needs
+                            reading it. */}
                         {p?.dataUrl
-                          ? <img src={p.dataUrl} alt={`Photo ${pi + 1}`} style={S.thumb} />
+                          ? <img
+                              src={p.dataUrl}
+                              alt={`Photo ${pi + 1}`}
+                              style={{ ...S.thumb, cursor: "zoom-in" }}
+                              onClick={() => setZoom(pi)}
+                            />
                           : <div style={{ ...S.thumb, ...S.thumbMissing }}>?</div>}
                         <div style={S.thumbLabel}>#{pi + 1}</div>
                         {g.photoIndexes.indexOf(pi) > 0 && (
@@ -1634,9 +1655,64 @@ export default function HomeworkCheck({
           teacherEmail={teacherEmail}
         />
       )}
+
+      {/* Full-size viewer. Whose work a page is often can't be told from a
+          90px thumbnail, and that judgement is the entire job of the grouping
+          screen. Arrows walk the batch so a run of pages can be identified
+          without closing and hunting for the next one. */}
+      {zoom !== null && photos[zoom] && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Photo ${zoom + 1} of ${photos.length}`}
+          onClick={() => setZoom(null)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 9999,
+            background: "rgba(15,23,42,0.92)",
+            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+            padding: 12, gap: 10,
+          }}
+        >
+          <div
+            style={{ display: "flex", alignItems: "center", gap: 12, color: "#fff", fontSize: 14, fontWeight: 700 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setZoom((i) => Math.max(i - 1, 0))}
+              disabled={zoom === 0}
+              style={{ ...zoomBtn, opacity: zoom === 0 ? 0.35 : 1 }}
+            >
+              ‹ Prev
+            </button>
+            <span>#{zoom + 1} of {photos.length}</span>
+            <button
+              type="button"
+              onClick={() => setZoom((i) => Math.min(i + 1, photos.length - 1))}
+              disabled={zoom >= photos.length - 1}
+              style={{ ...zoomBtn, opacity: zoom >= photos.length - 1 ? 0.35 : 1 }}
+            >
+              Next ›
+            </button>
+            <button type="button" onClick={() => setZoom(null)} style={zoomBtn}>Close ✕</button>
+          </div>
+          <img
+            src={photos[zoom].dataUrl}
+            alt={`Photo ${zoom + 1}`}
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: "100%", maxHeight: "82vh", objectFit: "contain", borderRadius: 8, background: "#fff" }}
+          />
+        </div>
+      )}
     </div>
   );
 }
+
+const zoomBtn = {
+  background: "rgba(255,255,255,0.14)", color: "#fff",
+  border: "1px solid rgba(255,255,255,0.35)", borderRadius: 8,
+  padding: "6px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+};
 
 /* ------------------------------------------------------------------ */
 /*  Results                                                            */
