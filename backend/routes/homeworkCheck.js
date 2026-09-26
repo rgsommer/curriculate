@@ -1095,7 +1095,21 @@ For every question you marked "attempted", set "correct" to:
 
 You are COMPARING against the key, not solving the problem. If your own
 calculation disagrees with the key, the key wins — never mark a student
-incorrect on the strength of your own arithmetic.
+incorrect on the strength of your own arithmetic. Set "checkedBy" to "key".
+
+WHERE THE KEY IS SILENT — most books print odd answers only.
+For a question that does NOT appear in the key above, work the answer out
+yourself, then compare. Set "checkedBy" to "worked" so the teacher can see
+which marks rest on the book and which on you.
+  - Do the mathematics carefully and completely before deciding.
+  - Only do this where the answer is a matter of fact — an arithmetic result,
+    a solved equation, a value read off a table. Where the question asks for an
+    explanation, an estimate, a drawing, an opinion, or anything with more than
+    one defensible answer, do NOT judge it: "no_key", checkedBy "none".
+  - If you are not confident, "no_key" with checkedBy "none" is the right
+    answer. A question left unjudged costs the teacher nothing; a student
+    marked wrong because of YOUR slip is a mark they have to argue their way
+    out of. Prefer saying nothing.
 
 IMPORTANT: this key is probably incomplete. Most textbooks print answers for
 odd-numbered questions only. A question missing from the key above is "no_key" —
@@ -1103,7 +1117,8 @@ it is NOT wrong, and it is NOT your job to work out the answer. Never mark a
 question incorrect because it is absent from the key.`
     : `
 NO ANSWER KEY IS AVAILABLE for this assignment.
-Set "correct" to null for every question. Do not judge correctness at all.`;
+Set "correct" to null and "checkedBy" to "none" for every question. Do not
+judge correctness at all.`;
 
   const surfaceBlock = workSurface === "loose"
     ? `
@@ -1281,8 +1296,12 @@ const CHECK_SCHEMA = {
           // was assigned — bonus, extension, investigation — and a question
           // nobody was asked to do must not count as work left undone.
           scope: { type: "string", enum: ["core", "bonus", "unclear"] },
+          // How "correct" was decided. The key is authoritative; "worked"
+          // means the book printed no answer and this was solved instead,
+          // which is worth separating in the tally.
+          checkedBy: { type: "string", enum: ["key", "worked", "none"] },
         },
-        required: ["q", "work", "correct", "note", "studentNote", "scope"],
+        required: ["q", "work", "correct", "note", "studentNote", "scope", "checkedBy"],
       },
     },
     encouragement: { type: "string" },
@@ -1388,15 +1407,21 @@ function scoreStudent(questions, hasAnswerKey) {
   let correctness = null;
   let correctCount = 0;
   let keyedAttemptedCount = 0;
+  let workedCount = 0;   // judged without the book, by working the answer out
   if (hasAnswerKey) {
-    const keyed = attempted.filter((q) => q.correct === "correct" || q.correct === "incorrect");
-    keyedAttemptedCount = keyed.length;
-    correctCount = keyed.filter((q) => q.correct === "correct").length;
+    const judged = attempted.filter((q) => q.correct === "correct" || q.correct === "incorrect");
+    keyedAttemptedCount = judged.length;
+    correctCount = judged.filter((q) => q.correct === "correct").length;
+    // Kept separate so the teacher can see how much of the mark rests on the
+    // book and how much on arithmetic done here. Both count towards the score
+    // — a mark over odds only would answer half the question asked of it —
+    // but which is which should never be invisible.
+    workedCount = judged.filter((q) => q.checkedBy === "worked").length;
     correctness = keyedAttemptedCount > 0
       ? Math.round((correctCount / keyedAttemptedCount) * 10 * 10) / 10
       : null;
   }
-  return { completeness, correctness, assignedCount, attemptedCount, correctCount, keyedAttemptedCount };
+  return { completeness, correctness, assignedCount, attemptedCount, correctCount, keyedAttemptedCount, workedCount };
 }
 
 // ---------- background job store ----------
@@ -1516,10 +1541,19 @@ router.post("/check", async (req, res) => {
 
     // Key coverage: most textbooks print odd answers only, so this is usually
     // partial. Uncovered questions are excluded from correctness, never wrong.
+    //
+    // In discovery mode there is no assigned list yet — the questions are read
+    // off the students' pages during grading — so intersecting with it gives
+    // zero and would declare a perfectly good key uncovered. That is exactly
+    // what happened to a PA7-8 batch sitting next to a PA7-8 key with 37
+    // answers in it. With no list, having a key at all is the test, and
+    // coverage is worked out per question while grading.
     const keySet = new Set(keyQuestions.map((k) => String(k.q).trim().toLowerCase()));
     const coveredQuestions = assigned.filter((a) => keySet.has(a.toLowerCase()));
     const uncovered = assigned.filter((a) => !keySet.has(a.toLowerCase()));
-    const hasAnswerKey = coveredQuestions.length > 0;
+    const hasAnswerKey = assigned.length
+      ? coveredQuestions.length > 0
+      : keyQuestions.length > 0;
 
     // Subject fit: no key, or extended writing, means completeness only — and
     // we say why rather than emitting a correctness number with nothing behind it.
@@ -1653,7 +1687,7 @@ async function runCheckJob(ctx) {
             .map((h) => ({ q: String(h?.q || "").trim(), hit: h }))
             .filter((r) => r.q);
       const questions = rows.map(({ q, hit }) => {
-        if (!hit) return { q, work: "unreadable", correct: null, scope: "unclear", note: "The model did not report on this question." };
+        if (!hit) return { q, work: "unreadable", correct: null, scope: "unclear", checkedBy: "none", note: "The model did not report on this question." };
         const work = ["attempted", "not_attempted", "unreadable", "sample"].includes(hit.work) ? hit.work : "unreadable";
         let correct = null;
         if (hasAnswerKey && (work === "attempted" || work === "unreadable")) {
@@ -1663,6 +1697,9 @@ async function runCheckJob(ctx) {
         // here rather than trusted to the prompt: a correct answer needs no
         // commentary, and an unreadable one is the teacher's business only.
         const scope = ["core", "bonus", "unclear"].includes(hit.scope) ? hit.scope : "unclear";
+        const checkedBy = correct === "correct" || correct === "incorrect"
+          ? (["key", "worked"].includes(hit.checkedBy) ? hit.checkedBy : "key")
+          : "none";
         let studentNote = sanitizeStudentText(hit.studentNote);
         if (work === "unreadable" || work === "sample" || correct === "correct") studentNote = "";
         // A bonus question was never theirs to do, so "Not done yet." would be
@@ -1671,7 +1708,7 @@ async function runCheckJob(ctx) {
         if (scope === "bonus" && work !== "attempted") studentNote = "";
         else if (work === "not_attempted" && !studentNote) studentNote = "Not done yet.";
         if (correct === "no_key" && !studentNote) studentNote = "I didn't check this one.";
-        return { q, work, correct, note: String(hit.note || ""), studentNote, scope };
+        return { q, work, correct, note: String(hit.note || ""), studentNote, scope, checkedBy };
       });
 
       const score = scoreStudent(questions, hasAnswerKey);

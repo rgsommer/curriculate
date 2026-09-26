@@ -43,6 +43,9 @@ const questionResultSchema = new mongoose.Schema(
     // while "unclear" is counted as core, so an ambiguous page errs towards
     // asking rather than quietly excusing.
     scope: { type: String, enum: ["core", "bonus", "unclear"], default: "unclear" },
+    // "key" = against the book, "worked" = solved here because the book is
+    // silent on it, "none" = not judged.
+    checkedBy: { type: String, enum: ["key", "worked", "none"], default: "none" },
   },
   { _id: false }
 );
@@ -74,6 +77,9 @@ const studentResultSchema = new mongoose.Schema(
     assignedCount: { type: Number, default: 0 },
     correctCount: { type: Number, default: 0 },
     keyedAttemptedCount: { type: Number, default: 0 },
+    // Of those, how many were judged by working the answer out rather than
+    // against the printed key — the book prints odd answers only.
+    workedCount: { type: Number, default: 0 },
 
     questions: [questionResultSchema],
 
