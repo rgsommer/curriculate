@@ -1031,12 +1031,38 @@ export default function HomeworkCheck({
       const parts = (r.studentName || "").trim().split(/\s+/);
       const firstName = parts[0] || "";
       const lastName = parts.slice(1).join(" ");
+      // The comment is the only part of a gradebook row a student or parent
+      // actually reads, so it carries the substance: what was missed, what was
+      // wrong, and the next step for each — which is what the per-question
+      // studentNote was written for.
+      const qs = r.questions || [];
+      const missed = qs.filter((q) => q.work === "not_attempted" && q.scope !== "bonus").map((q) => q.q);
+      const wrong = qs.filter((q) => q.correct === "incorrect").map((q) => q.q);
+
       const bits = [`Attempted ${r.attemptedCount} of ${r.assignedCount}.`];
-      if (r.correctness != null) bits.push(`Correct on ${r.correctCount} of ${r.keyedAttemptedCount} checked.`);
+      if (r.correctness != null) {
+        bits.push(
+          `Correct on ${r.correctCount} of ${r.keyedAttemptedCount} checked`
+          + (r.workedCount ? ` (${r.workedCount} worked out where the book prints no answer).` : ".")
+        );
+      }
+      if (missed.length) bits.push(`Not done: ${missed.join(", ")}.`);
+      if (wrong.length) bits.push(`Check again: ${wrong.join(", ")}.`);
+
+      // Next steps, question by question, in the wording the student sees.
+      const pointers = qs
+        .filter((q) => q.studentNote && q.correct === "incorrect")
+        .map((q) => `${q.q}: ${q.studentNote}`);
+      if (pointers.length) bits.push(pointers.join(" "));
+      if (r.encouragement) bits.push(r.encouragement);
       if ((r.flags || []).length) bits.push(r.flags.join(" "));
+
+      // Gradebook comment fields are not unbounded; cut on a word.
+      let comment = bits.join(" ");
+      if (comment.length > 900) comment = comment.slice(0, 897).replace(/\s+\S*$/, "") + "…";
       return [
         r.studentId || r.edsbyId, firstName, lastName,
-        assessmentName, today, r.completeness, 10, bits.join(" "),
+        assessmentName, today, r.completeness, 10, comment,
       ].map(escCsv).join(",");
     });
 
