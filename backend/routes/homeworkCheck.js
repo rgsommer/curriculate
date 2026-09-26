@@ -1264,6 +1264,23 @@ genuinely gives you nothing to praise (e.g. nothing was attempted), return an
 empty string rather than manufacturing something. An empty encouragement is
 honest; a hollow one is not.
 
+"reviewPoints" — WHAT TO REVIEW, at most two, often none.
+Look across everything this student got wrong and name the underlying skill,
+not the questions: "Review inverse operations — whatever you do to one side,
+do to the other", "Line up place value before adding", "Check whether the
+question wants the perimeter or the area". Write it to the student, as an
+instruction they can act on tonight.
+  - Draw it ONLY from mistakes you actually saw in THIS work. Two wrong answers
+    with nothing in common are two wrong answers — return an empty array rather
+    than inventing a pattern to explain them.
+  - Return an empty array when nothing was wrong, when nothing was attempted,
+    or when the errors have no common cause. Empty is a normal answer and a
+    far better one than a plausible-sounding diagnosis that is not true: the
+    student will act on whatever you write here.
+  - Never about the student, only about the work. Not "you rush"; "check the
+    sign when you move a term across".
+  - One short sentence each. Two at the very most.
+
 "lessonSeen" — what the PAGE says this work is.
 Copy the lesson code and/or title printed at the top of the page, exactly as
 printed: "NS7-1", "PA7-8 Patterns and Rules", "Unit 3 Review". This is read
@@ -1325,8 +1342,12 @@ const CHECK_SCHEMA = {
     // from the page, never inferred; 15-20 students agreeing is what makes it
     // usable, and a guess would poison that agreement.
     lessonSeen: { type: ["string", "null"] },
+    // The skill behind this student's errors, not the list of them. "Check 3b,
+    // 5a" tells a student where to look; "review inverse operations to keep
+    // both sides equal" tells them what to fix.
+    reviewPoints: { type: "array", items: { type: "string" } },
   },
-  required: ["questions", "unmatchedAnswers", "encouragement", "pageNote", "lessonSeen"],
+  required: ["questions", "unmatchedAnswers", "encouragement", "pageNote", "lessonSeen", "reviewPoints"],
 };
 
 // Belt-and-braces on the tone rules. The prompt forbids these, but a phrase
@@ -1729,9 +1750,14 @@ async function runCheckJob(ctx) {
       if (!g.matched) flags.push("Name could not be matched to the roster");
       if (parsed.pageNote) flags.push(String(parsed.pageNote));
       const lessonSeen = String(parsed.lessonSeen || "").trim().slice(0, 120);
+      const reviewPoints = (Array.isArray(parsed.reviewPoints) ? parsed.reviewPoints : [])
+        .map((t) => sanitizeStudentText(t))
+        .filter(Boolean)
+        .slice(0, 2);
 
       results[gi] = {
         lessonSeen,
+        reviewPoints,
         unmatchedAnswers,
         encouragement: sanitizeStudentText(parsed.encouragement),
         studentName: g.studentName || "",
@@ -2010,6 +2036,14 @@ function buildStudentPayloadText(batch, r, code) {
   // Per-question next steps. Only questions with something to act on carry a
   // studentNote — correct answers, samples and unreadable work are all blank
   // by construction upstream, so nothing leaks here.
+  // The skill to work on, before the question-by-question list — it is the one
+  // thing worth carrying away from the whole sheet.
+  if ((r.reviewPoints || []).length) {
+    lines.push("What to work on:");
+    for (const t of r.reviewPoints) lines.push(`- ${t}`);
+    lines.push("");
+  }
+
   const actionable = (r.questions || []).filter((q) => q.studentNote);
   if (actionable.length) {
     lines.push("Next Steps:");

@@ -1012,6 +1012,12 @@ export default function HomeworkCheck({
     downloadText([header, ...rows].join("\n"), name);
   }
 
+  // Edsby's own limit is unpublished and we have not tested where it truncates.
+  // 900 is a deliberate underestimate: a comment that arrives whole is worth
+  // more than one that arrives long. Raise it once a real import has been seen
+  // to accept more.
+  const EDSBY_COMMENT_MAX = 900;
+
   function exportEdsbyCsv() {
     if (!result?.results?.length) return;
     // Completeness is the mark that posts to the gradebook by default.
@@ -1032,34 +1038,43 @@ export default function HomeworkCheck({
       const firstName = parts[0] || "";
       const lastName = parts.slice(1).join(" ");
       // The comment is the only part of a gradebook row a student or parent
-      // actually reads, so it carries the substance: what was missed, what was
-      // wrong, and the next step for each — which is what the per-question
-      // studentNote was written for.
+      // actually reads, so it carries the substance. Assembled in priority
+      // order and trimmed by dropping whole items from the bottom: a comment
+      // cut off mid-sentence is worse than one that stops cleanly, and what
+      // matters most should be the last thing to go.
       const qs = r.questions || [];
       const missed = qs.filter((q) => q.work === "not_attempted" && q.scope !== "bonus").map((q) => q.q);
       const wrong = qs.filter((q) => q.correct === "incorrect").map((q) => q.q);
 
-      const bits = [`Attempted ${r.attemptedCount} of ${r.assignedCount}.`];
+      const commentParts = [`Attempted ${r.attemptedCount} of ${r.assignedCount}.`];
       if (r.correctness != null) {
-        bits.push(
+        commentParts.push(
           `Correct on ${r.correctCount} of ${r.keyedAttemptedCount} checked`
           + (r.workedCount ? ` (${r.workedCount} worked out where the book prints no answer).` : ".")
         );
       }
-      if (missed.length) bits.push(`Not done: ${missed.join(", ")}.`);
-      if (wrong.length) bits.push(`Check again: ${wrong.join(", ")}.`);
+      if (missed.length) commentParts.push(`Not done: ${missed.join(", ")}.`);
+      if (wrong.length) commentParts.push(`Check again: ${wrong.join(", ")}.`);
+      // The skill behind the errors — ahead of the per-question notes, because
+      // "review inverse operations" is the thing worth carrying away.
+      for (const t of (r.reviewPoints || [])) commentParts.push(/[.!?]$/.test(t) ? t : `${t}.`);
+      // Then question by question, in the wording the student sees.
+      for (const q of qs) {
+        if (q.studentNote && q.correct === "incorrect") commentParts.push(`${q.q}: ${q.studentNote}`);
+      }
+      if (r.encouragement) commentParts.push(r.encouragement);
+      if ((r.flags || []).length) commentParts.push(r.flags.join(" "));
 
-      // Next steps, question by question, in the wording the student sees.
-      const pointers = qs
-        .filter((q) => q.studentNote && q.correct === "incorrect")
-        .map((q) => `${q.q}: ${q.studentNote}`);
-      if (pointers.length) bits.push(pointers.join(" "));
-      if (r.encouragement) bits.push(r.encouragement);
-      if ((r.flags || []).length) bits.push(r.flags.join(" "));
-
-      // Gradebook comment fields are not unbounded; cut on a word.
-      let comment = bits.join(" ");
-      if (comment.length > 900) comment = comment.slice(0, 897).replace(/\s+\S*$/, "") + "…";
+      let comment = "";
+      for (const part of commentParts) {
+        const next = comment ? `${comment} ${part}` : part;
+        if (next.length > EDSBY_COMMENT_MAX) break;
+        comment = next;
+      }
+      // A single item longer than the budget still has to be cut somewhere.
+      if (!comment && commentParts.length) {
+        comment = commentParts[0].slice(0, EDSBY_COMMENT_MAX - 1).replace(/\s+\S*$/, "") + "…";
+      }
       return [
         r.studentId || r.edsbyId, firstName, lastName,
         assessmentName, today, r.completeness, 10, comment,

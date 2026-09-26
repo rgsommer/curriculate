@@ -110,6 +110,11 @@ const studentResultSchema = new mongoose.Schema(
     // student because the batch-level label is a vote across these.
     lessonSeen: { type: String, default: "" },
 
+    // The skill to work on, drawn from this student's actual errors. Written
+    // to the student; empty whenever the mistakes had no common cause, which
+    // is a normal outcome and better than an invented pattern.
+    reviewPoints: [{ type: String }],
+
     // Set when the model produced a page it could not attach to any roster
     // student — the teacher assigns it by hand.
     unmatched: { type: Boolean, default: false },
