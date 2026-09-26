@@ -1406,6 +1406,35 @@ function consensusLesson(results) {
   };
 }
 
+// One assignment, one scope. Whether question 2 was set is a fact about the
+// assignment, not about the student holding it — but it was being decided
+// separately for every student, from their own photo, so the same question
+// came back core on one desk and bonus on the next. The result was
+// denominators of 9, 15 and 7 across one class doing identical work.
+//
+// So the class votes, exactly as it does on the lesson code. Each question
+// label takes the scope most of the pages gave it, and every student is then
+// graded against the same set. "unclear" is not a vote — it is the absence of
+// one — so a handful of clear readings decide a label the rest could not see.
+function consensusScope(results) {
+  const tally = new Map(); // label -> { core, bonus }
+  for (const r of results) {
+    for (const q of (r?.questions || [])) {
+      const label = String(q?.q || "").trim().toLowerCase();
+      if (!label) continue;
+      if (!tally.has(label)) tally.set(label, { core: 0, bonus: 0 });
+      if (q.scope === "core") tally.get(label).core++;
+      else if (q.scope === "bonus") tally.get(label).bonus++;
+    }
+  }
+  const agreed = new Map();
+  for (const [label, v] of tally) {
+    if (!v.core && !v.bonus) continue;      // nobody could tell — leave as read
+    agreed.set(label, v.bonus > v.core ? "bonus" : "core");
+  }
+  return agreed;
+}
+
 // Two independent marks, never merged.
 function scoreStudent(questions, hasAnswerKey) {
   const qs = Array.isArray(questions) ? questions : [];
@@ -1818,6 +1847,27 @@ async function runCheckJob(ctx) {
       flags: ["No page found for this student in this batch"],
       error: "",
     });
+  }
+
+  // Settle the scope across the class before anything is scored, so no student
+  // is marked against a question another student was excused.
+  const agreedScope = consensusScope(results);
+  let scopeChanges = 0;
+  for (const r of results) {
+    if (!r || !Array.isArray(r.questions) || !r.questions.length) continue;
+    let touched = false;
+    for (const q of r.questions) {
+      const want = agreedScope.get(String(q.q || "").trim().toLowerCase());
+      if (want && q.scope !== want) { q.scope = want; touched = true; scopeChanges++; }
+    }
+    if (touched) {
+      // Rescore: the denominator just changed.
+      const s2 = scoreStudent(r.questions, hasAnswerKey);
+      Object.assign(r, s2);
+    }
+  }
+  if (scopeChanges) {
+    console.log(`[homework/check] scope consensus adjusted ${scopeChanges} question(s) across ${results.length} students`);
   }
 
   // Fill the label from the pages when the teacher left it blank. Never
