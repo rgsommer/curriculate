@@ -777,6 +777,190 @@ function assessSubjectFit({ workType, hasAnswerKey }) {
 // ===========================================================================
 // Answer keys
 // ===========================================================================
+// Pages per model call. A JUMP answer-key page is four dense columns holding
+// several lessons; the whole book in one call blew past max_output_tokens and
+// came back with the first three lessons and nothing else.
+const KEY_PAGES_PER_CALL = 3;
+const KEY_CALL_CONCURRENCY = 3;
+
+// The heading over each lesson reads "AP Book NS7-1". Strip the words, and
+// repair the separator: a dot or dash where the book prints a hyphen is the
+// same lesson, and filing it as "NS7.1" makes it unfindable.
+function normaliseLessonCode(raw) {
+  let c = String(raw || "").trim().toUpperCase();
+  if (!c) return "";
+  c = c.replace(/^AP\s*BOOK\s*/i, "").replace(/\s+/g, "");
+  c = c.replace(/^([A-Z]{1,4}\d+)[.–—_\/](\d+)$/, "$1-$2");
+  // "7.1" is the BOOK — it appears in the running footer on every page, and
+  // taking it for a lesson code files the whole book under one bogus key.
+  if (!/^[A-Z]{1,4}\d+-\d+[A-Z]?$/.test(c)) return "";
+  return c;
+}
+
+async function extractKeyChunk(images) {
+  const resp = await openai().responses.create({
+    model: MODEL,
+    input: [{
+      role: "user",
+      content: [
+        {
+          type: "input_text",
+          text: `These images are pages from the ANSWER KEY section of a maths workbook
+(a JUMP Math AP Book). Transcribe them.
+
+HOW THESE PAGES ARE LAID OUT — read them this way or the answers will be
+attributed to the wrong lessons:
+  - Each page is FOUR NARROW COLUMNS. Read all the way down column 1, then
+    column 2, then 3, then 4. Do NOT read straight across the page.
+  - Several lessons share a page. A lesson starts at a heading reading
+    "AP Book NS7-1" (or PA7-4, ME8-12, G7-2 ...), usually with "page 14"
+    under it. Everything after that heading belongs to that lesson until the
+    next heading — including where it continues into the next column, or onto
+    the next page.
+  - "BONUS" inside a lesson is part of that lesson. Keep its answers, labelled
+    as the book labels them.
+  - The running header ("Number Sense - AP Book 7, Part 1: Unit 1") and the
+    footer ("Answer Keys for AP Book 7.1", "J-3") are NOT lesson codes. Never
+    return "7.1" or "J-3" as a lessonCode.
+
+WHAT TO RETURN
+  - lessonCode exactly as the heading prints it: "NS7-1", not "NS7.1".
+  - Keep question labels exactly as the book writes them: "1a", "3", "10b".
+    Where a question has roman-numeral sub-parts, write them "4a-ii".
+  - Keep answers as text, including units, fractions and short explanations.
+    Do not convert or simplify them.
+  - A lesson may begin before these pages or run past them. Transcribe the part
+    you can see; it will be joined to the rest.
+  - Transcribe only what is printed. If something is illegible, omit that one
+    question rather than guessing — a missing key entry is safe, a wrong one
+    silently marks students wrong.
+
+Return JSON only.`,
+        },
+        ...images.map((img) => ({ type: "input_image", image_url: img })),
+      ],
+    }],
+    text: {
+      format: {
+        type: "json_schema", name: "answer_key", strict: true,
+        schema: {
+          type: "object", additionalProperties: false,
+          properties: {
+            lessons: {
+              type: "array",
+              items: {
+                type: "object", additionalProperties: false,
+                properties: {
+                  lessonCode: { type: "string" },
+                  questions: {
+                    type: "array",
+                    items: {
+                      type: "object", additionalProperties: false,
+                      properties: { q: { type: "string" }, answer: { type: "string" } },
+                      required: ["q", "answer"],
+                    },
+                  },
+                },
+                required: ["lessonCode", "questions"],
+              },
+            },
+            note: { type: ["string", "null"] },
+          },
+          required: ["lessons", "note"],
+        },
+      },
+    },
+    max_output_tokens: 16000,
+  });
+  const parsed = safeJsonParse(resp.output_text);
+  return {
+    lessons: Array.isArray(parsed?.lessons) ? parsed.lessons : [],
+    note: parsed?.note || "",
+  };
+}
+
+// Read every chunk, merging as we go. Nothing is written until all of it is
+// read: a lesson split across a chunk boundary must be stitched back together
+// before it lands, or the second half would overwrite the first.
+async function extractAnswerKey(images, onProgress) {
+  const chunks = [];
+  for (let i = 0; i < images.length; i += KEY_PAGES_PER_CALL) {
+    chunks.push(images.slice(i, i + KEY_PAGES_PER_CALL));
+  }
+
+  const merged = new Map();   // lessonCode -> Map(q -> answer)
+  const notes = [];
+  const failed = [];
+  let done = 0;
+
+  let cursor = 0;
+  const workers = Array.from(
+    { length: Math.min(KEY_CALL_CONCURRENCY, chunks.length) },
+    async () => {
+      while (cursor < chunks.length) {
+        const idx = cursor++;
+        try {
+          const { lessons, note } = await extractKeyChunk(chunks[idx]);
+          if (note) notes.push(note);
+          for (const lesson of lessons) {
+            const code = normaliseLessonCode(lesson.lessonCode);
+            if (!code) continue;
+            if (!merged.has(code)) merged.set(code, new Map());
+            const bucket = merged.get(code);
+            for (const q of (Array.isArray(lesson.questions) ? lesson.questions : [])) {
+              const label = String(q?.q || "").trim();
+              const answer = String(q?.answer || "").trim();
+              // First reading wins: a chunk that only caught the tail of a
+              // lesson shouldn't overwrite a fuller reading of the same label.
+              if (label && !bucket.has(label)) bucket.set(label, answer);
+            }
+          }
+        } catch (err) {
+          console.error(`[homework/answer-key] chunk ${idx + 1} failed:`, err?.message || err);
+          failed.push(idx + 1);
+        }
+        done++;
+        onProgress?.(done, chunks.length);
+      }
+    }
+  );
+  await Promise.all(workers);
+
+  return { merged, notes, failed, chunkCount: chunks.length };
+}
+
+async function saveAnswerKey({ teacherEmail, bookName, images, onProgress }) {
+  const { merged, notes, failed, chunkCount } = await extractAnswerKey(images, onProgress);
+
+  const saved = [];
+  for (const [lessonCode, bucket] of merged) {
+    const questions = [...bucket.entries()]
+      .map(([q, answer]) => ({ q, answer }))
+      .filter((x) => x.q);
+    if (!questions.length) continue;
+    await HomeworkAnswerKey.findOneAndUpdate(
+      { teacherEmail, bookName, lessonCode },
+      { teacherEmail, bookName, lessonCode, questions, sourcePageCount: images.length, extractionNote: notes.join(" ") },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    saved.push({ lessonCode, questionCount: questions.length });
+  }
+  saved.sort((a, b) => a.lessonCode.localeCompare(b.lessonCode, undefined, { numeric: true }));
+
+  console.log(
+    `[homework/answer-key] ${teacherEmail} "${bookName}" ${images.length}p → `
+    + `${saved.length} lesson(s)${failed.length ? `, ${failed.length}/${chunkCount} chunks failed` : ""}`
+  );
+  return {
+    lessons: saved,
+    note: notes.join(" "),
+    // Say so rather than quietly filing a key with holes in it.
+    warning: failed.length
+      ? `${failed.length} of ${chunkCount} page groups couldn't be read, so some lessons may be missing or incomplete. Re-uploading will fill the gaps.`
+      : "",
+  };
+}
+
 router.post("/answer-key", async (req, res) => {
   try {
     const teacherEmail = String(req.body?.teacherEmail || "").trim().toLowerCase();
@@ -785,100 +969,55 @@ router.post("/answer-key", async (req, res) => {
 
     if (!teacherEmail) return res.status(400).json({ ok: false, error: "teacherEmail is required." });
     if (!images.length) return res.status(400).json({ ok: false, error: "At least one answer-key photo is required." });
-    if (images.length > 40) return res.status(400).json({ ok: false, error: "Too many pages in one upload (max 40)." });
+    if (images.length > 60) return res.status(400).json({ ok: false, error: "Too many pages in one upload (max 60)." });
     if (!images.every(isDataUrlImage)) return res.status(400).json({ ok: false, error: "Every image must be a data URL." });
 
-    const resp = await openai().responses.create({
-      model: MODEL,
-      input: [{
-        role: "user",
-        content: [
-          {
-            type: "input_text",
-            text: `These images are pages from the ANSWER KEY section of a maths workbook
-(a JUMP Math AP Book). Transcribe them.
+    // A whole book takes minutes, which no proxy will hold open. Short uploads
+    // — a photographed spread — still answer directly.
+    if (images.length > KEY_PAGES_PER_CALL) {
+      const jobId = crypto.randomUUID();
+      jobs.set(jobId, { status: "processing", progress: 0, stage: "reading pages", createdAt: Date.now() });
+      res.json({ ok: true, jobId, pageCount: images.length });
+      (async () => {
+        try {
+          const out = await saveAnswerKey({
+            teacherEmail, bookName, images,
+            onProgress: (d, t) => setJob(jobId, {
+              progress: Math.round((d / Math.max(1, t)) * 100),
+              stage: `read ${d} of ${t} page groups`,
+            }),
+          });
+          if (!out.lessons.length) {
+            setJob(jobId, { status: "error", error: "No lessons could be read from those pages. Check they are answer-key pages." });
+            return;
+          }
+          setJob(jobId, { status: "done", progress: 100, result: out });
+        } catch (err) {
+          console.error("[homework/answer-key job]", err?.message || err);
+          setJob(jobId, { status: "error", error: "Answer-key extraction failed." });
+        }
+      })();
+      return;
+    }
 
-The key is organised by lesson code (e.g. "NS7-3", "ME8-12"). For each lesson
-you can see, list every question label and its answer exactly as printed.
-
-  - Keep question labels exactly as the book writes them: "1a", "3", "10b".
-  - Keep answers as text, including units, fractions and short explanations.
-    Do not convert or simplify them.
-  - If a lesson's answers run across a page break, merge them into one entry.
-  - Transcribe only what is printed. If something is illegible, omit that one
-    question rather than guessing — a missing key entry is safe, a wrong one
-    silently marks students wrong.
-
-Return JSON only.`,
-          },
-          ...images.map((img) => ({ type: "input_image", image_url: img })),
-        ],
-      }],
-      text: {
-        format: {
-          type: "json_schema", name: "answer_key", strict: true,
-          schema: {
-            type: "object", additionalProperties: false,
-            properties: {
-              lessons: {
-                type: "array",
-                items: {
-                  type: "object", additionalProperties: false,
-                  properties: {
-                    lessonCode: { type: "string" },
-                    questions: {
-                      type: "array",
-                      items: {
-                        type: "object", additionalProperties: false,
-                        properties: { q: { type: "string" }, answer: { type: "string" } },
-                        required: ["q", "answer"],
-                      },
-                    },
-                  },
-                  required: ["lessonCode", "questions"],
-                },
-              },
-              note: { type: ["string", "null"] },
-            },
-            required: ["lessons", "note"],
-          },
-        },
-      },
-      max_output_tokens: 8000,
-    });
-
-    const parsed = safeJsonParse(resp.output_text);
-    const lessons = Array.isArray(parsed?.lessons) ? parsed.lessons : [];
-    if (!lessons.length) {
+    const out = await saveAnswerKey({ teacherEmail, bookName, images });
+    if (!out.lessons.length) {
       return res.status(422).json({
         ok: false,
         error: "No lessons could be read from those pages. Check they are answer-key pages and try a sharper photo.",
       });
     }
-
-    const saved = [];
-    for (const lesson of lessons) {
-      const lessonCode = String(lesson.lessonCode || "").trim().toUpperCase();
-      if (!lessonCode) continue;
-      const questions = (Array.isArray(lesson.questions) ? lesson.questions : [])
-        .map((q) => ({ q: String(q?.q || "").trim(), answer: String(q?.answer || "").trim() }))
-        .filter((q) => q.q);
-      if (!questions.length) continue;
-
-      await HomeworkAnswerKey.findOneAndUpdate(
-        { teacherEmail, bookName, lessonCode },
-        { teacherEmail, bookName, lessonCode, questions, sourcePageCount: images.length, extractionNote: parsed?.note || "" },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
-      );
-      saved.push({ lessonCode, questionCount: questions.length });
-    }
-
-    console.log(`[homework/answer-key] ${teacherEmail} "${bookName}" → ${saved.length} lesson(s)`);
-    return res.json({ ok: true, bookName, lessons: saved, note: parsed?.note || "" });
+    return res.json({ ok: true, bookName, ...out });
   } catch (err) {
     console.error("[homework/answer-key]", err?.message || err);
     return res.status(500).json({ ok: false, error: "Answer-key extraction failed." });
   }
+});
+
+router.get("/answer-key/job/:id", (req, res) => {
+  const j = jobs.get(String(req.params.id || ""));
+  if (!j) return res.status(404).json({ ok: false, error: "Job not found or expired." });
+  return res.json({ ok: true, ...j });
 });
 
 router.get("/answer-key/list", async (req, res) => {
