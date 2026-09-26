@@ -1953,20 +1953,43 @@ function ResultsTable({ result, onExportCsv, onExportEdsby, hwUrl, teacherEmail 
           <tbody>
             {rows.map((r, i) => {
               const isOpen = expanded === i;
+              // A row whose student is wrong or unknown is the one thing here
+              // a teacher must not skim past: the work gets marked, exported
+              // and posted under the wrong name, or under none. A grey
+              // sub-line under a normal-looking row is too easy to miss, so
+              // the whole row is red. A low-confidence match is amber — it may
+              // be right, but it was a guess.
+              const needsName = !r.superseded && (r.unmatched || (!r.matched && !r.noPageFound));
+              const shakyMatch = !needsName && !r.superseded && !r.noPageFound
+                && (r.matchConfidence === "low" || r.matchConfidence === "none");
               return (
                 <React.Fragment key={i}>
                   <tr
-                    style={{ ...S.tr, ...(r.superseded ? S.trMuted : null) }}
+                    style={{
+                      ...S.tr,
+                      ...(r.superseded ? S.trMuted : null),
+                      ...(needsName ? { background: "rgba(220,38,38,0.09)", boxShadow: "inset 3px 0 0 #dc2626" } : null),
+                      ...(shakyMatch ? { background: "rgba(234,88,12,0.09)", boxShadow: "inset 3px 0 0 #ea580c" } : null),
+                    }}
                     onClick={() => setExpanded(isOpen ? null : i)}
                   >
                     <td style={S.td}>
-                      <div style={{ fontWeight: 700 }}>
+                      <div style={{ fontWeight: 700, color: needsName ? "#b91c1c" : undefined }}>
                         {r.studentName || r.nameAsWritten || "(unmatched)"}
                       </div>
                       {r.noPageFound && <div style={S.tdSub}>no page in this batch</div>}
                       {r.superseded && <div style={S.tdSub}>superseded retake — not graded</div>}
-                      {!r.matched && !r.noPageFound && !r.superseded && (
-                        <div style={S.tdSub}>unmatched — assign by hand</div>
+                      {needsName && (
+                        <div style={{ ...S.tdSub, color: "#b91c1c", fontWeight: 700 }}>
+                          {r.nameAsWritten
+                            ? `read as "${r.nameAsWritten}" — no roster match. Assign by hand.`
+                            : "no name matched — assign by hand."}
+                        </div>
+                      )}
+                      {shakyMatch && (
+                        <div style={{ ...S.tdSub, color: "#9a3412", fontWeight: 700 }}>
+                          matched on a guess{r.nameAsWritten ? ` from "${r.nameAsWritten}"` : ""} — check this is right.
+                        </div>
                       )}
                     </td>
                     <td style={S.td}>
