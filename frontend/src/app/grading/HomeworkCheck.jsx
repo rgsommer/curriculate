@@ -789,6 +789,8 @@ export default function HomeworkCheck({
 
   const allUploaded = photos.length > 0 && photos.every((p) => p.status === "sent");
 
+  // Photo index shown full-size, or null. Identifying a page means reading it.
+  const [zoom, setZoom] = useState(null);
   useEffect(() => {
     if (zoom === null) return;
     function onKey(e) {
@@ -802,8 +804,6 @@ export default function HomeworkCheck({
 
   // ---- phase 2: grouping ----
   const [groups, setGroups] = useState(null);
-  // Photo index shown full-size, or null. Identifying a page means reading it.
-  const [zoom, setZoom] = useState(null);
   const [groupMeta, setGroupMeta] = useState(null); // { warnings, missingStudents, modalPageCount, scans }
   const [groupBusy, setGroupBusy] = useState(false);
   const [groupError, setGroupError] = useState("");
