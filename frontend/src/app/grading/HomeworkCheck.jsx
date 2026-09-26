@@ -1071,11 +1071,12 @@ export default function HomeworkCheck({
       }
       return [
         r.studentId || r.edsbyId, firstName, lastName,
-        // Whole number. Completeness is a tenth-of-a-point figure on screen
-        // (5 of 9 attempted is 5.6), and this is the first export to carry a
-        // fraction into a gradebook — the marks that imported cleanly before
-        // were all integers. A gradebook column out of 10 wants 6, not 5.6.
-        assessmentName, today, Math.round(r.completeness), 10, comment,
+        // Left as the tenth-of-a-point figure the results table shows. Edsby
+        // imports it: 3.3 landed in the gradebook intact, and the hang that
+        // prompted rounding turned out to be Edsby-side — a refresh cleared
+        // it. Rounding here would change a mark for no demonstrated reason
+        // and make the gradebook disagree with the screen.
+        assessmentName, today, r.completeness, 10, comment,
       ].map(escCsv).join(",");
     });
 
