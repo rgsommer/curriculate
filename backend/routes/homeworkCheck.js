@@ -936,7 +936,14 @@ router.delete("/answer-key/:id", async (req, res) => {
 // ===========================================================================
 // PHASE 3 — grading the teacher-confirmed groups
 // ===========================================================================
-function buildCheckPrompt({ assigned, keyLines, pageCount, studentLabel, workSurface, assignmentQuestions, keyIdea }) {
+
+// What counts as set, when the teacher hasn't said. Everything printed counts,
+// minus the things textbooks universally mark as extra — which is the common
+// case and keeps a bonus question from reading as homework left undone.
+const DEFAULT_SCOPE_RULE =
+  "Everything printed on the page except questions the book marks as bonus, "
+  + "extension, investigation or challenge.";
+function buildCheckPrompt({ assigned, keyLines, pageCount, studentLabel, workSurface, assignmentQuestions, keyIdea, scopeRule }) {
   const keyBlock = keyLines.length
     ? `
 ANSWER KEY — AUTHORITATIVE. DO NOT DO THE MATHEMATICS YOURSELF.
@@ -1008,7 +1015,26 @@ THE MOST IMPORTANT DISTINCTION — printed ink is the book, handwriting is the s
 writing short formative feedback the student will read and act on.
 ${surfaceBlock}
 
-${assigned.length ? `THE ASSIGNED QUESTIONS — report on exactly these and no others:
+WHICH QUESTIONS WERE ACTUALLY SET — set "scope" on every question.
+A printed page carries more than the teacher assigned. Work nobody was asked to
+do must never read as work left undone, so judge each question against this,
+which is how this teacher describes what they set:
+
+  ${scopeRule}
+
+  core     the question falls inside that description — it was set
+  bonus    it is on the page but outside it (bonus, extension, investigation,
+           challenge, a starred or shaded question, a section the description
+           excludes)
+  unclear  the page gives you nothing to decide on
+
+Use what is PRINTED on the page to decide — a heading, a label, a star, a
+shaded box. Do not infer from whether the student did it: a blank question is
+exactly the case this has to get right, and "they skipped it so it must be
+bonus" would erase the finding. When the page says nothing either way, "unclear"
+is the honest answer and it will be counted as core.
+${assigned.length ? `
+THE ASSIGNED QUESTIONS — report on exactly these and no others:
 ${assigned.map((q) => `  ${q}`).join("\n")}` : `THE ASSIGNED QUESTIONS — the teacher did not supply a list, because the
 questions are printed on these pages. Read them off the page yourself:
   - Report on every printed question on these pages, in the order they appear.
@@ -1094,8 +1120,12 @@ const CHECK_SCHEMA = {
           note: { type: ["string", "null"] },
           // Student-facing formative line. Empty when there's nothing to act on.
           studentNote: { type: "string" },
+          // Was this question actually set? A printed page carries more than
+          // was assigned — bonus, extension, investigation — and a question
+          // nobody was asked to do must not count as work left undone.
+          scope: { type: "string", enum: ["core", "bonus", "unclear"] },
         },
-        required: ["q", "work", "correct", "note", "studentNote"],
+        required: ["q", "work", "correct", "note", "studentNote", "scope"],
       },
     },
     encouragement: { type: "string" },
@@ -1143,7 +1173,11 @@ function scoreStudent(questions, hasAnswerKey) {
   const qs = Array.isArray(questions) ? questions : [];
   // Book-pre-filled samples were never the student's work, so they leave the
   // denominator rather than counting against them.
-  const gradable = qs.filter((q) => q.work !== "sample");
+  // Out of the denominator: a book's pre-filled worked example was never the
+  // student's to do, and neither was a question they weren't asked to do. This
+  // is the whole point of scope — a bonus left blank is not work left undone.
+  // "unclear" counts as core, so an unreadable page errs towards asking.
+  const gradable = qs.filter((q) => q.work !== "sample" && q.scope !== "bonus");
   // "unreadable" means handwriting IS present — the student did attempt it.
   const attempted = gradable.filter((q) => q.work === "attempted" || q.work === "unreadable");
 
@@ -1315,6 +1349,7 @@ router.post("/check", async (req, res) => {
     runCheckJob({
       jobId, teacherEmail, className, rosterId, lessonCode, bookName,
       assignmentName: String(b.assignmentName || "").trim().slice(0, 120),
+      scopeRule: String(b.assignmentScope || "").trim().slice(0, 400),
       assignedRaw, assigned, groups, images: mat.images, roster,
       keyQuestions, hasAnswerKey: correctnessAvailable, keyIdea,
       keyCoverage: { covered: coveredQuestions.length, total: assigned.length, uncovered },
@@ -1346,7 +1381,7 @@ async function runCheckJob(ctx) {
     assignedRaw, assigned, groups, images, roster,
     keyQuestions, hasAnswerKey, batchDate, uploadId,
     keyCoverage, correctnessAvailable, correctnessSkippedReason,
-    workSurface, subsetMode, assignment,
+    workSurface, subsetMode, assignment, scopeRule, assignmentName,
   } = ctx;
 
   const started = Date.now();
@@ -1393,6 +1428,7 @@ async function runCheckJob(ctx) {
                 workSurface,
                 assignmentQuestions: assignment?.questions || [],
                 keyIdea: ctx.keyIdea || "",
+                scopeRule: ctx.scopeRule || DEFAULT_SCOPE_RULE,
               }),
             },
             ...groupImages.map((img) => ({ type: "input_image", image_url: img })),
@@ -1405,15 +1441,21 @@ async function runCheckJob(ctx) {
       const parsed = safeJsonParse(resp.output_text);
       if (!parsed) throw new Error("Model returned unparseable JSON");
 
-      // Normalise to exactly the assigned questions, in the teacher's order —
-      // so the model can neither drop a row nor invent one we didn't ask for.
       const byQ = new Map(
         (Array.isArray(parsed.questions) ? parsed.questions : [])
           .map((q) => [String(q?.q || "").trim().toLowerCase(), q])
       );
-      const questions = assigned.map((q) => {
-        const hit = byQ.get(q.toLowerCase());
-        if (!hit) return { q, work: "unreadable", correct: null, note: "The model did not report on this question." };
+      // With a list, the model can neither drop a row nor invent one. Without
+      // one — printed pages, no assignment photo — the model's own rows ARE the
+      // result: it read the questions off the page, so there is nothing to
+      // normalise against and mapping over an empty list would discard them all.
+      const rows = assigned.length
+        ? assigned.map((q) => ({ q, hit: byQ.get(q.toLowerCase()) }))
+        : (Array.isArray(parsed.questions) ? parsed.questions : [])
+            .map((h) => ({ q: String(h?.q || "").trim(), hit: h }))
+            .filter((r) => r.q);
+      const questions = rows.map(({ q, hit }) => {
+        if (!hit) return { q, work: "unreadable", correct: null, scope: "unclear", note: "The model did not report on this question." };
         const work = ["attempted", "not_attempted", "unreadable", "sample"].includes(hit.work) ? hit.work : "unreadable";
         let correct = null;
         if (hasAnswerKey && (work === "attempted" || work === "unreadable")) {
@@ -1422,11 +1464,16 @@ async function runCheckJob(ctx) {
         // Student-facing line, with the cases that must stay silent enforced
         // here rather than trusted to the prompt: a correct answer needs no
         // commentary, and an unreadable one is the teacher's business only.
+        const scope = ["core", "bonus", "unclear"].includes(hit.scope) ? hit.scope : "unclear";
         let studentNote = sanitizeStudentText(hit.studentNote);
         if (work === "unreadable" || work === "sample" || correct === "correct") studentNote = "";
-        if (work === "not_attempted" && !studentNote) studentNote = "Not done yet.";
+        // A bonus question was never theirs to do, so "Not done yet." would be
+        // an accusation about work nobody set. Attempting one is credit, not a
+        // requirement, so it only ever gets a line when they actually did it.
+        if (scope === "bonus" && work !== "attempted") studentNote = "";
+        else if (work === "not_attempted" && !studentNote) studentNote = "Not done yet.";
         if (correct === "no_key" && !studentNote) studentNote = "I didn't check this one.";
-        return { q, work, correct, note: String(hit.note || ""), studentNote };
+        return { q, work, correct, note: String(hit.note || ""), studentNote, scope };
       });
 
       const score = scoreStudent(questions, hasAnswerKey);
@@ -1525,6 +1572,8 @@ async function runCheckJob(ctx) {
     subsetMode: subsetMode || "all",
     assignedQuestionsRaw: assignedRaw,
     assignedQuestions: assigned,
+    assignmentScope: scopeRule || "",
+    assignmentName: assignmentName || "",
     workSurface: workSurface || "workbook",
     photoCount: images.length,
     hasAnswerKey,

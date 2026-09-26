@@ -357,6 +357,16 @@ export default function HomeworkCheck({
   // Optional free-text label. The lesson code alone is enough to identify a
   // batch; this is for when a code isn't what you'd recognise it by later.
   const [assignmentName, setAssignmentName] = useState("");
+  // What the teacher set, in their own words. Applied per question against
+  // what is printed on the page, so a bonus nobody was asked to do doesn't
+  // read as work left undone.
+  const [assignmentScope, setAssignmentScope] = useState("");
+  useEffect(() => {
+    try { const v = localStorage.getItem("curriculate_hw_scope_v1"); if (v) setAssignmentScope(v); } catch {}
+  }, []);
+  useEffect(() => {
+    try { localStorage.setItem("curriculate_hw_scope_v1", assignmentScope); } catch {}
+  }, [assignmentScope]);
   const [bookName, setBookName] = useState("");
   useEffect(() => {
     try { const v = localStorage.getItem("curriculate_hw_book_v1"); if (v) setBookName(v); } catch {}
@@ -858,6 +868,7 @@ export default function HomeworkCheck({
           lessonCode: lessonCode || assignment?.lessonCode || "",
           bookName,
           assignmentName,
+          assignmentScope,
           answerKeyId,
           assignedQuestions,
           subsetMode,
@@ -1049,6 +1060,28 @@ export default function HomeworkCheck({
               onChange={(e) => setAssignmentName(e.target.value)}
               placeholder="Leave blank to use the lesson code"
             />
+          </div>
+        </div>
+
+        {/* The one thing that separates "didn't do it" from "wasn't asked to".
+            A printed page carries more than was set, and without this every
+            bonus question reads as work left undone — for every student
+            equally, which makes the completeness mark meaningless. */}
+        <div style={{ marginTop: 8 }}>
+          <label style={S.label}>
+            What was assigned? <span style={S.optional}>optional</span>
+          </label>
+          <input
+            style={S.input}
+            value={assignmentScope}
+            onChange={(e) => setAssignmentScope(e.target.value)}
+            placeholder="e.g. Core only — odds — 1 to 12, all parts — skip the Investigation"
+          />
+          <div style={S.hint}>
+            Say it however you'd say it to the class. It's read against what's printed on the
+            page, so anything outside it is marked bonus and left out of the completeness
+            score rather than counting as not done. Blank means everything printed except
+            what the book marks bonus, extension or investigation.
           </div>
         </div>
       </div>

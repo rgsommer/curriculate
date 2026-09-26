@@ -37,6 +37,12 @@ const questionResultSchema = new mongoose.Schema(
     // questions the student got right (nothing to act on) and for anything
     // flagged unreadable (that goes to the teacher only).
     studentNote: { type: String, default: "" },
+
+    // Whether this question was actually set. "bonus" leaves the completeness
+    // denominator — work nobody was asked to do is not work left undone —
+    // while "unclear" is counted as core, so an ambiguous page errs towards
+    // asking rather than quietly excusing.
+    scope: { type: String, enum: ["core", "bonus", "unclear"], default: "unclear" },
   },
   { _id: false }
 );
@@ -144,6 +150,9 @@ const homeworkCheckBatchSchema = new mongoose.Schema(
     // optional, the lesson code may be the only other label a batch carries —
     // and "NS7-3" is not what a teacher recognises their own homework by.
     assignmentName: { type: String, default: "" },
+    // What the teacher said was set, in their own words. Applied per question
+    // by the model against what is printed on the page.
+    assignmentScope: { type: String, default: "" },
     lessonCode: { type: String, default: "", index: true },
     bookName: { type: String, default: "" },
     batchDate: { type: Date, default: Date.now, index: true },
