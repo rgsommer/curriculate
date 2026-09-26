@@ -1009,7 +1009,7 @@ export default function HomeworkCheck({
 
       {/* ---------- Setup ---------- */}
       <div style={S.section}>
-        <div style={S.sectionTitle}>1 · Class &amp; book</div>
+        <div style={S.sectionTitle}>1 · What you're checking</div>
         <div style={S.row}>
           <div style={{ flex: 1, minWidth: 180 }}>
             <label style={S.label}>Class</label>
@@ -1026,15 +1026,6 @@ export default function HomeworkCheck({
                 No rosters yet. Upload one in Batch mode, or the check will run without name matching.
               </div>
             )}
-          </div>
-          <div style={{ flex: 1, minWidth: 180 }}>
-            <label style={S.label}>Book (for the answer key)</label>
-            <input
-              style={S.input}
-              value={bookName}
-              onChange={(e) => setBookName(e.target.value)}
-              placeholder="JUMP Math AP Book 7.1"
-            />
           </div>
         </div>
 
@@ -1134,6 +1125,17 @@ export default function HomeworkCheck({
           >
             {keyBusy ? "Reading key…" : "Upload answer-key pages"}
           </button>
+          {/* Only meaningful while uploading: it's the label the new key is filed
+              under. It used to sit up in section 1 as if it selected something,
+              which it stopped doing once the key itself became a choice. */}
+          <div style={{ flex: 1, minWidth: 180 }}>
+            <input
+              style={S.input}
+              value={bookName}
+              onChange={(e) => setBookName(e.target.value)}
+              placeholder="Book to file it under (JUMP Math AP Book 7.1)"
+            />
+          </div>
           <input
             ref={keyInputRef}
             type="file"
