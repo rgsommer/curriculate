@@ -973,11 +973,11 @@ export default function HomeworkCheck({
 
   /* ---------------- exports ---------------- */
 
-  function exportCsv() {
+  function exportCsv(codes = {}) {
     if (!result?.results?.length) return;
     const header = [
       "Student", "Completeness /10", "Correctness /10", "Attempted", "Assigned",
-      "Correct", "Checked against key", "Status", "Flags", "Per-question",
+      "Correct", "Checked against key", "Status", "Flags", "Feedback link", "Per-question",
     ].map(escCsv).join(",");
 
     const rows = result.results.map((r) => {
@@ -998,6 +998,11 @@ export default function HomeworkCheck({
         r.keyedAttemptedCount ?? "",
         status,
         (r.flags || []).join("; "),
+        // Where the student can read what was wrong and what to do about it.
+        // Blank until the batch is released — the code is minted then.
+        (codes[r.studentId] || codes[r.edsbyId])
+          ? `www.curriculate.net/results/${codes[r.studentId] || codes[r.edsbyId]}`
+          : "",
         perQ,
       ].map(escCsv).join(",");
     });
@@ -1012,7 +1017,7 @@ export default function HomeworkCheck({
   // to accept more.
   const EDSBY_COMMENT_MAX = 900;
 
-  function exportEdsbyCsv() {
+  function exportEdsbyCsv(codes = {}) {
     if (!result?.results?.length) return;
     // Completeness is the mark that posts to the gradebook by default.
     const headers = ["Student ID", "First Name", "Last Name", "Assessment Name", "Date", "Grade", "Out Of", "Comment"];
@@ -1057,6 +1062,8 @@ export default function HomeworkCheck({
         if (q.studentNote && q.correct === "incorrect") commentParts.push(`${q.q}: ${q.studentNote}`);
       }
       if (r.encouragement) commentParts.push(r.encouragement);
+      const code = codes[r.studentId] || codes[r.edsbyId];
+      if (code) commentParts.push(`Full feedback: www.curriculate.net/results/${code}`);
       if ((r.flags || []).length) commentParts.push(r.flags.join(" "));
 
       let comment = "";
@@ -1768,6 +1775,11 @@ function ResultsTable({ result, onExportCsv, onExportEdsby, hwUrl, teacherEmail 
   const [releaseBusy, setReleaseBusy] = useState(false);
   const [releaseError, setReleaseError] = useState("");
   const [portalMsg, setPortalMsg] = useState("");
+  // studentId -> result code, from the release. These codes are minted per
+  // student and are the only way to reach the detailed feedback — Edsby's
+  // gradebook CSV has no comment field, so nothing about what was wrong or
+  // what to do next can travel with the mark.
+  const [resultCodes, setResultCodes] = useState({});
 
   async function toggleRelease(next) {
     if (!result.batchId) {
@@ -1789,6 +1801,11 @@ function ResultsTable({ result, onExportCsv, onExportEdsby, hwUrl, teacherEmail 
         setReleaseError(data.portalError);
       } else if (data.portal) {
         const p = data.portal;
+        if (Array.isArray(p.codes)) {
+          const map = {};
+          for (const c of p.codes) if (c.studentId) map[c.studentId] = c.code;
+          setResultCodes(map);
+        }
         setPortalMsg(
           next
             ? `${(p.created || 0) + (p.updated || 0)} of ${p.eligible ?? 0} students now have this on their progress page.`
@@ -1833,8 +1850,8 @@ function ResultsTable({ result, onExportCsv, onExportEdsby, hwUrl, teacherEmail 
       <div style={{ ...S.row, justifyContent: "space-between", alignItems: "center" }}>
         <div style={S.sectionTitle}>Results</div>
         <div style={S.row}>
-          <button type="button" style={S.smallBtn} onClick={onExportCsv}>Export CSV</button>
-          <button type="button" style={S.smallBtn} onClick={onExportEdsby}>Edsby CSV</button>
+          <button type="button" style={S.smallBtn} onClick={() => onExportCsv(resultCodes)}>Export CSV</button>
+          <button type="button" style={S.smallBtn} onClick={() => onExportEdsby(resultCodes)}>Edsby CSV</button>
         </div>
       </div>
 

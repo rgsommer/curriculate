@@ -2164,6 +2164,7 @@ async function publishBatchToPortal(batch) {
   const batchId = String(batch._id);
   let created = 0;
   let updated = 0;
+  const codes = [];
 
   for (const r of eligible) {
     const studentId = r.studentId || r.edsbyId;
@@ -2214,6 +2215,7 @@ async function publishBatchToPortal(batch) {
     }
     if (saved) {
       created += 1;
+      codes.push({ studentId, studentName: r.studentName || "", code: saved.code });
       // Same notification path every other grading mode uses.
       notifyNewGrade(studentId, {
         title: meta.title,
@@ -2225,7 +2227,9 @@ async function publishBatchToPortal(batch) {
   }
 
   console.log(`[homework/publish] batch ${batchId}: ${created} created, ${updated} updated of ${eligible.length} eligible`);
-  return { created, updated, eligible: eligible.length };
+  // The codes go back to the caller: they are the only route a student has to
+  // the detailed feedback, and until now they were minted and forgotten.
+  return { created, updated, eligible: eligible.length, codes };
 }
 
 async function unpublishBatch(batchId) {
