@@ -1070,6 +1070,36 @@ export default function BatchGrading({
     };
   }
 
+  // What goes in an Edsby gradebook cell: the same material the printed
+  // report carries — what they did well, what to do next, then the comment —
+  // rather than the comment alone, which is all the strips have room for. A
+  // gradebook cell is read by the student and by a parent, so it should give
+  // direction as well as encouragement.
+  //
+  // Assembled in that order and trimmed by dropping whole items off the end,
+  // so a long one stops cleanly instead of mid-sentence.
+  function buildEdsbyComment(r, max = 700) {
+    const clean = (v) => String(v || "").replace(/\s+/g, " ").trim();
+    const parts = [];
+    const strengths = (Array.isArray(r.strengths) ? r.strengths : []).map(clean).filter(Boolean);
+    const next = (Array.isArray(r.improvements) ? r.improvements : []).map(clean).filter(Boolean);
+
+    if (strengths.length) parts.push(`Well done: ${strengths.slice(0, 2).join(" ")}`);
+    if (next.length) parts.push(`Next: ${next.slice(0, 2).join(" ")}`);
+    const c = clean(r.comment);
+    if (c) parts.push(c);
+
+    let out = "";
+    for (const part of parts) {
+      const joined = out ? `${out} ${part}` : part;
+      if (joined.length > max) break;
+      out = joined;
+    }
+    // A single oversized piece still has to be cut somewhere.
+    if (!out && parts.length) out = parts[0].slice(0, max - 1).replace(/\s+\S*$/, "") + "…";
+    return out;
+  }
+
   // ---------- Run batch grading ----------
   const runBatch = useCallback(async () => {
     const doc = pdfDocRef.current;
@@ -1358,7 +1388,7 @@ export default function BatchGrading({
                   // payload is the whole student-facing report, far too long
                   // for a comment field, so carry a short form and the mark.
                   teacherEmail: parentTeacherEmail || "",
-                  edsbyComment: String(resultEntry.comment || "").replace(/\s+/g, " ").trim().slice(0, 700),
+                  edsbyComment: buildEdsbyComment(resultEntry),
                   score: resultEntry.score ?? null,
                   outOf: resultEntry.outOf ?? null,
                   pct: resultEntry.pct ?? null,
