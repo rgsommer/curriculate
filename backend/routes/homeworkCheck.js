@@ -2324,6 +2324,94 @@ router.post("/batches/:id/release-answers", async (req, res) => {
 //   - correct answers are withheld until the teacher flips answersReleased
 //   - counts, never percentages; no class average, no ranking, no other students
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// GET /homework/batches/:id/comments?teacherEmail=...
+//
+// The per-student feedback as plain text, ready to be put somewhere Edsby can
+// actually hold it. The gradebook CSV cannot: its format is a marks matrix
+// with no comment field, so everything about what was wrong and what to do
+// next stops at the export.
+//
+// Whatever carries it — a gradebook cell comment posted by the teacher's own
+// Apps Script, or anything else — needs the same thing: the text, keyed to a
+// student Edsby can identify. That is this. It commits to no transport and
+// stores no credentials.
+//
+// Released batches only. These lines are written to the student, and the
+// release gate is the teacher saying they have read them.
+// ---------------------------------------------------------------------------
+function buildTeacherComment(batch, r, code) {
+  const qs = r.questions || [];
+  const missed = qs.filter((q) => q.work === "not_attempted" && q.scope !== "bonus").map((q) => q.q);
+  const wrong = qs.filter((q) => q.correct === "incorrect").map((q) => q.q);
+
+  const parts = [`Attempted ${r.attemptedCount} of ${r.assignedCount}.`];
+  if (r.correctness != null) {
+    parts.push(`Correct on ${r.correctCount} of ${r.keyedAttemptedCount} checked`
+      + (r.workedCount ? ` (${r.workedCount} worked out where the book prints no answer).` : "."));
+  }
+  if (missed.length) parts.push(`Not done: ${missed.join(", ")}.`);
+  if (wrong.length) parts.push(`Check again: ${wrong.join(", ")}.`);
+  for (const t of (r.reviewPoints || [])) parts.push(/[.!?]$/.test(t) ? t : `${t}.`);
+  for (const q of qs) {
+    if (q.studentNote && q.correct === "incorrect") parts.push(`${q.q}: ${q.studentNote}`);
+  }
+  if (r.encouragement) parts.push(r.encouragement);
+  if (code) parts.push(`Full feedback: www.curriculate.net/results/${code}`);
+  return parts.join(" ");
+}
+
+router.get("/batches/:id/comments", async (req, res) => {
+  try {
+    const teacherEmail = String(req.query.teacherEmail || "").trim().toLowerCase();
+    if (!teacherEmail) return res.status(400).json({ ok: false, error: "teacherEmail is required." });
+
+    const batch = await HomeworkCheckBatch.findOne({ _id: req.params.id, teacherEmail }).lean();
+    if (!batch) return res.status(404).json({ ok: false, error: "Batch not found." });
+    if (!batch.released) {
+      return res.status(409).json({
+        ok: false,
+        error: "This batch hasn't been released. Release it first — these lines are written to the student.",
+      });
+    }
+
+    // Codes are per student, minted at release; look them up rather than
+    // re-minting, so the link matches what the portal is already serving.
+    const published = await PublishedResult
+      .find({ "meta.homeworkBatchId": String(batch._id) })
+      .select("code meta.studentId").lean();
+    const codeByStudent = new Map(
+      published.map((p) => [String(p?.meta?.studentId || ""), p.code]).filter(([k]) => k)
+    );
+
+    const students = (batch.results || [])
+      .filter((r) => !r.superseded && !r.noPageFound && r.completeness != null)
+      .map((r) => {
+        const sid = r.studentId || r.edsbyId || "";
+        return {
+          studentName: r.studentName || "",
+          studentId: r.studentId || "",
+          edsbyId: r.edsbyId || "",
+          grade: r.completeness,
+          outOf: 10,
+          comment: buildTeacherComment(batch, r, codeByStudent.get(String(sid)) || ""),
+        };
+      });
+
+    return res.json({
+      ok: true,
+      batchId: String(batch._id),
+      assessmentName: `Homework ${batch.assignmentName || batch.lessonCode || ""}`.trim(),
+      className: batch.className || "",
+      batchDate: batch.batchDate,
+      students,
+    });
+  } catch (err) {
+    console.error("[homework/batches/:id/comments]", err?.message || err);
+    return res.status(500).json({ ok: false, error: "Could not build the comments." });
+  }
+});
+
 router.get("/student-view", async (req, res) => {
   try {
     const studentId = String(req.query.studentId || "").trim();
