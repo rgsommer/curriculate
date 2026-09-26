@@ -1982,13 +1982,17 @@ router.get("/batches", async (req, res) => {
     const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
 
     const docs = await HomeworkCheckBatch.find(q)
-      .select("className lessonCode bookName batchDate assignedQuestionsRaw photoCount hasAnswerKey missingStudents unreadableCount results.studentName results.completeness results.correctness createdAt")
+      .select("className lessonCode bookName assignmentName released releasedAt batchDate assignedQuestionsRaw photoCount hasAnswerKey missingStudents unreadableCount results.studentName results.completeness results.correctness createdAt")
       .sort({ batchDate: -1, createdAt: -1 }).limit(limit).lean();
 
     return res.json({
       ok: true,
       batches: docs.map((d) => ({
         id: String(d._id), className: d.className, lessonCode: d.lessonCode, bookName: d.bookName,
+        assignmentName: d.assignmentName || "",
+        // Only a released batch has comments to post — the release gate is the
+        // teacher saying they have read what goes to the student.
+        released: !!d.released, releasedAt: d.releasedAt || null,
         batchDate: d.batchDate, assignedQuestionsRaw: d.assignedQuestionsRaw,
         photoCount: d.photoCount, hasAnswerKey: d.hasAnswerKey,
         studentCount: (d.results || []).length,
