@@ -1249,6 +1249,14 @@ genuinely gives you nothing to praise (e.g. nothing was attempted), return an
 empty string rather than manufacturing something. An empty encouragement is
 honest; a hollow one is not.
 
+"lessonSeen" — what the PAGE says this work is.
+Copy the lesson code and/or title printed at the top of the page, exactly as
+printed: "NS7-1", "PA7-8 Patterns and Rules", "Unit 3 Review". This is read
+off the page, never worked out: if the page carries no such heading, return
+null. Every student's copy is the same page, so their answers are compared
+with one another — a guess from one of them would corrupt that agreement, and
+null from all of them is a perfectly good answer.
+
 Return JSON only.`;
 }
 
@@ -1294,8 +1302,12 @@ const CHECK_SCHEMA = {
       },
     },
     pageNote: { type: ["string", "null"] },
+    // What the page says it is — the printed lesson code and/or title. Read
+    // from the page, never inferred; 15-20 students agreeing is what makes it
+    // usable, and a guess would poison that agreement.
+    lessonSeen: { type: ["string", "null"] },
   },
-  required: ["questions", "unmatchedAnswers", "encouragement", "pageNote"],
+  required: ["questions", "unmatchedAnswers", "encouragement", "pageNote", "lessonSeen"],
 };
 
 // Belt-and-braces on the tone rules. The prompt forbids these, but a phrase
@@ -1315,6 +1327,43 @@ function sanitizeStudentText(s) {
   // Two sentences max.
   const sentences = t.split(/(?<=[.!?])\s+/).slice(0, 2).join(" ");
   return sentences.slice(0, 300);
+}
+
+// What the class's own pages say this assignment is. Every student holds a
+// copy of the same page, so the heading printed on it is reported 15-20 times
+// over — agreement across the batch is what makes it trustworthy, and it costs
+// nothing beyond a field the model was already looking at.
+//
+// A plurality is required, not a majority: on a bad photo most pages read as
+// nothing, and two clear readings out of twenty with nothing contradicting
+// them is still the answer. What is refused is a lone reading, or a genuine
+// split, where the honest outcome is to leave the field to the teacher.
+function consensusLesson(results) {
+  const seen = results
+    .map((r) => String(r?.lessonSeen || "").trim())
+    .filter(Boolean);
+  if (seen.length < 2) return null;
+
+  const tally = new Map();
+  for (const v of seen) {
+    const k = v.toUpperCase();
+    if (!tally.has(k)) tally.set(k, { text: v, n: 0 });
+    tally.get(k).n++;
+  }
+  const ranked = [...tally.values()].sort((a, b) => b.n - a.n);
+  const top = ranked[0];
+  const runnerUp = ranked[1]?.n || 0;
+  if (top.n < 2) return null;
+  if (top.n <= runnerUp) return null; // a real split — say nothing
+
+  // The code, where the heading carries one ("PA7-8 Patterns and Rules").
+  const codeMatch = top.text.match(/\b([A-Z]{1,4}\d+-\d+[A-Z]?)\b/i);
+  return {
+    text: top.text,
+    code: codeMatch ? codeMatch[1].toUpperCase() : "",
+    agreed: top.n,
+    of: seen.length,
+  };
 }
 
 // Two independent marks, never merged.
@@ -1642,8 +1691,10 @@ async function runCheckJob(ctx) {
       }
       if (!g.matched) flags.push("Name could not be matched to the roster");
       if (parsed.pageNote) flags.push(String(parsed.pageNote));
+      const lessonSeen = String(parsed.lessonSeen || "").trim().slice(0, 120);
 
       results[gi] = {
+        lessonSeen,
         unmatchedAnswers,
         encouragement: sanitizeStudentText(parsed.encouragement),
         studentName: g.studentName || "",
@@ -1706,6 +1757,22 @@ async function runCheckJob(ctx) {
     });
   }
 
+  // Fill the label from the pages when the teacher left it blank. Never
+  // overwrite what they typed — they were in the room and the page was not.
+  const detected = consensusLesson(results);
+  let effectiveName = assignmentName || "";
+  let effectiveCode = lessonCode || "";
+  if (detected) {
+    if (!effectiveName) effectiveName = detected.text;
+    if (!effectiveCode && detected.code) effectiveCode = detected.code;
+  }
+  // The pages disagreeing with the teacher is worth saying out loud: it is how
+  // a batch graded against the wrong lesson's key announces itself.
+  const lessonMismatch =
+    detected?.code && lessonCode && detected.code !== String(lessonCode).toUpperCase()
+      ? `The pages read "${detected.code}" (${detected.agreed} of ${detected.of}) but this batch was labelled ${lessonCode}.`
+      : "";
+
   const unmatchedPhotoIndexes = results
     .filter((r) => r && r.unmatched && !r.superseded)
     .flatMap((r) => r.photoIndexes || []);
@@ -1715,14 +1782,17 @@ async function runCheckJob(ctx) {
 
   const doc = {
     teacherEmail, className, rosterId,
-    lessonCode, bookName,
+    lessonCode: effectiveCode,
+    bookName,
     batchDate: batchDate || new Date(),
     assignment: assignment || {},
     subsetMode: subsetMode || "all",
     assignedQuestionsRaw: assignedRaw,
     assignedQuestions: assigned,
     assignmentScope: scopeRule || "",
-    assignmentName: assignmentName || "",
+    assignmentName: effectiveName,
+    detectedLesson: detected ? `${detected.text} (${detected.agreed}/${detected.of} pages)` : "",
+    lessonMismatch,
     workSurface: workSurface || "workbook",
     photoCount: images.length,
     hasAnswerKey,

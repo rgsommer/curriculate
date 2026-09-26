@@ -100,6 +100,10 @@ const studentResultSchema = new mongoose.Schema(
     // Per-student notes surfaced above the table. TEACHER-FACING ONLY.
     flags: [{ type: String }],
 
+    // The lesson heading printed on THIS student's page, as read. Kept per
+    // student because the batch-level label is a vote across these.
+    lessonSeen: { type: String, default: "" },
+
     // Set when the model produced a page it could not attach to any roster
     // student — the teacher assigns it by hand.
     unmatched: { type: Boolean, default: false },
@@ -153,6 +157,14 @@ const homeworkCheckBatchSchema = new mongoose.Schema(
     // What the teacher said was set, in their own words. Applied per question
     // by the model against what is printed on the page.
     assignmentScope: { type: String, default: "" },
+
+    // What the students' own pages said this was, and how many agreed. Used to
+    // fill the name when the teacher left it blank, and kept either way as the
+    // evidence behind that label.
+    detectedLesson: { type: String, default: "" },
+    // Set when the pages consistently name a different lesson than the batch
+    // was labelled with — how a batch graded against the wrong key shows up.
+    lessonMismatch: { type: String, default: "" },
     lessonCode: { type: String, default: "", index: true },
     bookName: { type: String, default: "" },
     batchDate: { type: Date, default: Date.now, index: true },
