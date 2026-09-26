@@ -2448,6 +2448,93 @@ router.get("/batches/:id/comments", async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// GET /homework/sessions?teacherEmail=...
+// GET /homework/sessions/:sessionId/comments?teacherEmail=...
+//
+// The same service for batch grading that /batches/:id/comments provides for
+// homework checks. Batch grading keeps no batch document — each student is
+// published straight to the results portal — so a "session" here is just the
+// PublishedResults sharing a sessionId, and the short comment and mark ride
+// along in meta because the payload itself is a whole report.
+//
+// Lives in this router because the Edsby poster already talks to it; the
+// alternative was a second base URL in the extension for no gain.
+// ---------------------------------------------------------------------------
+router.get("/sessions", async (req, res) => {
+  try {
+    const teacherEmail = String(req.query.teacherEmail || "").trim().toLowerCase();
+    if (!teacherEmail) return res.status(400).json({ ok: false, error: "teacherEmail is required." });
+
+    const docs = await PublishedResult.find({
+      "meta.source": "batch-grading",
+      "meta.teacherEmail": teacherEmail,
+      sessionId: { $nin: [null, ""] },
+    }).select("sessionId meta createdAt").sort({ createdAt: -1 }).limit(400).lean();
+
+    const bySession = new Map();
+    for (const d of docs) {
+      const k = String(d.sessionId);
+      if (!bySession.has(k)) {
+        bySession.set(k, {
+          id: k,
+          assignmentName: d.meta?.title || "Graded work",
+          className: d.meta?.className || "",
+          batchDate: d.createdAt,
+          studentCount: 0,
+          released: true,   // batch grading publishes as it grades
+        });
+      }
+      bySession.get(k).studentCount += 1;
+    }
+    return res.json({ ok: true, batches: [...bySession.values()] });
+  } catch (err) {
+    console.error("[homework/sessions]", err?.message || err);
+    return res.status(500).json({ ok: false, error: "Could not list grading sessions." });
+  }
+});
+
+router.get("/sessions/:sessionId/comments", async (req, res) => {
+  try {
+    const teacherEmail = String(req.query.teacherEmail || "").trim().toLowerCase();
+    if (!teacherEmail) return res.status(400).json({ ok: false, error: "teacherEmail is required." });
+
+    const docs = await PublishedResult.find({
+      sessionId: String(req.params.sessionId),
+      "meta.teacherEmail": teacherEmail,
+    }).select("code meta").lean();
+    if (!docs.length) return res.status(404).json({ ok: false, error: "No results in that session." });
+
+    const students = docs.map((d) => {
+      const m = d.meta || {};
+      const bits = [];
+      if (m.edsbyComment) bits.push(m.edsbyComment);
+      if (d.code) bits.push(`Full feedback: www.curriculate.net/results/${d.code}`);
+      return {
+        studentName: m.studentName || "",
+        studentId: m.studentId || "",
+        edsbyId: "",
+        // Batch marks keep their own denominator — a quiz out of 6 stays out
+        // of 6 rather than being rescaled into somebody else's column.
+        grade: m.score != null ? m.score : null,
+        outOf: m.outOf != null ? m.outOf : null,
+        comment: bits.join(" "),
+      };
+    }).filter((s) => s.studentName && s.comment);
+
+    return res.json({
+      ok: true,
+      batchId: String(req.params.sessionId),
+      assessmentName: docs[0]?.meta?.title || "Graded work",
+      className: docs[0]?.meta?.className || "",
+      students,
+    });
+  } catch (err) {
+    console.error("[homework/sessions/:id/comments]", err?.message || err);
+    return res.status(500).json({ ok: false, error: "Could not build the comments." });
+  }
+});
+
 router.get("/student-view", async (req, res) => {
   try {
     const studentId = String(req.query.studentId || "").trim();

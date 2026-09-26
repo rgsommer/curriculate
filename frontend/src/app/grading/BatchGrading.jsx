@@ -1354,6 +1354,14 @@ export default function BatchGrading({
                   title: resultEntry.detectedTitle || effectiveTitle || "",
                   pdfName: pdfName || "",
                   className: resultEntry.rosterClassName || "",
+                  // For posting into an Edsby gradebook cell later: the
+                  // payload is the whole student-facing report, far too long
+                  // for a comment field, so carry a short form and the mark.
+                  teacherEmail: parentTeacherEmail || "",
+                  edsbyComment: String(resultEntry.comment || "").replace(/\s+/g, " ").trim().slice(0, 700),
+                  score: resultEntry.score ?? null,
+                  outOf: resultEntry.outOf ?? null,
+                  pct: resultEntry.pct ?? null,
                 },
                 sessionId: batchSessionId,
               }),
@@ -2851,6 +2859,26 @@ export default function BatchGrading({
     return rows.join("\n");
   }, [results, emailTitle]);
 
+  const [edsbyExported, setEdsbyExported] = useState(false);
+  const downloadEdsbyCsv = useCallback(() => {
+    const csv = buildEdsbyCsv();
+    if (!csv) { alert("No graded results to export yet."); return; }
+    // Names are normalised to the roster spelling on email; do the same here,
+    // or the gradebook gets whatever the handwriting was read as.
+    const safeTitle = String(effectiveTitle || "grades").replace(/[^\w.-]+/g, "-").slice(0, 40);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `edsby-${safeTitle}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setEdsbyExported(true);
+    setTimeout(() => setEdsbyExported(false), 2500);
+  }, [buildEdsbyCsv, effectiveTitle]);
+
   const sendEmail = useCallback(async () => {
     const to = emailTo.trim();
     if (!to || !to.includes("@")) return;
@@ -4327,6 +4355,13 @@ export default function BatchGrading({
               </button>
               <button onClick={exportCsv} style={batchStyles.smallBtn} type="button">
                 {csvExported ? "Exported ✓" : "Export CSV"}
+              </button>
+              {/* buildEdsbyCsv already existed, but only as an email
+                  attachment — so getting a gradebook file meant emailing it to
+                  yourself, finding the mail and saving the attachment. It is
+                  the same file; it just needed a button. */}
+              <button onClick={downloadEdsbyCsv} style={batchStyles.smallBtn} type="button">
+                {edsbyExported ? "Downloaded ✓" : "Edsby CSV"}
               </button>
               <button
                 onClick={async () => {
