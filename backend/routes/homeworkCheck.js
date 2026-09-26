@@ -1023,16 +1023,26 @@ which is how this teacher describes what they set:
   ${scopeRule}
 
   core     the question falls inside that description — it was set
-  bonus    it is on the page but outside it (bonus, extension, investigation,
-           challenge, a starred or shaded question, a section the description
-           excludes)
-  unclear  the page gives you nothing to decide on
+  bonus    it is on the page but outside it — not set, whatever the reason
+  unclear  you genuinely cannot tell
 
-Use what is PRINTED on the page to decide — a heading, a label, a star, a
-shaded box. Do not infer from whether the student did it: a blank question is
-exactly the case this has to get right, and "they skipped it so it must be
-bonus" would erase the finding. When the page says nothing either way, "unclear"
-is the honest answer and it will be counted as core.
+A description comes in two kinds and may mix them:
+
+  BY NUMBER OR PART — "1, 3, 5", "odds", "1 to 12", "first three parts of each",
+  "a and b only", "1-10 but just the first two letters". Work it out from the
+  question's own printed number and part letter. "The first three letters of 1,
+  3, 5" means 1a 1b 1c, 3a 3b 3c, 5a 5b 5c are core and everything else on the
+  page — including 1d, and including all of 2 and 4 — is bonus. Letters and
+  parts mean the same thing: a, b, c.
+
+  BY SECTION — "Core only", "skip the Investigation", "not the bonus". Decide
+  from what is PRINTED: a heading, a label, a star, a shaded box.
+
+Two rules hold either way. Never infer from whether the student did it — a
+blank question is exactly the case this has to get right, and "they skipped it
+so it must not have been set" would erase the finding. And when you genuinely
+cannot tell, "unclear" is the honest answer; it will be counted as core, so
+guessing "bonus" to be kind would quietly excuse real work.
 ${assigned.length ? `
 THE ASSIGNED QUESTIONS — report on exactly these and no others:
 ${assigned.map((q) => `  ${q}`).join("\n")}` : `THE ASSIGNED QUESTIONS — the teacher did not supply a list, because the

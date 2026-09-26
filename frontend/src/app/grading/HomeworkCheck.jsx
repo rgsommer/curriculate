@@ -483,6 +483,18 @@ export default function HomeworkCheck({
 
   // ---- answer key ----
   const [keys, setKeys] = useState([]);
+  // Set only when both codes are known and disagree — an unlabelled key or a
+  // blank lesson code is not evidence of a mistake.
+  const keyMismatch = useMemo(() => {
+    if (!answerKeyId) return null;
+    const k = keys.find((x) => x.id === answerKeyId);
+    const keyCode = String(k?.lessonCode || "").trim();
+    const typed = String(lessonCode || "").trim();
+    if (!keyCode || !typed) return null;
+    if (keyCode.toUpperCase() === typed.toUpperCase()) return null;
+    return { keyCode, lessonCode: typed };
+  }, [answerKeyId, keys, lessonCode]);
+
   const [keyBusy, setKeyBusy] = useState(false);
   const [keyMsg, setKeyMsg] = useState("");
   const [showKeys, setShowKeys] = useState(false);
@@ -1112,6 +1124,22 @@ export default function HomeworkCheck({
             {!answerKeyId && (
               <span style={S.hint}>
                 No key chosen — this batch reports completeness only, with no correctness score.
+              </span>
+            )}
+            {/* Choosing the key outright also makes it possible to choose the
+                wrong one, and nothing downstream would notice: every answer
+                would simply be compared against another lesson's. */}
+            {keyMismatch && (
+              <span
+                style={{
+                  display: "block", marginTop: 4, fontSize: 12, lineHeight: 1.5,
+                  color: "#7c2d12", background: "rgba(234,88,12,0.10)",
+                  border: "1px solid rgba(234,88,12,0.35)", borderRadius: 6, padding: "6px 9px",
+                }}
+              >
+                This key is for <b>{keyMismatch.keyCode}</b>, but the lesson code says{" "}
+                <b>{keyMismatch.lessonCode}</b>. If that's not deliberate, every answer will be
+                marked against the wrong lesson.
               </span>
             )}
           </label>
