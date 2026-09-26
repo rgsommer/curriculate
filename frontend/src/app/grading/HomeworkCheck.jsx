@@ -429,7 +429,21 @@ export default function HomeworkCheck({
   // ---- key coverage ----
   const [coverage, setCoverage] = useState(null);
   // Which key this check marks against, chosen rather than inferred.
-  const [answerKeyId, setAnswerKeyId] = useState("");
+  const [keys, setKeys] = useState([]);
+  // An uploaded key is a whole book, so what the teacher picks is the BOOK.
+  // The lesson code they have already typed finds the lesson inside it —
+  // asking them to name the lesson twice is asking them to do the lookup.
+  const books = useMemo(
+    () => [...new Set(keys.map((k) => String(k.bookName || "").trim()).filter(Boolean))].sort(),
+    [keys]
+  );
+  const matchedKey = useMemo(() => {
+    const code = String(lessonCode || "").trim().toUpperCase();
+    if (!code) return null;
+    const inBook = keys.filter((k) => !bookName || String(k.bookName || "") === bookName);
+    return inBook.find((k) => String(k.lessonCode || "").toUpperCase() === code) || null;
+  }, [keys, bookName, lessonCode]);
+  const answerKeyId = matchedKey?.id || "";
   const [coverageBusy, setCoverageBusy] = useState(false);
   useEffect(() => {
     if (!assignedQuestions.length || !backendBase) { setCoverage(null); return; }
@@ -482,18 +496,6 @@ export default function HomeworkCheck({
   }
 
   // ---- answer key ----
-  const [keys, setKeys] = useState([]);
-  // Set only when both codes are known and disagree — an unlabelled key or a
-  // blank lesson code is not evidence of a mistake.
-  const keyMismatch = useMemo(() => {
-    if (!answerKeyId) return null;
-    const k = keys.find((x) => x.id === answerKeyId);
-    const keyCode = String(k?.lessonCode || "").trim();
-    const typed = String(lessonCode || "").trim();
-    if (!keyCode || !typed) return null;
-    if (keyCode.toUpperCase() === typed.toUpperCase()) return null;
-    return { keyCode, lessonCode: typed };
-  }, [answerKeyId, keys, lessonCode]);
 
   const [keyBusy, setKeyBusy] = useState(false);
   const [keyMsg, setKeyMsg] = useState("");
@@ -517,6 +519,30 @@ export default function HomeworkCheck({
     if (keys.length === 1 && !answerKeyId) { setAnswerKeyId(keys[0].id); return; }
     if (answerKeyId && !keys.some((k) => k.id === answerKeyId)) setAnswerKeyId("");
   }, [keys, answerKeyId]);
+
+  // Poll a background answer-key extraction. Tolerant of a few failed polls:
+  // a book takes minutes and one dropped request shouldn't lose the run.
+  async function pollKeyJob(jobId, pageCount) {
+    let misses = 0;
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 2500));
+      try {
+        const res = await fetch(hwUrl(`/answer-key/job/${encodeURIComponent(jobId)}`));
+        if (!res.ok) throw new Error(`poll ${res.status}`);
+        const j = await res.json();
+        misses = 0;
+        if (j.status === "error") throw new Error(j.error || "Answer-key extraction failed.");
+        if (j.status === "done") return j.result || {};
+        setKeyMsg(`Reading ${pageCount} pages — ${j.stage || "working"}… ${j.progress || 0}%`);
+      } catch (err) {
+        if (String(err?.message || "").startsWith("poll")) {
+          if (++misses >= 10) throw new Error("Lost contact while reading the answer key.");
+        } else {
+          throw err;
+        }
+      }
+    }
+  }
 
   async function deleteAnswerKey(k) {
     const id = k?._id || k?.id;
@@ -562,8 +588,16 @@ export default function HomeworkCheck({
       });
       const data = await res.json();
       if (!res.ok || !data?.ok) throw new Error(data?.error || `Server error ${res.status}`);
+
+      // A whole book is read in the background — a few pages still answer
+      // outright — so accept either shape.
+      const out = data.jobId ? await pollKeyJob(data.jobId, data.pageCount) : data;
+      const lessons = Array.isArray(out?.lessons) ? out.lessons : [];
+      const shown = lessons.slice(0, 12).map((l) => l.lessonCode).join(", ");
       setKeyMsg(
-        `Saved ${data.lessons.length} lesson(s): ${data.lessons.map((l) => l.lessonCode).join(", ")}`
+        `Saved ${lessons.length} lesson${lessons.length === 1 ? "" : "s"}`
+        + (shown ? `: ${shown}${lessons.length > 12 ? `, and ${lessons.length - 12} more` : ""}` : "")
+        + (out?.warning ? ` — ${out.warning}` : "")
         + (note ? ` — ${note}` : "")
       );
       refreshKeys();
@@ -1098,52 +1132,51 @@ export default function HomeworkCheck({
           in the key is marked “no key” and left out of the correctness score.
         </div>
 
-        {/* Say which key this check marks against, rather than inferring it from
-            a book name and lesson code. A teacher holding keys for several
-            subjects shouldn't have to spell the label the same way twice to get
-            the right answers used. */}
-        {keys.length > 0 && (
-          <label style={{ ...S.label, marginTop: 8, display: "block" }}>
-            Mark this check against
+        {/* Pick the BOOK; the lesson code already typed finds the lesson in it.
+            An uploaded key is the whole book's answers, so naming the lesson
+            here as well would be doing the lookup by hand. */}
+        {books.length > 0 && (
+          <div style={{ marginTop: 8 }}>
+            <label style={S.label}>Mark this check against</label>
             <select
-              value={answerKeyId}
-              onChange={(e) => setAnswerKeyId(e.target.value)}
-              style={{ ...S.input, marginTop: 4, width: "100%" }}
+              value={bookName}
+              onChange={(e) => setBookName(e.target.value)}
+              style={{ ...S.input, width: "100%" }}
             >
-              <option value="">
-                {keys.length === 1 ? "— choose a key —" : "— choose a key —"}
-              </option>
-              {keys.map((k) => (
-                <option key={k.id} value={k.id}>
-                  {k.lessonCode || "(no lesson code)"}
-                  {k.bookName ? ` · ${k.bookName}` : ""}
-                  {typeof k.questionCount === "number" ? ` · ${k.questionCount} answers` : ""}
+              <option value="">Any book on file</option>
+              {books.map((b) => (
+                <option key={b} value={b}>
+                  {b} ({keys.filter((k) => k.bookName === b).length} lessons)
                 </option>
               ))}
             </select>
-            {!answerKeyId && (
-              <span style={S.hint}>
-                No key chosen — this batch reports completeness only, with no correctness score.
-              </span>
-            )}
-            {/* Choosing the key outright also makes it possible to choose the
-                wrong one, and nothing downstream would notice: every answer
-                would simply be compared against another lesson's. */}
-            {keyMismatch && (
-              <span
+
+            {/* Whether THIS lesson is actually in there. Otherwise the first
+                sign of a wrong code is a whole batch coming back with no
+                correctness score at all. */}
+            {!String(lessonCode || "").trim() ? (
+              <div style={S.hint}>Enter the lesson code above and its answers will be found here.</div>
+            ) : matchedKey ? (
+              <div style={{ ...S.hint, color: "#166534" }}>
+                ✓ <b>{matchedKey.lessonCode}</b> found{matchedKey.bookName ? ` in ${matchedKey.bookName}` : ""} —{" "}
+                {matchedKey.questionCount} answers.
+              </div>
+            ) : (
+              <div
                 style={{
-                  display: "block", marginTop: 4, fontSize: 12, lineHeight: 1.5,
+                  fontSize: 12, lineHeight: 1.5, marginTop: 4,
                   color: "#7c2d12", background: "rgba(234,88,12,0.10)",
                   border: "1px solid rgba(234,88,12,0.35)", borderRadius: 6, padding: "6px 9px",
                 }}
               >
-                This key is for <b>{keyMismatch.keyCode}</b>, but the lesson code says{" "}
-                <b>{keyMismatch.lessonCode}</b>. If that's not deliberate, every answer will be
-                marked against the wrong lesson.
-              </span>
+                No answers on file for <b>{String(lessonCode).trim().toUpperCase()}</b>
+                {bookName ? ` in ${bookName}` : ""}. This batch will report completeness only.
+                Check the code, or upload that book's answer key below.
+              </div>
             )}
-          </label>
+          </div>
         )}
+
         <div style={{ ...S.row, marginTop: 8 }}>
           <button
             type="button"
@@ -1190,7 +1223,7 @@ export default function HomeworkCheck({
             it covers is then marked against the wrong answers. There was no way
             to take one back, so an upload could only ever be added to. */}
         {showKeys && keys.length > 0 && (
-          <div style={{ marginTop: 8, border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
+          <div style={{ marginTop: 8, border: "1px solid #e2e8f0", borderRadius: 8, overflow: "auto", maxHeight: "40vh" }}>
             {keys.map((k) => (
               <div
                 key={k._id || k.id}
