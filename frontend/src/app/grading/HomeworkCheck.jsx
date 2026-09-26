@@ -513,12 +513,6 @@ export default function HomeworkCheck({
   }, [teacherEmail, backendBase]);
   useEffect(() => { refreshKeys(); }, [refreshKeys]);
 
-  // One key on file is not a choice — select it. And a selection that has been
-  // deleted must not linger, or the check would silently mark against nothing.
-  useEffect(() => {
-    if (keys.length === 1 && !answerKeyId) { setAnswerKeyId(keys[0].id); return; }
-    if (answerKeyId && !keys.some((k) => k.id === answerKeyId)) setAnswerKeyId("");
-  }, [keys, answerKeyId]);
 
   // Poll a background answer-key extraction. Tolerant of a few failed polls:
   // a book takes minutes and one dropped request shouldn't lose the run.
