@@ -1801,14 +1801,20 @@ function ResultsTable({ result, onExportCsv, onExportEdsby, hwUrl, teacherEmail 
         setReleaseError(data.portalError);
       } else if (data.portal) {
         const p = data.portal;
+        let map = {};
         if (Array.isArray(p.codes)) {
-          const map = {};
           for (const c of p.codes) if (c.studentId) map[c.studentId] = c.code;
           setResultCodes(map);
         }
+        // Releasing is the moment the result codes exist, so it is also the
+        // only moment the Edsby file can carry a working feedback link for
+        // every student. Hand it over now rather than making the teacher
+        // remember a second button — and it saves a trip when the import is
+        // what creates the assignment column.
+        if (next) { try { onExportEdsby(map); } catch { /* export is a bonus, not the point */ } }
         setPortalMsg(
           next
-            ? `${(p.created || 0) + (p.updated || 0)} of ${p.eligible ?? 0} students now have this on their progress page.`
+            ? `${(p.created || 0) + (p.updated || 0)} of ${p.eligible ?? 0} students now have this on their progress page. The Edsby CSV has been downloaded.`
             : `Removed ${p.removed || 0} entries from student progress pages.`
         );
       }
