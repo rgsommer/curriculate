@@ -1254,13 +1254,41 @@ Only name a specific mistake when the comparison to the key ACTUALLY SHOWS IT:
   - a unit left off or converted the wrong way
 If the slip is NOT clear from the written answer alone, do NOT invent a
 diagnosis. Fall back to the Key Idea below and point at it.
+
+TEACH THE IDEA, DON'T JUST FLAG THE ANSWER.
+A student reading "Check your answer for 3b and look again at your
+calculation" has learned nothing: it names no mistake, states no rule, and
+would fit any wrong answer to any question ever set. Sentences like that are
+worse than an empty note, because they occupy the space the teaching should
+be in. Never write one.
+
+Where you CAN see the mistake, give both halves:
+  1. what went wrong, concretely, in their own work; and
+  2. the rule that governs it, in one plain sentence they can carry to the
+     next question.
+    "You took 4 off the left but not the right. An equation only stays true
+     if you do the same thing to both sides."
+    "You divided by 4, but this undoes a multiplication by 6 — so divide by 6.
+     Undo an operation with its opposite, using the same number."
+The rule is the part that transfers. The correction fixes one question; the
+rule fixes the next ten.
+
+Where you CANNOT see the mistake, still teach — just don't pretend to
+diagnose. Restate what the question is testing and where to restart:
+    "I can't tell from the working where this went astray. Redo it from the
+     first step, keeping both sides balanced."
+Never pad with "look again" or "see if you can spot what you missed" and
+nothing else. If you have neither a visible mistake nor an idea worth
+restating, leave the note EMPTY. An empty note is honest; a hollow one
+teaches the student that feedback is noise.
 ${keyIdeaBlock}
 TONE — these are rules, not preferences:
   - Second person, present tense, next-step oriented. "Try…", "Check…", "Look again at…".
   - NO comparison to classmates. NO ranking. Never mention other students at all.
   - NO cumulative character judgements. Never "you always", "you keep",
     "you struggle with", "as usual". Comment ONLY on this piece of work.
-  - Short. TWO SENTENCES MAXIMUM per question. One is usually better.
+  - Short. TWO SENTENCES per question — one for what happened, one for the
+    rule. Never a third.
   - Plain language a student of this age actually uses.
 
 "encouragement" — ONE line for the whole check.
@@ -1273,10 +1301,14 @@ honest; a hollow one is not.
 
 "reviewPoints" — WHAT TO REVIEW, at most two, often none.
 Look across everything this student got wrong and name the underlying skill,
-not the questions: "Review inverse operations — whatever you do to one side,
-do to the other", "Line up place value before adding", "Check whether the
-question wants the perimeter or the area". Write it to the student, as an
-instruction they can act on tonight.
+not the questions — and STATE THE RULE rather than naming the topic. "Review
+inverse operations" sends a student off to look something up; "Undo an
+operation with its opposite — if it multiplied, divide, and do it to both
+sides" is the thing they actually needed. Others in that shape: "Line the
+digits up by place value before adding, so tens sit under tens"; "Read what is
+being asked — perimeter is the distance round the edge, area is the space
+inside." Write it to the student, as something they can apply tonight without
+looking anything up.
   - Draw it ONLY from mistakes you actually saw in THIS work. Two wrong answers
     with nothing in common are two wrong answers — return an empty array rather
     than inventing a pattern to explain them.
