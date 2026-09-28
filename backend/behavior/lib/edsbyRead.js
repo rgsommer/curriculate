@@ -504,11 +504,13 @@ export async function fetchZoomStudents(sess, zoomId, formkey) {
 // ── IXL import roster (roster → parents → parent emails) ──────────────────────
 
 // IXL's student-import template columns, in order.
+// EXACT IXL import-template headers (from Setup_templates_rosters.xlsx, 2026).
+// IXL matches columns by exact header text — a near-match is silently ignored.
 export const IXL_COLUMNS = [
   "First name", "Last name", "Student ID number", "Grade level",
   "Student email address (recommended)",
-  "Parent or Guardian email address 1 (optional)",
-  "Parent or Guardian email address 2 (optional)",
+  "First parent or guardian email address (optional)",
+  "Second parent or guardian email address (optional)",
   "Teacher(s) by last name, username or email address (recommended)",
   "Preferred username (optional)", "Preferred password (optional)",
   "Gender (optional)", "Race (optional)", "IEP status (optional)",
