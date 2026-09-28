@@ -41,9 +41,12 @@ const nextConfig = {
       // Old internal name kept as a permanent redirect to the public brand.
       { source: "/pngpay",        destination: "/teebeepay",        permanent: true },
       { source: "/pngpay/:path*", destination: "/teebeepay/:path*", permanent: true },
-      // The Behaviours app lives at /behavior (singular); accept the plural too.
+      // The Compass app lives at /behavior; accept the plural and the new brand
+      // name too, so typing /compass or /behavior(s) all lands in the app.
       { source: "/behaviors",        destination: "/behavior",        permanent: false },
       { source: "/behaviors/:path*", destination: "/behavior/:path*", permanent: false },
+      { source: "/compass",          destination: "/behavior",        permanent: false },
+      { source: "/compass/:path*",   destination: "/behavior/:path*", permanent: false },
     ];
   },
 };
