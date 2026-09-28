@@ -1,8 +1,8 @@
 // src/app/behavior/_lib/api.ts
 //
-// Thin client for the Behaviours API (backend /api/behavior). Reuses the
+// Thin client for the Compass API (backend /api/behavior). Reuses the
 // existing Curriculate JWT stored by the login page in localStorage
-// ("curriculate_auth_token"), so Behaviours shares the same sign-in.
+// ("curriculate_auth_token"), so Compass shares the same sign-in.
 
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE ||

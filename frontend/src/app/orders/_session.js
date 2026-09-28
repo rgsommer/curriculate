@@ -1,7 +1,7 @@
 "use client";
 
 // Shared client helpers for orders sign-in. A teacher already signed in elsewhere
-// on curriculate.net (e.g. Behaviours) has a "curriculate_auth_token" in
+// on curriculate.net (e.g. Compass) has a "curriculate_auth_token" in
 // localStorage — trySso() exchanges it for an orders session so they skip the code.
 
 export function getStoredSession() {
@@ -59,7 +59,7 @@ export async function refreshAdmin(session) {
   }
 }
 
-// Attempt single-sign-on from an existing Curriculate/Behaviours login.
+// Attempt single-sign-on from an existing Curriculate/Compass login.
 // Returns { session, email, isAdmin, name } on success, or null.
 export async function trySso() {
   const token = getCurriculateToken();

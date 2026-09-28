@@ -1,6 +1,6 @@
 // backend/behavior/models/BehaviorInvite.js
 //
-// An invitation for a teacher to join a Behaviours school (brief §5d). The
+// An invitation for a teacher to join a Compass school (brief §5d). The
 // originator/admin types one or more email addresses and clicks Invite; we
 // create one of these per address and email them a tokenised accept link.
 // Modeled on the existing SubsInvite pattern.

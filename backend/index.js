@@ -677,7 +677,7 @@ app.use("/api/subs-admin", subsAdminRouter);
 app.use("/api/subs-teacher", subsTeacherRouter);
 app.use("/api/subs-feedback", subsFeedbackRouter);
 app.use("/api/campfire", campfireFeedbackRouter);
-// Behaviours app (curriculate.net/behavior) — loaded DEFENSIVELY so a fault in
+// Compass app (curriculate.net/behavior) — loaded DEFENSIVELY so a fault in
 // this module can never take down the whole backend at boot. If it fails to
 // load, the exact error is logged (stderr) and the rest of the app continues
 // (the /api/behavior routes will 404 until the fault is fixed).

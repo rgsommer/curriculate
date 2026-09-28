@@ -4,7 +4,7 @@ import { useState } from "react";
 import { usePathname } from "next/navigation";
 import { api, getToken } from "../_lib/api";
 
-// A floating "Feedback" button on every Behaviours page. Opens a small panel so
+// A floating "Feedback" button on every Compass page. Opens a small panel so
 // teachers can request revisions / report issues; it emails the school's admins
 // (and copies the sender). Hidden when signed out.
 export default function FeedbackButton() {

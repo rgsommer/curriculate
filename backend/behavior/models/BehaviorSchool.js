@@ -1,6 +1,6 @@
 // backend/behavior/models/BehaviorSchool.js
 //
-// A school/division in the Behaviours app (curriculate.net/behavior). The
+// A school/division in the Compass app (curriculate.net/behavior). The
 // "originator" is the teacher who created the setup — they own the shared
 // division configuration and invite the other teachers. Admin can be granted
 // to others (more than one admin allowed) so the setup survives the

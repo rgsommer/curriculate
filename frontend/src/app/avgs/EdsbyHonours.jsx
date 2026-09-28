@@ -213,7 +213,7 @@ export default function EdsbyHonours() {
     return shell(
       <p className="mt-2 text-sm text-slate-600">
         Skip the PDF: pull every student&apos;s current grades straight from Edsby and compute the honour roll on
-        demand. Uses your school&apos;s Behaviours account and its synced Edsby session —{" "}
+        demand. Uses your school&apos;s Compass account and its synced Edsby session —{" "}
         <a className="font-medium text-blue-600 hover:underline" href={loginHref("/avgs")}>sign in</a> to use it.
       </p>
     );
@@ -222,7 +222,7 @@ export default function EdsbyHonours() {
   if (needsSetup) {
     return shell(
       <p className="mt-2 text-sm text-slate-600">
-        Your account isn&apos;t part of a Behaviours school yet. This panel reuses the Behaviours roster and Edsby
+        Your account isn&apos;t part of a Compass school yet. This panel reuses the Compass roster and Edsby
         connection — set that up first at{" "}
         <a className="font-medium text-blue-600 hover:underline" href="/behavior/setup">/behavior/setup</a>.
       </p>
@@ -305,7 +305,7 @@ export default function EdsbyHonours() {
       </div>
       <p className="mt-2 text-xs text-slate-400">
         A complete, weighted honour roll needs an <strong>admin</strong> Edsby session connected (a teacher login only
-        sees its own classes). Set it up under <a href="/behavior/setup#edsby" className="text-blue-600 hover:underline">Behaviours → Edsby connection</a>.
+        sees its own classes). Set it up under <a href="/behavior/setup#edsby" className="text-blue-600 hover:underline">Compass → Edsby connection</a>.
       </p>
 
       <div className="mt-2">
@@ -327,7 +327,7 @@ export default function EdsbyHonours() {
             <p className="text-xs text-slate-400">
               Either way the session is held only in memory for the run — nothing is written to the database. Best for the
               school-wide (admin) run, so the admin session never sits stored. Leave blank to use the connection saved in
-              Behaviours Setup.
+              Compass Setup.
             </p>
           </div>
         )}

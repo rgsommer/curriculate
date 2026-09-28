@@ -1,6 +1,6 @@
 // backend/behavior/lib/emailTemplate.js
 //
-// Shared, email-client-safe HTML for every Behaviours email (parent notices,
+// Shared, email-client-safe HTML for every Compass email (parent notices,
 // invites, admin summaries, reports, reminders). Inline styles only — Gmail/
 // Outlook strip <style> blocks — and a simple centered card so it looks tidy
 // everywhere. Keep it dependency-free and deterministic.
@@ -30,13 +30,13 @@ export function emailShell({ title = "", schoolName = "", contentHtml = "", preh
     (preheader ? `<div style="display:none;max-height:0;overflow:hidden;opacity:0">${escapeHtml(preheader)}</div>` : "") +
     `<div style="max-width:600px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden">` +
     `<div style="background:${accent};padding:18px 24px;color:#ffffff">` +
-    `<div style="font-size:12px;letter-spacing:.05em;text-transform:uppercase;opacity:.82">${escapeHtml(schoolName || "Behaviours")}</div>` +
+    `<div style="font-size:12px;letter-spacing:.05em;text-transform:uppercase;opacity:.82">${escapeHtml(schoolName || "Compass")}</div>` +
     (title ? `<div style="font-size:19px;font-weight:700;margin-top:3px">${escapeHtml(title)}</div>` : "") +
     `</div>` +
     `<div style="padding:24px">${contentHtml}</div>` +
     `<div style="padding:14px 24px;background:#f8fafc;border-top:1px solid #e2e8f0;font-size:12px;color:#94a3b8;line-height:1.5">` +
     (footnote ? `${escapeHtml(footnote)}<br>` : "") +
-    `Sent by ${escapeHtml(schoolName || "the Behaviours app")}.` +
+    `Sent by ${escapeHtml(schoolName || "the Compass app")}.` +
     `</div></div></body></html>`
   );
 }

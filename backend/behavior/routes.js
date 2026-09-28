@@ -1,6 +1,6 @@
 // backend/behavior/routes.js
 //
-// Behaviours API (brief §6, §3, §5d, §7). Mounted at /api/behavior in index.js.
+// Compass API (brief §6, §3, §5d, §7). Mounted at /api/behavior in index.js.
 // Reuses the existing JWT auth (authAny) — every route is behind it. School
 // membership + role are loaded from BehaviorTeacher.
 //
@@ -144,17 +144,17 @@ async function fireWhiteSlip({ req, student, config, behaviorName, detailText, a
   const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
   try {
     await sendEmail({
-      from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
+      from: fromAddr ? { name: "Compass", address: fromAddr } : undefined,
       to: teacherEmail || vpEmail,
       cc: teacherEmail && vpEmail ? vpEmail : undefined,
       subject: `White Slip — ${studentName}`,
       text:
         `WHITE SLIP\n\nStudent: ${studentName}${student.classGroup ? ` (${student.classGroup})` : ""}\n` +
         `Reason: ${behaviorName}${detailText ? `\nDetail: ${detailText}` : ""}\n` +
-        `Teacher: ${teacherName}\nDate: ${when.toLocaleString("en-CA", { timeZone: SCHOOL_TZ })}\n\n— Behaviours`,
+        `Teacher: ${teacherName}\nDate: ${when.toLocaleString("en-CA", { timeZone: SCHOOL_TZ })}\n\n— Compass`,
       html: emailShell({
         title: "White Slip",
-        schoolName: config?.branding?.schoolName || "Behaviours",
+        schoolName: config?.branding?.schoolName || "Compass",
         preheader: `White slip — ${studentName}`,
         contentHtml:
           `<table style="width:100%;border-collapse:collapse;color:#334155;font-size:14px">` +
@@ -250,13 +250,13 @@ async function sendConsequenceMessage({ req, student, config, behavior, detailTe
   const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
   try {
     await sendEmail({
-      from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
+      from: fromAddr ? { name: "Compass", address: fromAddr } : undefined,
       to: teacherEmail,
       subject: `Consequence to post — ${studentName} (${behavior.name})`,
       text: message,
       html: emailShell({
         title: `Consequence — ${escapeHtml(studentName)}`,
-        schoolName: schoolName || "Behaviours",
+        schoolName: schoolName || "Compass",
         preheader: `Ready to paste into Edsby — ${behavior.name}`,
         footnote: "This copy goes only to you. Paste it into Edsby so the student and parents see the consequence now, rather than waiting for a notice home.",
         contentHtml: pasteableNote(noteToHtml(message)),
@@ -394,7 +394,7 @@ async function loadMembership(req, res, next) {
   try {
     const membership = await BehaviorTeacher.findOne({ userId: req.userId }).lean();
     if (!membership) {
-      return res.status(404).json({ ok: false, error: "No Behaviours school for this account", needsSetup: true });
+      return res.status(404).json({ ok: false, error: "No Compass school for this account", needsSetup: true });
     }
     req.membership = membership;
     req.schoolId = membership.schoolId;
@@ -443,7 +443,7 @@ async function audit(schoolId, type, req, extra = {}) {
 
 // ── Identity / setup ─────────────────────────────────────────────────────────
 
-// Who am I in the Behaviours app (membership + role + config summary).
+// Who am I in the Compass app (membership + role + config summary).
 // Never expose the encrypted Edsby cookie to the client; surface a boolean.
 function sanitizeConfig(config) {
   if (!config) return config;
@@ -493,7 +493,7 @@ router.get("/me", authAny, async (req, res, next) => {
 router.post("/setup", authAny, async (req, res, next) => {
   try {
     const existing = await BehaviorTeacher.findOne({ userId: req.userId }).lean();
-    if (existing) return res.status(409).json({ ok: false, error: "Account already belongs to a Behaviours school" });
+    if (existing) return res.status(409).json({ ok: false, error: "Account already belongs to a Compass school" });
 
     // If this person was invited to an existing school, JOIN that school rather
     // than creating a parallel one. Without this, an invited teacher who reaches
@@ -996,13 +996,13 @@ router.post("/parent-message/bulk", authAny, loadMembership, canLog, async (req,
       );
       try {
         await sendEmail({
-          from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
+          from: fromAddr ? { name: "Compass", address: fromAddr } : undefined,
           to: teacherEmail,
           subject: `Parent message — ${studentName} (${tpl.name})`,
           text: message,
           html: emailShell({
             title: `Parent message — ${escapeHtml(studentName)}`,
-            schoolName: schoolName || "Behaviours",
+            schoolName: schoolName || "Compass",
             preheader: `Ready to paste into Edsby — ${tpl.name}`,
             accent: kind === "encouraging" ? "#16a34a" : "#0f172a",
             footnote: "This copy goes only to you. Paste it into Edsby to send it to the family.",
@@ -1039,14 +1039,14 @@ router.post("/test-email", authAny, loadMembership, requireAdmin, async (req, re
     const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
     try {
       await sendEmail({
-        from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
+        from: fromAddr ? { name: "Compass", address: fromAddr } : undefined,
         to,
-        subject: "Behaviours — test email ✓",
-        text: `This is a test from Behaviours. If you received it, email delivery is working.\n\nSent ${new Date().toLocaleString("en-CA", { timeZone: SCHOOL_TZ })}.`,
+        subject: "Compass — test email ✓",
+        text: `This is a test from Compass. If you received it, email delivery is working.\n\nSent ${new Date().toLocaleString("en-CA", { timeZone: SCHOOL_TZ })}.`,
         html: emailShell({
           title: "Email delivery is working ✓",
           contentHtml:
-            `<p style="margin:0 0 10px;color:#334155;line-height:1.6">This is a test from Behaviours. If you can read this, your email delivery is set up correctly.</p>` +
+            `<p style="margin:0 0 10px;color:#334155;line-height:1.6">This is a test from Compass. If you can read this, your email delivery is set up correctly.</p>` +
             `<p style="margin:0;color:#94a3b8;font-size:13px">Sent ${escapeHtml(new Date().toLocaleString("en-CA", { timeZone: SCHOOL_TZ }))}.</p>`,
         }),
       });
@@ -1118,7 +1118,7 @@ router.post("/test-notice", authAny, loadMembership, requireAdmin, async (req, r
       const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
       try {
         await sendEmail({
-          from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
+          from: fromAddr ? { name: "Compass", address: fromAddr } : undefined,
           to: req.user.email,
           subject,
           text,
@@ -1180,7 +1180,7 @@ router.post("/test-edsby-send", authAny, loadMembership, requireAdmin, async (re
       jver: e.jver, cver: e.cver, userNid: e.userNid, studentNid,
     });
     const message = String(req.body?.message || "").trim() ||
-      "Test broadcast from Behaviours — if you can see this in Edsby, posting works.";
+      "Test broadcast from Compass — if you can see this in Edsby, posting works.";
     const r = await provider.send({ recipient: { edsbyParentId: toNid }, body: message });
     await audit(req.schoolId, "edsby.test_send", req, { meta: { toNid, ok: r.ok } });
     res.json({ ok: r.ok, error: r.error });
@@ -1230,15 +1230,15 @@ router.post("/invite", authAny, loadMembership, async (req, res, next) => {
       const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
       try {
         await sendEmail({
-          from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
+          from: fromAddr ? { name: "Compass", address: fromAddr } : undefined,
           to: email,
           cc: inviterEmail || undefined, // copy the inviter so they see what was sent
           replyTo: inviterEmail || undefined,
-          subject: `${inviter || "You're"} invited you to Behaviours`,
+          subject: `${inviter || "You're"} invited you to Compass`,
           text:
             `Hi,\n\n` +
-            `${by} has invited you to Behaviours at ${school?.name || "our school"}.\n\n` +
-            `If you teach on rotary, you see dozens of students across many classes — and a single off day can look small in each room while really being a pattern. Behaviours fixes that: every teacher's logs pool into ONE shared picture per student, so you're never the only one noticing, and no one is fighting it alone.\n\n` +
+            `${by} has invited you to Compass at ${school?.name || "our school"}.\n\n` +
+            `If you teach on rotary, you see dozens of students across many classes — and a single off day can look small in each room while really being a pattern. Compass fixes that: every teacher's logs pool into ONE shared picture per student, so you're never the only one noticing, and no one is fighting it alone.\n\n` +
             `What you can do:\n` +
             `• Log any student in seconds from any device or desktop — positives as well as concerns.\n` +
             `• See a student's full cross-teacher history before you say a word to them.\n` +
@@ -1251,14 +1251,14 @@ router.post("/invite", authAny, loadMembership, async (req, res, next) => {
             `• Track homework, class work and formal discussions, with end-of-term grades that export to Edsby.\n` +
             `• A Tour walks you through it, and a Feedback button is always there if you want something changed.\n\n` +
             `Set your password and get started:\n${link}\n\n` +
-            `If you didn't expect this, you can ignore this email.\n\n— Behaviours`,
+            `If you didn't expect this, you can ignore this email.\n\n— Compass`,
           html: emailShell({
-            title: "You're invited to Behaviours",
-            schoolName: school?.name || "Behaviours",
-            preheader: `${by} invited you to Behaviours — one shared picture of every student.`,
+            title: "You're invited to Compass",
+            schoolName: school?.name || "Compass",
+            preheader: `${by} invited you to Compass — one shared picture of every student.`,
             contentHtml:
-              `<p style="margin:0 0 12px;color:#334155;line-height:1.6"><strong>${escapeHtml(by)}</strong> has invited you to <strong>Behaviours</strong> at ${escapeHtml(school?.name || "our school")}.</p>` +
-              `<p style="margin:0 0 12px;color:#334155;line-height:1.6">If you teach on <strong>rotary</strong>, you see dozens of students across many classes — and one off day can look small in each room while really being a pattern. Behaviours pools every teacher's logs into <strong>one shared picture per student</strong>, so you're never the only one noticing, and no one is fighting it alone.</p>` +
+              `<p style="margin:0 0 12px;color:#334155;line-height:1.6"><strong>${escapeHtml(by)}</strong> has invited you to <strong>Compass</strong> at ${escapeHtml(school?.name || "our school")}.</p>` +
+              `<p style="margin:0 0 12px;color:#334155;line-height:1.6">If you teach on <strong>rotary</strong>, you see dozens of students across many classes — and one off day can look small in each room while really being a pattern. Compass pools every teacher's logs into <strong>one shared picture per student</strong>, so you're never the only one noticing, and no one is fighting it alone.</p>` +
               `<p style="margin:0 0 6px;color:#0f172a;font-weight:600">What you can do</p>` +
               `<ul style="margin:0 0 14px;padding-left:18px;color:#334155;line-height:1.6">` +
               `<li><strong>Log any student in seconds</strong> from any device or desktop — positives as well as concerns.</li>` +
@@ -1289,7 +1289,7 @@ router.post("/invite", authAny, loadMembership, async (req, res, next) => {
   }
 });
 
-// "Tell a colleague" — an informational email about Behaviours to a teacher or
+// "Tell a colleague" — an informational email about Compass to a teacher or
 // admin at ANY school, so they can try it for their own division. This is NOT a
 // join-invite (no token, no membership, no domain restriction); it just points
 // them at the overview + setup pages. Admin-only to keep it from being abused.
@@ -1313,31 +1313,31 @@ router.post("/refer", authAny, loadMembership, canLog, async (req, res, next) =>
     const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
 
     const blurb =
-      "Behaviours is a school-wide, pastoral approach to student conduct. It tracks the positive AND the negative across every teacher (one shared picture per student), catches patterns early, and keeps clear, defensible records. When it's time to involve home, it PREPARES a tailored, respectful note that the teacher reviews, edits and sends — nothing is ever auto-sent, and it goes through Edsby so families recognise the sender. It also offers recommended consequences (an admin-defined ladder plus AI coaching from a school-approved list), an optional Houses system with merit-based rewards, a Homework tab (completion, formal discussions, term reports), and AI summaries for leadership.";
+      "Compass is a school-wide, pastoral approach to student conduct. It tracks the positive AND the negative across every teacher (one shared picture per student), catches patterns early, and keeps clear, defensible records. When it's time to involve home, it PREPARES a tailored, respectful note that the teacher reviews, edits and sends — nothing is ever auto-sent, and it goes through Edsby so families recognise the sender. It also offers recommended consequences (an admin-defined ladder plus AI coaching from a school-approved list), an optional Houses system with merit-based rewards, a Homework tab (completion, formal discussions, term reports), and AI summaries for leadership.";
     const sent = [];
     const failed = [];
     for (const email of emails) {
       try {
         await sendEmail({
-          from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
+          from: fromAddr ? { name: "Compass", address: fromAddr } : undefined,
           to: email,
           cc: senderEmail || undefined, // copy the sender so they see what went out
           replyTo: senderEmail || undefined,
-          subject: `${sender || "A colleague"} thought you'd like Behaviours`,
+          subject: `${sender || "A colleague"} thought you'd like Compass`,
           text:
             `Hi,\n\n` +
-            `${by} thought Behaviours might be useful for you.\n\n` +
+            `${by} thought Compass might be useful for you.\n\n` +
             `${blurb}\n\n` +
             (note ? `Their note: "${note}"\n\n` : "") +
             `See what it does: ${learnUrl}\n` +
             `Try it / set up your division: ${startUrl}\n\n` +
-            `— Behaviours (curriculate.net)`,
+            `— Compass (curriculate.net)`,
           html: emailShell({
-            title: "A colleague thought you'd like Behaviours",
-            schoolName: "Behaviours",
-            preheader: `${by} thought you'd like Behaviours.`,
+            title: "A colleague thought you'd like Compass",
+            schoolName: "Compass",
+            preheader: `${by} thought you'd like Compass.`,
             contentHtml:
-              `<p style="margin:0 0 12px;color:#334155;line-height:1.6"><strong>${escapeHtml(by)}</strong> thought Behaviours might be useful for you.</p>` +
+              `<p style="margin:0 0 12px;color:#334155;line-height:1.6"><strong>${escapeHtml(by)}</strong> thought Compass might be useful for you.</p>` +
               `<p style="margin:0 0 12px;color:#334155;line-height:1.6">${escapeHtml(blurb)}</p>` +
               (note ? `<blockquote style="margin:0 0 14px;padding:8px 14px;border-left:3px solid #cbd5e1;color:#475569;font-style:italic">${escapeHtml(note)}</blockquote>` : "") +
               emailButton("See what it does", learnUrl) +
@@ -1358,7 +1358,7 @@ router.post("/refer", authAny, loadMembership, canLog, async (req, res, next) =>
 });
 
 // "Invite an admin" — a leadership-focused pitch a teacher can send to a
-// principal/VP at any school to consider adopting Behaviours. CC's the sender.
+// principal/VP at any school to consider adopting Compass. CC's the sender.
 router.post("/invite-admin", authAny, loadMembership, async (req, res, next) => {
   try {
     const emails = (Array.isArray(req.body?.emails) ? req.body.emails : [req.body?.email])
@@ -1427,23 +1427,23 @@ router.post("/invite-admin", authAny, loadMembership, async (req, res, next) => 
     for (const email of emails) {
       try {
         await sendEmail({
-          from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
+          from: fromAddr ? { name: "Compass", address: fromAddr } : undefined,
           to: email,
           cc: senderEmail || undefined,
           replyTo: senderEmail || undefined,
           subject: `${sender || "A teacher"} — a behaviour tool worth a look for our school`,
           text:
             `Hello,\n\n` +
-            `${by} thought Behaviours might be worth considering for your school.\n\n` +
+            `${by} thought Compass might be worth considering for your school.\n\n` +
             `It's a school-wide, pastoral approach to student conduct that helps with:\n\n${textPoints}\n\n` +
             (note ? `Their note: "${note}"\n\n` : "") +
-            `A short overview: ${learnUrl}\nSet it up for your division: ${startUrl}\n\n— Behaviours (curriculate.net)`,
+            `A short overview: ${learnUrl}\nSet it up for your division: ${startUrl}\n\n— Compass (curriculate.net)`,
           html: emailShell({
             title: "A behaviour tool worth a look",
-            schoolName: "Behaviours",
-            preheader: `${by} suggested Behaviours for your school.`,
+            schoolName: "Compass",
+            preheader: `${by} suggested Compass for your school.`,
             contentHtml:
-              `<p style="margin:0 0 12px;color:#334155;line-height:1.6"><strong>${escapeHtml(by)}</strong> thought <strong>Behaviours</strong> might be worth considering for your school — a school-wide, pastoral approach to student conduct.</p>` +
+              `<p style="margin:0 0 12px;color:#334155;line-height:1.6"><strong>${escapeHtml(by)}</strong> thought <strong>Compass</strong> might be worth considering for your school — a school-wide, pastoral approach to student conduct.</p>` +
               (note ? `<blockquote style="margin:0 0 14px;padding:8px 14px;border-left:3px solid #cbd5e1;color:#475569;font-style:italic">${escapeHtml(note)}</blockquote>` : "") +
               `<p style="margin:0 0 6px;color:#0f172a;font-weight:600">Why it helps a school</p>` +
               `<ul style="margin:0 0 14px;padding-left:18px;color:#334155;line-height:1.6">${htmlPoints}</ul>` +
@@ -1482,17 +1482,17 @@ router.post("/feedback", authAny, loadMembership, async (req, res, next) => {
     let sent = false, error = "";
     try {
       await sendEmail({
-        from: fromAddr ? { name: "Behaviours feedback", address: fromAddr } : undefined,
+        from: fromAddr ? { name: "Compass feedback", address: fromAddr } : undefined,
         to,
         cc: senderEmail || undefined,
         replyTo: senderEmail || undefined,
-        subject: `Behaviours feedback from ${sender || "a teacher"}`,
+        subject: `Compass feedback from ${sender || "a teacher"}`,
         text:
           `${sender || "A teacher"}${senderEmail ? ` (${senderEmail})` : ""} sent feedback / a request:\n\n${message}\n\n` +
-          (page ? `From page: ${page}\n` : "") + `— Behaviours`,
+          (page ? `From page: ${page}\n` : "") + `— Compass`,
         html: emailShell({
           title: "Feedback / feature request",
-          schoolName: "Behaviours",
+          schoolName: "Compass",
           preheader: `Feedback from ${sender || "a teacher"}`,
           contentHtml:
             `<p style="margin:0 0 8px;color:#334155"><strong>${escapeHtml(sender || "A teacher")}</strong>${senderEmail ? ` (${escapeHtml(senderEmail)})` : ""} sent feedback / a request:</p>` +
@@ -1539,17 +1539,17 @@ router.post("/invites/resend", authAny, loadMembership, requireAdmin, async (req
     let emailError = "";
     try {
       await sendEmail({
-        from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
+        from: fromAddr ? { name: "Compass", address: fromAddr } : undefined,
         to: email,
         replyTo: inviterEmail || undefined,
-        subject: `Reminder: you're invited to Behaviours`,
-        text: `Reminder — ${by} invited you to Behaviours.\n\nSet your password and get started:\n${link}\n`,
+        subject: `Reminder: you're invited to Compass`,
+        text: `Reminder — ${by} invited you to Compass.\n\nSet your password and get started:\n${link}\n`,
         html: emailShell({
-          title: "Reminder: you're invited to Behaviours",
-          schoolName: school?.name || "Behaviours",
-          preheader: `${by} invited you to Behaviours.`,
+          title: "Reminder: you're invited to Compass",
+          schoolName: school?.name || "Compass",
+          preheader: `${by} invited you to Compass.`,
           contentHtml:
-            `<p style="margin:0 0 12px;color:#334155;line-height:1.6">Just a reminder — <strong>${escapeHtml(by)}</strong> invited you to Behaviours. Here's your link again.</p>` +
+            `<p style="margin:0 0 12px;color:#334155;line-height:1.6">Just a reminder — <strong>${escapeHtml(by)}</strong> invited you to Compass. Here's your link again.</p>` +
             emailButton("Accept & set your password", link) +
             `<p style="color:#94a3b8;font-size:13px;word-break:break-all;margin:8px 0 0">Or paste this link: ${escapeHtml(link)}</p>`,
         }),
@@ -1725,7 +1725,7 @@ router.put("/team/houses-committee", authAny, loadMembership, requireAdmin, asyn
   }
 });
 
-// Set MY own display name in Behaviours (the name shown as "logged by …" etc.).
+// Set MY own display name in Compass (the name shown as "logged by …" etc.).
 // Any member can set it — handy for a teacher invited by email with no name.
 router.put("/my-name", authAny, loadMembership, async (req, res, next) => {
   try {
@@ -2284,7 +2284,7 @@ router.delete("/students/:id", authAny, loadMembership, requireAdmin, async (req
   }
 });
 
-// ── Behaviours (§5a) ─────────────────────────────────────────────────────────
+// ── Compass (§5a) ─────────────────────────────────────────────────────────
 
 // Standard behaviours + this teacher's own custom ones (custom is private).
 router.get("/behaviors", authAny, loadMembership, async (req, res, next) => {
@@ -2921,7 +2921,7 @@ async function composeAndCreateNotice({
         : `Unless you cancel or edit it on the dashboard, it will be delivered to ${recipNames} via ${chanLabel} after the short review window.`;
       const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
       await sendEmail({
-        from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
+        from: fromAddr ? { name: "Compass", address: fromAddr } : undefined,
         to: sender.email,
         subject: `📋 Your copy — ${isPositive ? "good-news note" : "notice"} for ${studentName} (review before it sends)`,
         text:
@@ -2929,7 +2929,7 @@ async function composeAndCreateNotice({
           `Recipients: ${recipNames}\nChannel: ${chanLabel}\n\n----- NOTE -----\n${text}`,
         html: emailShell({
           title: `Your copy — ${isPositive ? "good-news note" : "notice"} for ${escapeHtml(studentName)}`,
-          schoolName: schoolName || "Behaviours",
+          schoolName: schoolName || "Compass",
           preheader: "Review it before it goes out.",
           accent: isPositive ? "#16a34a" : "#0f172a",
           footnote: "This copy goes only to you (the logging teacher). Parents are contacted over the school's chosen channel.",
@@ -3475,13 +3475,13 @@ async function sendAdminSummaryEmail(req, name, schoolName, text, toRaw, student
   const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
   try {
     await sendEmail({
-      from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
+      from: fromAddr ? { name: "Compass", address: fromAddr } : undefined,
       to,
       subject: `Behaviour summary — ${name}`,
       text,
       html: emailShell({
         title: `Behaviour summary — ${name}`,
-        schoolName: schoolName || "Behaviours",
+        schoolName: schoolName || "Compass",
         preheader: `Confidential behaviour summary for ${name}.`,
         footnote: "Confidential — includes private teacher notes. For VP/principal; not sent to parents.",
         contentHtml:
@@ -4017,7 +4017,7 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
     if (req.body?.email) {
       const html = emailShell({
         title: "Executive summary",
-        schoolName: config?.branding?.schoolName || "Behaviours",
+        schoolName: config?.branding?.schoolName || "Compass",
         preheader: `${who} · ${windowShort}`,
         contentHtml:
           `<p style="color:#64748b;margin:0 0 16px">${escapeHtml(who)} · ${windowShort}</p>` +
@@ -4034,9 +4034,9 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
       const to = [...new Set([req.user.email, ...extra].filter(Boolean))];
       try {
         await sendEmail({
-          from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
+          from: fromAddr ? { name: "Compass", address: fromAddr } : undefined,
           to,
-          subject: `Behaviours executive summary — ${who} (${windowShort})`,
+          subject: `Compass executive summary — ${who} (${windowShort})`,
           text: summary,
           html,
         });
@@ -4972,8 +4972,8 @@ async function composeAdminDigest(schoolId, config) {
     `Open the dashboard → School insights for the full picture.`;
 
   return {
-    subject: `Behaviours weekly digest — ${school?.name || "your school"}`,
-    html: emailShell({ title: "Weekly behaviour digest", schoolName: school?.name || "Behaviours", preheader: `${wkNeg} incidents · ${wkPos} encouragements · ${wkNotices} notices this week`, contentHtml }),
+    subject: `Compass weekly digest — ${school?.name || "your school"}`,
+    html: emailShell({ title: "Weekly behaviour digest", schoolName: school?.name || "Compass", preheader: `${wkNeg} incidents · ${wkPos} encouragements · ${wkNotices} notices this week`, contentHtml }),
     text,
   };
 }
@@ -5004,7 +5004,7 @@ export async function sendAdminDigestForSchool(schoolId, { force = false } = {})
 
   const { subject, html, text } = await composeAdminDigest(schoolId, config);
   const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
-  await sendEmail({ from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined, to, subject, text, html });
+  await sendEmail({ from: fromAddr ? { name: "Compass", address: fromAddr } : undefined, to, subject, text, html });
   await BehaviorConfig.updateOne({ schoolId }, { $set: { "adminDigest.lastSentAt": new Date() } });
   return { ok: true, to };
 }
@@ -5571,7 +5571,7 @@ router.post("/house-report", authAny, loadMembership, canManageHouses, async (re
       .join("");
     const html = emailShell({
       title: "House standings",
-      schoolName: config?.branding?.schoolName || "Behaviours",
+      schoolName: config?.branding?.schoolName || "Compass",
       preheader: "Current house point standings.",
       accent: "#16a34a",
       contentHtml: rows || "<p style='color:#94a3b8'>No houses defined yet.</p>",
@@ -5587,9 +5587,9 @@ router.post("/house-report", authAny, loadMembership, canManageHouses, async (re
         .join("\n");
       try {
         await sendEmail({
-          from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
+          from: fromAddr ? { name: "Compass", address: fromAddr } : undefined,
           to,
-          subject: `House standings — ${config?.branding?.schoolName || "Behaviours"}`,
+          subject: `House standings — ${config?.branding?.schoolName || "Compass"}`,
           text,
           html,
         });

@@ -1,4 +1,4 @@
-// POST { token } -> exchange an existing Curriculate/Behaviours JWT for an orders
+// POST { token } -> exchange an existing Curriculate/Compass JWT for an orders
 // session, so teachers already signed in elsewhere on curriculate.net don't need a
 // 6-digit code. We validate the token server-to-server against the backend's
 // signature-verified GET /api/me and trust the email it returns.

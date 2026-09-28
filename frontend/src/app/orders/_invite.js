@@ -25,7 +25,7 @@ export function buildInviteEmail({ schoolName = "our school", financeName = "Fin
   <p style="margin:0 0 6px"><strong>What it's for:</strong> requesting the supplies you need for your classroom — pencils, markers, paper, binders, art materials, and everything else on the approved catalogues.</p>
   <p style="margin:14px 0 6px"><strong>How to use it:</strong></p>
   <ol style="margin:0 0 6px;padding-left:20px">
-    <li>Go to <a href="${url}">${url.replace(/^https?:\/\//, "")}</a>. If you're already signed in to Behaviours you'll go straight in; otherwise enter your school email and we'll send you a 6-digit code.</li>
+    <li>Go to <a href="${url}">${url.replace(/^https?:\/\//, "")}</a>. If you're already signed in to Compass you'll go straight in; otherwise enter your school email and we'll send you a 6-digit code.</li>
     <li>Search or browse by category and type the quantity you want beside any item. Your running total updates as you go.</li>
     <li>Put your name in, then click <strong>Send order</strong>.</li>
   </ol>
@@ -44,7 +44,7 @@ export function buildInviteEmail({ schoolName = "our school", financeName = "Fin
     `What it's for: requesting the supplies you need for your classroom — pencils, markers, paper, binders, art materials, and everything else on the approved catalogues.`,
     ``,
     `How to use it:`,
-    `  1. Go to ${url}. If you're already signed in to Behaviours you'll go straight in; otherwise enter your school email and we'll send you a 6-digit code.`,
+    `  1. Go to ${url}. If you're already signed in to Compass you'll go straight in; otherwise enter your school email and we'll send you a 6-digit code.`,
     `  2. Search or browse by category and type the quantity you want beside any item. Your running total updates as you go.`,
     `  3. Put your name in, then click "Send order".`,
     ``,

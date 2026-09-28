@@ -1,4 +1,4 @@
-# Behaviours — cross-teacher behaviour tracking (Phase 1)
+# Compass — cross-teacher behaviour tracking (Phase 1)
 
 App at **https://www.curriculate.net/behavior**. Built into the existing
 Curriculate stack: Express + MongoDB backend (`api.curriculate.net`) + Next.js
@@ -59,7 +59,7 @@ This stores children's behavioural records and parent contacts. **Flagged for
 your board sign-off (you handle approval; this lists the requirements):**
 
 1. **Data residency** — confirmed earlier that the EC2 backend + Mongo are *not*
-   certainly in Canada. **Recommendation:** host the Behaviours MongoDB in a
+   certainly in Canada. **Recommendation:** host the Compass MongoDB in a
    Canadian region (Atlas `ca-central-1`) and confirm the EC2 region; if EC2
    stays in the US, document it as a cross-border processing flow in the PIA.
 2. **Sub-processors to list in the PIA:** MongoDB (DB), the EC2/host provider,

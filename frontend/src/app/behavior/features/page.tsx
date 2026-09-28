@@ -1,6 +1,6 @@
 // src/app/behavior/features/page.tsx
 //
-// The Guide — a complete, administrator-ready overview of what Behaviours does.
+// The Guide — a complete, administrator-ready overview of what Compass does.
 // Reachable at /behavior/features. Includes a Print / Save-as-PDF button.
 
 import Link from "next/link";
@@ -8,7 +8,7 @@ import GuideGated from "../_components/GuideGated";
 import PrintButton from "../_components/PrintButton";
 
 export const metadata = {
-  title: "Behaviours — Guide & overview",
+  title: "Compass — Guide & overview",
   description:
     "A school-wide, pastoral approach to behaviour: cross-teacher tracking of positives and negatives, early intervention, and parent communication that a teacher always reviews and sends — never auto-sent.",
 };
@@ -240,12 +240,12 @@ export default function FeaturesPage() {
 
       {/* Hero */}
       <section id="guide-hero" className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
-        <p className="text-sm font-medium uppercase tracking-wide text-slate-400">Behaviours — Guide &amp; overview</p>
+        <p className="text-sm font-medium uppercase tracking-wide text-slate-400">Compass — Guide &amp; overview</p>
         <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-900">
           A school-wide, pastoral approach to behaviour.
         </h1>
         <p className="mt-3 max-w-2xl text-slate-600">
-          Behaviours helps a whole staff support students together: it tracks the positive and the negative across
+          Compass helps a whole staff support students together: it tracks the positive and the negative across
           every teacher, catches patterns early, keeps clear records, and turns a concern into a thoughtful,
           teacher-written message home — one a teacher always reviews and sends. Nothing is ever sent automatically.
         </p>
@@ -260,7 +260,7 @@ export default function FeaturesPage() {
       <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6">
         <h2 className="text-lg font-semibold text-emerald-900">For administrators: how messaging home works</h2>
         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-emerald-900/90">
-          The biggest worry with any behaviour system is automated, impersonal messages going to families. Behaviours is
+          The biggest worry with any behaviour system is automated, impersonal messages going to families. Compass is
           built the other way around. When a threshold is reached, the app <strong>prepares</strong> a message and hands
           it to the teacher — it never sends on its own. The teacher reads the exact wording, edits it freely, and
           decides whether (and how) to send. Modern composition means we can do far better than a standard form letter:
@@ -349,7 +349,7 @@ export default function FeaturesPage() {
       </div>
 
       <p className="pb-6 text-center text-xs text-slate-400">
-        Behaviours stores sensitive student information. Access is role-based and every notice is audit-logged. Ask your
+        Compass stores sensitive student information. Access is role-based and every notice is audit-logged. Ask your
         administrator about your board&apos;s privacy approval before go-live.
       </p>
     </div>

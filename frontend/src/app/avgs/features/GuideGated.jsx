@@ -10,12 +10,12 @@ import { useEffect, useState } from "react";
 
 const SETUP_STEPS = [
   {
-    t: "Be part of a Behaviours school",
-    d: "The honour roll reuses the Behaviours roster and Edsby connection. If your account isn't in a Behaviours school yet, set that up first at /behavior/setup (or ask your admin for an invite).",
+    t: "Be part of a Compass school",
+    d: "The honour roll reuses the Compass roster and Edsby connection. If your account isn't in a Compass school yet, set that up first at /behavior/setup (or ask your admin for an invite).",
   },
   {
     t: "Connect Edsby (admin, once)",
-    d: "In Behaviours Setup → Edsby, paste your Edsby base URL and session cookie — stored encrypted, never shown again. Install the Cookie Sync browser extension so the session stays fresh without re-pasting.",
+    d: "In Compass Setup → Edsby, paste your Edsby base URL and session cookie — stored encrypted, never shown again. Install the Cookie Sync browser extension so the session stays fresh without re-pasting.",
   },
   {
     t: "Extract student IDs (one button)",
@@ -40,8 +40,8 @@ const SETUP_STEPS = [
 ];
 
 const TROUBLE = [
-  ["“Edsby session cookie has expired”", "Open Edsby in your browser and sign in — the Cookie Sync extension pushes the fresh session automatically. Or re-paste the cookie in Behaviours Setup."],
-  ["“No students … have an Edsby nid”", "Student Edsby IDs haven't been extracted yet — hit the amber “Extract student IDs” button on /avgs. It needs the Zoom id saved in Behaviours Setup → Edsby (open My Students in Edsby; the number in the page URL is the Zoom id)."],
+  ["“Edsby session cookie has expired”", "Open Edsby in your browser and sign in — the Cookie Sync extension pushes the fresh session automatically. Or re-paste the cookie in Compass Setup."],
+  ["“No students … have an Edsby nid”", "Student Edsby IDs haven't been extracted yet — hit the amber “Extract student IDs” button on /avgs. It needs the Zoom id saved in Compass Setup → Edsby (open My Students in Edsby; the number in the page URL is the Zoom id)."],
   ["Some students show “no course data found”", "Edsby's grade view varies by school. The refresh result includes diagnostics describing exactly what Edsby returned — pass them along and the probe can be tuned to your school without touching your setup."],
 ];
 

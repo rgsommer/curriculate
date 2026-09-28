@@ -3,7 +3,7 @@
 /**
  * /orders — School supply ordering for teachers.
  *
- * If already signed in elsewhere on curriculate.net (e.g. Behaviours), the page
+ * If already signed in elsewhere on curriculate.net (e.g. Compass), the page
  * signs you in automatically; otherwise it sends a 6-digit code to your email.
  * Then type a quantity beside any items you want from the catalog. On submit you
  * get an email confirmation and finance gets your order (non-zero lines only).
@@ -330,7 +330,7 @@ export default function OrdersPage() {
         {stage === "email" && (
           <form onSubmit={requestCode} className="max-w-md mx-auto mt-10 bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
             <h2 className="text-lg font-semibold mb-1">Sign in</h2>
-            <p className="text-sm text-slate-500 mb-4">Enter your school email and we'll send you a 6-digit code. If you're already signed in to Behaviours, you won't need one.</p>
+            <p className="text-sm text-slate-500 mb-4">Enter your school email and we'll send you a 6-digit code. If you're already signed in to Compass, you won't need one.</p>
             <input type="email" autoFocus value={email} onChange={(e) => setEmail(e.target.value)}
               placeholder="you@bramptoncs.org"
               className="w-full rounded-lg border border-slate-300 px-3 py-2 mb-3 focus:outline-none focus:ring-2 focus:ring-indigo-400" />
