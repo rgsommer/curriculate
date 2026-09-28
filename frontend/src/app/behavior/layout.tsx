@@ -6,7 +6,7 @@ import TourButton from "./_components/TourButton";
 import FeedbackButton from "./_components/FeedbackButton";
 
 export const metadata = {
-  title: "Behaviours — Curriculate",
+  title: "Compass — Curriculate",
   description: "Cross-teacher student behaviour tracking and parent notices.",
 };
 
@@ -16,7 +16,7 @@ export default function BehaviorLayout({ children }: { children: ReactNode }) {
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3">
           <Link href="/behavior" className="shrink-0 text-lg font-semibold tracking-tight">
-            Behaviours
+            Compass
           </Link>
           <nav className="flex min-w-0 flex-1 items-center gap-4 overflow-x-auto whitespace-nowrap text-sm [&>*]:shrink-0">
             <Link href="/behavior" className="text-slate-600 hover:text-slate-900">

@@ -4,12 +4,12 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 
-// A lightweight guided tour of Behaviours for teachers — a step-through overlay,
+// A lightweight guided tour of Compass for teachers — a step-through overlay,
 // no external library. Launched from the header; remembers nothing, so it can be
 // re-run any time.
 const STEPS: { title: string; body: string }[] = [
   {
-    title: "Welcome to Behaviours 👋",
+    title: "Welcome to Compass 👋",
     body: "One shared picture of every student across all teachers. You log what you see; the app spots patterns, prepares pastoral notes home for you to review, and keeps fair, defensible records. Nothing is ever sent to a parent automatically.",
   },
   {

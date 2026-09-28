@@ -1,12 +1,12 @@
 // backend/behavior/lib/sendEmail.js
 //
-// Unified email sender for the Behaviours app. Uses Resend over HTTPS when
+// Unified email sender for the Compass app. Uses Resend over HTTPS when
 // RESEND_API_KEY is set — important because many hosts (Render included on
 // common plans) BLOCK outbound SMTP ports, so nodemailer/SMTP times out. Falls
 // back to the existing SMTP transport when no Resend key is configured.
 //
 // The Resend `from` MUST be an address on a Resend-verified domain — set
-// RESEND_FROM (e.g. "Behaviours <behaviours@yourverifieddomain>").
+// RESEND_FROM (e.g. "Compass <behaviours@yourverifieddomain>").
 
 function fromString(from) {
   if (!from) {
@@ -18,7 +18,7 @@ function fromString(from) {
       ""
     );
   }
-  if (typeof from === "object" && from.address) return `${from.name || "Behaviours"} <${from.address}>`;
+  if (typeof from === "object" && from.address) return `${from.name || "Compass"} <${from.address}>`;
   return String(from);
 }
 

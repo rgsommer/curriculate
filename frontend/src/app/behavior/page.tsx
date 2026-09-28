@@ -27,9 +27,9 @@ export default function BehaviorDashboard() {
   if (!getToken()) {
     return (
       <Card>
-        <h1 className="text-xl font-semibold">Sign in to Behaviours</h1>
+        <h1 className="text-xl font-semibold">Sign in to Compass</h1>
         <p className="mt-2 text-slate-600">
-          Behaviours uses your Curriculate account. Please sign in to continue.
+          Compass uses your Curriculate account. Please sign in to continue.
         </p>
         <Link
           href={loginHref("/behavior")}
@@ -49,7 +49,7 @@ export default function BehaviorDashboard() {
       <Card>
         <h1 className="text-xl font-semibold">Set up your school</h1>
         <p className="mt-2 text-slate-600">
-          You don&apos;t belong to a Behaviours school yet. If you&apos;re setting one up for your
+          You don&apos;t belong to a Compass school yet. If you&apos;re setting one up for your
           division, create it here. Otherwise, ask your admin to invite you.
         </p>
         <Link
@@ -143,7 +143,7 @@ export default function BehaviorDashboard() {
         </Card>
       )}
 
-      {/* Non-admin teachers can still tell a colleague about Behaviours. */}
+      {/* Non-admin teachers can still tell a colleague about Compass. */}
       {!isAdmin && canLog && (
         <Card>
           <h2 className="font-semibold">Tell a colleague</h2>
@@ -156,7 +156,7 @@ export default function BehaviorDashboard() {
 }
 
 // Prompt an invited teacher (who joined by email with no name) to choose the
-// name they want shown in Behaviours. Appears until a name is set.
+// name they want shown in Compass. Appears until a name is set.
 function SetMyName({ onSaved }: { onSaved: (name: string) => void }) {
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -169,7 +169,7 @@ function SetMyName({ onSaved }: { onSaved: (name: string) => void }) {
   }
   return (
     <Card>
-      <h2 className="font-semibold">What name should appear in Behaviours?</h2>
+      <h2 className="font-semibold">What name should appear in Compass?</h2>
       <p className="mt-0.5 text-sm text-slate-500">This is how you&apos;ll be shown (e.g. &ldquo;logged by …&rdquo;). You can change it later, or an admin can.</p>
       <div className="mt-2 flex flex-wrap gap-2">
         <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save()}
@@ -243,7 +243,7 @@ function ReferColleague({ canInviteAdmin = false, standalone = false }: { canInv
           <p className="text-xs text-slate-400">
             {kind === "admin"
               ? "Sends a leadership-focused pitch (burnout, consistency, documentation, trends, coaching) with a link — no account created. You're cc'd."
-              : "Sends an info email about Behaviours with a link to try it — no account created. You're cc'd."}
+              : "Sends an info email about Compass with a link to try it — no account created. You're cc'd."}
           </p>
           <button onClick={send} disabled={busy || !email.trim()} className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-40">
             {busy ? "Sending…" : kind === "admin" ? "Send admin pitch" : "Send info email"}

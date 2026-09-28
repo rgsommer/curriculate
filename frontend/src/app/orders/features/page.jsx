@@ -5,7 +5,7 @@
 const FEATURES = [
   { t: "The whole catalogue, searchable", d: "Every approved item from Staples Professional and Office Central in one place. Search by name, SKU, or category — no scrolling paper forms." },
   { t: "Just type a quantity", d: "Put a number beside anything you want. Your running total and item list update instantly as you go." },
-  { t: "Sign in in seconds", d: "Already using Behaviours? You're in automatically. Otherwise we email you a 6-digit code — no password to remember." },
+  { t: "Sign in in seconds", d: "Already using Compass? You're in automatically. Otherwise we email you a 6-digit code — no password to remember." },
   { t: "Instant confirmation", d: "You get an email copy of exactly what you ordered the moment you submit. Order as many times as you need." },
   { t: "Finance gets it automatically", d: "Your order goes straight to the finance office — non-zero lines only — so there's nothing to print, scan, or hand in." },
   { t: "Accurate pricing", d: "Prices come from the current supplier sheets and every total is calculated for you, so there are no math mistakes on the order." },

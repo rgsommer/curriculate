@@ -702,7 +702,10 @@ router.post("/coverage", async (req, res) => {
 
     const fit = assessSubjectFit({ workType, hasAnswerKey: true });
 
-    if (!teacherEmail || !lessonCode) {
+    // A key chosen by the teacher answers this outright; the lessonCode lookup
+    // is only the fallback for a batch labelled from an assignment page.
+    const answerKeyId = String(req.body?.answerKeyId || "").trim();
+    if (!teacherEmail || (!lessonCode && !answerKeyId)) {
       return res.json({
         ok: true, hasAnswerKey: false, covered: 0, total: assigned.length,
         coveredQuestions: [], uncovered: assigned,
@@ -712,9 +715,14 @@ router.post("/coverage", async (req, res) => {
       });
     }
 
-    const q = { teacherEmail, lessonCode };
-    if (bookName) q.bookName = bookName;
-    const doc = await HomeworkAnswerKey.findOne(q).lean();
+    let doc = null;
+    if (answerKeyId) {
+      doc = await HomeworkAnswerKey.findOne({ _id: answerKeyId, teacherEmail }).lean().catch(() => null);
+    } else {
+      const q = { teacherEmail, lessonCode };
+      if (bookName) q.bookName = bookName;
+      doc = await HomeworkAnswerKey.findOne(q).lean();
+    }
     const keyQs = doc?.questions || [];
     const keySet = new Set(keyQs.map((k) => String(k.q).trim().toLowerCase()));
 
@@ -769,6 +777,190 @@ function assessSubjectFit({ workType, hasAnswerKey }) {
 // ===========================================================================
 // Answer keys
 // ===========================================================================
+// Pages per model call. A JUMP answer-key page is four dense columns holding
+// several lessons; the whole book in one call blew past max_output_tokens and
+// came back with the first three lessons and nothing else.
+const KEY_PAGES_PER_CALL = 3;
+const KEY_CALL_CONCURRENCY = 3;
+
+// The heading over each lesson reads "AP Book NS7-1". Strip the words, and
+// repair the separator: a dot or dash where the book prints a hyphen is the
+// same lesson, and filing it as "NS7.1" makes it unfindable.
+function normaliseLessonCode(raw) {
+  let c = String(raw || "").trim().toUpperCase();
+  if (!c) return "";
+  c = c.replace(/^AP\s*BOOK\s*/i, "").replace(/\s+/g, "");
+  c = c.replace(/^([A-Z]{1,4}\d+)[.–—_\/](\d+)$/, "$1-$2");
+  // "7.1" is the BOOK — it appears in the running footer on every page, and
+  // taking it for a lesson code files the whole book under one bogus key.
+  if (!/^[A-Z]{1,4}\d+-\d+[A-Z]?$/.test(c)) return "";
+  return c;
+}
+
+async function extractKeyChunk(images) {
+  const resp = await openai().responses.create({
+    model: MODEL,
+    input: [{
+      role: "user",
+      content: [
+        {
+          type: "input_text",
+          text: `These images are pages from the ANSWER KEY section of a maths workbook
+(a JUMP Math AP Book). Transcribe them.
+
+HOW THESE PAGES ARE LAID OUT — read them this way or the answers will be
+attributed to the wrong lessons:
+  - Each page is FOUR NARROW COLUMNS. Read all the way down column 1, then
+    column 2, then 3, then 4. Do NOT read straight across the page.
+  - Several lessons share a page. A lesson starts at a heading reading
+    "AP Book NS7-1" (or PA7-4, ME8-12, G7-2 ...), usually with "page 14"
+    under it. Everything after that heading belongs to that lesson until the
+    next heading — including where it continues into the next column, or onto
+    the next page.
+  - "BONUS" inside a lesson is part of that lesson. Keep its answers, labelled
+    as the book labels them.
+  - The running header ("Number Sense - AP Book 7, Part 1: Unit 1") and the
+    footer ("Answer Keys for AP Book 7.1", "J-3") are NOT lesson codes. Never
+    return "7.1" or "J-3" as a lessonCode.
+
+WHAT TO RETURN
+  - lessonCode exactly as the heading prints it: "NS7-1", not "NS7.1".
+  - Keep question labels exactly as the book writes them: "1a", "3", "10b".
+    Where a question has roman-numeral sub-parts, write them "4a-ii".
+  - Keep answers as text, including units, fractions and short explanations.
+    Do not convert or simplify them.
+  - A lesson may begin before these pages or run past them. Transcribe the part
+    you can see; it will be joined to the rest.
+  - Transcribe only what is printed. If something is illegible, omit that one
+    question rather than guessing — a missing key entry is safe, a wrong one
+    silently marks students wrong.
+
+Return JSON only.`,
+        },
+        ...images.map((img) => ({ type: "input_image", image_url: img })),
+      ],
+    }],
+    text: {
+      format: {
+        type: "json_schema", name: "answer_key", strict: true,
+        schema: {
+          type: "object", additionalProperties: false,
+          properties: {
+            lessons: {
+              type: "array",
+              items: {
+                type: "object", additionalProperties: false,
+                properties: {
+                  lessonCode: { type: "string" },
+                  questions: {
+                    type: "array",
+                    items: {
+                      type: "object", additionalProperties: false,
+                      properties: { q: { type: "string" }, answer: { type: "string" } },
+                      required: ["q", "answer"],
+                    },
+                  },
+                },
+                required: ["lessonCode", "questions"],
+              },
+            },
+            note: { type: ["string", "null"] },
+          },
+          required: ["lessons", "note"],
+        },
+      },
+    },
+    max_output_tokens: 16000,
+  });
+  const parsed = safeJsonParse(resp.output_text);
+  return {
+    lessons: Array.isArray(parsed?.lessons) ? parsed.lessons : [],
+    note: parsed?.note || "",
+  };
+}
+
+// Read every chunk, merging as we go. Nothing is written until all of it is
+// read: a lesson split across a chunk boundary must be stitched back together
+// before it lands, or the second half would overwrite the first.
+async function extractAnswerKey(images, onProgress) {
+  const chunks = [];
+  for (let i = 0; i < images.length; i += KEY_PAGES_PER_CALL) {
+    chunks.push(images.slice(i, i + KEY_PAGES_PER_CALL));
+  }
+
+  const merged = new Map();   // lessonCode -> Map(q -> answer)
+  const notes = [];
+  const failed = [];
+  let done = 0;
+
+  let cursor = 0;
+  const workers = Array.from(
+    { length: Math.min(KEY_CALL_CONCURRENCY, chunks.length) },
+    async () => {
+      while (cursor < chunks.length) {
+        const idx = cursor++;
+        try {
+          const { lessons, note } = await extractKeyChunk(chunks[idx]);
+          if (note) notes.push(note);
+          for (const lesson of lessons) {
+            const code = normaliseLessonCode(lesson.lessonCode);
+            if (!code) continue;
+            if (!merged.has(code)) merged.set(code, new Map());
+            const bucket = merged.get(code);
+            for (const q of (Array.isArray(lesson.questions) ? lesson.questions : [])) {
+              const label = String(q?.q || "").trim();
+              const answer = String(q?.answer || "").trim();
+              // First reading wins: a chunk that only caught the tail of a
+              // lesson shouldn't overwrite a fuller reading of the same label.
+              if (label && !bucket.has(label)) bucket.set(label, answer);
+            }
+          }
+        } catch (err) {
+          console.error(`[homework/answer-key] chunk ${idx + 1} failed:`, err?.message || err);
+          failed.push(idx + 1);
+        }
+        done++;
+        onProgress?.(done, chunks.length);
+      }
+    }
+  );
+  await Promise.all(workers);
+
+  return { merged, notes, failed, chunkCount: chunks.length };
+}
+
+async function saveAnswerKey({ teacherEmail, bookName, images, onProgress }) {
+  const { merged, notes, failed, chunkCount } = await extractAnswerKey(images, onProgress);
+
+  const saved = [];
+  for (const [lessonCode, bucket] of merged) {
+    const questions = [...bucket.entries()]
+      .map(([q, answer]) => ({ q, answer }))
+      .filter((x) => x.q);
+    if (!questions.length) continue;
+    await HomeworkAnswerKey.findOneAndUpdate(
+      { teacherEmail, bookName, lessonCode },
+      { teacherEmail, bookName, lessonCode, questions, sourcePageCount: images.length, extractionNote: notes.join(" ") },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    saved.push({ lessonCode, questionCount: questions.length });
+  }
+  saved.sort((a, b) => a.lessonCode.localeCompare(b.lessonCode, undefined, { numeric: true }));
+
+  console.log(
+    `[homework/answer-key] ${teacherEmail} "${bookName}" ${images.length}p → `
+    + `${saved.length} lesson(s)${failed.length ? `, ${failed.length}/${chunkCount} chunks failed` : ""}`
+  );
+  return {
+    lessons: saved,
+    note: notes.join(" "),
+    // Say so rather than quietly filing a key with holes in it.
+    warning: failed.length
+      ? `${failed.length} of ${chunkCount} page groups couldn't be read, so some lessons may be missing or incomplete. Re-uploading will fill the gaps.`
+      : "",
+  };
+}
+
 router.post("/answer-key", async (req, res) => {
   try {
     const teacherEmail = String(req.body?.teacherEmail || "").trim().toLowerCase();
@@ -777,100 +969,55 @@ router.post("/answer-key", async (req, res) => {
 
     if (!teacherEmail) return res.status(400).json({ ok: false, error: "teacherEmail is required." });
     if (!images.length) return res.status(400).json({ ok: false, error: "At least one answer-key photo is required." });
-    if (images.length > 40) return res.status(400).json({ ok: false, error: "Too many pages in one upload (max 40)." });
+    if (images.length > 60) return res.status(400).json({ ok: false, error: "Too many pages in one upload (max 60)." });
     if (!images.every(isDataUrlImage)) return res.status(400).json({ ok: false, error: "Every image must be a data URL." });
 
-    const resp = await openai().responses.create({
-      model: MODEL,
-      input: [{
-        role: "user",
-        content: [
-          {
-            type: "input_text",
-            text: `These images are pages from the ANSWER KEY section of a maths workbook
-(a JUMP Math AP Book). Transcribe them.
+    // A whole book takes minutes, which no proxy will hold open. Short uploads
+    // — a photographed spread — still answer directly.
+    if (images.length > KEY_PAGES_PER_CALL) {
+      const jobId = crypto.randomUUID();
+      jobs.set(jobId, { status: "processing", progress: 0, stage: "reading pages", createdAt: Date.now() });
+      res.json({ ok: true, jobId, pageCount: images.length });
+      (async () => {
+        try {
+          const out = await saveAnswerKey({
+            teacherEmail, bookName, images,
+            onProgress: (d, t) => setJob(jobId, {
+              progress: Math.round((d / Math.max(1, t)) * 100),
+              stage: `read ${d} of ${t} page groups`,
+            }),
+          });
+          if (!out.lessons.length) {
+            setJob(jobId, { status: "error", error: "No lessons could be read from those pages. Check they are answer-key pages." });
+            return;
+          }
+          setJob(jobId, { status: "done", progress: 100, result: out });
+        } catch (err) {
+          console.error("[homework/answer-key job]", err?.message || err);
+          setJob(jobId, { status: "error", error: "Answer-key extraction failed." });
+        }
+      })();
+      return;
+    }
 
-The key is organised by lesson code (e.g. "NS7-3", "ME8-12"). For each lesson
-you can see, list every question label and its answer exactly as printed.
-
-  - Keep question labels exactly as the book writes them: "1a", "3", "10b".
-  - Keep answers as text, including units, fractions and short explanations.
-    Do not convert or simplify them.
-  - If a lesson's answers run across a page break, merge them into one entry.
-  - Transcribe only what is printed. If something is illegible, omit that one
-    question rather than guessing — a missing key entry is safe, a wrong one
-    silently marks students wrong.
-
-Return JSON only.`,
-          },
-          ...images.map((img) => ({ type: "input_image", image_url: img })),
-        ],
-      }],
-      text: {
-        format: {
-          type: "json_schema", name: "answer_key", strict: true,
-          schema: {
-            type: "object", additionalProperties: false,
-            properties: {
-              lessons: {
-                type: "array",
-                items: {
-                  type: "object", additionalProperties: false,
-                  properties: {
-                    lessonCode: { type: "string" },
-                    questions: {
-                      type: "array",
-                      items: {
-                        type: "object", additionalProperties: false,
-                        properties: { q: { type: "string" }, answer: { type: "string" } },
-                        required: ["q", "answer"],
-                      },
-                    },
-                  },
-                  required: ["lessonCode", "questions"],
-                },
-              },
-              note: { type: ["string", "null"] },
-            },
-            required: ["lessons", "note"],
-          },
-        },
-      },
-      max_output_tokens: 8000,
-    });
-
-    const parsed = safeJsonParse(resp.output_text);
-    const lessons = Array.isArray(parsed?.lessons) ? parsed.lessons : [];
-    if (!lessons.length) {
+    const out = await saveAnswerKey({ teacherEmail, bookName, images });
+    if (!out.lessons.length) {
       return res.status(422).json({
         ok: false,
         error: "No lessons could be read from those pages. Check they are answer-key pages and try a sharper photo.",
       });
     }
-
-    const saved = [];
-    for (const lesson of lessons) {
-      const lessonCode = String(lesson.lessonCode || "").trim().toUpperCase();
-      if (!lessonCode) continue;
-      const questions = (Array.isArray(lesson.questions) ? lesson.questions : [])
-        .map((q) => ({ q: String(q?.q || "").trim(), answer: String(q?.answer || "").trim() }))
-        .filter((q) => q.q);
-      if (!questions.length) continue;
-
-      await HomeworkAnswerKey.findOneAndUpdate(
-        { teacherEmail, bookName, lessonCode },
-        { teacherEmail, bookName, lessonCode, questions, sourcePageCount: images.length, extractionNote: parsed?.note || "" },
-        { upsert: true, new: true, setDefaultsOnInsert: true }
-      );
-      saved.push({ lessonCode, questionCount: questions.length });
-    }
-
-    console.log(`[homework/answer-key] ${teacherEmail} "${bookName}" → ${saved.length} lesson(s)`);
-    return res.json({ ok: true, bookName, lessons: saved, note: parsed?.note || "" });
+    return res.json({ ok: true, bookName, ...out });
   } catch (err) {
     console.error("[homework/answer-key]", err?.message || err);
     return res.status(500).json({ ok: false, error: "Answer-key extraction failed." });
   }
+});
+
+router.get("/answer-key/job/:id", (req, res) => {
+  const j = jobs.get(String(req.params.id || ""));
+  if (!j) return res.status(404).json({ ok: false, error: "Job not found or expired." });
+  return res.json({ ok: true, ...j });
 });
 
 router.get("/answer-key/list", async (req, res) => {
@@ -928,7 +1075,14 @@ router.delete("/answer-key/:id", async (req, res) => {
 // ===========================================================================
 // PHASE 3 — grading the teacher-confirmed groups
 // ===========================================================================
-function buildCheckPrompt({ assigned, keyLines, pageCount, studentLabel, workSurface, assignmentQuestions, keyIdea }) {
+
+// What counts as set, when the teacher hasn't said. Everything printed counts,
+// minus the things textbooks universally mark as extra — which is the common
+// case and keeps a bonus question from reading as homework left undone.
+const DEFAULT_SCOPE_RULE =
+  "Everything printed on the page except questions the book marks as bonus, "
+  + "extension, investigation or challenge.";
+function buildCheckPrompt({ assigned, keyLines, pageCount, studentLabel, workSurface, assignmentQuestions, keyIdea, scopeRule }) {
   const keyBlock = keyLines.length
     ? `
 ANSWER KEY — AUTHORITATIVE. DO NOT DO THE MATHEMATICS YOURSELF.
@@ -941,7 +1095,21 @@ For every question you marked "attempted", set "correct" to:
 
 You are COMPARING against the key, not solving the problem. If your own
 calculation disagrees with the key, the key wins — never mark a student
-incorrect on the strength of your own arithmetic.
+incorrect on the strength of your own arithmetic. Set "checkedBy" to "key".
+
+WHERE THE KEY IS SILENT — most books print odd answers only.
+For a question that does NOT appear in the key above, work the answer out
+yourself, then compare. Set "checkedBy" to "worked" so the teacher can see
+which marks rest on the book and which on you.
+  - Do the mathematics carefully and completely before deciding.
+  - Only do this where the answer is a matter of fact — an arithmetic result,
+    a solved equation, a value read off a table. Where the question asks for an
+    explanation, an estimate, a drawing, an opinion, or anything with more than
+    one defensible answer, do NOT judge it: "no_key", checkedBy "none".
+  - If you are not confident, "no_key" with checkedBy "none" is the right
+    answer. A question left unjudged costs the teacher nothing; a student
+    marked wrong because of YOUR slip is a mark they have to argue their way
+    out of. Prefer saying nothing.
 
 IMPORTANT: this key is probably incomplete. Most textbooks print answers for
 odd-numbered questions only. A question missing from the key above is "no_key" —
@@ -949,7 +1117,8 @@ it is NOT wrong, and it is NOT your job to work out the answer. Never mark a
 question incorrect because it is absent from the key.`
     : `
 NO ANSWER KEY IS AVAILABLE for this assignment.
-Set "correct" to null for every question. Do not judge correctness at all.`;
+Set "correct" to null and "checkedBy" to "none" for every question. Do not
+judge correctness at all.`;
 
   const surfaceBlock = workSurface === "loose"
     ? `
@@ -1000,12 +1169,48 @@ THE MOST IMPORTANT DISTINCTION — printed ink is the book, handwriting is the s
 writing short formative feedback the student will read and act on.
 ${surfaceBlock}
 
-${assigned.length ? `THE ASSIGNED QUESTIONS — report on exactly these and no others:
+WHICH QUESTIONS WERE ACTUALLY SET — set "scope" on every question.
+A printed page carries more than the teacher assigned. Work nobody was asked to
+do must never read as work left undone, so judge each question against this,
+which is how this teacher describes what they set:
+
+  ${scopeRule}
+
+  core     the question falls inside that description — it was set
+  bonus    it is on the page but outside it — not set, whatever the reason
+  unclear  you genuinely cannot tell
+
+A description comes in two kinds and may mix them:
+
+  BY NUMBER OR PART — "1, 3, 5", "odds", "1 to 12", "first three parts of each",
+  "a and b only", "1-10 but just the first two letters". Work it out from the
+  question's own printed number and part letter. "The first three letters of 1,
+  3, 5" means 1a 1b 1c, 3a 3b 3c, 5a 5b 5c are core and everything else on the
+  page — including 1d, and including all of 2 and 4 — is bonus. Letters and
+  parts mean the same thing: a, b, c.
+
+  BY SECTION — "Core only", "skip the Investigation", "not the bonus". Decide
+  from what is PRINTED: a heading, a label, a star, a shaded box.
+
+Two rules hold either way. Never infer from whether the student did it — a
+blank question is exactly the case this has to get right, and "they skipped it
+so it must not have been set" would erase the finding. And when you genuinely
+cannot tell, "unclear" is the honest answer; it will be counted as core, so
+guessing "bonus" to be kind would quietly excuse real work.
+${assigned.length ? `
+THE ASSIGNED QUESTIONS — report on exactly these and no others:
 ${assigned.map((q) => `  ${q}`).join("\n")}` : `THE ASSIGNED QUESTIONS — the teacher did not supply a list, because the
 questions are printed on these pages. Read them off the page yourself:
   - Report on every printed question on these pages, in the order they appear.
   - Use the question's own printed number as its label, exactly as printed
     (including any part letter: "3b", not "3 b" or "question 3b").
+  - A LABEL IS A NUMBER, not a description. Never write "5 (operations)",
+    "5 (undo in backwards order)" or "5 (Did you finish...)". If question 5 has
+    several parts and the book letters them, use "5a", "5b". If the book does
+    NOT letter them, question 5 is ONE question labelled "5" — report it once,
+    attempted if the student did any of it. Whatever the part was about belongs
+    in the note, never in the label: these labels are printed back to the
+    student and pasted into a gradebook.
   - A question printed on the page but left blank is "not_attempted". Do not
     leave it out — a skipped question is the finding, and omitting it would
     silently shrink the denominator and flatter the student.
@@ -1049,13 +1254,41 @@ Only name a specific mistake when the comparison to the key ACTUALLY SHOWS IT:
   - a unit left off or converted the wrong way
 If the slip is NOT clear from the written answer alone, do NOT invent a
 diagnosis. Fall back to the Key Idea below and point at it.
+
+TEACH THE IDEA, DON'T JUST FLAG THE ANSWER.
+A student reading "Check your answer for 3b and look again at your
+calculation" has learned nothing: it names no mistake, states no rule, and
+would fit any wrong answer to any question ever set. Sentences like that are
+worse than an empty note, because they occupy the space the teaching should
+be in. Never write one.
+
+Where you CAN see the mistake, give both halves:
+  1. what went wrong, concretely, in their own work; and
+  2. the rule that governs it, in one plain sentence they can carry to the
+     next question.
+    "You took 4 off the left but not the right. An equation only stays true
+     if you do the same thing to both sides."
+    "You divided by 4, but this undoes a multiplication by 6 — so divide by 6.
+     Undo an operation with its opposite, using the same number."
+The rule is the part that transfers. The correction fixes one question; the
+rule fixes the next ten.
+
+Where you CANNOT see the mistake, still teach — just don't pretend to
+diagnose. Restate what the question is testing and where to restart:
+    "I can't tell from the working where this went astray. Redo it from the
+     first step, keeping both sides balanced."
+Never pad with "look again" or "see if you can spot what you missed" and
+nothing else. If you have neither a visible mistake nor an idea worth
+restating, leave the note EMPTY. An empty note is honest; a hollow one
+teaches the student that feedback is noise.
 ${keyIdeaBlock}
 TONE — these are rules, not preferences:
   - Second person, present tense, next-step oriented. "Try…", "Check…", "Look again at…".
   - NO comparison to classmates. NO ranking. Never mention other students at all.
   - NO cumulative character judgements. Never "you always", "you keep",
     "you struggle with", "as usual". Comment ONLY on this piece of work.
-  - Short. TWO SENTENCES MAXIMUM per question. One is usually better.
+  - Short. TWO SENTENCES per question — one for what happened, one for the
+    rule. Never a third.
   - Plain language a student of this age actually uses.
 
 "encouragement" — ONE line for the whole check.
@@ -1065,6 +1298,35 @@ SPECIFIC — never generic praise like "good effort" or "well done". If the work
 genuinely gives you nothing to praise (e.g. nothing was attempted), return an
 empty string rather than manufacturing something. An empty encouragement is
 honest; a hollow one is not.
+
+"reviewPoints" — WHAT TO REVIEW, at most two, often none.
+Look across everything this student got wrong and name the underlying skill,
+not the questions — and STATE THE RULE rather than naming the topic. "Review
+inverse operations" sends a student off to look something up; "Undo an
+operation with its opposite — if it multiplied, divide, and do it to both
+sides" is the thing they actually needed. Others in that shape: "Line the
+digits up by place value before adding, so tens sit under tens"; "Read what is
+being asked — perimeter is the distance round the edge, area is the space
+inside." Write it to the student, as something they can apply tonight without
+looking anything up.
+  - Draw it ONLY from mistakes you actually saw in THIS work. Two wrong answers
+    with nothing in common are two wrong answers — return an empty array rather
+    than inventing a pattern to explain them.
+  - Return an empty array when nothing was wrong, when nothing was attempted,
+    or when the errors have no common cause. Empty is a normal answer and a
+    far better one than a plausible-sounding diagnosis that is not true: the
+    student will act on whatever you write here.
+  - Never about the student, only about the work. Not "you rush"; "check the
+    sign when you move a term across".
+  - One short sentence each. Two at the very most.
+
+"lessonSeen" — what the PAGE says this work is.
+Copy the lesson code and/or title printed at the top of the page, exactly as
+printed: "NS7-1", "PA7-8 Patterns and Rules", "Unit 3 Review". This is read
+off the page, never worked out: if the page carries no such heading, return
+null. Every student's copy is the same page, so their answers are compared
+with one another — a guess from one of them would corrupt that agreement, and
+null from all of them is a perfectly good answer.
 
 Return JSON only.`;
 }
@@ -1086,8 +1348,16 @@ const CHECK_SCHEMA = {
           note: { type: ["string", "null"] },
           // Student-facing formative line. Empty when there's nothing to act on.
           studentNote: { type: "string" },
+          // Was this question actually set? A printed page carries more than
+          // was assigned — bonus, extension, investigation — and a question
+          // nobody was asked to do must not count as work left undone.
+          scope: { type: "string", enum: ["core", "bonus", "unclear"] },
+          // How "correct" was decided. The key is authoritative; "worked"
+          // means the book printed no answer and this was solved instead,
+          // which is worth separating in the tally.
+          checkedBy: { type: "string", enum: ["key", "worked", "none"] },
         },
-        required: ["q", "work", "correct", "note", "studentNote"],
+        required: ["q", "work", "correct", "note", "studentNote", "scope", "checkedBy"],
       },
     },
     encouragement: { type: "string" },
@@ -1107,8 +1377,16 @@ const CHECK_SCHEMA = {
       },
     },
     pageNote: { type: ["string", "null"] },
+    // What the page says it is — the printed lesson code and/or title. Read
+    // from the page, never inferred; 15-20 students agreeing is what makes it
+    // usable, and a guess would poison that agreement.
+    lessonSeen: { type: ["string", "null"] },
+    // The skill behind this student's errors, not the list of them. "Check 3b,
+    // 5a" tells a student where to look; "review inverse operations to keep
+    // both sides equal" tells them what to fix.
+    reviewPoints: { type: "array", items: { type: "string" } },
   },
-  required: ["questions", "unmatchedAnswers", "encouragement", "pageNote"],
+  required: ["questions", "unmatchedAnswers", "encouragement", "pageNote", "lessonSeen", "reviewPoints"],
 };
 
 // Belt-and-braces on the tone rules. The prompt forbids these, but a phrase
@@ -1130,12 +1408,82 @@ function sanitizeStudentText(s) {
   return sentences.slice(0, 300);
 }
 
+// What the class's own pages say this assignment is. Every student holds a
+// copy of the same page, so the heading printed on it is reported 15-20 times
+// over — agreement across the batch is what makes it trustworthy, and it costs
+// nothing beyond a field the model was already looking at.
+//
+// A plurality is required, not a majority: on a bad photo most pages read as
+// nothing, and two clear readings out of twenty with nothing contradicting
+// them is still the answer. What is refused is a lone reading, or a genuine
+// split, where the honest outcome is to leave the field to the teacher.
+function consensusLesson(results) {
+  const seen = results
+    .map((r) => String(r?.lessonSeen || "").trim())
+    .filter(Boolean);
+  if (seen.length < 2) return null;
+
+  const tally = new Map();
+  for (const v of seen) {
+    const k = v.toUpperCase();
+    if (!tally.has(k)) tally.set(k, { text: v, n: 0 });
+    tally.get(k).n++;
+  }
+  const ranked = [...tally.values()].sort((a, b) => b.n - a.n);
+  const top = ranked[0];
+  const runnerUp = ranked[1]?.n || 0;
+  if (top.n < 2) return null;
+  if (top.n <= runnerUp) return null; // a real split — say nothing
+
+  // The code, where the heading carries one ("PA7-8 Patterns and Rules").
+  const codeMatch = top.text.match(/\b([A-Z]{1,4}\d+-\d+[A-Z]?)\b/i);
+  return {
+    text: top.text,
+    code: codeMatch ? codeMatch[1].toUpperCase() : "",
+    agreed: top.n,
+    of: seen.length,
+  };
+}
+
+// One assignment, one scope. Whether question 2 was set is a fact about the
+// assignment, not about the student holding it — but it was being decided
+// separately for every student, from their own photo, so the same question
+// came back core on one desk and bonus on the next. The result was
+// denominators of 9, 15 and 7 across one class doing identical work.
+//
+// So the class votes, exactly as it does on the lesson code. Each question
+// label takes the scope most of the pages gave it, and every student is then
+// graded against the same set. "unclear" is not a vote — it is the absence of
+// one — so a handful of clear readings decide a label the rest could not see.
+function consensusScope(results) {
+  const tally = new Map(); // label -> { core, bonus }
+  for (const r of results) {
+    for (const q of (r?.questions || [])) {
+      const label = String(q?.q || "").trim().toLowerCase();
+      if (!label) continue;
+      if (!tally.has(label)) tally.set(label, { core: 0, bonus: 0 });
+      if (q.scope === "core") tally.get(label).core++;
+      else if (q.scope === "bonus") tally.get(label).bonus++;
+    }
+  }
+  const agreed = new Map();
+  for (const [label, v] of tally) {
+    if (!v.core && !v.bonus) continue;      // nobody could tell — leave as read
+    agreed.set(label, v.bonus > v.core ? "bonus" : "core");
+  }
+  return agreed;
+}
+
 // Two independent marks, never merged.
 function scoreStudent(questions, hasAnswerKey) {
   const qs = Array.isArray(questions) ? questions : [];
   // Book-pre-filled samples were never the student's work, so they leave the
   // denominator rather than counting against them.
-  const gradable = qs.filter((q) => q.work !== "sample");
+  // Out of the denominator: a book's pre-filled worked example was never the
+  // student's to do, and neither was a question they weren't asked to do. This
+  // is the whole point of scope — a bonus left blank is not work left undone.
+  // "unclear" counts as core, so an unreadable page errs towards asking.
+  const gradable = qs.filter((q) => q.work !== "sample" && q.scope !== "bonus");
   // "unreadable" means handwriting IS present — the student did attempt it.
   const attempted = gradable.filter((q) => q.work === "attempted" || q.work === "unreadable");
 
@@ -1148,15 +1496,21 @@ function scoreStudent(questions, hasAnswerKey) {
   let correctness = null;
   let correctCount = 0;
   let keyedAttemptedCount = 0;
+  let workedCount = 0;   // judged without the book, by working the answer out
   if (hasAnswerKey) {
-    const keyed = attempted.filter((q) => q.correct === "correct" || q.correct === "incorrect");
-    keyedAttemptedCount = keyed.length;
-    correctCount = keyed.filter((q) => q.correct === "correct").length;
+    const judged = attempted.filter((q) => q.correct === "correct" || q.correct === "incorrect");
+    keyedAttemptedCount = judged.length;
+    correctCount = judged.filter((q) => q.correct === "correct").length;
+    // Kept separate so the teacher can see how much of the mark rests on the
+    // book and how much on arithmetic done here. Both count towards the score
+    // — a mark over odds only would answer half the question asked of it —
+    // but which is which should never be invisible.
+    workedCount = judged.filter((q) => q.checkedBy === "worked").length;
     correctness = keyedAttemptedCount > 0
       ? Math.round((correctCount / keyedAttemptedCount) * 10 * 10) / 10
       : null;
   }
-  return { completeness, correctness, assignedCount, attemptedCount, correctCount, keyedAttemptedCount };
+  return { completeness, correctness, assignedCount, attemptedCount, correctCount, keyedAttemptedCount, workedCount };
 }
 
 // ---------- background job store ----------
@@ -1252,24 +1606,43 @@ router.post("/check", async (req, res) => {
 
     const { roster, rosterId } = await loadRoster({ teacherEmail, className, rosterIn: b.roster });
 
+    // The teacher can name the key outright. Matching on (bookName, lessonCode)
+    // is a guess that only works when the batch is labelled from an assignment
+    // page — and with the assignment page optional, and a teacher holding keys
+    // for several subjects, picking one from the list is the plain way to say
+    // which answers this check should be marked against.
     let keyQuestions = [];
     let keyIdea = String(b.keyIdea || "").trim();
-    if (lessonCode) {
+    const answerKeyId = String(b.answerKeyId || "").trim();
+    let keyDoc = null;
+    if (answerKeyId) {
+      // Scoped to the teacher: an id alone must not reach another teacher's key.
+      keyDoc = await HomeworkAnswerKey.findOne({ _id: answerKeyId, teacherEmail }).lean().catch(() => null);
+    } else if (lessonCode) {
       const kq = { teacherEmail, lessonCode };
       if (bookName) kq.bookName = bookName;
-      const keyDoc = await HomeworkAnswerKey.findOne(kq).lean();
-      if (keyDoc) {
-        keyQuestions = keyDoc.questions || [];
-        if (!keyIdea) keyIdea = keyDoc.keyIdea || "";
-      }
+      keyDoc = await HomeworkAnswerKey.findOne(kq).lean();
+    }
+    if (keyDoc) {
+      keyQuestions = keyDoc.questions || [];
+      if (!keyIdea) keyIdea = keyDoc.keyIdea || "";
     }
 
     // Key coverage: most textbooks print odd answers only, so this is usually
     // partial. Uncovered questions are excluded from correctness, never wrong.
+    //
+    // In discovery mode there is no assigned list yet — the questions are read
+    // off the students' pages during grading — so intersecting with it gives
+    // zero and would declare a perfectly good key uncovered. That is exactly
+    // what happened to a PA7-8 batch sitting next to a PA7-8 key with 37
+    // answers in it. With no list, having a key at all is the test, and
+    // coverage is worked out per question while grading.
     const keySet = new Set(keyQuestions.map((k) => String(k.q).trim().toLowerCase()));
     const coveredQuestions = assigned.filter((a) => keySet.has(a.toLowerCase()));
     const uncovered = assigned.filter((a) => !keySet.has(a.toLowerCase()));
-    const hasAnswerKey = coveredQuestions.length > 0;
+    const hasAnswerKey = assigned.length
+      ? coveredQuestions.length > 0
+      : keyQuestions.length > 0;
 
     // Subject fit: no key, or extended writing, means completeness only — and
     // we say why rather than emitting a correctness number with nothing behind it.
@@ -1296,6 +1669,8 @@ router.post("/check", async (req, res) => {
 
     runCheckJob({
       jobId, teacherEmail, className, rosterId, lessonCode, bookName,
+      assignmentName: String(b.assignmentName || "").trim().slice(0, 120),
+      scopeRule: String(b.assignmentScope || "").trim().slice(0, 400),
       assignedRaw, assigned, groups, images: mat.images, roster,
       keyQuestions, hasAnswerKey: correctnessAvailable, keyIdea,
       keyCoverage: { covered: coveredQuestions.length, total: assigned.length, uncovered },
@@ -1327,7 +1702,7 @@ async function runCheckJob(ctx) {
     assignedRaw, assigned, groups, images, roster,
     keyQuestions, hasAnswerKey, batchDate, uploadId,
     keyCoverage, correctnessAvailable, correctnessSkippedReason,
-    workSurface, subsetMode, assignment,
+    workSurface, subsetMode, assignment, scopeRule, assignmentName,
   } = ctx;
 
   const started = Date.now();
@@ -1374,6 +1749,7 @@ async function runCheckJob(ctx) {
                 workSurface,
                 assignmentQuestions: assignment?.questions || [],
                 keyIdea: ctx.keyIdea || "",
+                scopeRule: ctx.scopeRule || DEFAULT_SCOPE_RULE,
               }),
             },
             ...groupImages.map((img) => ({ type: "input_image", image_url: img })),
@@ -1386,15 +1762,21 @@ async function runCheckJob(ctx) {
       const parsed = safeJsonParse(resp.output_text);
       if (!parsed) throw new Error("Model returned unparseable JSON");
 
-      // Normalise to exactly the assigned questions, in the teacher's order —
-      // so the model can neither drop a row nor invent one we didn't ask for.
       const byQ = new Map(
         (Array.isArray(parsed.questions) ? parsed.questions : [])
           .map((q) => [String(q?.q || "").trim().toLowerCase(), q])
       );
-      const questions = assigned.map((q) => {
-        const hit = byQ.get(q.toLowerCase());
-        if (!hit) return { q, work: "unreadable", correct: null, note: "The model did not report on this question." };
+      // With a list, the model can neither drop a row nor invent one. Without
+      // one — printed pages, no assignment photo — the model's own rows ARE the
+      // result: it read the questions off the page, so there is nothing to
+      // normalise against and mapping over an empty list would discard them all.
+      const rows = assigned.length
+        ? assigned.map((q) => ({ q, hit: byQ.get(q.toLowerCase()) }))
+        : (Array.isArray(parsed.questions) ? parsed.questions : [])
+            .map((h) => ({ q: String(h?.q || "").trim(), hit: h }))
+            .filter((r) => r.q);
+      const questions = rows.map(({ q, hit }) => {
+        if (!hit) return { q, work: "unreadable", correct: null, scope: "unclear", checkedBy: "none", note: "The model did not report on this question." };
         const work = ["attempted", "not_attempted", "unreadable", "sample"].includes(hit.work) ? hit.work : "unreadable";
         let correct = null;
         if (hasAnswerKey && (work === "attempted" || work === "unreadable")) {
@@ -1403,11 +1785,19 @@ async function runCheckJob(ctx) {
         // Student-facing line, with the cases that must stay silent enforced
         // here rather than trusted to the prompt: a correct answer needs no
         // commentary, and an unreadable one is the teacher's business only.
+        const scope = ["core", "bonus", "unclear"].includes(hit.scope) ? hit.scope : "unclear";
+        const checkedBy = correct === "correct" || correct === "incorrect"
+          ? (["key", "worked"].includes(hit.checkedBy) ? hit.checkedBy : "key")
+          : "none";
         let studentNote = sanitizeStudentText(hit.studentNote);
         if (work === "unreadable" || work === "sample" || correct === "correct") studentNote = "";
-        if (work === "not_attempted" && !studentNote) studentNote = "Not done yet.";
+        // A bonus question was never theirs to do, so "Not done yet." would be
+        // an accusation about work nobody set. Attempting one is credit, not a
+        // requirement, so it only ever gets a line when they actually did it.
+        if (scope === "bonus" && work !== "attempted") studentNote = "";
+        else if (work === "not_attempted" && !studentNote) studentNote = "Not done yet.";
         if (correct === "no_key" && !studentNote) studentNote = "I didn't check this one.";
-        return { q, work, correct, note: String(hit.note || ""), studentNote };
+        return { q, work, correct, note: String(hit.note || ""), studentNote, scope, checkedBy };
       });
 
       const score = scoreStudent(questions, hasAnswerKey);
@@ -1427,8 +1817,15 @@ async function runCheckJob(ctx) {
       }
       if (!g.matched) flags.push("Name could not be matched to the roster");
       if (parsed.pageNote) flags.push(String(parsed.pageNote));
+      const lessonSeen = String(parsed.lessonSeen || "").trim().slice(0, 120);
+      const reviewPoints = (Array.isArray(parsed.reviewPoints) ? parsed.reviewPoints : [])
+        .map((t) => sanitizeStudentText(t))
+        .filter(Boolean)
+        .slice(0, 2);
 
       results[gi] = {
+        lessonSeen,
+        reviewPoints,
         unmatchedAnswers,
         encouragement: sanitizeStudentText(parsed.encouragement),
         studentName: g.studentName || "",
@@ -1491,6 +1888,43 @@ async function runCheckJob(ctx) {
     });
   }
 
+  // Settle the scope across the class before anything is scored, so no student
+  // is marked against a question another student was excused.
+  const agreedScope = consensusScope(results);
+  let scopeChanges = 0;
+  for (const r of results) {
+    if (!r || !Array.isArray(r.questions) || !r.questions.length) continue;
+    let touched = false;
+    for (const q of r.questions) {
+      const want = agreedScope.get(String(q.q || "").trim().toLowerCase());
+      if (want && q.scope !== want) { q.scope = want; touched = true; scopeChanges++; }
+    }
+    if (touched) {
+      // Rescore: the denominator just changed.
+      const s2 = scoreStudent(r.questions, hasAnswerKey);
+      Object.assign(r, s2);
+    }
+  }
+  if (scopeChanges) {
+    console.log(`[homework/check] scope consensus adjusted ${scopeChanges} question(s) across ${results.length} students`);
+  }
+
+  // Fill the label from the pages when the teacher left it blank. Never
+  // overwrite what they typed — they were in the room and the page was not.
+  const detected = consensusLesson(results);
+  let effectiveName = assignmentName || "";
+  let effectiveCode = lessonCode || "";
+  if (detected) {
+    if (!effectiveName) effectiveName = detected.text;
+    if (!effectiveCode && detected.code) effectiveCode = detected.code;
+  }
+  // The pages disagreeing with the teacher is worth saying out loud: it is how
+  // a batch graded against the wrong lesson's key announces itself.
+  const lessonMismatch =
+    detected?.code && lessonCode && detected.code !== String(lessonCode).toUpperCase()
+      ? `The pages read "${detected.code}" (${detected.agreed} of ${detected.of}) but this batch was labelled ${lessonCode}.`
+      : "";
+
   const unmatchedPhotoIndexes = results
     .filter((r) => r && r.unmatched && !r.superseded)
     .flatMap((r) => r.photoIndexes || []);
@@ -1500,12 +1934,17 @@ async function runCheckJob(ctx) {
 
   const doc = {
     teacherEmail, className, rosterId,
-    lessonCode, bookName,
+    lessonCode: effectiveCode,
+    bookName,
     batchDate: batchDate || new Date(),
     assignment: assignment || {},
     subsetMode: subsetMode || "all",
     assignedQuestionsRaw: assignedRaw,
     assignedQuestions: assigned,
+    assignmentScope: scopeRule || "",
+    assignmentName: effectiveName,
+    detectedLesson: detected ? `${detected.text} (${detected.agreed}/${detected.of} pages)` : "",
+    lessonMismatch,
     workSurface: workSurface || "workbook",
     photoCount: images.length,
     hasAnswerKey,
@@ -1575,13 +2014,17 @@ router.get("/batches", async (req, res) => {
     const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
 
     const docs = await HomeworkCheckBatch.find(q)
-      .select("className lessonCode bookName batchDate assignedQuestionsRaw photoCount hasAnswerKey missingStudents unreadableCount results.studentName results.completeness results.correctness createdAt")
+      .select("className lessonCode bookName assignmentName released releasedAt batchDate assignedQuestionsRaw photoCount hasAnswerKey missingStudents unreadableCount results.studentName results.completeness results.correctness createdAt")
       .sort({ batchDate: -1, createdAt: -1 }).limit(limit).lean();
 
     return res.json({
       ok: true,
       batches: docs.map((d) => ({
         id: String(d._id), className: d.className, lessonCode: d.lessonCode, bookName: d.bookName,
+        assignmentName: d.assignmentName || "",
+        // Only a released batch has comments to post — the release gate is the
+        // teacher saying they have read what goes to the student.
+        released: !!d.released, releasedAt: d.releasedAt || null,
         batchDate: d.batchDate, assignedQuestionsRaw: d.assignedQuestionsRaw,
         photoCount: d.photoCount, hasAnswerKey: d.hasAnswerKey,
         studentCount: (d.results || []).length,
@@ -1670,7 +2113,10 @@ function buildStudentPayloadText(batch, r, code) {
   else lines.push("Homework check");
   lines.push("");
 
-  const label = [batch.lessonCode, batch.assignment?.pageLabel].filter(Boolean).join(" · ");
+  // The teacher's own name for it first — it is what the student was told in
+  // class. The code and page label stay behind it for anyone cross-referencing.
+  const label = [batch.assignmentName, batch.lessonCode, batch.assignment?.pageLabel]
+    .filter(Boolean).join(" · ");
   if (label) { lines.push(`Assignment: ${label}`); lines.push(""); }
 
   // Counts, never percentages — "you finished 4 of 6", not "67%".
@@ -1683,6 +2129,14 @@ function buildStudentPayloadText(batch, r, code) {
   // Per-question next steps. Only questions with something to act on carry a
   // studentNote — correct answers, samples and unreadable work are all blank
   // by construction upstream, so nothing leaks here.
+  // The skill to work on, before the question-by-question list — it is the one
+  // thing worth carrying away from the whole sheet.
+  if ((r.reviewPoints || []).length) {
+    lines.push("What to work on:");
+    for (const t of r.reviewPoints) lines.push(`- ${t}`);
+    lines.push("");
+  }
+
   const actionable = (r.questions || []).filter((q) => q.studentNote);
   if (actionable.length) {
     lines.push("Next Steps:");
@@ -1746,6 +2200,7 @@ async function publishBatchToPortal(batch) {
   const batchId = String(batch._id);
   let created = 0;
   let updated = 0;
+  const codes = [];
 
   for (const r of eligible) {
     const studentId = r.studentId || r.edsbyId;
@@ -1756,7 +2211,7 @@ async function publishBatchToPortal(batch) {
       studentName: r.studentName,
       className: batch.className || "",
       teacherEmail: batch.teacherEmail,
-      title: `Homework ${batch.lessonCode || batch.assignment?.pageLabel || ""}`.trim(),
+      title: `Homework ${batch.assignmentName || batch.lessonCode || batch.assignment?.pageLabel || ""}`.trim(),
       subject: batch.assignment?.subjectGuess || "",
       assessmentType: "Homework",
       score: r.completeness,
@@ -1796,6 +2251,7 @@ async function publishBatchToPortal(batch) {
     }
     if (saved) {
       created += 1;
+      codes.push({ studentId, studentName: r.studentName || "", code: saved.code });
       // Same notification path every other grading mode uses.
       notifyNewGrade(studentId, {
         title: meta.title,
@@ -1807,7 +2263,9 @@ async function publishBatchToPortal(batch) {
   }
 
   console.log(`[homework/publish] batch ${batchId}: ${created} created, ${updated} updated of ${eligible.length} eligible`);
-  return { created, updated, eligible: eligible.length };
+  // The codes go back to the caller: they are the only route a student has to
+  // the detailed feedback, and until now they were minted and forgotten.
+  return { created, updated, eligible: eligible.length, codes };
 }
 
 async function unpublishBatch(batchId) {
@@ -1902,6 +2360,181 @@ router.post("/batches/:id/release-answers", async (req, res) => {
 //   - correct answers are withheld until the teacher flips answersReleased
 //   - counts, never percentages; no class average, no ranking, no other students
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// GET /homework/batches/:id/comments?teacherEmail=...
+//
+// The per-student feedback as plain text, ready to be put somewhere Edsby can
+// actually hold it. The gradebook CSV cannot: its format is a marks matrix
+// with no comment field, so everything about what was wrong and what to do
+// next stops at the export.
+//
+// Whatever carries it — a gradebook cell comment posted by the teacher's own
+// Apps Script, or anything else — needs the same thing: the text, keyed to a
+// student Edsby can identify. That is this. It commits to no transport and
+// stores no credentials.
+//
+// Released batches only. These lines are written to the student, and the
+// release gate is the teacher saying they have read them.
+// ---------------------------------------------------------------------------
+function buildTeacherComment(batch, r, code) {
+  const qs = r.questions || [];
+  const missed = qs.filter((q) => q.work === "not_attempted" && q.scope !== "bonus").map((q) => q.q);
+  const wrong = qs.filter((q) => q.correct === "incorrect").map((q) => q.q);
+
+  const parts = [`Attempted ${r.attemptedCount} of ${r.assignedCount}.`];
+  if (r.correctness != null) {
+    parts.push(`Correct on ${r.correctCount} of ${r.keyedAttemptedCount} checked`
+      + (r.workedCount ? ` (${r.workedCount} worked out where the book prints no answer).` : "."));
+  }
+  if (missed.length) parts.push(`Not done: ${missed.join(", ")}.`);
+  if (wrong.length) parts.push(`Check again: ${wrong.join(", ")}.`);
+  for (const t of (r.reviewPoints || [])) parts.push(/[.!?]$/.test(t) ? t : `${t}.`);
+  for (const q of qs) {
+    if (q.studentNote && q.correct === "incorrect") parts.push(`${q.q}: ${q.studentNote}`);
+  }
+  if (r.encouragement) parts.push(r.encouragement);
+  if (code) parts.push(`Full feedback: www.curriculate.net/results/${code}`);
+  return parts.join(" ");
+}
+
+router.get("/batches/:id/comments", async (req, res) => {
+  try {
+    const teacherEmail = String(req.query.teacherEmail || "").trim().toLowerCase();
+    if (!teacherEmail) return res.status(400).json({ ok: false, error: "teacherEmail is required." });
+
+    const batch = await HomeworkCheckBatch.findOne({ _id: req.params.id, teacherEmail }).lean();
+    if (!batch) return res.status(404).json({ ok: false, error: "Batch not found." });
+    if (!batch.released) {
+      return res.status(409).json({
+        ok: false,
+        error: "This batch hasn't been released. Release it first — these lines are written to the student.",
+      });
+    }
+
+    // Codes are per student, minted at release; look them up rather than
+    // re-minting, so the link matches what the portal is already serving.
+    const published = await PublishedResult
+      .find({ "meta.homeworkBatchId": String(batch._id) })
+      .select("code meta.studentId").lean();
+    const codeByStudent = new Map(
+      published.map((p) => [String(p?.meta?.studentId || ""), p.code]).filter(([k]) => k)
+    );
+
+    const students = (batch.results || [])
+      .filter((r) => !r.superseded && !r.noPageFound && r.completeness != null)
+      .map((r) => {
+        const sid = r.studentId || r.edsbyId || "";
+        return {
+          studentName: r.studentName || "",
+          studentId: r.studentId || "",
+          edsbyId: r.edsbyId || "",
+          grade: r.completeness,
+          outOf: 10,
+          comment: buildTeacherComment(batch, r, codeByStudent.get(String(sid)) || ""),
+        };
+      });
+
+    return res.json({
+      ok: true,
+      batchId: String(batch._id),
+      assessmentName: `Homework ${batch.assignmentName || batch.lessonCode || ""}`.trim(),
+      className: batch.className || "",
+      batchDate: batch.batchDate,
+      students,
+    });
+  } catch (err) {
+    console.error("[homework/batches/:id/comments]", err?.message || err);
+    return res.status(500).json({ ok: false, error: "Could not build the comments." });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /homework/sessions?teacherEmail=...
+// GET /homework/sessions/:sessionId/comments?teacherEmail=...
+//
+// The same service for batch grading that /batches/:id/comments provides for
+// homework checks. Batch grading keeps no batch document — each student is
+// published straight to the results portal — so a "session" here is just the
+// PublishedResults sharing a sessionId, and the short comment and mark ride
+// along in meta because the payload itself is a whole report.
+//
+// Lives in this router because the Edsby poster already talks to it; the
+// alternative was a second base URL in the extension for no gain.
+// ---------------------------------------------------------------------------
+router.get("/sessions", async (req, res) => {
+  try {
+    const teacherEmail = String(req.query.teacherEmail || "").trim().toLowerCase();
+    if (!teacherEmail) return res.status(400).json({ ok: false, error: "teacherEmail is required." });
+
+    const docs = await PublishedResult.find({
+      "meta.source": "batch-grading",
+      "meta.teacherEmail": teacherEmail,
+      sessionId: { $nin: [null, ""] },
+    }).select("sessionId meta createdAt").sort({ createdAt: -1 }).limit(400).lean();
+
+    const bySession = new Map();
+    for (const d of docs) {
+      const k = String(d.sessionId);
+      if (!bySession.has(k)) {
+        bySession.set(k, {
+          id: k,
+          assignmentName: d.meta?.title || "Graded work",
+          className: d.meta?.className || "",
+          batchDate: d.createdAt,
+          studentCount: 0,
+          released: true,   // batch grading publishes as it grades
+        });
+      }
+      bySession.get(k).studentCount += 1;
+    }
+    return res.json({ ok: true, batches: [...bySession.values()] });
+  } catch (err) {
+    console.error("[homework/sessions]", err?.message || err);
+    return res.status(500).json({ ok: false, error: "Could not list grading sessions." });
+  }
+});
+
+router.get("/sessions/:sessionId/comments", async (req, res) => {
+  try {
+    const teacherEmail = String(req.query.teacherEmail || "").trim().toLowerCase();
+    if (!teacherEmail) return res.status(400).json({ ok: false, error: "teacherEmail is required." });
+
+    const docs = await PublishedResult.find({
+      sessionId: String(req.params.sessionId),
+      "meta.teacherEmail": teacherEmail,
+    }).select("code meta").lean();
+    if (!docs.length) return res.status(404).json({ ok: false, error: "No results in that session." });
+
+    const students = docs.map((d) => {
+      const m = d.meta || {};
+      const bits = [];
+      if (m.edsbyComment) bits.push(m.edsbyComment);
+      if (d.code) bits.push(`Full feedback: www.curriculate.net/results/${d.code}`);
+      return {
+        studentName: m.studentName || "",
+        studentId: m.studentId || "",
+        edsbyId: "",
+        // Batch marks keep their own denominator — a quiz out of 6 stays out
+        // of 6 rather than being rescaled into somebody else's column.
+        grade: m.score != null ? m.score : null,
+        outOf: m.outOf != null ? m.outOf : null,
+        comment: bits.join(" "),
+      };
+    }).filter((s) => s.studentName && s.comment);
+
+    return res.json({
+      ok: true,
+      batchId: String(req.params.sessionId),
+      assessmentName: docs[0]?.meta?.title || "Graded work",
+      className: docs[0]?.meta?.className || "",
+      students,
+    });
+  } catch (err) {
+    console.error("[homework/sessions/:id/comments]", err?.message || err);
+    return res.status(500).json({ ok: false, error: "Could not build the comments." });
+  }
+});
+
 router.get("/student-view", async (req, res) => {
   try {
     const studentId = String(req.query.studentId || "").trim();

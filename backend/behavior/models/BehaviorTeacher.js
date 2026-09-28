@@ -1,6 +1,6 @@
 // backend/behavior/models/BehaviorTeacher.js
 //
-// A teacher's MEMBERSHIP in a Behaviours school. This is distinct from the
+// A teacher's MEMBERSHIP in a Compass school. This is distinct from the
 // shared Curriculate `User` (the sign-in identity): a BehaviorTeacher links a
 // User to a school and carries their role + per-user signature for the note
 // home. We reuse the existing email+password JWT auth (routes/auth.js); this

@@ -565,7 +565,7 @@ function RosterSection() {
 // document.cookie — swap in your own accessor if your cookie is HttpOnly.
 function ingestSnippet(apiBase: string, token: string) {
   return `// ==UserScript==
-// @name         Push Edsby creds → Behaviours
+// @name         Push Edsby creds → Compass
 // @match        https://*.edsby.com/*
 // @grant        GM_xmlhttpRequest
 // ==/UserScript==
@@ -583,7 +583,7 @@ function ingestSnippet(apiBase: string, token: string) {
     url: "${apiBase}/api/behavior/edsby/ingest",
     headers: { "Content-Type": "application/json", "x-ingest-token": "${token}" },
     data: JSON.stringify(payload),
-    onload: function (r) { console.log("Behaviours ingest:", r.status, r.responseText); }
+    onload: function (r) { console.log("Compass ingest:", r.status, r.responseText); }
   });
 })();`;
 }

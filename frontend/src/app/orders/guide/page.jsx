@@ -8,7 +8,7 @@
 import { useEffect, useState } from "react";
 
 const TEACHER_STEPS = [
-  { t: "Open the ordering page", d: "Go to curriculate.net/orders. If you're already signed in to Behaviours you'll go straight in. Otherwise type your school email and we'll send a 6-digit code — enter it to sign in." },
+  { t: "Open the ordering page", d: "Go to curriculate.net/orders. If you're already signed in to Compass you'll go straight in. Otherwise type your school email and we'll send a 6-digit code — enter it to sign in." },
   { t: "Find what you need", d: "Browse by supplier and category, or use the search box to jump to an item by name, SKU, or category. Each row shows the unit (e.g. 12/BOX) and price." },
   { t: "Type quantities", d: "Put a number in the box beside any item. It's added to “Your order” on the right, and the running total updates. Set it back to 0 (or hit ×) to remove it." },
   { t: "Add your name and send", d: "Enter your name so finance knows who ordered, then click Send order. Only items with a quantity are included." },

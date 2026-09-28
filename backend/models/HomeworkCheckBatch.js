@@ -37,6 +37,15 @@ const questionResultSchema = new mongoose.Schema(
     // questions the student got right (nothing to act on) and for anything
     // flagged unreadable (that goes to the teacher only).
     studentNote: { type: String, default: "" },
+
+    // Whether this question was actually set. "bonus" leaves the completeness
+    // denominator — work nobody was asked to do is not work left undone —
+    // while "unclear" is counted as core, so an ambiguous page errs towards
+    // asking rather than quietly excusing.
+    scope: { type: String, enum: ["core", "bonus", "unclear"], default: "unclear" },
+    // "key" = against the book, "worked" = solved here because the book is
+    // silent on it, "none" = not judged.
+    checkedBy: { type: String, enum: ["key", "worked", "none"], default: "none" },
   },
   { _id: false }
 );
@@ -68,6 +77,9 @@ const studentResultSchema = new mongoose.Schema(
     assignedCount: { type: Number, default: 0 },
     correctCount: { type: Number, default: 0 },
     keyedAttemptedCount: { type: Number, default: 0 },
+    // Of those, how many were judged by working the answer out rather than
+    // against the printed key — the book prints odd answers only.
+    workedCount: { type: Number, default: 0 },
 
     questions: [questionResultSchema],
 
@@ -93,6 +105,15 @@ const studentResultSchema = new mongoose.Schema(
 
     // Per-student notes surfaced above the table. TEACHER-FACING ONLY.
     flags: [{ type: String }],
+
+    // The lesson heading printed on THIS student's page, as read. Kept per
+    // student because the batch-level label is a vote across these.
+    lessonSeen: { type: String, default: "" },
+
+    // The skill to work on, drawn from this student's actual errors. Written
+    // to the student; empty whenever the mistakes had no common cause, which
+    // is a normal outcome and better than an invented pattern.
+    reviewPoints: [{ type: String }],
 
     // Set when the model produced a page it could not attach to any roster
     // student — the teacher assigns it by hand.
@@ -140,6 +161,21 @@ const homeworkCheckBatchSchema = new mongoose.Schema(
     rosterId: { type: mongoose.Schema.Types.ObjectId, ref: "ClassRoster", default: null },
 
     // What was checked.
+    // What the teacher called this assignment. With the assignment page now
+    // optional, the lesson code may be the only other label a batch carries —
+    // and "NS7-3" is not what a teacher recognises their own homework by.
+    assignmentName: { type: String, default: "" },
+    // What the teacher said was set, in their own words. Applied per question
+    // by the model against what is printed on the page.
+    assignmentScope: { type: String, default: "" },
+
+    // What the students' own pages said this was, and how many agreed. Used to
+    // fill the name when the teacher left it blank, and kept either way as the
+    // evidence behind that label.
+    detectedLesson: { type: String, default: "" },
+    // Set when the pages consistently name a different lesson than the batch
+    // was labelled with — how a batch graded against the wrong key shows up.
+    lessonMismatch: { type: String, default: "" },
     lessonCode: { type: String, default: "", index: true },
     bookName: { type: String, default: "" },
     batchDate: { type: Date, default: Date.now, index: true },

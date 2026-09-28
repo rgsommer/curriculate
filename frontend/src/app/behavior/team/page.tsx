@@ -50,7 +50,7 @@ export default function TeamPage() {
   }, []);
 
   async function renameMember(userId: string, currentName: string) {
-    const name = window.prompt("Name to show for this member in Behaviours:", currentName || "");
+    const name = window.prompt("Name to show for this member in Compass:", currentName || "");
     if (name === null) return;
     const trimmed = name.trim();
     if (!trimmed) return;

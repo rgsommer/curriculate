@@ -46,7 +46,7 @@ async function loadEdsbySession(schoolId, { overrideCookie, membership } = {}) {
   const e = config?.edsby || {};
   const pasted = String(overrideCookie || "").trim();
   if (!e.baseUrl) {
-    return { error: "Edsby base URL isn't set — an admin sets it once in Behaviours Setup → Edsby." };
+    return { error: "Edsby base URL isn't set — an admin sets it once in Compass Setup → Edsby." };
   }
 
   // The pull runs as WHOEVER is signed in, when they've connected their own
@@ -217,7 +217,7 @@ export function buildAvgsRouter({ requireAdmin }) {
       const r = await loadZoomRoster(req.schoolId, session, req.body?.zoomId, req.membership);
       if (r.error) return res.json({ ok: false, error: r.error });
       if (r.sessionExpired) {
-        return res.json({ ok: false, error: "Edsby session cookie has expired — refresh it (Cookie Sync extension or re-paste in Behaviours Setup)." });
+        return res.json({ ok: false, error: "Edsby session cookie has expired — refresh it (Cookie Sync extension or re-paste in Compass Setup)." });
       }
       if (!r.people.length) {
         return res.json({
@@ -346,7 +346,7 @@ export function buildAvgsRouter({ requireAdmin }) {
       const roster = await loadZoomRoster(req.schoolId, session, req.body?.zoomId, req.membership);
       if (roster.error) return res.json({ ok: false, error: roster.error });
       if (roster.sessionExpired) {
-        return res.json({ ok: false, error: "Edsby session cookie has expired — refresh it (Cookie Sync extension or re-paste in Behaviours Setup)." });
+        return res.json({ ok: false, error: "Edsby session cookie has expired — refresh it (Cookie Sync extension or re-paste in Compass Setup)." });
       }
       if (!roster.people.length) {
         return res.json({ ok: false, error: "Edsby returned no students. Diagnostics attached — share them to get the parser tuned.", diagnostics: roster.diagnostics });
@@ -409,7 +409,7 @@ export function buildAvgsRouter({ requireAdmin }) {
       const roster = await loadZoomRoster(req.schoolId, session, req.body?.zoomId, req.membership);
       if (roster.error) return res.json({ ok: false, error: roster.error });
       if (roster.sessionExpired) {
-        return res.json({ ok: false, error: "Edsby session cookie has expired — refresh it (Cookie Sync extension or re-paste in Behaviours Setup)." });
+        return res.json({ ok: false, error: "Edsby session cookie has expired — refresh it (Cookie Sync extension or re-paste in Compass Setup)." });
       }
       if (!roster.people.length) {
         return res.json({ ok: false, error: "Edsby returned no students. Diagnostics attached.", diagnostics: roster.diagnostics });
@@ -439,7 +439,7 @@ export function buildAvgsRouter({ requireAdmin }) {
         if (!g.marks.size && classDiag.length < 8) classDiag.push({ classId: cid, name: classNames.get(cid), note: g.error || `no marks; shape: ${g.shape || "?"}` });
       });
       if (sessionExpired) {
-        return res.json({ ok: false, error: "Edsby session cookie has expired — refresh it (Cookie Sync extension or re-paste in Behaviours Setup)." });
+        return res.json({ ok: false, error: "Edsby session cookie has expired — refresh it (Cookie Sync extension or re-paste in Compass Setup)." });
       }
 
       // Weighted average at the previous refresh, keyed by Edsby nid — so we can

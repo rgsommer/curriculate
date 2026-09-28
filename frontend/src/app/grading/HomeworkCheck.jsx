@@ -20,6 +20,33 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isPdf, pdfToDataUrls } from "./pdfToImages";
+import HomeworkCapture from "./HomeworkCapture";
+
+// Build the student groups straight from in-app capture, where every photo was
+// attributed the moment it was taken. Keyed by student rather than by runs of
+// consecutive photos, so going back to a student you'd moved past adds to their
+// group instead of creating a second one for the same person.
+function groupsFromCapture(attrib) {
+  const byStudent = new Map();
+  attrib.forEach((stu, idx) => {
+    const key = stu?.edsbyId || stu?.studentId
+      || `${stu?.firstName || ""}|${stu?.lastName || ""}`.toLowerCase();
+    if (!byStudent.has(key)) {
+      byStudent.set(key, {
+        studentName: `${stu?.firstName || ""} ${stu?.lastName || ""}`.trim(),
+        studentId: stu?.studentId || "",
+        edsbyId: stu?.edsbyId || "",
+        nameAsWritten: "",   // nothing was read off the page — the teacher said who this is
+        matched: true,
+        matchConfidence: 1,
+        superseded: false,
+        photoIndexes: [],
+      });
+    }
+    byStudent.get(key).photoIndexes.push(idx);
+  });
+  return [...byStudent.values()];
+}
 
 // Turn a mixed pick of photos and PDFs into page images. A PDF becomes one
 // image per page, so a key or a textbook page that already exists as a PDF
@@ -327,6 +354,19 @@ export default function HomeworkCheck({
     return rc?.students || [];
   }, [rosterClasses, className]);
 
+  // Optional free-text label. The lesson code alone is enough to identify a
+  // batch; this is for when a code isn't what you'd recognise it by later.
+  const [assignmentName, setAssignmentName] = useState("");
+  // What the teacher set, in their own words. Applied per question against
+  // what is printed on the page, so a bonus nobody was asked to do doesn't
+  // read as work left undone.
+  const [assignmentScope, setAssignmentScope] = useState("");
+  useEffect(() => {
+    try { const v = localStorage.getItem("curriculate_hw_scope_v1"); if (v) setAssignmentScope(v); } catch {}
+  }, []);
+  useEffect(() => {
+    try { localStorage.setItem("curriculate_hw_scope_v1", assignmentScope); } catch {}
+  }, [assignmentScope]);
   const [bookName, setBookName] = useState("");
   useEffect(() => {
     try { const v = localStorage.getItem("curriculate_hw_book_v1"); if (v) setBookName(v); } catch {}
@@ -388,6 +428,22 @@ export default function HomeworkCheck({
 
   // ---- key coverage ----
   const [coverage, setCoverage] = useState(null);
+  // Which key this check marks against, chosen rather than inferred.
+  const [keys, setKeys] = useState([]);
+  // An uploaded key is a whole book, so what the teacher picks is the BOOK.
+  // The lesson code they have already typed finds the lesson inside it —
+  // asking them to name the lesson twice is asking them to do the lookup.
+  const books = useMemo(
+    () => [...new Set(keys.map((k) => String(k.bookName || "").trim()).filter(Boolean))].sort(),
+    [keys]
+  );
+  const matchedKey = useMemo(() => {
+    const code = String(lessonCode || "").trim().toUpperCase();
+    if (!code) return null;
+    const inBook = keys.filter((k) => !bookName || String(k.bookName || "") === bookName);
+    return inBook.find((k) => String(k.lessonCode || "").toUpperCase() === code) || null;
+  }, [keys, bookName, lessonCode]);
+  const answerKeyId = matchedKey?.id || "";
   const [coverageBusy, setCoverageBusy] = useState(false);
   useEffect(() => {
     if (!assignedQuestions.length || !backendBase) { setCoverage(null); return; }
@@ -399,7 +455,7 @@ export default function HomeworkCheck({
       body: JSON.stringify({
         teacherEmail, bookName,
         lessonCode: lessonCode || assignment?.lessonCode || "",
-        assignedQuestions,
+        assignedQuestions, answerKeyId,
         workType: assignment?.workType || "unknown",
       }),
     })
@@ -409,7 +465,7 @@ export default function HomeworkCheck({
       .finally(() => { if (!cancelled) setCoverageBusy(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [assignedQuestions, lessonCode, bookName, teacherEmail, backendBase, assignment?.workType]);
+  }, [assignedQuestions, lessonCode, bookName, teacherEmail, backendBase, assignment?.workType, answerKeyId]);
 
   async function readAssignmentPage(files) {
     const list = Array.from(files || []).slice(0, 3);
@@ -440,7 +496,7 @@ export default function HomeworkCheck({
   }
 
   // ---- answer key ----
-  const [keys, setKeys] = useState([]);
+
   const [keyBusy, setKeyBusy] = useState(false);
   const [keyMsg, setKeyMsg] = useState("");
   const [showKeys, setShowKeys] = useState(false);
@@ -456,6 +512,31 @@ export default function HomeworkCheck({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teacherEmail, backendBase]);
   useEffect(() => { refreshKeys(); }, [refreshKeys]);
+
+
+  // Poll a background answer-key extraction. Tolerant of a few failed polls:
+  // a book takes minutes and one dropped request shouldn't lose the run.
+  async function pollKeyJob(jobId, pageCount) {
+    let misses = 0;
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 2500));
+      try {
+        const res = await fetch(hwUrl(`/answer-key/job/${encodeURIComponent(jobId)}`));
+        if (!res.ok) throw new Error(`poll ${res.status}`);
+        const j = await res.json();
+        misses = 0;
+        if (j.status === "error") throw new Error(j.error || "Answer-key extraction failed.");
+        if (j.status === "done") return j.result || {};
+        setKeyMsg(`Reading ${pageCount} pages — ${j.stage || "working"}… ${j.progress || 0}%`);
+      } catch (err) {
+        if (String(err?.message || "").startsWith("poll")) {
+          if (++misses >= 10) throw new Error("Lost contact while reading the answer key.");
+        } else {
+          throw err;
+        }
+      }
+    }
+  }
 
   async function deleteAnswerKey(k) {
     const id = k?._id || k?.id;
@@ -501,8 +582,16 @@ export default function HomeworkCheck({
       });
       const data = await res.json();
       if (!res.ok || !data?.ok) throw new Error(data?.error || `Server error ${res.status}`);
+
+      // A whole book is read in the background — a few pages still answer
+      // outright — so accept either shape.
+      const out = data.jobId ? await pollKeyJob(data.jobId, data.pageCount) : data;
+      const lessons = Array.isArray(out?.lessons) ? out.lessons : [];
+      const shown = lessons.slice(0, 12).map((l) => l.lessonCode).join(", ");
       setKeyMsg(
-        `Saved ${data.lessons.length} lesson(s): ${data.lessons.map((l) => l.lessonCode).join(", ")}`
+        `Saved ${lessons.length} lesson${lessons.length === 1 ? "" : "s"}`
+        + (shown ? `: ${shown}${lessons.length > 12 ? `, and ${lessons.length - 12} more` : ""}` : "")
+        + (out?.warning ? ` — ${out.warning}` : "")
         + (note ? ` — ${note}` : "")
       );
       refreshKeys();
@@ -522,6 +611,29 @@ export default function HomeworkCheck({
   const [prepMsg, setPrepMsg] = useState("");
   const batchInputRef = useRef(null);
   const cancelUploadRef = useRef(false);
+  // In-app capture: the roster screen is open, and (once shot) who each photo
+  // belongs to, parallel to `photos`. Null means these photos came from files
+  // and still need the name-reading grouping pass.
+  const [showCapture, setShowCapture] = useState(false);
+  const [captureAttrib, setCaptureAttrib] = useState(null);
+
+  function acceptCapture(shots) {
+    setShowCapture(false);
+    if (!shots?.length) return;
+    setPhotos(shots.map((s, i) => ({
+      name: `capture-${String(i + 1).padStart(2, "0")}.jpg`,
+      dataUrl: s.dataUrl,
+      capturedAt: s.capturedAt,
+      issues: [],
+      status: "pending",
+    })));
+    setCaptureAttrib(shots.map((s) => s.student));
+    // A fresh set of photos invalidates any previous upload and grouping.
+    setUploadId("");
+    setGroups(null);
+    setGroupMeta(null);
+    setUploadError("");
+  }
 
   async function prepareFiles(files) {
     const list = Array.from(files || []);
@@ -531,6 +643,9 @@ export default function HomeworkCheck({
       return;
     }
     setUploadError("");
+    // These came from files, so they carry no attribution — grouping has to
+    // read the names off the pages as before.
+    setCaptureAttrib(null);
     setPrepMsg(`Reading ${list.length} photos…`);
 
     // 1) Capture time from EXIF, so we sort by when it was shot, not by filename.
@@ -674,11 +789,33 @@ export default function HomeworkCheck({
 
   const allUploaded = photos.length > 0 && photos.every((p) => p.status === "sent");
 
+  // Photo index shown full-size, or null. Identifying a page means reading it.
+  const [zoom, setZoom] = useState(null);
+  useEffect(() => {
+    if (zoom === null) return;
+    function onKey(e) {
+      if (e.key === "Escape") { setZoom(null); return; }
+      if (e.key === "ArrowRight") setZoom((i) => Math.min((i ?? 0) + 1, photos.length - 1));
+      if (e.key === "ArrowLeft") setZoom((i) => Math.max((i ?? 0) - 1, 0));
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [zoom, photos.length]);
+
   // ---- phase 2: grouping ----
   const [groups, setGroups] = useState(null);
   const [groupMeta, setGroupMeta] = useState(null); // { warnings, missingStudents, modalPageCount, scans }
   const [groupBusy, setGroupBusy] = useState(false);
   const [groupError, setGroupError] = useState("");
+
+  // Photos shot in the app are already attributed, so the grouping pass — which
+  // exists to read a name off each page and guess the boundaries — has nothing
+  // left to work out. Skip straight to the groups the teacher themselves gave.
+  useEffect(() => {
+    if (!captureAttrib || !allUploaded || groups) return;
+    setGroups(groupsFromCapture(captureAttrib));
+    setGroupMeta({ warnings: [], missingStudents: [], modalPageCount: null, scans: [], fromCapture: true });
+  }, [captureAttrib, allUploaded, groups]);
 
   async function runGrouping() {
     if (!allUploaded) return;
@@ -783,6 +920,9 @@ export default function HomeworkCheck({
           uploadId, teacherEmail, className,
           lessonCode: lessonCode || assignment?.lessonCode || "",
           bookName,
+          assignmentName,
+          assignmentScope,
+          answerKeyId,
           assignedQuestions,
           subsetMode,
           workSurface,
@@ -833,11 +973,11 @@ export default function HomeworkCheck({
 
   /* ---------------- exports ---------------- */
 
-  function exportCsv() {
+  function exportCsv(codes = {}) {
     if (!result?.results?.length) return;
     const header = [
       "Student", "Completeness /10", "Correctness /10", "Attempted", "Assigned",
-      "Correct", "Checked against key", "Status", "Flags", "Per-question",
+      "Correct", "Checked against key", "Status", "Flags", "Feedback link", "Per-question",
     ].map(escCsv).join(",");
 
     const rows = result.results.map((r) => {
@@ -858,6 +998,11 @@ export default function HomeworkCheck({
         r.keyedAttemptedCount ?? "",
         status,
         (r.flags || []).join("; "),
+        // Where the student can read what was wrong and what to do about it.
+        // Blank until the batch is released — the code is minted then.
+        (codes[r.studentId] || codes[r.edsbyId])
+          ? `www.curriculate.net/results/${codes[r.studentId] || codes[r.edsbyId]}`
+          : "",
         perQ,
       ].map(escCsv).join(",");
     });
@@ -866,7 +1011,13 @@ export default function HomeworkCheck({
     downloadText([header, ...rows].join("\n"), name);
   }
 
-  function exportEdsbyCsv() {
+  // Edsby's own limit is unpublished and we have not tested where it truncates.
+  // 900 is a deliberate underestimate: a comment that arrives whole is worth
+  // more than one that arrives long. Raise it once a real import has been seen
+  // to accept more.
+  const EDSBY_COMMENT_MAX = 900;
+
+  function exportEdsbyCsv(codes = {}) {
     if (!result?.results?.length) return;
     // Completeness is the mark that posts to the gradebook by default.
     const headers = ["Student ID", "First Name", "Last Name", "Assessment Name", "Date", "Grade", "Out Of", "Comment"];
@@ -885,12 +1036,54 @@ export default function HomeworkCheck({
       const parts = (r.studentName || "").trim().split(/\s+/);
       const firstName = parts[0] || "";
       const lastName = parts.slice(1).join(" ");
-      const bits = [`Attempted ${r.attemptedCount} of ${r.assignedCount}.`];
-      if (r.correctness != null) bits.push(`Correct on ${r.correctCount} of ${r.keyedAttemptedCount} checked.`);
-      if ((r.flags || []).length) bits.push(r.flags.join(" "));
+      // The comment is the only part of a gradebook row a student or parent
+      // actually reads, so it carries the substance. Assembled in priority
+      // order and trimmed by dropping whole items from the bottom: a comment
+      // cut off mid-sentence is worse than one that stops cleanly, and what
+      // matters most should be the last thing to go.
+      const qs = r.questions || [];
+      const missed = qs.filter((q) => q.work === "not_attempted" && q.scope !== "bonus").map((q) => q.q);
+      const wrong = qs.filter((q) => q.correct === "incorrect").map((q) => q.q);
+
+      const commentParts = [`Attempted ${r.attemptedCount} of ${r.assignedCount}.`];
+      if (r.correctness != null) {
+        commentParts.push(
+          `Correct on ${r.correctCount} of ${r.keyedAttemptedCount} checked`
+          + (r.workedCount ? ` (${r.workedCount} worked out where the book prints no answer).` : ".")
+        );
+      }
+      if (missed.length) commentParts.push(`Not done: ${missed.join(", ")}.`);
+      if (wrong.length) commentParts.push(`Check again: ${wrong.join(", ")}.`);
+      // The skill behind the errors — ahead of the per-question notes, because
+      // "review inverse operations" is the thing worth carrying away.
+      for (const t of (r.reviewPoints || [])) commentParts.push(/[.!?]$/.test(t) ? t : `${t}.`);
+      // Then question by question, in the wording the student sees.
+      for (const q of qs) {
+        if (q.studentNote && q.correct === "incorrect") commentParts.push(`${q.q}: ${q.studentNote}`);
+      }
+      if (r.encouragement) commentParts.push(r.encouragement);
+      const code = codes[r.studentId] || codes[r.edsbyId];
+      if (code) commentParts.push(`Full feedback: www.curriculate.net/results/${code}`);
+      if ((r.flags || []).length) commentParts.push(r.flags.join(" "));
+
+      let comment = "";
+      for (const part of commentParts) {
+        const next = comment ? `${comment} ${part}` : part;
+        if (next.length > EDSBY_COMMENT_MAX) break;
+        comment = next;
+      }
+      // A single item longer than the budget still has to be cut somewhere.
+      if (!comment && commentParts.length) {
+        comment = commentParts[0].slice(0, EDSBY_COMMENT_MAX - 1).replace(/\s+\S*$/, "") + "…";
+      }
       return [
         r.studentId || r.edsbyId, firstName, lastName,
-        assessmentName, today, r.completeness, 10, bits.join(" "),
+        // Left as the tenth-of-a-point figure the results table shows. Edsby
+        // imports it: 3.3 landed in the gradebook intact, and the hang that
+        // prompted rounding turned out to be Edsby-side — a refresh cleared
+        // it. Rounding here would change a mark for no demonstrated reason
+        // and make the gradebook disagree with the screen.
+        assessmentName, today, r.completeness, 10, comment,
       ].map(escCsv).join(",");
     });
 
@@ -922,7 +1115,7 @@ export default function HomeworkCheck({
 
       {/* ---------- Setup ---------- */}
       <div style={S.section}>
-        <div style={S.sectionTitle}>1 · Class &amp; book</div>
+        <div style={S.sectionTitle}>1 · What you're checking</div>
         <div style={S.row}>
           <div style={{ flex: 1, minWidth: 180 }}>
             <label style={S.label}>Class</label>
@@ -940,26 +1133,110 @@ export default function HomeworkCheck({
               </div>
             )}
           </div>
-          <div style={{ flex: 1, minWidth: 180 }}>
-            <label style={S.label}>Book (for the answer key)</label>
+        </div>
+
+        {/* Lesson code labels the batch on its own. The name is only for when a
+            code isn't what you'd recognise the homework by later. */}
+        <div style={{ ...S.row, marginTop: 8 }}>
+          <div style={{ flex: 1, minWidth: 140 }}>
+            <label style={S.label}>Lesson code</label>
             <input
               style={S.input}
-              value={bookName}
-              onChange={(e) => setBookName(e.target.value)}
-              placeholder="JUMP Math AP Book 7.1"
+              value={lessonCode}
+              onChange={(e) => setLessonCode(e.target.value.toUpperCase())}
+              placeholder="NS7-3"
             />
+          </div>
+          <div style={{ flex: 1, minWidth: 180 }}>
+            <label style={S.label}>
+              Assignment name <span style={S.optional}>optional</span>
+            </label>
+            <input
+              style={S.input}
+              value={assignmentName}
+              onChange={(e) => setAssignmentName(e.target.value)}
+              placeholder="Leave blank to use the lesson code"
+            />
+          </div>
+        </div>
+
+        {/* The one thing that separates "didn't do it" from "wasn't asked to".
+            A printed page carries more than was set, and without this every
+            bonus question reads as work left undone — for every student
+            equally, which makes the completeness mark meaningless. */}
+        <div style={{ marginTop: 8 }}>
+          <label style={S.label}>
+            What was assigned? <span style={S.optional}>optional</span>
+          </label>
+          <input
+            style={S.input}
+            value={assignmentScope}
+            onChange={(e) => setAssignmentScope(e.target.value)}
+            placeholder="e.g. Core only — odds — 1 to 12, all parts — skip the Investigation"
+          />
+          <div style={S.hint}>
+            Say it however you'd say it to the class. It's read against what's printed on the
+            page, so anything outside it is marked bonus and left out of the completeness
+            score rather than counting as not done. Blank means everything printed except
+            what the book marks bonus, extension or investigation.
           </div>
         </div>
       </div>
 
       {/* ---------- Answer key ---------- */}
       <div style={S.section}>
-        <div style={S.sectionTitle}>2 · Answer key <span style={S.optional}>one-time per book</span></div>
+        <div style={S.sectionTitle}>2 · Answer key <span style={S.optional}>upload once, pick per check</span></div>
         <div style={S.hint}>
           Photograph the answers section at the back of the book, or upload the PDF — its pages
           are read straight off it. Most books print odd answers only — that's fine, anything not
           in the key is marked “no key” and left out of the correctness score.
         </div>
+
+        {/* Pick the BOOK; the lesson code already typed finds the lesson in it.
+            An uploaded key is the whole book's answers, so naming the lesson
+            here as well would be doing the lookup by hand. */}
+        {books.length > 0 && (
+          <div style={{ marginTop: 8 }}>
+            <label style={S.label}>Mark this check against</label>
+            <select
+              value={bookName}
+              onChange={(e) => setBookName(e.target.value)}
+              style={{ ...S.input, width: "100%" }}
+            >
+              <option value="">Any book on file</option>
+              {books.map((b) => (
+                <option key={b} value={b}>
+                  {b} ({keys.filter((k) => k.bookName === b).length} lessons)
+                </option>
+              ))}
+            </select>
+
+            {/* Whether THIS lesson is actually in there. Otherwise the first
+                sign of a wrong code is a whole batch coming back with no
+                correctness score at all. */}
+            {!String(lessonCode || "").trim() ? (
+              <div style={S.hint}>Enter the lesson code above and its answers will be found here.</div>
+            ) : matchedKey ? (
+              <div style={{ ...S.hint, color: "#166534" }}>
+                ✓ <b>{matchedKey.lessonCode}</b> found{matchedKey.bookName ? ` in ${matchedKey.bookName}` : ""} —{" "}
+                {matchedKey.questionCount} answers.
+              </div>
+            ) : (
+              <div
+                style={{
+                  fontSize: 12, lineHeight: 1.5, marginTop: 4,
+                  color: "#7c2d12", background: "rgba(234,88,12,0.10)",
+                  border: "1px solid rgba(234,88,12,0.35)", borderRadius: 6, padding: "6px 9px",
+                }}
+              >
+                No answers on file for <b>{String(lessonCode).trim().toUpperCase()}</b>
+                {bookName ? ` in ${bookName}` : ""}. This batch will report completeness only.
+                Check the code, or upload that book's answer key below.
+              </div>
+            )}
+          </div>
+        )}
+
         <div style={{ ...S.row, marginTop: 8 }}>
           <button
             type="button"
@@ -969,6 +1246,17 @@ export default function HomeworkCheck({
           >
             {keyBusy ? "Reading key…" : "Upload answer-key pages"}
           </button>
+          {/* Only meaningful while uploading: it's the label the new key is filed
+              under. It used to sit up in section 1 as if it selected something,
+              which it stopped doing once the key itself became a choice. */}
+          <div style={{ flex: 1, minWidth: 180 }}>
+            <input
+              style={S.input}
+              value={bookName}
+              onChange={(e) => setBookName(e.target.value)}
+              placeholder="Book to file it under (JUMP Math AP Book 7.1)"
+            />
+          </div>
           <input
             ref={keyInputRef}
             type="file"
@@ -995,7 +1283,7 @@ export default function HomeworkCheck({
             it covers is then marked against the wrong answers. There was no way
             to take one back, so an upload could only ever be added to. */}
         {showKeys && keys.length > 0 && (
-          <div style={{ marginTop: 8, border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
+          <div style={{ marginTop: 8, border: "1px solid #e2e8f0", borderRadius: 8, overflow: "auto", maxHeight: "40vh" }}>
             {keys.map((k) => (
               <div
                 key={k._id || k.id}
@@ -1039,8 +1327,8 @@ export default function HomeworkCheck({
         <div style={S.hint}>
           Only needed when the questions <i>aren't</i> on the pages you're photographing — work
           done on loose paper or in a notebook, where nothing in the photo says what was asked.
-          Add 1–3 photos (or a PDF) of the textbook page and it reads the question numbers, sets
-          the subset and labels the batch.
+          Add 1–3 photos (or a PDF) of the textbook page and it reads the question numbers and
+          sets the subset.
           <br />
           If your students write on <b>printed pages</b>, skip this — the questions are already in
           their photos, and every question printed on the page will be reported.
@@ -1062,14 +1350,6 @@ export default function HomeworkCheck({
             style={{ display: "none" }}
             onChange={(e) => { readAssignmentPage(e.target.files); e.target.value = ""; }}
           />
-          <div style={{ flex: 1, minWidth: 140 }}>
-            <input
-              style={S.input}
-              value={lessonCode}
-              onChange={(e) => setLessonCode(e.target.value.toUpperCase())}
-              placeholder="Lesson code (NS7-3)"
-            />
-          </div>
         </div>
         {assignmentError && <div style={S.error}>{assignmentError}</div>}
 
@@ -1171,12 +1451,37 @@ export default function HomeworkCheck({
       <div style={S.section}>
         <div style={S.sectionTitle}>4 · The photos</div>
         <div style={S.hint}>
-          Shoot the room with your normal camera app, then pick the whole set here. Photos are
-          ordered by capture time, shrunk for upload, and sent one at a time so a dropped
-          connection only costs one photo.
+          <b>On a phone:</b> shoot here. Tap a student, take their pages — one, three, however
+          many — then the next student. Each photo is filed as it's taken, so there's nothing to
+          sort out afterwards.
+          <br />
+          <b>On a computer:</b> pick photos you've already taken. They're ordered by capture time,
+          grouped by the name on each page, and you confirm the grouping in step 5.
         </div>
 
+        {showCapture ? (
+          <div style={{ marginTop: 10 }}>
+            <HomeworkCapture
+              students={roster}
+              className={className}
+              onDone={acceptCapture}
+              onCancel={() => setShowCapture(false)}
+            />
+          </div>
+        ) : null}
+
         <div style={{ ...S.row, marginTop: 8 }}>
+          {!showCapture && (
+            <button
+              type="button"
+              style={S.secondaryBtn}
+              onClick={() => setShowCapture(true)}
+              title={roster.length ? "" : "Pick a class with a roster first"}
+              disabled={!roster.length}
+            >
+              📷 Shoot in app
+            </button>
+          )}
           <button type="button" style={S.secondaryBtn} onClick={() => batchInputRef.current?.click()}>
             {photos.length ? `Replace photos (${photos.length})` : "Choose photos"}
           </button>
@@ -1328,8 +1633,16 @@ export default function HomeworkCheck({
                         style={S.thumbWrap}
                         title={p?.name || `Photo ${pi + 1}`}
                       >
+                        {/* A 90px thumbnail can't be read, and deciding whose
+                            work this is — the whole point of this screen — needs
+                            reading it. */}
                         {p?.dataUrl
-                          ? <img src={p.dataUrl} alt={`Photo ${pi + 1}`} style={S.thumb} />
+                          ? <img
+                              src={p.dataUrl}
+                              alt={`Photo ${pi + 1}`}
+                              style={{ ...S.thumb, cursor: "zoom-in" }}
+                              onClick={() => setZoom(pi)}
+                            />
                           : <div style={{ ...S.thumb, ...S.thumbMissing }}>?</div>}
                         <div style={S.thumbLabel}>#{pi + 1}</div>
                         {g.photoIndexes.indexOf(pi) > 0 && (
@@ -1389,9 +1702,64 @@ export default function HomeworkCheck({
           teacherEmail={teacherEmail}
         />
       )}
+
+      {/* Full-size viewer. Whose work a page is often can't be told from a
+          90px thumbnail, and that judgement is the entire job of the grouping
+          screen. Arrows walk the batch so a run of pages can be identified
+          without closing and hunting for the next one. */}
+      {zoom !== null && photos[zoom] && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Photo ${zoom + 1} of ${photos.length}`}
+          onClick={() => setZoom(null)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 9999,
+            background: "rgba(15,23,42,0.92)",
+            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+            padding: 12, gap: 10,
+          }}
+        >
+          <div
+            style={{ display: "flex", alignItems: "center", gap: 12, color: "#fff", fontSize: 14, fontWeight: 700 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setZoom((i) => Math.max(i - 1, 0))}
+              disabled={zoom === 0}
+              style={{ ...zoomBtn, opacity: zoom === 0 ? 0.35 : 1 }}
+            >
+              ‹ Prev
+            </button>
+            <span>#{zoom + 1} of {photos.length}</span>
+            <button
+              type="button"
+              onClick={() => setZoom((i) => Math.min(i + 1, photos.length - 1))}
+              disabled={zoom >= photos.length - 1}
+              style={{ ...zoomBtn, opacity: zoom >= photos.length - 1 ? 0.35 : 1 }}
+            >
+              Next ›
+            </button>
+            <button type="button" onClick={() => setZoom(null)} style={zoomBtn}>Close ✕</button>
+          </div>
+          <img
+            src={photos[zoom].dataUrl}
+            alt={`Photo ${zoom + 1}`}
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: "100%", maxHeight: "82vh", objectFit: "contain", borderRadius: 8, background: "#fff" }}
+          />
+        </div>
+      )}
     </div>
   );
 }
+
+const zoomBtn = {
+  background: "rgba(255,255,255,0.14)", color: "#fff",
+  border: "1px solid rgba(255,255,255,0.35)", borderRadius: 8,
+  padding: "6px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer",
+};
 
 /* ------------------------------------------------------------------ */
 /*  Results                                                            */
@@ -1407,6 +1775,11 @@ function ResultsTable({ result, onExportCsv, onExportEdsby, hwUrl, teacherEmail 
   const [releaseBusy, setReleaseBusy] = useState(false);
   const [releaseError, setReleaseError] = useState("");
   const [portalMsg, setPortalMsg] = useState("");
+  // studentId -> result code, from the release. These codes are minted per
+  // student and are the only way to reach the detailed feedback — Edsby's
+  // gradebook CSV has no comment field, so nothing about what was wrong or
+  // what to do next can travel with the mark.
+  const [resultCodes, setResultCodes] = useState({});
 
   async function toggleRelease(next) {
     if (!result.batchId) {
@@ -1428,9 +1801,20 @@ function ResultsTable({ result, onExportCsv, onExportEdsby, hwUrl, teacherEmail 
         setReleaseError(data.portalError);
       } else if (data.portal) {
         const p = data.portal;
+        let map = {};
+        if (Array.isArray(p.codes)) {
+          for (const c of p.codes) if (c.studentId) map[c.studentId] = c.code;
+          setResultCodes(map);
+        }
+        // Releasing is the moment the result codes exist, so it is also the
+        // only moment the Edsby file can carry a working feedback link for
+        // every student. Hand it over now rather than making the teacher
+        // remember a second button — and it saves a trip when the import is
+        // what creates the assignment column.
+        if (next) { try { onExportEdsby(map); } catch { /* export is a bonus, not the point */ } }
         setPortalMsg(
           next
-            ? `${(p.created || 0) + (p.updated || 0)} of ${p.eligible ?? 0} students now have this on their progress page.`
+            ? `${(p.created || 0) + (p.updated || 0)} of ${p.eligible ?? 0} students now have this on their progress page. The Edsby CSV has been downloaded.`
             : `Removed ${p.removed || 0} entries from student progress pages.`
         );
       }
@@ -1472,8 +1856,8 @@ function ResultsTable({ result, onExportCsv, onExportEdsby, hwUrl, teacherEmail 
       <div style={{ ...S.row, justifyContent: "space-between", alignItems: "center" }}>
         <div style={S.sectionTitle}>Results</div>
         <div style={S.row}>
-          <button type="button" style={S.smallBtn} onClick={onExportCsv}>Export CSV</button>
-          <button type="button" style={S.smallBtn} onClick={onExportEdsby}>Edsby CSV</button>
+          <button type="button" style={S.smallBtn} onClick={() => onExportCsv(resultCodes)}>Export CSV</button>
+          <button type="button" style={S.smallBtn} onClick={() => onExportEdsby(resultCodes)}>Edsby CSV</button>
         </div>
       </div>
 
@@ -1575,20 +1959,43 @@ function ResultsTable({ result, onExportCsv, onExportEdsby, hwUrl, teacherEmail 
           <tbody>
             {rows.map((r, i) => {
               const isOpen = expanded === i;
+              // A row whose student is wrong or unknown is the one thing here
+              // a teacher must not skim past: the work gets marked, exported
+              // and posted under the wrong name, or under none. A grey
+              // sub-line under a normal-looking row is too easy to miss, so
+              // the whole row is red. A low-confidence match is amber — it may
+              // be right, but it was a guess.
+              const needsName = !r.superseded && (r.unmatched || (!r.matched && !r.noPageFound));
+              const shakyMatch = !needsName && !r.superseded && !r.noPageFound
+                && (r.matchConfidence === "low" || r.matchConfidence === "none");
               return (
                 <React.Fragment key={i}>
                   <tr
-                    style={{ ...S.tr, ...(r.superseded ? S.trMuted : null) }}
+                    style={{
+                      ...S.tr,
+                      ...(r.superseded ? S.trMuted : null),
+                      ...(needsName ? { background: "rgba(220,38,38,0.09)", boxShadow: "inset 3px 0 0 #dc2626" } : null),
+                      ...(shakyMatch ? { background: "rgba(234,88,12,0.09)", boxShadow: "inset 3px 0 0 #ea580c" } : null),
+                    }}
                     onClick={() => setExpanded(isOpen ? null : i)}
                   >
                     <td style={S.td}>
-                      <div style={{ fontWeight: 700 }}>
+                      <div style={{ fontWeight: 700, color: needsName ? "#b91c1c" : undefined }}>
                         {r.studentName || r.nameAsWritten || "(unmatched)"}
                       </div>
                       {r.noPageFound && <div style={S.tdSub}>no page in this batch</div>}
                       {r.superseded && <div style={S.tdSub}>superseded retake — not graded</div>}
-                      {!r.matched && !r.noPageFound && !r.superseded && (
-                        <div style={S.tdSub}>unmatched — assign by hand</div>
+                      {needsName && (
+                        <div style={{ ...S.tdSub, color: "#b91c1c", fontWeight: 700 }}>
+                          {r.nameAsWritten
+                            ? `read as "${r.nameAsWritten}" — no roster match. Assign by hand.`
+                            : "no name matched — assign by hand."}
+                        </div>
+                      )}
+                      {shakyMatch && (
+                        <div style={{ ...S.tdSub, color: "#9a3412", fontWeight: 700 }}>
+                          matched on a guess{r.nameAsWritten ? ` from "${r.nameAsWritten}"` : ""} — check this is right.
+                        </div>
                       )}
                     </td>
                     <td style={S.td}>

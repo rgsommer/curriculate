@@ -213,7 +213,7 @@ export default function LogIncidentPage() {
       .catch(() => setStatus(null));
   }, [student]);
 
-  // Behaviours of the chosen kind (positive vs negative). Legacy rows without an
+  // Compass of the chosen kind (positive vs negative). Legacy rows without an
   // explicit kind fall back to their points sign.
   const inKind = useMemo(
     () => behaviors.filter((b) => (kindOf(b)) === kindFilter),
