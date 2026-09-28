@@ -290,6 +290,50 @@ export function extractZoomStudents(root) {
   return out;
 }
 
+// Preferred column order for the raw export; everything else follows sorted.
+const RAW_PREFERRED = [
+  "nid", "SID", "MinistryID", "FirstName", "PrefName", "MName", "LastName",
+  "Gender", "Grade", "Average", "accountStatus", "haveiep",
+  "_HomeroomTeacher", "_Classes",
+];
+
+/**
+ * Extract EVERY field from each ZoomMyStudents record (not just the honour-roll
+ * subset) — for the "all fields" Students-tab export. Scalars are kept as-is,
+ * nested values JSON-stringified, plus friendly _HomeroomTeacher / _Classes
+ * columns. Returns { students: [flatObj], fields: [orderedColumnNames] }.
+ */
+export function extractZoomStudentsRaw(root) {
+  let rec = null;
+  (function find(node, depth) {
+    if (rec || !node || typeof node !== "object" || depth > 16) return;
+    if (Array.isArray(node)) { for (const v of node) find(v, depth + 1); return; }
+    const keys = Object.keys(node);
+    if (keys.length >= 3 && keys.filter((k) => /^r\d+$/.test(k)).length >= keys.length * 0.8) { rec = node; return; }
+    for (const k of keys) find(node[k], depth + 1);
+  })(root, 0);
+  if (!rec) return { students: [], fields: [] };
+
+  const students = [];
+  const all = new Set();
+  for (const [key, r] of Object.entries(rec)) {
+    if (!r || typeof r !== "object") continue;
+    const nid = String(r.nid ?? key.replace(/^r/, "")).trim();
+    if (!/^\d{3,}$/.test(nid)) continue;
+    const flat = {};
+    for (const [k, v] of Object.entries(r)) {
+      flat[k] = v === null || typeof v !== "object" ? (v ?? "") : JSON.stringify(v);
+    }
+    if (Array.isArray(r.Classes)) flat._Classes = r.Classes.map((c) => c.LastName || c.PrefName || c.name || "").filter(Boolean).join("; ");
+    if (Array.isArray(r.hrTeacher)) flat._HomeroomTeacher = r.hrTeacher.map((t) => t.name || t.display || "").filter(Boolean).join("; ");
+    Object.keys(flat).forEach((k) => all.add(k));
+    students.push(flat);
+  }
+  const rest = [...all].filter((k) => !RAW_PREFERRED.includes(k)).sort();
+  const fields = RAW_PREFERRED.filter((k) => all.has(k)).concat(rest);
+  return { students, fields };
+}
+
 const PERSON_NAME_KEYS = /^(name|fullname|studentname|displayname|text|title)$/i;
 const FIRST_KEYS = /^(first|firstname|givenname|given)$/i;
 const LAST_KEYS = /^(last|lastname|surname|familyname)$/i;
