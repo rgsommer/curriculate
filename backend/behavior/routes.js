@@ -28,7 +28,7 @@ import BehaviorAuditLog from "./models/BehaviorAuditLog.js";
 import BehaviorFollowup from "./models/BehaviorFollowup.js";
 import BehaviorConsequence from "./models/BehaviorConsequence.js";
 import { HonourRollSnapshot, HonourRollConfig } from "./models/HonourRoll.js";
-import { edsbyGetJson, extractZoomStudentsRaw } from "./lib/edsbyRead.js";
+import { edsbyGetJson, extractZoomStudentsRaw, buildIxlRoster } from "./lib/edsbyRead.js";
 import BehaviorHouse from "./models/BehaviorHouse.js";
 import HousePointEvent from "./models/HousePointEvent.js";
 import HomeworkAssignment from "./models/HomeworkAssignment.js";
@@ -853,6 +853,53 @@ router.post("/edsby/students-export", async (req, res) => {
 
     await audit(config.schoolId, "edsby.students_exported", req, { meta: { count: students.length, via: "ingest-token" } });
     res.json({ ok: true, fields, students });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err?.message || String(err) });
+  }
+});
+
+// IXL import roster — token-authed, uses the extension-synced session (same as
+// students-export) so no cookie ever touches the sheet. Walks each student's
+// Panorama → parents → ParentDetails to fill parent emails. Returns the 14 IXL
+// columns + rows. Student email / race / home language aren't in Edsby (blank).
+router.post("/edsby/ixl-roster", async (req, res) => {
+  try {
+    const token = String(req.headers["x-ingest-token"] || req.body?.token || "").trim();
+    if (!token) return res.status(401).json({ ok: false, error: "missing token" });
+    const config = await BehaviorConfig.findOne({ "edsby.ingestToken": token }).lean();
+    if (!config) return res.status(401).json({ ok: false, error: "invalid token" });
+
+    const e = config.edsby || {};
+    if (!e.baseUrl || !e.cookieEnc) {
+      return res.status(400).json({ ok: false, error: "Edsby isn't connected for this school. Run the Cookie Sync extension (or connect Edsby in Behaviours Setup) first." });
+    }
+    const session = { baseUrl: e.baseUrl, cookie: decrypt(e.cookieEnc), jver: e.jver || "", cver: e.cver || "", userNid: e.userNid || "" };
+
+    const hr = await HonourRollConfig.findOne({ schoolId: config.schoolId }).select("zoomNid").lean();
+    const nodeSpec = String(req.body?.node || hr?.zoomNid || e.zoomId || "").trim();
+    const nodeIds = nodeSpec.split(",").map((s) => s.trim()).filter(Boolean);
+    if (!nodeIds.length) {
+      return res.status(400).json({ ok: false, error: "No Edsby “My Students” node id set. Pass one as { node } or set it in the honour-roll setup." });
+    }
+
+    const out = await buildIxlRoster(session, nodeIds, { teacher: req.body?.teacher || "" });
+    if (out.sessionExpired) {
+      return res.status(409).json({ ok: false, error: "Edsby session expired. Open Edsby so the Cookie Sync extension refreshes it, then retry." });
+    }
+    if (!out.rows.length) {
+      const e0 = (out.edsbyErrors || [])[0];
+      let error = "Edsby returned no students. Check that the node has stage=1 student rows.";
+      if (e0) {
+        error = `Edsby refused node ${e0.node}` + (e0.code ? ` (error ${e0.code})` : "") + (e0.message ? `: ${e0.message}` : "") + ".";
+        if (String(e0.code) === "1030" || /denied nodetype/i.test(e0.message || "")) {
+          error += ' Use the number from that account\'s own Edsby URL /p/ZoomMyStudents/NUMBER, and make sure the extension synced that same account.';
+        }
+      }
+      return res.status(502).json({ ok: false, error, edsbyErrors: out.edsbyErrors });
+    }
+
+    await audit(config.schoolId, "edsby.ixl_exported", req, { meta: { ...out.stats, via: "ingest-token" } });
+    res.json({ ok: true, columns: out.columns, rows: out.rows, stats: out.stats });
   } catch (err) {
     res.status(500).json({ ok: false, error: err?.message || String(err) });
   }
