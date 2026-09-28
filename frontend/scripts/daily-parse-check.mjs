@@ -159,6 +159,23 @@ check("duty title: recess duty is what students are doing", P.friendlyDutyTitle(
 check("duty title: playground", P.friendlyDutyTitle("Playground") === "Out on the playground");
 check("duty title: dismissal", P.friendlyDutyTitle("Dismissal Rm212") === "Dismissal");
 check("duty title: no school", P.friendlyDutyTitle("No School (Labour Day)") === "No school today");
+// A chapel is not always the ordinary chapel, and each kind has its own shape
+// of morning — so the sheet's own words are kept where it says more than the
+// bare word, less the duty shorthand and the room.
+check("duty title: a plain chapel", P.friendlyDutyTitle("Chapel") === "Chapel");
+check("duty title: chapel duty is still just chapel", P.friendlyDutyTitle("Chapel Duty") === "Chapel", P.friendlyDutyTitle("Chapel Duty"));
+check("duty title: the room comes off", P.friendlyDutyTitle("Chapel Rm 100") === "Chapel", P.friendlyDutyTitle("Chapel Rm 100"));
+check(
+  "duty title: a named chapel keeps its name",
+  P.friendlyDutyTitle("Christmas Chapel") === "Christmas Chapel",
+  P.friendlyDutyTitle("Christmas Chapel"),
+);
+check(
+  "duty title: and so does a named assembly",
+  P.friendlyDutyTitle("Remembrance Day Assembly - Duty") === "Remembrance Day Assembly",
+  P.friendlyDutyTitle("Remembrance Day Assembly - Duty"),
+);
+check("duty title: a plain assembly", P.friendlyDutyTitle("Assembly") === "Assembly");
 check("duty title: nothing better to say", P.friendlyDutyTitle("MAPS Testing") === "");
 
 check("theme: Math is blue", P.subjectTheme("J003", "Math 7A").accent === "#2F6BD8");

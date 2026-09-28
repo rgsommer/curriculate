@@ -58,8 +58,12 @@ Paste the whole JSON file as the value of `DAILY_SHEETS_SERVICE_ACCOUNT`.
 
 The non-teaching rows get a friendlier heading than the sheet's own label, because
 the room is reading them rather than the teacher: Lunch becomes "Enjoy your lunch",
-Recess Duty becomes "Out for recess", and Playground, Dismissal, Assembly, Chapel and
-No School are similarly reworded (`friendlyDutyTitle` in `parse.ts`). A row with no
+Recess Duty becomes "Out for recess", and Playground, Dismissal and
+No School are similarly reworded (`friendlyDutyTitle` in `parse.ts`). **A chapel or an
+assembly keeps the sheet's own words** where the row says more than the bare word —
+"Christmas Chapel", "Remembrance Day Assembly" — since each kind has its own shape of
+morning and the variant is the part the room wants to read; only the teacher's
+shorthand comes off, the duty word and the room. A row with no
 better wording keeps its own text.
 
 Lesson cells are split using the shape the AI text already has:
