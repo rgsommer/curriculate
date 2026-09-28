@@ -2784,10 +2784,28 @@ export function friendlyDutyTitle(text: string): string {
   if (/recess/.test(t)) return "Out for recess";
   if (/playground/.test(t)) return "Out on the playground";
   if (/dismiss/.test(t)) return "Dismissal";
-  if (/assembl/.test(t)) return "Assembly";
-  if (/chapel/.test(t)) return "Chapel";
+  // A chapel or an assembly is not always the ordinary one — Christmas Chapel,
+  // Remembrance Day Assembly, a grade leading it — and each kind has its own
+  // shape of morning. Flattening them all to one word threw away the one thing
+  // the room wanted to read, so the sheet's own wording is kept wherever it
+  // says more than the bare word. What comes off is only what belongs to the
+  // teacher: the duty word and the room.
+  if (/assembl|chapel/.test(t)) return asWrittenEvent(text, /assembl/.test(t) ? "Assembly" : "Chapel");
   if (/no school/.test(t)) return "No school today";
   return "";
+}
+
+/** The sheet's own words for an event, less the teacher's shorthand. */
+function asWrittenEvent(text: string, plain: string): string {
+  const kept = String(text || "")
+    .replace(/\brm\.?\s*\d+\w*/gi, " ")        // Rm212, Rm 100
+    .replace(/\b(duty|supervision|coverage)\b/gi, " ")
+    .replace(/[-–—·|]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  // Nothing left but the word itself: say it the board's way.
+  const bare = kept.replace(/\b(chapel|assembly|assemblies)\b/gi, "").replace(/[^A-Za-z0-9]+/g, "");
+  return bare ? kept : plain;
 }
 
 /* ------------------------------------------------------------------ *
