@@ -816,19 +816,35 @@ router.post("/edsby/students-export", async (req, res) => {
 
     const byNid = new Map();
     const allFields = new Set();
+    const edsbyErrors = [];
     for (const node of nodeIds) {
       const r = await edsbyGetJson(session, node, "ZoomMyStudents", "&stage=1");
       if (r.status === 401 || r.text === "session-expired") {
         return res.status(409).json({ ok: false, error: "Edsby session expired. Open Edsby so the Cookie Sync extension refreshes it, then retry." });
       }
-      if (!r.ok) continue;
+      if (!r.ok) {
+        // Surface Edsby's own error (e.g. 1030 "denied nodetype") for this node.
+        const j = r.json || {};
+        const code = j.errorcode ?? j.error;
+        const str = j.errorstr || j.errorStr || "";
+        edsbyErrors.push({ node, status: r.status, code: code ?? null, message: str || `HTTP ${r.status}` });
+        continue;
+      }
       const { students, fields } = extractZoomStudentsRaw(r.json);
       fields.forEach((f) => allFields.add(f));
       for (const s of students) if (s.nid && !byNid.has(s.nid)) byNid.set(s.nid, s);
     }
     const students = [...byNid.values()];
     if (!students.length) {
-      return res.status(502).json({ ok: false, error: "Edsby returned no students. Check the node id, or that stage=1 rows are available." });
+      const e0 = edsbyErrors[0];
+      let error = "Edsby returned no students. Check that the node has stage=1 student rows.";
+      if (e0) {
+        error = `Edsby refused node ${e0.node}` + (e0.code ? ` (error ${e0.code})` : "") + (e0.message ? `: ${e0.message}` : "") + ".";
+        if (String(e0.code) === "1030" || /denied nodetype/i.test(e0.message)) {
+          error += ' That node isn\'t a "My Students" the connected Edsby session can open. Use the number from THAT account\'s own Edsby URL /p/ZoomMyStudents/NUMBER (not a class or formkey id), and make sure the extension synced that same account\'s session.';
+        }
+      }
+      return res.status(502).json({ ok: false, error, edsbyErrors });
     }
     // Column order: the raw preferred columns first, then the rest sorted.
     const PREF = ["nid", "SID", "MinistryID", "FirstName", "PrefName", "MName", "LastName", "Gender", "Grade", "Average", "accountStatus", "haveiep", "_HomeroomTeacher", "_Classes"];
