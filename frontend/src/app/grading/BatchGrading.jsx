@@ -2889,6 +2889,7 @@ export default function BatchGrading({
     return rows.join("\n");
   }, [results, emailTitle]);
 
+  const photoInputRef = useRef(null);
   const [edsbyExported, setEdsbyExported] = useState(false);
   const downloadEdsbyCsv = useCallback(() => {
     const csv = buildEdsbyCsv();
@@ -3818,6 +3819,20 @@ export default function BatchGrading({
           <div style={{ fontSize: 12, opacity: 0.6, marginTop: 4 }}>
             PDF from your copier's ADF, or select individual photos/scans
           </div>
+          {/* A second, explicit way in. On a phone the combined picker offers
+              "Take Photo" as well, and that returns one image — this goes
+              straight to the library where several can be chosen at once. */}
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); photoInputRef.current?.click(); }}
+            style={{
+              marginTop: 10, background: "#fff", border: "1px solid #cbd5e1",
+              borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 700,
+              cursor: "pointer", color: "#334155",
+            }}
+          >
+            🖼 Choose photos
+          </button>
         </div>
       )}
 
@@ -3848,10 +3863,29 @@ export default function BatchGrading({
         } catch { return null; }
       })()}
 
+      {/* accept is a wildcard, not a list of MIME types.
+          "application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif"
+          is understood by desktop browsers but makes phone pickers fall back
+          to choosing one file — an enumerated list mixed with a document type
+          is the case they handle worst, and image/heic in particular is not
+          recognised everywhere. `image/*` is the form every picker honours,
+          and `multiple` then works. handleFileChange already accepts the whole
+          array; nothing downstream needed changing. */}
       <input
         ref={fileInputRef}
         type="file"
-        accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif"
+        accept="application/pdf,image/*"
+        multiple
+        onChange={handleFileChange}
+        style={{ display: "none" }}
+      />
+      {/* Photos only, for a phone. Tapping the combined input on iOS opens an
+          action sheet whose "Take Photo" gives exactly one image — this goes
+          straight to the library, where multi-select is the default. */}
+      <input
+        ref={photoInputRef}
+        type="file"
+        accept="image/*"
         multiple
         onChange={handleFileChange}
         style={{ display: "none" }}
