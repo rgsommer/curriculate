@@ -12767,8 +12767,13 @@ function parseRubricOrOverrides(input) {
   //    so server-side enforcement can rescale if the AI ignores the rubric
   let rubricFixedOutOf = null;
 
-  // Check for explicit total: "/5 as follows", "out of 5", "total: 5"
-  const totalDecl = raw.match(/(?:^|\n)\s*\/\s*(\d+(?:\.\d+)?)\s+(?:as follows|total|:)/i)
+  // Check for explicit total: a bare "/10" line, "/5 as follows", "out of 5",
+  // "total: 5". The bare line is first because it is how a teacher actually
+  // writes it — a rubric opening "/10\nThey were to include…" matched none of
+  // the others, so no total reached the model and it invented one per student
+  // (/12, /11, /9 across one class).
+  const totalDecl = raw.match(/(?:^|\n)[ \t]*\/[ \t]*(\d+(?:\.\d+)?)[ \t]*(?:\r?\n|$)/)
+    || raw.match(/(?:^|\n)\s*\/\s*(\d+(?:\.\d+)?)\s+(?:as follows|total|:)/i)
     || raw.match(/(?:out of|total[:\s]*\/?\s*)(\d+(?:\.\d+)?)/i);
   if (totalDecl) {
     rubricFixedOutOf = parseFloat(totalDecl[1]);
@@ -13575,7 +13580,10 @@ function buildRubricInstructions({
       let explicitTotal = 0; // from "/5 as follows" or "out of 5"
 
       // Check for explicit total declaration: "/5 as follows", "out of 5", "total: 5", "total /5", "/ 5"
-      const totalDecl = rubricOverride.match(/(?:^|\n)\s*\/\s*(\d+(?:\.\d+)?)\s+(?:as follows|total|:)/i)
+      // A bare "/10" on its own line first — see the note at the other call
+      // site; it is the commonest form and matched none of the old patterns.
+      const totalDecl = rubricOverride.match(/(?:^|\n)[ \t]*\/[ \t]*(\d+(?:\.\d+)?)[ \t]*(?:\r?\n|$)/)
+        || rubricOverride.match(/(?:^|\n)\s*\/\s*(\d+(?:\.\d+)?)\s+(?:as follows|total|:)/i)
         || rubricOverride.match(/(?:out of|total[:\s]*\/?\s*)(\d+(?:\.\d+)?)/i);
       if (totalDecl) {
         explicitTotal = parseFloat(totalDecl[1]);

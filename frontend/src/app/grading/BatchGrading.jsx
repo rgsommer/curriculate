@@ -4709,7 +4709,17 @@ export default function BatchGrading({
                             ? "rgba(37,99,235,0.06)"
                             : r.error
                             ? "rgba(220,38,38,0.05)"
+                            : r.letter === "F"
+                            // A fail is the row a teacher acts on — a follow-up,
+                            // a phone call, a re-do — and the only thing marking
+                            // it was a letter in the eighth column. The tint is
+                            // lighter than the error row's: a failing grade is a
+                            // result, not a fault in the run.
+                            ? "rgba(220,38,38,0.07)"
                             : "transparent",
+                        ...(r.letter === "F" && expandedIndex !== r.index && !r.error
+                          ? { boxShadow: "inset 3px 0 0 #dc2626" }
+                          : null),
                       }}
                       onClick={() =>
                         setExpandedIndex(expandedIndex === r.index ? null : r.index)
