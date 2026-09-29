@@ -24,6 +24,20 @@ export const SEED_BEHAVIORS = [
 /**
  * Build BehaviorSchema docs from the seed list for a given school.
  */
+// Suggested house-point value for a behaviour under the standard scheme:
+// positives add (+5, or +10 for notable ones), negatives deduct (−10 serious/
+// immediate, −5 behaviour/respect, −2 minor). Documented interactions get 0.
+export function recommendedHousePoints(beh) {
+  const text = `${beh?.name || ""} ${beh?.keyword || ""}`.toLowerCase();
+  if ((beh?.kind || "negative") === "positive") {
+    return /award|kindness|above|beyond|outstanding|excellen|leadership|service/.test(text) ? 10 : 5;
+  }
+  if (beh?.triggerMode === "INTERACTION") return 0; // documented only — no points
+  if (beh?.triggerMode === "IMMEDIATE") return -10;
+  if (/respect|honest|faith|insolen|inappropriate|disrespect|cheat|defian|\brude\b|vain|god'?s name|chapel|prayer|devotion/.test(text)) return -5;
+  return -2; // minor (class time, preparedness, tidiness, uniform, …)
+}
+
 export function seedBehaviorDocs(schoolId) {
   return SEED_BEHAVIORS.map((b, i) => ({
     schoolId,
@@ -33,6 +47,7 @@ export function seedBehaviorDocs(schoolId) {
     triggerMode: b.triggerMode,
     consequenceText: b.consequenceText,
     followUpType: b.followUpType || "none",
+    points: recommendedHousePoints(b),
     scope: "standard",
     ownerTeacherId: null,
     sortOrder: i,

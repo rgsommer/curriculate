@@ -1295,6 +1295,9 @@ function HousesSection({ config }: { config?: any }) {
   function saveEncPts() {
     encSave.run(async () => { await api("/houses/config", { method: "PUT", body: { encouragingMessagePoints: Math.max(0, Number(encPts) || 0) } }); });
   }
+  // Apply the standard house-point scheme across all behaviours.
+  const [applyPtsBusy, setApplyPtsBusy] = useState(false);
+  const [applyPtsMsg, setApplyPtsMsg] = useState("");
 
   // House events with preset points.
   const [events, setEvents] = useState<{ name: string; points: number }[]>(
@@ -1699,6 +1702,24 @@ function HousesSection({ config }: { config?: any }) {
             <label className="flex items-center gap-1.5">Points per encouraging message
               <input type="number" min={0} value={encPts} onChange={(e) => setEncPts(e.target.value)} className="w-20 rounded-lg border border-slate-300 px-2 py-1" /></label>
             <SaveButton state={encSave} onClick={saveEncPts} label="Save" />
+          </div>
+        </div>
+
+        {/* Standard add/deduct scheme for infractions & positives */}
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <p className="text-sm font-medium text-slate-700">Standard house points on behaviours</p>
+          <p className="text-xs text-slate-400">Give every behaviour a recommended house-point value so logging it auto-adds (positives) or deducts (infractions): −2 minor, −5 behaviour/respect, −10 serious/immediate; +5 positive, +10 notable. Only fills behaviours still at 0 — your custom values are kept. Tune any of them in the Behaviours list.</p>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <button type="button" disabled={applyPtsBusy}
+              onClick={async () => {
+                setApplyPtsBusy(true); setApplyPtsMsg("");
+                try { const r = await api<{ ok: boolean; updated: number }>("/behaviors/apply-house-points", { body: {} }); setApplyPtsMsg(`✓ Set house points on ${r.updated} behaviour${r.updated === 1 ? "" : "s"}.`); }
+                catch (e: any) { setApplyPtsMsg(`✗ ${e.message}`); } finally { setApplyPtsBusy(false); }
+              }}
+              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
+              {applyPtsBusy ? "Applying…" : "Apply recommended house points"}
+            </button>
+            {applyPtsMsg && <span className={`text-sm ${applyPtsMsg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{applyPtsMsg}</span>}
           </div>
         </div>
 

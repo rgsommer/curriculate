@@ -39,7 +39,7 @@ import { evaluateIncident, activeThresholdIncidents, evaluatePositive } from "./
 import { nextSchoolDay } from "./lib/schoolCalendar.js";
 import { encrypt, decrypt } from "./lib/secretBox.js";
 import { EdsbyProvider } from "./lib/providers/EdsbyProvider.js";
-import { seedBehaviorDocs } from "./lib/seedBehaviors.js";
+import { seedBehaviorDocs, recommendedHousePoints } from "./lib/seedBehaviors.js";
 import { parseRoster, parseRosterFile } from "./lib/rosterImport.js";
 import { DEFAULT_PARENT_TEMPLATES, fillTemplate } from "./lib/parentTemplates.js";
 import { STANDARD_BEHAVIORS } from "./lib/standardBehaviors.js";
@@ -2457,6 +2457,7 @@ router.post("/behaviors/seed-standard", authAny, loadMembership, requireAdmin, a
         triggerMode: b.triggerMode || "THRESHOLD",
         followUpType: b.followUpType || "none",
         kind: "negative",
+        points: recommendedHousePoints({ ...b, kind: "negative" }),
         scope: "standard",
         ownerTeacherId: null,
       });
@@ -2464,6 +2465,28 @@ router.post("/behaviors/seed-standard", authAny, loadMembership, requireAdmin, a
     }
     await audit(req.schoolId, "behaviors.seed_standard", req, { meta: { created } });
     res.json({ ok: true, created, total: STANDARD_BEHAVIORS.length, skipped: STANDARD_BEHAVIORS.length - created });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Apply the standard house-point scheme (auto add/deduct on logging): fills in a
+// recommended value for each behaviour still at 0, without clobbering any the
+// admin has already customised. Positives add, negatives deduct by severity.
+router.post("/behaviors/apply-house-points", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const overwrite = req.body?.overwrite === true;
+    const behs = await Behavior.find({ schoolId: req.schoolId }).select("name keyword kind triggerMode points").lean();
+    let updated = 0;
+    for (const b of behs) {
+      if (!overwrite && (b.points || 0) !== 0) continue; // keep custom values
+      const pts = recommendedHousePoints(b);
+      if ((b.points || 0) === pts) continue;
+      await Behavior.updateOne({ _id: b._id }, { $set: { points: pts } });
+      updated += 1;
+    }
+    await audit(req.schoolId, "behaviors.apply_house_points", req, { meta: { updated, overwrite } });
+    res.json({ ok: true, updated });
   } catch (err) {
     next(err);
   }
