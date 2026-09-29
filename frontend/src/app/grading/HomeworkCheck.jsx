@@ -1599,14 +1599,38 @@ export default function HomeworkCheck({
                     <option value="">
                       {g.nameAsWritten ? `Unmatched: “${g.nameAsWritten}”` : "Choose student…"}
                     </option>
-                    {roster.map((s) => (
-                      <option
-                        key={`${s.studentId || s.edsbyId}-${s.firstName}${s.lastName}`}
-                        value={`${s.firstName}|${s.lastName}|${s.studentId || ""}|${s.edsbyId || ""}`}
-                      >
-                        {s.firstName} {s.lastName}
-                      </option>
-                    ))}
+                    {/* Students not yet assigned to a group come first. When
+                        you are naming an unmatched pile, the person you want
+                        is by definition one who has not been placed — and in
+                        a class of 25 they were scattered among the 24 already
+                        spoken for. Assigned names stay, below a divider,
+                        because a mis-grouping is fixed by reassigning one. */}
+                    {(() => {
+                      const taken = new Set(
+                        (groups || [])
+                          .filter((x, xi) => xi !== gi && !x.superseded)
+                          .map((x) => String(x.studentId || x.edsbyId || "").trim())
+                          .filter(Boolean)
+                      );
+                      const key = (s) => String(s.studentId || s.edsbyId || "").trim();
+                      const label = (s) => `${s.firstName} ${s.lastName}`;
+                      const val = (s) => `${s.firstName}|${s.lastName}|${s.studentId || ""}|${s.edsbyId || ""}`;
+                      const free = roster.filter((s) => !taken.has(key(s)));
+                      const used = roster.filter((s) => taken.has(key(s)));
+                      return (
+                        <>
+                          {free.map((s) => (
+                            <option key={`free-${key(s)}-${label(s)}`} value={val(s)}>{label(s)}</option>
+                          ))}
+                          {free.length > 0 && used.length > 0 && (
+                            <option disabled value="">──────────</option>
+                          )}
+                          {used.map((s) => (
+                            <option key={`used-${key(s)}-${label(s)}`} value={val(s)}>{label(s)} ✓</option>
+                          ))}
+                        </>
+                      );
+                    })()}
                   </select>
                   <button
                     type="button"
