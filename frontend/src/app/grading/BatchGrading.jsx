@@ -610,6 +610,18 @@ export default function BatchGrading({
 
   const [grading, setGrading] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0, current: "" });
+  // Read at the moment of use, never captured. runBatch is a useCallback with
+  // 23 dependencies and the email was not among them, so gradeOneStudent
+  // published with whatever the prop held when that callback was last built —
+  // empty on a fresh mount, and empty is what reached meta.teacherEmail for
+  // every batch but one. Without it the session is invisible to anything that
+  // scopes by teacher, which is why they never appeared in the Edsby poster.
+  const currentTeacherEmail = useCallback(() => {
+    const fromProp = String(parentTeacherEmail || "").trim();
+    if (fromProp) return fromProp;
+    try { return (localStorage.getItem("curriculate_report_email") || "").trim(); } catch { return ""; }
+  }, [parentTeacherEmail]);
+
   const [results, setResults] = useState([]); // { index, studentName, score, outOf, pct, letter, strengths, improvements, comment, error }
   const [classSummary, setClassSummary] = useState(null);
   const [teacherAnalysis, setTeacherAnalysis] = useState(""); // AI-generated class analysis
@@ -1387,7 +1399,7 @@ export default function BatchGrading({
                   // For posting into an Edsby gradebook cell later: the
                   // payload is the whole student-facing report, far too long
                   // for a comment field, so carry a short form and the mark.
-                  teacherEmail: parentTeacherEmail || "",
+                  teacherEmail: currentTeacherEmail(),
                   edsbyComment: buildEdsbyComment(resultEntry),
                   score: resultEntry.score ?? null,
                   outOf: resultEntry.outOf ?? null,
@@ -2277,6 +2289,7 @@ export default function BatchGrading({
     perQuestionAudit,
     precisionMode,
     PRECISION_PASSES,
+    currentTeacherEmail,
   ]);
 
   // ---------- Re-grade a single student with adjusted strictness ----------
@@ -2461,6 +2474,7 @@ export default function BatchGrading({
                 payload: buildBatchPayloadText(updatedEntry, null, gradeBand),
                 meta: {
                   source: "batch-regrade", batchIndex: groupIdx, gradeBand,
+                  teacherEmail: currentTeacherEmail(),
                   studentName: updatedEntry.studentName || null,
                   studentId: updatedEntry.rosterStudentId || updatedEntry.rosterEdsbyId || updatedEntry.studentId || null,
                   subject: updatedEntry.subject || "",
