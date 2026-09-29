@@ -537,6 +537,24 @@ export function extractParentRefs(json) {
   return refs;
 }
 
+/**
+ * A student's homeroom section LETTER (e.g. "C") from their Panorama page. The
+ * classdata carries each class's code; the homeroom is coded "HR…<letter>" (the
+ * digits vary — grade 5 can read "HR55B"), so we take the trailing letter and
+ * let the caller pair it with the roster grade → "5B". Verified 2026-09. "" if none.
+ */
+export function extractHomeroomSectionLetter(json) {
+  const d = json?.slices?.[0]?.data || json;
+  const cd = d?.col1?.attainments?.classdata;
+  if (cd && typeof cd === "object") {
+    for (const c of Object.values(cd)) {
+      const m = String(c?.code || "").match(/^HR.*?([A-Za-z])$/);
+      if (m) return m[1].toUpperCase();
+    }
+  }
+  return "";
+}
+
 /** ParentDetails email: col1.col1.account.email, falling back to col2.info.email. */
 export function extractParentEmail(json) {
   if (!json || json.errorcode || json.error) return "";
@@ -588,17 +606,22 @@ export async function buildIxlRoster(sess, nodeIds, opts = {}) {
     }
   }
   const students = [...byNid.values()];
-  if (!students.length) return { columns: IXL_COLUMNS, rows: [], stats: { students: 0, parents: 0, withEmail: 0 }, edsbyErrors };
+  if (!students.length) return { columns: IXL_COLUMNS, rows: [], sections: [], stats: { students: 0, parents: 0, withEmail: 0 }, edsbyErrors };
 
-  // 2) Panorama per student → parent refs (bounded concurrency, retried)
+  // 2) Panorama per student → parent refs + homeroom section (retried)
   let expired = false;
-  const refsByStudent = await mapPool(students, CONC, async (s) => {
-    if (expired) return [];
+  const pano = await mapPool(students, CONC, async (s) => {
+    if (expired) return { refs: [], section: "" };
     const r = await getJsonRetry(String(s.nid), "Panorama", "&stage=1");
-    if (r.status === 401 || r.text === "session-expired") { expired = true; return []; }
-    return r.ok && r.json ? extractParentRefs(r.json) : [];
+    if (r.status === 401 || r.text === "session-expired") { expired = true; return { refs: [], section: "" }; }
+    if (!(r.ok && r.json)) return { refs: [], section: "" };
+    const letter = extractHomeroomSectionLetter(r.json);
+    const grade = String(s.Grade || "").trim();
+    return { refs: extractParentRefs(r.json), section: letter ? `${grade}${letter}` : "" };
   });
   if (expired) return { sessionExpired: true };
+  const refsByStudent = pano.map((p) => p.refs);
+  const sections = pano.map((p) => p.section);
 
   // 3) unique parent nids → email (retried)
   const pnids = [...new Set(refsByStudent.flat().map((p) => p.pnid))];
@@ -633,7 +656,7 @@ export async function buildIxlRoster(sess, nodeIds, opts = {}) {
       "",                       // Home language — not in Edsby
     ];
   });
-  return { columns: IXL_COLUMNS, rows, stats: { students: students.length, parents: pnids.length, withEmail }, edsbyErrors };
+  return { columns: IXL_COLUMNS, rows, sections, stats: { students: students.length, parents: pnids.length, withEmail }, edsbyErrors };
 }
 
 // ── Weights, averages, honours ────────────────────────────────────────────────

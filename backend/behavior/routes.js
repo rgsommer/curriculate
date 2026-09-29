@@ -899,7 +899,7 @@ router.post("/edsby/ixl-roster", async (req, res) => {
     }
 
     await audit(config.schoolId, "edsby.ixl_exported", req, { meta: { ...out.stats, via: "ingest-token" } });
-    res.json({ ok: true, columns: out.columns, rows: out.rows, stats: out.stats });
+    res.json({ ok: true, columns: out.columns, rows: out.rows, sections: out.sections, stats: out.stats });
   } catch (err) {
     res.status(500).json({ ok: false, error: err?.message || String(err) });
   }
