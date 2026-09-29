@@ -1485,6 +1485,21 @@ function HousesSection({ config }: { config?: any }) {
     } catch (e: any) { setErr(e.message); }
     finally { setResetBusy(false); }
   }
+  // Reset the standings as of a specific date (e.g. Sept 1 for a new year), so
+  // points earned before that date stop counting. Earlier points stay in history.
+  const [resetDate, setResetDate] = useState("");
+  async function setResetToDate() {
+    if (!resetDate) return;
+    if (!window.confirm(`Reset house standings as of ${resetDate}? Points earned before that date stop counting toward the leaderboard and competitions (kept in history).`)) return;
+    setResetBusy(true);
+    try {
+      const iso = new Date(resetDate + "T00:00:00").toISOString();
+      await api("/houses/config", { method: "PUT", body: { housePointsResetAt: iso } });
+      setResetAt(iso);
+      load();
+    } catch (e: any) { setErr(e.message); }
+    finally { setResetBusy(false); }
+  }
   async function clearTermReset() {
     if (!window.confirm("Count ALL house points again (since the start)? This undoes the term reset.")) return;
     setResetBusy(true);
@@ -1884,7 +1899,7 @@ function HousesSection({ config }: { config?: any }) {
         <div className="mt-2 flex flex-wrap gap-2">
           <button onClick={startNewTerm} disabled={resetBusy}
             className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm disabled:opacity-40">
-            {resetBusy ? "…" : "Start a new term (reset standings)"}
+            {resetBusy ? "…" : "Reset now (start a new term/year)"}
           </button>
           {resetAt && (
             <button onClick={clearTermReset} disabled={resetBusy}
@@ -1892,6 +1907,13 @@ function HousesSection({ config }: { config?: any }) {
               Count all points again
             </button>
           )}
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-slate-500">Or reset as of a date:</span>
+          <input type="date" value={resetDate} onChange={(e) => setResetDate(e.target.value)}
+            className="rounded-lg border border-slate-300 px-2 py-1" />
+          <button onClick={setResetToDate} disabled={resetBusy || !resetDate}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:opacity-40">Set date</button>
         </div>
       </div>
 
