@@ -1390,6 +1390,7 @@ export default function GradingPage() {
     useEffect(() => {
       try { localStorage.setItem(SAVED_RUBRICS_KEY, JSON.stringify(savedRubrics)); } catch {}
     }, [savedRubrics]);
+
     const [gradeBand, setGradeBand] = useState(() => {
       if (typeof window === "undefined") return "6-8";
       return loadLS(GRADE_BAND_KEY, "6-8");
@@ -1702,6 +1703,67 @@ export default function GradingPage() {
       () => stripTrailingSlash(process.env.NEXT_PUBLIC_BACKEND_URL),
       []
     );
+
+    // Rubrics follow the teacher, not the machine. They lived only in
+    // localStorage, so one written on the classroom desktop did not exist on
+    // the phone — and a rubric is written once and reused for a term, which
+    // is the worst possible fit for per-device storage.
+    //
+    // localStorage stays as the offline copy: it is what paints the list
+    // before the fetch lands, and what the tool falls back to when the email
+    // is blank or the server is unreachable.
+    const rubricsSyncedRef = useRef("");   // teacherEmail whose library we've pulled
+    useEffect(() => {
+      const email = (teacherEmail || "").trim();
+      if (!email.includes("@") || !backendBase) return;
+      if (rubricsSyncedRef.current === email) return;
+      let cancelled = false;
+      (async () => {
+        try {
+          const res = await fetch(`${backendBase}/saved-rubrics?teacherEmail=${encodeURIComponent(email)}`);
+          if (!res.ok) return;
+          const data = await res.json();
+          if (cancelled || !data?.ok) return;
+          const remote = Array.isArray(data.rubrics) ? data.rubrics : [];
+          rubricsSyncedRef.current = email;
+
+          // First sync from a device that already had rubrics: push the local
+          // ones up rather than letting the server's list erase them. Remote
+          // wins on a name clash — it is the shared copy.
+          setSavedRubrics((local) => {
+            const byName = new Map();
+            for (const r of local) if (r?.name) byName.set(String(r.name).toLowerCase(), r);
+            for (const r of remote) if (r?.name) byName.set(String(r.name).toLowerCase(), { name: r.name, text: r.text });
+            const merged = [...byName.values()].sort((a, b) => String(a.name).localeCompare(String(b.name)));
+            if (merged.length !== remote.length) {
+              fetch(`${backendBase}/saved-rubrics`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ teacherEmail: email, rubrics: merged }),
+              }).catch(() => {});
+            }
+            return merged;
+          });
+        } catch { /* offline — the local copy stands */ }
+      })();
+      return () => { cancelled = true; };
+    }, [teacherEmail, backendBase]);
+
+    // Every later change is pushed up. Only after the first pull, or an empty
+    // list on a fresh device would wipe the library before it arrived.
+    useEffect(() => {
+      const email = (teacherEmail || "").trim();
+      if (!email.includes("@") || !backendBase) return;
+      if (rubricsSyncedRef.current !== email) return;
+      const t = setTimeout(() => {
+        fetch(`${backendBase}/saved-rubrics`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ teacherEmail: email, rubrics: savedRubrics }),
+        }).catch(() => {});
+      }, 800);   // debounce a burst of edits into one write
+      return () => clearTimeout(t);
+    }, [savedRubrics, teacherEmail, backendBase]);
 
     // Adopt the signed-in account's email on a device that has never been used.
     // /login stores a JWT and redirects straight here, but this page only ever
