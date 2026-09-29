@@ -468,7 +468,24 @@ function sanitizeConfig(config) {
 
 router.get("/me", authAny, async (req, res, next) => {
   try {
-    const membership = await BehaviorTeacher.findOne({ userId: req.userId }).lean();
+    let membership = await BehaviorTeacher.findOne({ userId: req.userId }).lean();
+    // Auto-accept a pending invite for this signed-in user, so an invited teacher
+    // who just logs in (without clicking the emailed link again) is joined to
+    // their school instead of dead-ending on "no school".
+    if (!membership) {
+      const myEmail = String(req.user?.email || "").toLowerCase();
+      const invite = myEmail ? await BehaviorInvite.findOne({ email: myEmail, status: "pending" }) : null;
+      if (invite) {
+        membership = await BehaviorTeacher.findOneAndUpdate(
+          { schoolId: invite.schoolId, userId: req.userId },
+          { $set: { email: myEmail, name: req.user?.name || "", role: invite.role, status: "accepted" } },
+          { upsert: true, new: true }
+        ).lean();
+        invite.status = "accepted";
+        await invite.save();
+        await audit(invite.schoolId, "invite.accepted", req, { meta: { email: myEmail, role: invite.role, via: "auto-on-signin" } });
+      }
+    }
     if (!membership) return res.json({ ok: true, membership: null, needsSetup: true });
     // Lightweight usage signal: count this week's page loads (best-effort).
     try {
