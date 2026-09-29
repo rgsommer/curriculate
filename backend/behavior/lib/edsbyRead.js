@@ -638,7 +638,14 @@ export async function buildIxlRoster(sess, nodeIds, opts = {}) {
   let withEmail = 0;
   const rows = students.map((s, i) => {
     const refs = (refsByStudent[i] || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0));
-    const emails = [...new Set(refs.map((p) => emailByPnid.get(p.pnid) || "").filter(Boolean))];
+    // Dedup case-insensitively — IXL rejects a student whose two parent emails
+    // match ignoring case (e.g. "a@x.com" vs "A@x.com"). Emit lowercased.
+    const seen = new Set();
+    const emails = [];
+    for (const p of refs) {
+      const e = String(emailByPnid.get(p.pnid) || "").trim().toLowerCase();
+      if (e && !seen.has(e)) { seen.add(e); emails.push(e); }
+    }
     if (emails.length) withEmail++;
     const iep = Number(s.haveiep) || s.haveiep === true;
     return [
