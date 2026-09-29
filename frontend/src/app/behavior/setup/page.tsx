@@ -19,6 +19,20 @@ const RECOMMENDED_CONSEQUENCES = [
   "White slip",
 ];
 
+// Starter whole-house activities with suggested point values. Admins load these
+// as a base and edit/add their own as new events come up through the year.
+const PRESET_HOUSE_EVENTS = [
+  { name: "Trivia — 1st", points: 50 },
+  { name: "Trivia — 2nd", points: 30 },
+  { name: "Trivia — 3rd", points: 20 },
+  { name: "House game / sports day — win", points: 100 },
+  { name: "House game — participation", points: 25 },
+  { name: "Spirit day participation", points: 30 },
+  { name: "Charity / service drive", points: 50 },
+  { name: "Chapel / assembly excellence", points: 25 },
+  { name: "Class competition — win", points: 40 },
+];
+
 export default function SetupPage() {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1691,7 +1705,18 @@ function HousesSection({ config }: { config?: any }) {
         {/* House events with preset points */}
         <div className="mt-4 border-t border-slate-100 pt-3">
           <p className="text-sm font-medium text-slate-700">House events (preset points)</p>
-          <p className="text-xs text-slate-400">Define events with set point values for quick awarding from the dashboard (e.g. “Trivia — 1st” = 50).</p>
+          <p className="text-xs text-slate-400">Define events with set point values for quick awarding from the dashboard (e.g. “Trivia — 1st” = 50). Load a preset list to start, then edit or add your own — including new events that come up during the year.</p>
+          <div className="mt-1">
+            <button type="button"
+              onClick={() => setEvents((p) => {
+                const have = new Set(p.map((e) => e.name.trim().toLowerCase()).filter(Boolean));
+                const add = PRESET_HOUSE_EVENTS.filter((e) => !have.has(e.name.toLowerCase()));
+                // Drop a single blank starter row if present, then append presets.
+                const base = p.filter((e) => e.name.trim() || e.points);
+                return [...base, ...add];
+              })}
+              className="text-xs text-slate-500 underline">Load preset activities</button>
+          </div>
           <div className="mt-2 space-y-1.5">
             {events.map((ev, i) => (
               <div key={i} className="flex items-center gap-2">
