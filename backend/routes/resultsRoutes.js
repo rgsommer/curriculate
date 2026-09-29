@@ -271,6 +271,27 @@ router.put("/:code", createLimiter, async (req, res) => {
  * Rescales all results in a batch session to a new denominator.
  * Returns { updated: number, results: [{ code, score, outOf, pct }] }
  */
+// DELETE /results/:code
+//
+// Withdraw a published result. A batch can double-count a student — two
+// entries for one person when their pages were split wrongly — and until now
+// the teacher could correct the list on screen while the stray result stayed
+// live on the student's progress page, with a code that still resolved.
+//
+// Hard delete rather than a flag: the point is that it stops existing.
+router.delete("/:code", createLimiter, async (req, res) => {
+  try {
+    const code = normalizeCode(req.params.code);
+    if (code.length !== 5) return res.status(404).json({ error: "Code not found." });
+    const r = await PublishedResult.deleteOne({ code });
+    // Already gone is the desired state, so it is not an error.
+    return res.json({ ok: true, deleted: r?.deletedCount || 0 });
+  } catch (err) {
+    console.error("[results delete]", err?.message || err);
+    return res.status(500).json({ error: "Could not delete that result." });
+  }
+});
+
 router.post("/batch-update-denom", createLimiter, async (req, res) => {
   try {
     const { sessionId, newDenom } = req.body || {};

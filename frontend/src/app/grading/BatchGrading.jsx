@@ -2280,6 +2280,29 @@ export default function BatchGrading({
   ]);
 
   // ---------- Re-grade a single student with adjusted strictness ----------
+  // Drop a result from the batch — the usual cause being one student counted
+  // twice because their pages were split wrongly.
+  const deleteResult = useCallback(async (r) => {
+    const who = r.studentName || `entry ${r.index}`;
+    const published = !!r.refCode;
+    if (!confirm(
+      `Remove ${who} from these results?`
+      + (published ? `\n\nThis also withdraws ${r.refCode} from the student's progress page.` : "")
+    )) return;
+
+    if (published && resultsUrl) {
+      try {
+        await fetch(`${resultsUrl.replace(/\/$/, "")}/${encodeURIComponent(r.refCode)}`, { method: "DELETE" });
+      } catch (err) {
+        // The row still goes; say what was left behind rather than pretending.
+        console.warn("[batch] withdraw published result failed:", err);
+        alert(`Removed from the list, but ${r.refCode} could not be withdrawn from the progress page. It may still be visible to the student.`);
+      }
+    }
+    setResults((prev) => prev.filter((x) => x.index !== r.index));
+    setExpandedIndex(null);
+  }, [resultsUrl]);
+
   async function regradeStudent(resultIndex, biasDelta) {
     const r = results.find((x) => x.index === resultIndex);
     if (!r || regradingIndex) return;
@@ -4695,6 +4718,7 @@ export default function BatchGrading({
                   <th style={batchStyles.th}>Grade</th>
                   <th style={batchStyles.th}>Code</th>
                   <th style={{ ...batchStyles.th, textAlign: "left" }}>Comment</th>
+                  <th style={{ ...batchStyles.th, width: 34 }} aria-label="Remove" />
                 </tr>
               </thead>
               <tbody>
@@ -5032,6 +5056,25 @@ export default function BatchGrading({
                             {r.comment.slice(0, r.detectedTitle ? 60 : 100)}
                           </>
                         )}
+                      </td>
+                      {/* Removing a row is not enough on its own: the result is
+                          already published, so a duplicate would stay live on
+                          the student's progress page with a code that still
+                          resolves. This withdraws it as well. */}
+                      <td style={{ ...batchStyles.td, width: 34 }}>
+                        <button
+                          type="button"
+                          title="Remove this result"
+                          onClick={(e) => { e.stopPropagation(); deleteResult(r); }}
+                          style={{
+                            background: "none", border: "none", cursor: "pointer",
+                            color: "#cbd5e1", fontSize: 14, padding: "2px 4px", lineHeight: 1,
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.color = "#dc2626"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.color = "#cbd5e1"; }}
+                        >
+                          ✕
+                        </button>
                       </td>
                     </tr>
 
