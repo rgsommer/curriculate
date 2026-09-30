@@ -33,6 +33,7 @@ import { edsbyGetJson, extractZoomStudentsRaw, buildIxlRoster } from "./lib/edsb
 import BehaviorHouse from "./models/BehaviorHouse.js";
 import HousePointEvent from "./models/HousePointEvent.js";
 import HousesVisit from "./models/HousesVisit.js";
+import { awardGuddAndReset } from "./lib/guddAward.js";
 import HomeworkAssignment from "./models/HomeworkAssignment.js";
 import HomeworkScore from "./models/HomeworkScore.js";
 import BehaviorCompetition from "./models/BehaviorCompetition.js";
@@ -4928,10 +4929,10 @@ router.get("/gudd/report", authAny, loadMembership, requireAdmin, async (req, re
 // in history but stop counting toward the GUDD.
 router.post("/gudd/reset", authAny, loadMembership, requireAdmin, async (req, res, next) => {
   try {
-    const at = new Date();
-    await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: { "gudd.resetAt": at } });
-    await audit(req.schoolId, "gudd.cleared", req, {});
-    res.json({ ok: true, resetAt: at });
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    const { resetAt, awarded } = await awardGuddAndReset(req.schoolId, config);
+    await audit(req.schoolId, "gudd.cleared", req, { awarded });
+    res.json({ ok: true, resetAt, awarded });
   } catch (err) {
     next(err);
   }
@@ -4960,10 +4961,10 @@ router.post("/gudd/reset-link", async (req, res, next) => {
     if (!schoolId || !verifyGuddResetToken(schoolId, token)) {
       return res.status(403).json({ ok: false, error: "This reset link is invalid or has expired. Reset the list from Setup instead." });
     }
-    const at = new Date();
-    await BehaviorConfig.updateOne({ schoolId }, { $set: { "gudd.resetAt": at } });
-    await audit(schoolId, "gudd.cleared_via_link", { userId: null, user: { email: "" } }, {});
-    res.json({ ok: true, resetAt: at });
+    const config = await BehaviorConfig.findOne({ schoolId }).lean();
+    const { resetAt, awarded } = await awardGuddAndReset(schoolId, config);
+    await audit(schoolId, "gudd.cleared_via_link", { userId: null, user: { email: "" } }, { awarded });
+    res.json({ ok: true, resetAt, awarded });
   } catch (err) { next(err); }
 });
 

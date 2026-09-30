@@ -198,6 +198,16 @@ const BehaviorConfigSchema = new mongoose.Schema(
       // Auto-clear the GUDD list every Friday (end of school day, school timezone)
       // so staff don't have to reset it manually.
       autoResetFriday: { type: Boolean, default: false },
+      // Recycling the list awards house points to the houses with the FEWEST
+      // excluded members (1st/2nd/3rd). Points are configurable; enabled by
+      // default. lastAwardAt records the most recent award for reference.
+      award: {
+        enabled: { type: Boolean, default: true },
+        first: { type: Number, default: 100 },
+        second: { type: Number, default: 60 },
+        third: { type: Number, default: 30 },
+      },
+      lastAwardAt: { type: Date, default: null },
     },
 
     // House points awarded to a student's house when a teacher sends them an
