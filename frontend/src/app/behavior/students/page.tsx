@@ -272,11 +272,7 @@ export default function StudentsPage() {
 
       <ul className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
         {visible.map((s) => (
-          <li key={s._id}
-            title={housesOn && !s.houseId ? "No house yet" : undefined}
-            className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 ${housesOn && !s.houseId
-              ? "border-l-4 border-l-amber-400 bg-amber-50 hover:bg-amber-100"
-              : "hover:bg-slate-50"}`}>
+          <li key={s._id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 hover:bg-slate-50">
             {templates.length > 0 && (
               <input type="checkbox" checked={!!selected[s._id]} onChange={(e) => setSelected((m) => ({ ...m, [s._id]: e.target.checked }))}
                 title="Select for a bulk parent message" className="shrink-0" />
