@@ -92,6 +92,13 @@ const BehaviorConfigSchema = new mongoose.Schema(
       type: [{ noticeNumber: { type: Number }, action: { type: String, default: "" }, _id: false }],
       default: [],
     },
+    // Whether reaching the behaviour threshold auto-RECOMMENDS a white slip.
+    // Off by default: per admin policy, white slips are reserved for handbook-
+    // defined offences (behaviours flagged immediateWhiteSlip, which fire a slip
+    // on their own). At the threshold we still surface a recommended CONSEQUENCE
+    // (the ladder / AI coach) to the teacher and VP — just not a white slip.
+    autoRecommendWhiteSlipAtThreshold: { type: Boolean, default: false },
+
     // The ONLY consequences the AI coach may suggest — keeps suggestions
     // school-approved, age-appropriate and defensible (no freeform invention).
     consequenceWhitelist: {
@@ -102,6 +109,7 @@ const BehaviorConfigSchema = new mongoose.Schema(
         "Apology letter — clearly state what happened, what you wish you'd done differently, and what you'll do to prevent it.",
         "Reflection on what happened in class today, using 3 relevant Bible verses.",
         "Detention",
+        "Loss of extracurricular participation for a set period (e.g. one week to one month) — clubs, teams, or events.",
         "In-school suspension",
         "At-home suspension",
         "Meeting with the parents and the Principal (or VP)",

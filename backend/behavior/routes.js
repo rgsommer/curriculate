@@ -590,7 +590,7 @@ router.put("/config", authAny, loadMembership, requireAdmin, async (req, res, ne
       "noticesResetMode", "termStartDates", "repeatScopeDays",
       "reminderTime", "manualNonSchoolDays", "houseReport", "housesEnabled", "housePointsResetAt",
       "homework", "vpNotify", "teacherDraft", "consequenceLadder", "consequenceWhitelist", "adminDigest", "houseCaps", "houseEvents", "houseRewards",
-      "encouragingMessagePoints", "houseIndividualPoints",
+      "encouragingMessagePoints", "houseIndividualPoints", "autoRecommendWhiteSlipAtThreshold",
     ];
     const update = {};
     for (const k of allowed) if (k in (req.body || {})) update[k] = req.body[k];
@@ -2773,9 +2773,13 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
       await sendConsequenceMessage({ req, student, config, behavior: cn.behavior, detailText: cn.detailText, at: cn.at });
     }
 
-    // Auto-recommend a white slip if this submission pushed the student to the
-    // behaviour-strike threshold (no more waiting for a manual click).
-    await maybeAutoRecommendWhiteSlip({ req, student, config, incidents: priorIncidents });
+    // Auto-recommend a white slip at the behaviour-strike threshold ONLY if the
+    // school has opted in. Off by default: white slips are reserved for handbook
+    // offences (immediateWhiteSlip behaviours), while the threshold still surfaces
+    // a recommended consequence via the ladder / AI coach.
+    if (config?.autoRecommendWhiteSlipAtThreshold) {
+      await maybeAutoRecommendWhiteSlip({ req, student, config, incidents: priorIncidents });
+    }
 
     // The incidents that make up the CURRENT trigger, for the teacher to review:
     // if a notice just fired, the incidents that fed it; otherwise the running
@@ -2919,8 +2923,10 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
         if (!covered) await sendConsequenceMessage({ req, student, config, behavior, detailText, at: timestamp });
       }
 
-      // Auto-recommend a white slip if this pushed the student to the threshold.
-      await maybeAutoRecommendWhiteSlip({ req, student, config, incidents: priorIncidents });
+      // Auto-recommend a white slip at the threshold ONLY if opted in (see above).
+      if (config?.autoRecommendWhiteSlipAtThreshold) {
+        await maybeAutoRecommendWhiteSlip({ req, student, config, incidents: priorIncidents });
+      }
 
       results.push({
         studentId: String(student._id),
