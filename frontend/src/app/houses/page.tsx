@@ -23,7 +23,7 @@ async function fetchBoard(code: string): Promise<{ ok: boolean; error?: string; 
   }
 }
 
-type Match = { firstName: string; grade: string; house: string; color: string; group: number | null; room: string };
+type Match = { firstName: string; grade: string; house: string; color: string; group: number | null; room: string; teachers?: string[]; captains?: string[] };
 
 export default function HousesPortal() {
   const [code, setCode] = useState<string>("");
@@ -198,6 +198,12 @@ export default function HousesPortal() {
                     {m.group ? <span className="font-medium"> · Group #{m.group}</span> : null}
                     {m.room ? <span className="text-slate-500"> → Room {m.room}</span> : null}
                   </div>
+                  {m.teachers && m.teachers.length > 0 && (
+                    <div className="mt-0.5 text-xs text-slate-500"><span className="text-slate-400">Teacher{m.teachers.length > 1 ? "s" : ""}:</span> {m.teachers.join(", ")}</div>
+                  )}
+                  {m.captains && m.captains.length > 0 && (
+                    <div className="mt-0.5 text-xs text-slate-500"><span className="text-slate-400">Captain{m.captains.length > 1 ? "s" : ""}:</span> {m.captains.join(", ")}</div>
+                  )}
                 </div>
               </li>
             ))}

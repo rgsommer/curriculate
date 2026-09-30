@@ -6112,13 +6112,25 @@ router.get("/public/houses/lookup", async (req, res, next) => {
       .sort({ lastName: 1, firstName: 1 })
       .limit(40)
       .lean();
-    const houses = await BehaviorHouse.find({ schoolId: config.schoolId }).select("name color roomGroup1 roomGroup2").lean();
+    const houses = await BehaviorHouse.find({ schoolId: config.schoolId }).select("name color roomGroup1 roomGroup2 teacher1 teacher2").lean();
     const houseById = Object.fromEntries(houses.map((h) => [String(h._id), h]));
+
+    // House captains (first name + last initial only — minimal PII), keyed by house,
+    // so a student's look-up can show who leads their team.
+    const capStudents = await BehaviorStudent.find({ schoolId: config.schoolId, active: true, houseCaptain: true, houseId: { $ne: null } })
+      .select("firstName preferredName lastName houseId")
+      .lean();
+    const captainsByHouse = {};
+    for (const c of capStudents) {
+      const k = String(c.houseId);
+      (captainsByHouse[k] ||= []).push(`${c.preferredName || c.firstName} ${(c.lastName || "").charAt(0)}.`.trim());
+    }
 
     const matches = students.map((s) => {
       const h = houseById[String(s.houseId)] || {};
       const group = s.houseGroup === 1 || s.houseGroup === 2 ? s.houseGroup : null;
       const room = group === 1 ? (h.roomGroup1 || "") : group === 2 ? (h.roomGroup2 || "") : "";
+      const teachers = [h.teacher1, h.teacher2].filter((t) => t && String(t).trim());
       return {
         firstName: s.preferredName || s.firstName || "",
         grade: s.grade || "",
@@ -6126,6 +6138,8 @@ router.get("/public/houses/lookup", async (req, res, next) => {
         color: h.color || "#0f172a",
         group,
         room,
+        teachers,
+        captains: captainsByHouse[String(s.houseId)] || [],
       };
     });
     res.json({ ok: true, matches });
