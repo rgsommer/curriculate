@@ -249,6 +249,17 @@ const BehaviorConfigSchema = new mongoose.Schema(
       lastRunAt: { type: Date, default: null },
     },
 
+    // Merch store: students spend their personal (positive) points on items with
+    // a house logo/slogan. This is a SEPARATE wallet — redeeming never lowers the
+    // house's standing. Items are { name, points, image? }.
+    merchStore: {
+      enabled: { type: Boolean, default: false },
+      items: {
+        type: [{ name: { type: String, default: "" }, points: { type: Number, default: 0 }, image: { type: String, default: "" }, _id: false }],
+        default: [],
+      },
+    },
+
     // House points awarded to a student's house when a teacher sends them an
     // encouraging parent message (positive reinforcement). 0 = award none.
     encouragingMessagePoints: { type: Number, default: 5 },

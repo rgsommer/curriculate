@@ -7,7 +7,8 @@ type House = { id: string; name: string; color: string; image?: string; points: 
 type Comp = { name: string; monthLabel: string; scored: boolean; results: { place: number; houseName: string; houseColor: string }[] };
 type Activity = { house: string; color: string; points: number; reason: string; at: string };
 type TopStudent = { rank: number; name: string; photoUrl?: string; house: string; color: string; points: number };
-type Board = { schoolName: string; houses: House[]; competitions: Comp[]; activity: Activity[]; topStudents: TopStudent[] };
+type MerchItem = { name: string; points: number; image?: string };
+type Board = { schoolName: string; houses: House[]; competitions: Comp[]; activity: Activity[]; topStudents: TopStudent[]; merch: MerchItem[] };
 type DetailItem = { reason: string; points: number; count: number };
 type HouseDetail = {
   house: { id: string; name: string; color: string };
@@ -24,13 +25,13 @@ async function fetchBoard(code: string): Promise<{ ok: boolean; error?: string; 
     const r = await fetch(`${API_BASE}/api/behavior/public/houses?code=${encodeURIComponent(code)}`);
     const d = await r.json();
     if (!d.ok) return { ok: false, error: d.error || "Could not load standings" };
-    return { ok: true, board: { schoolName: d.schoolName || "", houses: d.houses || [], competitions: d.competitions || [], activity: d.activity || [], topStudents: d.topStudents || [] } };
+    return { ok: true, board: { schoolName: d.schoolName || "", houses: d.houses || [], competitions: d.competitions || [], activity: d.activity || [], topStudents: d.topStudents || [], merch: d.merch || [] } };
   } catch {
     return { ok: false, error: "Network error — try again" };
   }
 }
 
-type Match = { firstName: string; grade: string; house: string; color: string; group: number | null; room: string; teachers?: string[]; captains?: string[] };
+type Match = { firstName: string; grade: string; house: string; color: string; group: number | null; room: string; teachers?: string[]; captains?: string[]; points?: number };
 
 export default function HousesPortal() {
   const [code, setCode] = useState<string>("");
@@ -237,7 +238,12 @@ export default function HousesPortal() {
               <li key={i} className="flex items-center gap-3 rounded-xl border border-slate-200 p-3">
                 <span className="inline-block h-8 w-8 shrink-0 rounded-full" style={{ background: m.color }} />
                 <div className="min-w-0 flex-1">
-                  <div className="font-semibold">{m.firstName}{m.grade ? <span className="ml-1 text-xs font-normal text-slate-400">Gr {m.grade}</span> : null}</div>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <div className="font-semibold">{m.firstName}{m.grade ? <span className="ml-1 text-xs font-normal text-slate-400">Gr {m.grade}</span> : null}</div>
+                    {typeof m.points === "number" && (
+                      <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800" title="Your points to spend in the rewards store">⭐ {m.points} pts</span>
+                    )}
+                  </div>
                   <div className="text-sm text-slate-600">
                     {m.house || "—"}
                     {m.group ? <span className="font-medium"> · Group #{m.group}</span> : null}
@@ -351,6 +357,22 @@ export default function HousesPortal() {
           </ul>
         )}
       </section>
+
+      {board && board.merch && board.merch.length > 0 && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-5">
+          <h2 className="font-semibold">🎁 Rewards store</h2>
+          <p className="mt-1 text-sm text-slate-500">Spend the points you&apos;ve earned. Find your name above to see your balance, then see a teacher to redeem.</p>
+          <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {board.merch.map((m, i) => (
+              <li key={i} className="rounded-xl border border-slate-200 p-3 text-center">
+                {m.image ? <img src={m.image} alt="" className="mx-auto mb-2 h-16 w-16 rounded-lg object-cover" /> : <div className="mx-auto mb-2 flex h-16 w-16 items-center justify-center rounded-lg bg-slate-100 text-2xl">🎁</div>}
+                <div className="text-sm font-medium leading-tight">{m.name}</div>
+                <div className="mt-1 text-xs font-semibold text-amber-700">⭐ {m.points} pts</div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {board && board.topStudents.length > 0 && (
         <section className="rounded-2xl border border-slate-200 bg-white p-5">

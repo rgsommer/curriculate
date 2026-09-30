@@ -580,6 +580,8 @@ export default function StudentPage() {
         </section>
       )}
 
+      <MerchCard studentId={params.id} studentName={s.preferredName || s.firstName} />
+
       {/* Log a parent meeting / contact (interaction — no strike, nothing home) */}
       <section className="no-print rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="font-semibold">Log a parent meeting / contact</h2>
@@ -887,5 +889,71 @@ export default function StudentPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// Merch store card: shows the student's personal points balance and lets staff
+// redeem an item (spends from the wallet — never affects house standings).
+type MerchState = { enabled: boolean; balance: number; items: { name: string; points: number }[]; history: { item: string; points: number; byName: string; at: string }[] };
+function MerchCard({ studentId, studentName }: { studentId: string; studentName: string }) {
+  const [state, setState] = useState<MerchState | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState("");
+
+  const load = useCallback(() => {
+    api<MerchState>(`/students/${studentId}/merch`).then(setState).catch(() => setState(null));
+  }, [studentId]);
+  useEffect(() => { load(); }, [load]);
+
+  async function redeem(item: string, points: number) {
+    if (!window.confirm(`Redeem “${item}” for ${points} points from ${studentName}'s balance?`)) return;
+    setBusy(item); setMsg("");
+    try {
+      const r = await api<{ balance: number }>(`/students/${studentId}/redeem`, { method: "POST", body: { item, points } });
+      setMsg(`✓ Redeemed ${item}. New balance: ${r.balance} pts.`);
+      load();
+    } catch (e: any) { setMsg(`✗ ${e.message}`); }
+    finally { setBusy(null); }
+  }
+
+  if (!state || !state.enabled) return null;
+  return (
+    <section className="no-print rounded-xl border border-slate-200 bg-white p-5">
+      <div className="flex items-center justify-between">
+        <h2 className="font-semibold">🎁 Rewards store</h2>
+        <span className="rounded-full bg-amber-100 px-2.5 py-1 text-sm font-semibold text-amber-800">⭐ {state.balance} pts</span>
+      </div>
+      <p className="text-xs text-slate-400">Spends from {studentName}&apos;s personal points. This does not change any house total.</p>
+      {state.items.length === 0 ? (
+        <p className="mt-2 text-sm text-slate-400">No items in the store yet — add some in Setup.</p>
+      ) : (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {state.items.map((it, i) => {
+            const affordable = state.balance >= it.points;
+            return (
+              <button key={i} onClick={() => redeem(it.name, it.points)} disabled={!affordable || busy === it.name}
+                className={`rounded-lg border px-3 py-1.5 text-sm ${affordable ? "border-slate-300 hover:bg-slate-100" : "border-slate-200 text-slate-300"}`}
+                title={affordable ? "Redeem" : "Not enough points"}>
+                {busy === it.name ? "…" : `${it.name} · ${it.points}`}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {msg && <p className="mt-2 text-sm text-slate-700">{msg}</p>}
+      {state.history.length > 0 && (
+        <div className="mt-3">
+          <p className="text-xs font-semibold text-slate-600">Recent redemptions</p>
+          <ul className="mt-1 divide-y divide-slate-100 text-xs text-slate-500">
+            {state.history.slice(0, 6).map((h, i) => (
+              <li key={i} className="flex items-center justify-between py-1">
+                <span>{h.item} <span className="text-slate-300">· {new Date(h.at).toLocaleDateString()}</span></span>
+                <span className="tabular-nums">−{h.points}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
   );
 }

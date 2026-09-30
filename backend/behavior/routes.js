@@ -33,6 +33,7 @@ import { edsbyGetJson, extractZoomStudentsRaw, buildIxlRoster } from "./lib/edsb
 import BehaviorHouse from "./models/BehaviorHouse.js";
 import HousePointEvent from "./models/HousePointEvent.js";
 import HousesVisit from "./models/HousesVisit.js";
+import MerchRedemption from "./models/MerchRedemption.js";
 import { awardGuddAndReset } from "./lib/guddAward.js";
 import { awardMonthlyConduct } from "./lib/monthlyConductAward.js";
 import HomeworkAssignment from "./models/HomeworkAssignment.js";
@@ -4628,6 +4629,41 @@ router.post("/students/:id/homeroom-followup", authAny, loadMembership, canLog, 
   }
 });
 
+// Staff view of a student's merch wallet: balance + the catalog + recent
+// redemptions, for the Redeem control on the student page.
+router.get("/students/:id/merch", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const student = await BehaviorStudent.findOne({ _id: req.params.id, schoolId: req.schoolId }).select("_id").lean();
+    if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("merchStore").lean();
+    const enabled = !!config?.merchStore?.enabled;
+    const balance = (await merchBalances(req.schoolId, [student._id]))[String(student._id)] || 0;
+    const items = enabled ? (config.merchStore.items || []).slice().sort((a, b) => (a.points || 0) - (b.points || 0)) : [];
+    const history = await MerchRedemption.find({ schoolId: req.schoolId, studentId: student._id }).sort({ at: -1 }).limit(20).select("item points byName at").lean();
+    res.json({ ok: true, enabled, balance, items, history });
+  } catch (err) { next(err); }
+});
+
+// Redeem merch for a student — spends from their personal points wallet (a
+// separate ledger; never touches house standings). Staff-only. Rejects if the
+// balance is too low. Returns the new balance.
+router.post("/students/:id/redeem", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const student = await BehaviorStudent.findOne({ _id: req.params.id, schoolId: req.schoolId }).lean();
+    if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
+    const item = String(req.body?.item || "").trim();
+    const points = Math.max(0, Math.round(Number(req.body?.points) || 0));
+    if (!item || !points) return res.status(400).json({ ok: false, error: "Item and points are required." });
+    const bal = (await merchBalances(req.schoolId, [student._id]))[String(student._id)] || 0;
+    if (points > bal) return res.status(400).json({ ok: false, error: `Not enough points — balance is ${bal}.` });
+    const who = req.membership?.name || req.user?.name || "";
+    await MerchRedemption.create({ schoolId: req.schoolId, studentId: student._id, item, points, byTeacherId: req.membership._id, byName: who });
+    await audit(req.schoolId, "merch.redeemed", req, { studentId: String(student._id), meta: { item, points } });
+    const balance = (await merchBalances(req.schoolId, [student._id]))[String(student._id)] || 0;
+    res.json({ ok: true, balance });
+  } catch (err) { next(err); }
+});
+
 // Public one-tap "I've talked to them" from the homeroom check-in email. The
 // confirm page reads /info to show the student, then POSTs /log to record it.
 router.get("/hr-followup/info", async (req, res, next) => {
@@ -5546,6 +5582,31 @@ async function houseTotals(schoolId, cfg) {
   return byHouse;
 }
 
+// A student's personal merch wallet: all-time positive individual points earned
+// minus all-time redemptions (never below 0). Kept separate from house standings
+// so spending on merch doesn't lower the house total. Returns a {id: balance} map.
+async function merchBalances(schoolId, studentIds) {
+  if (!studentIds.length) return {};
+  const [earned, spent] = await Promise.all([
+    HousePointEvent.aggregate([
+      { $match: { schoolId, studentId: { $in: studentIds }, points: { $gt: 0 } } },
+      { $group: { _id: "$studentId", v: { $sum: "$points" } } },
+    ]),
+    MerchRedemption.aggregate([
+      { $match: { schoolId, studentId: { $in: studentIds } } },
+      { $group: { _id: "$studentId", v: { $sum: "$points" } } },
+    ]),
+  ]);
+  const earnedBy = Object.fromEntries(earned.map((e) => [String(e._id), e.v]));
+  const spentBy = Object.fromEntries(spent.map((e) => [String(e._id), e.v]));
+  const out = {};
+  for (const id of studentIds) {
+    const k = String(id);
+    out[k] = Math.max(0, (earnedBy[k] || 0) - (spentBy[k] || 0));
+  }
+  return out;
+}
+
 // Daily Movers — students with the most behaviour movement TODAY: net house
 // points and the count of incidents/positives logged since local midnight.
 router.get("/daily-movers", authAny, loadMembership, async (req, res, next) => {
@@ -5604,6 +5665,14 @@ router.put("/houses/config", authAny, loadMembership, canManageHouses, async (re
     if (Array.isArray(b.houseRewards)) $set.houseRewards = b.houseRewards.map((r) => ({ points: Number(r.points) || 0, reward: String(r.reward || "").trim() })).filter((r) => r.reward && r.points);
     if (b.houseReport) $set.houseReport = { enabled: !!b.houseReport.enabled, recipientEmail: String(b.houseReport.recipientEmail || "").trim().toLowerCase() };
     if ("encouragingMessagePoints" in b) $set.encouragingMessagePoints = Math.max(0, Number(b.encouragingMessagePoints) || 0);
+    if (b.merchStore && typeof b.merchStore === "object") {
+      if ("enabled" in b.merchStore) $set["merchStore.enabled"] = !!b.merchStore.enabled;
+      if (Array.isArray(b.merchStore.items)) {
+        $set["merchStore.items"] = b.merchStore.items
+          .map((i) => ({ name: String(i.name || "").trim(), points: Math.max(0, Number(i.points) || 0), image: String(i.image || "") }))
+          .filter((i) => i.name && i.points);
+      }
+    }
     if (!Object.keys($set).length) return res.status(400).json({ ok: false, error: "Nothing to update" });
     const config = await BehaviorConfig.findOneAndUpdate({ schoolId: req.schoolId }, { $set }, { new: true, upsert: true }).lean();
     await audit(req.schoolId, "houses.config_updated", req, { meta: { keys: Object.keys($set) } });
@@ -6285,7 +6354,7 @@ router.get("/public/houses", async (req, res, next) => {
   try {
     const code = String(req.query.code || "").trim();
     if (!/^\d{3,6}$/.test(code)) return res.status(400).json({ ok: false, error: "Enter your school code." });
-    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true }).select("schoolId housePointsResetAt houseCaps houseRewards").lean();
+    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true }).select("schoolId housePointsResetAt houseCaps houseRewards merchStore").lean();
     if (!config) return res.status(404).json({ ok: false, error: "No school matches that code." });
     const schoolId = config.schoolId;
     const sid = new mongoose.Types.ObjectId(schoolId);
@@ -6405,7 +6474,10 @@ router.get("/public/houses", async (req, res, next) => {
       }).filter(Boolean);
     }
 
-    res.json({ ok: true, enabled: true, schoolName: school?.name || "", houses: houseOut, competitions: compOut, activity, dailyTopStudent, dailyTopHouse, topStudents, rewards });
+    const merch = config.merchStore?.enabled
+      ? (config.merchStore.items || []).slice().sort((a, b) => (a.points || 0) - (b.points || 0)).map((i) => ({ name: i.name, points: i.points, image: i.image || "" }))
+      : [];
+    res.json({ ok: true, enabled: true, schoolName: school?.name || "", houses: houseOut, competitions: compOut, activity, dailyTopStudent, dailyTopHouse, topStudents, rewards, merch });
   } catch (err) {
     next(err);
   }
@@ -6420,7 +6492,7 @@ router.get("/public/houses/lookup", async (req, res, next) => {
     if (!/^\d{3,6}$/.test(code)) return res.status(400).json({ ok: false, error: "Enter your school code." });
     const lastName = String(req.query.lastName || "").trim();
     if (lastName.length < 2) return res.status(400).json({ ok: false, error: "Type at least two letters of your last name." });
-    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true }).select("schoolId").lean();
+    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true }).select("schoolId merchStore").lean();
     if (!config) return res.status(404).json({ ok: false, error: "No school matches that code." });
 
     const rx = new RegExp("^" + lastName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
@@ -6429,6 +6501,9 @@ router.get("/public/houses/lookup", async (req, res, next) => {
       .sort({ lastName: 1, firstName: 1 })
       .limit(40)
       .lean();
+    // Personal merch points balance (only surfaced when the store is enabled).
+    const merchOn = !!config.merchStore?.enabled;
+    const balances = merchOn ? await merchBalances(new mongoose.Types.ObjectId(config.schoolId), students.map((s) => s._id)) : {};
     const houses = await BehaviorHouse.find({ schoolId: config.schoolId }).select("name color roomGroup1 roomGroup2 teacher1 teacher2").lean();
     const houseById = Object.fromEntries(houses.map((h) => [String(h._id), h]));
 
@@ -6457,9 +6532,10 @@ router.get("/public/houses/lookup", async (req, res, next) => {
         room,
         teachers,
         captains: captainsByHouse[String(s.houseId)] || [],
+        ...(merchOn ? { points: balances[String(s._id)] || 0 } : {}),
       };
     });
-    res.json({ ok: true, matches });
+    res.json({ ok: true, merchEnabled: merchOn, matches });
   } catch (err) {
     next(err);
   }

@@ -61,6 +61,16 @@ const PRESET_HOUSE_REWARDS = [
   { points: 3000, reward: "House trophy + celebration outing" },
 ];
 
+// Suggested merch-store items (students spend personal points). Editable after loading.
+const PRESET_MERCH = [
+  { name: "Sticker / button pin", points: 25 },
+  { name: "Mug", points: 120 },
+  { name: "Drawstring bag / tote", points: 150 },
+  { name: "Cap or visor", points: 200 },
+  { name: "T-shirt", points: 250 },
+  { name: "Hoodie / sweatshirt", points: 500 },
+];
+
 export default function SetupPage() {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1380,6 +1390,19 @@ function HousesSection({ config }: { config?: any }) {
     });
   }
 
+  // Merch store: students spend personal points on items (separate wallet).
+  const [merchOn, setMerchOn] = useState<boolean>(!!config?.merchStore?.enabled);
+  const [merch, setMerch] = useState<{ name: string; points: number }[]>(
+    Array.isArray(config?.merchStore?.items) ? config.merchStore.items.map((i: any) => ({ name: i.name || "", points: Number(i.points) || 0 })) : []
+  );
+  const merchSave = useSaveState([merchOn, merch]);
+  function saveMerch() {
+    merchSave.run(async () => {
+      const items = merch.filter((m) => m.name.trim() && m.points).map((m) => ({ name: m.name.trim(), points: Number(m.points) || 0 }));
+      await api("/houses/config", { method: "PUT", body: { merchStore: { enabled: merchOn, items } } });
+    });
+  }
+
   // Printable houses list — House · Student · Group · Room.
   const [printBusy, setPrintBusy] = useState(false);
   async function printHousesList() {
@@ -1969,6 +1992,39 @@ function HousesSection({ config }: { config?: any }) {
             <button onClick={() => setRewards((p) => [...p, { points: 50, reward: "" }])} className="rounded-lg border border-slate-300 px-2 py-1 text-xs">+ add reward</button>
           </div>
           <div className="mt-2"><SaveButton state={rewardsSave} onClick={saveRewards} label="Save rewards" /></div>
+        </div>
+
+        {/* Merch store — students spend personal points */}
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <label className="flex items-start gap-2">
+            <input type="checkbox" checked={merchOn} onChange={(e) => setMerchOn(e.target.checked)} className="mt-0.5" />
+            <span className="text-sm">
+              <span className="font-medium text-slate-700">Merch store (students spend their points)</span>
+              <span className="block text-xs text-slate-400">Students see their personal points balance and this catalog on the /houses portal, then see a teacher to redeem. Spending here is a separate wallet — it never lowers a house&apos;s standing.</span>
+            </span>
+          </label>
+          <div className="mt-2">
+            <button type="button"
+              onClick={() => setMerch((p) => {
+                const have = new Set(p.map((m) => m.name.trim().toLowerCase()).filter(Boolean));
+                const add = PRESET_MERCH.filter((m) => !have.has(m.name.toLowerCase()));
+                const base = p.filter((m) => m.name.trim() || m.points);
+                return [...base, ...add];
+              })}
+              className="text-xs text-slate-500 underline">Load suggested items</button>
+          </div>
+          <div className="mt-2 space-y-1.5">
+            {merch.map((m, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input value={m.name} onChange={(e) => setMerch((p) => p.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} placeholder="Item (e.g. Hoodie)" className="flex-1 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+                <input type="number" min={1} value={m.points} onChange={(e) => setMerch((p) => p.map((x, j) => (j === i ? { ...x, points: Number(e.target.value) || 0 } : x)))} className="w-20 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+                <span className="text-sm text-slate-400">pts</span>
+                <button onClick={() => setMerch((p) => p.filter((_, j) => j !== i))} className="text-xs text-red-600">remove</button>
+              </div>
+            ))}
+            <button onClick={() => setMerch((p) => [...p, { name: "", points: 100 }])} className="rounded-lg border border-slate-300 px-2 py-1 text-xs">+ add item</button>
+          </div>
+          <div className="mt-2"><SaveButton state={merchSave} onClick={saveMerch} label="Save merch store" /></div>
         </div>
       </div>
 
