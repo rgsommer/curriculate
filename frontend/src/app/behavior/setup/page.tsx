@@ -1323,6 +1323,35 @@ function HousesSection({ config }: { config?: any }) {
   function saveEncPts() {
     encSave.run(async () => { await api("/houses/config", { method: "PUT", body: { encouragingMessagePoints: Math.max(0, Number(encPts) || 0) } }); });
   }
+
+  // ── How houses earn points: the three switches ──────────────────────────────
+  // 1) individual add/subtract from behaviour logging
+  const [indivPts, setIndivPts] = useState<boolean>(config?.houseIndividualPoints !== false);
+  const indivSave = useSaveState([indivPts]);
+  function saveIndiv() {
+    indivSave.run(async () => { await api("/config", { method: "PUT", body: { houseIndividualPoints: indivPts } }); });
+  }
+  // 2) month-end conduct award (fewest infractions OR most positive points)
+  const mc0 = config?.monthlyConductAward || {};
+  const [mcOn, setMcOn] = useState<boolean>(mc0.enabled !== false);
+  const [mcBasis, setMcBasis] = useState<string>(mc0.basis || "fewest_infractions");
+  const [mc1, setMc1] = useState<number | string>(mc0.first ?? 100);
+  const [mc2, setMc2] = useState<number | string>(mc0.second ?? 60);
+  const [mc3, setMc3] = useState<number | string>(mc0.third ?? 30);
+  const mcSave = useSaveState([mcOn, mcBasis, mc1, mc2, mc3]);
+  function saveMc() {
+    mcSave.run(async () => { await api("/config", { method: "PUT", body: { monthlyConductAward: { enabled: mcOn, basis: mcBasis, first: Math.max(0, Number(mc1) || 0), second: Math.max(0, Number(mc2) || 0), third: Math.max(0, Number(mc3) || 0) } } }); });
+  }
+  // 3) GUDD dress-down award when the list is recycled
+  const ga0 = (config?.gudd && config.gudd.award) || {};
+  const [gaOn, setGaOn] = useState<boolean>(ga0.enabled !== false);
+  const [ga1, setGa1] = useState<number | string>(ga0.first ?? 100);
+  const [ga2, setGa2] = useState<number | string>(ga0.second ?? 60);
+  const [ga3, setGa3] = useState<number | string>(ga0.third ?? 30);
+  const gaSave = useSaveState([gaOn, ga1, ga2, ga3]);
+  function saveGa() {
+    gaSave.run(async () => { await api("/config", { method: "PUT", body: { gudd: { award: { enabled: gaOn, first: Math.max(0, Number(ga1) || 0), second: Math.max(0, Number(ga2) || 0), third: Math.max(0, Number(ga3) || 0) } } } }); });
+  }
   // Apply the standard house-point scheme across all behaviours.
   const [applyPtsBusy, setApplyPtsBusy] = useState(false);
   const [applyPtsMsg, setApplyPtsMsg] = useState("");
@@ -1779,6 +1808,68 @@ function HousesSection({ config }: { config?: any }) {
           <button onClick={printHousesList} disabled={printBusy} className="mt-3 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm disabled:opacity-40">
             {printBusy ? "Preparing…" : "Print houses list (House · Name · Room)"}
           </button>
+        </div>
+
+        {/* How houses earn points — three switches */}
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <p className="text-sm font-medium text-slate-700">How houses earn points</p>
+          <p className="text-xs text-slate-400">Choose which point systems are active. You can run individual points, the monthly award, and the GUDD award in any combination.</p>
+
+          {/* 1) Individual add/subtract */}
+          <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
+            <label className="flex items-start gap-2">
+              <input type="checkbox" checked={indivPts} onChange={(e) => setIndivPts(e.target.checked)} className="mt-0.5" />
+              <span className="text-sm">
+                <span className="font-medium text-slate-700">Add &amp; subtract individual points for good/bad behaviour</span>
+                <span className="block text-xs text-slate-400">When on, logging a Compass behaviour moves the student&apos;s house total (good adds, infractions deduct). When off, behaviours are still recorded and still drive strikes/notices — they just don&apos;t change house points.</span>
+              </span>
+            </label>
+            <div className="mt-2"><SaveButton state={indivSave} onClick={saveIndiv} label="Save" /></div>
+          </div>
+
+          {/* 2) Monthly conduct award */}
+          <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
+            <label className="flex items-start gap-2">
+              <input type="checkbox" checked={mcOn} onChange={(e) => setMcOn(e.target.checked)} className="mt-0.5" />
+              <span className="text-sm">
+                <span className="font-medium text-slate-700">Monthly award: 1st / 2nd / 3rd each month</span>
+                <span className="block text-xs text-slate-400">On the last school day of each month, award house points to the top houses.</span>
+              </span>
+            </label>
+            <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
+              <label className="flex items-center gap-1.5">Winner is the house with
+                <select value={mcBasis} onChange={(e) => setMcBasis(e.target.value)} disabled={!mcOn} className="rounded-lg border border-slate-300 px-2 py-1 disabled:opacity-40">
+                  <option value="fewest_infractions">fewest infractions</option>
+                  <option value="most_positive">most positive points</option>
+                </select>
+              </label>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-slate-500">Points:</span>
+              <label className="flex items-center gap-1">1st <input type="number" min={0} value={mc1} onChange={(e) => setMc1(e.target.value)} disabled={!mcOn} className="w-16 rounded-lg border border-slate-300 px-2 py-1 disabled:opacity-40" /></label>
+              <label className="flex items-center gap-1">2nd <input type="number" min={0} value={mc2} onChange={(e) => setMc2(e.target.value)} disabled={!mcOn} className="w-16 rounded-lg border border-slate-300 px-2 py-1 disabled:opacity-40" /></label>
+              <label className="flex items-center gap-1">3rd <input type="number" min={0} value={mc3} onChange={(e) => setMc3(e.target.value)} disabled={!mcOn} className="w-16 rounded-lg border border-slate-300 px-2 py-1 disabled:opacity-40" /></label>
+              <SaveButton state={mcSave} onClick={saveMc} label="Save" />
+            </div>
+          </div>
+
+          {/* 3) GUDD dress-down award */}
+          <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
+            <label className="flex items-start gap-2">
+              <input type="checkbox" checked={gaOn} onChange={(e) => setGaOn(e.target.checked)} className="mt-0.5" />
+              <span className="text-sm">
+                <span className="font-medium text-slate-700">GUDD dress-down award: 1st / 2nd / 3rd when the list is recycled</span>
+                <span className="block text-xs text-slate-400">When you clear the GUDD list for a new period, the houses with the fewest excluded members are awarded these points.</span>
+              </span>
+            </label>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-slate-500">Points:</span>
+              <label className="flex items-center gap-1">1st <input type="number" min={0} value={ga1} onChange={(e) => setGa1(e.target.value)} disabled={!gaOn} className="w-16 rounded-lg border border-slate-300 px-2 py-1 disabled:opacity-40" /></label>
+              <label className="flex items-center gap-1">2nd <input type="number" min={0} value={ga2} onChange={(e) => setGa2(e.target.value)} disabled={!gaOn} className="w-16 rounded-lg border border-slate-300 px-2 py-1 disabled:opacity-40" /></label>
+              <label className="flex items-center gap-1">3rd <input type="number" min={0} value={ga3} onChange={(e) => setGa3(e.target.value)} disabled={!gaOn} className="w-16 rounded-lg border border-slate-300 px-2 py-1 disabled:opacity-40" /></label>
+              <SaveButton state={gaSave} onClick={saveGa} label="Save" />
+            </div>
+          </div>
         </div>
 
         {/* Per-student point caps */}
