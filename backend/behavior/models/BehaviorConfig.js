@@ -210,6 +210,27 @@ const BehaviorConfigSchema = new mongoose.Schema(
       lastAwardAt: { type: Date, default: null },
     },
 
+    // Month-end conduct competition: on the last school day of each month, the
+    // houses with the fewest infractions win 1st/2nd/3rd and are awarded house
+    // points (positive, on top of the per-infraction deductions). Ranked by
+    // infraction count; uniform excluded by default (GUDD has its own award).
+    monthlyConductAward: {
+      enabled: { type: Boolean, default: true },
+      // What decides the winners: fewest infractions, or most positive points.
+      basis: { type: String, enum: ["fewest_infractions", "most_positive"], default: "fewest_infractions" },
+      first: { type: Number, default: 100 },
+      second: { type: Number, default: 60 },
+      third: { type: Number, default: 30 },
+      includeUniform: { type: Boolean, default: false },
+      lastAwardMonth: { type: String, default: null }, // "YYYY-MM" already awarded
+      lastAwardAt: { type: Date, default: null },
+    },
+
+    // Master switch for applying house points from individual Compass behaviour
+    // logging (good adds, bad subtracts). Off = behaviours are still recorded and
+    // still drive strikes/notices, but they don't move house totals.
+    houseIndividualPoints: { type: Boolean, default: true },
+
     // House points awarded to a student's house when a teacher sends them an
     // encouraging parent message (positive reinforcement). 0 = award none.
     encouragingMessagePoints: { type: Number, default: 5 },

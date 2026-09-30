@@ -34,6 +34,7 @@ import BehaviorHouse from "./models/BehaviorHouse.js";
 import HousePointEvent from "./models/HousePointEvent.js";
 import HousesVisit from "./models/HousesVisit.js";
 import { awardGuddAndReset } from "./lib/guddAward.js";
+import { awardMonthlyConduct } from "./lib/monthlyConductAward.js";
 import HomeworkAssignment from "./models/HomeworkAssignment.js";
 import HomeworkScore from "./models/HomeworkScore.js";
 import BehaviorCompetition from "./models/BehaviorCompetition.js";
@@ -589,7 +590,7 @@ router.put("/config", authAny, loadMembership, requireAdmin, async (req, res, ne
       "noticesResetMode", "termStartDates", "repeatScopeDays",
       "reminderTime", "manualNonSchoolDays", "houseReport", "housesEnabled", "housePointsResetAt",
       "homework", "vpNotify", "teacherDraft", "consequenceLadder", "consequenceWhitelist", "adminDigest", "houseCaps", "houseEvents", "houseRewards",
-      "encouragingMessagePoints",
+      "encouragingMessagePoints", "houseIndividualPoints",
     ];
     const update = {};
     for (const k of allowed) if (k in (req.body || {})) update[k] = req.body[k];
@@ -597,6 +598,11 @@ router.put("/config", authAny, loadMembership, requireAdmin, async (req, res, ne
     // period reset (resetAt) or the auto-Friday flag it didn't send.
     if (req.body?.gudd && typeof req.body.gudd === "object") {
       for (const [k, v] of Object.entries(req.body.gudd)) update[`gudd.${k}`] = v;
+    }
+    // Same field-merge for the month-end conduct award, so saving its toggle/
+    // points never clobbers lastAwardMonth (the idempotency marker).
+    if (req.body?.monthlyConductAward && typeof req.body.monthlyConductAward === "object") {
+      for (const [k, v] of Object.entries(req.body.monthlyConductAward)) update[`monthlyConductAward.${k}`] = v;
     }
     const config = await BehaviorConfig.findOneAndUpdate(
       { schoolId: req.schoolId },
@@ -2689,8 +2695,9 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
       }
 
       // House points: this behaviour's value scaled by the intensity weight.
+      // Skipped when the school has turned off individual behaviour points.
       const pts = Math.round((behavior.points || 0) * weight);
-      if (pts && student.houseId) {
+      if (pts && student.houseId && config?.houseIndividualPoints !== false) {
         await HousePointEvent.create({
           schoolId: req.schoolId, houseId: student.houseId, studentId: student._id,
           points: pts, reason: weight !== 1 ? `${behavior.name} (×${weight})` : behavior.name, behaviorId: behavior._id,
@@ -2864,7 +2871,7 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
       });
 
       const pts = Math.round((behavior.points || 0) * weight);
-      if (pts && student.houseId) {
+      if (pts && student.houseId && config?.houseIndividualPoints !== false) {
         await HousePointEvent.create({
           schoolId: req.schoolId, houseId: student.houseId, studentId: student._id,
           points: pts, reason: weight !== 1 ? `${behavior.name} (×${weight})` : behavior.name, behaviorId: behavior._id,
@@ -4933,6 +4940,20 @@ router.post("/gudd/reset", authAny, loadMembership, requireAdmin, async (req, re
     const { resetAt, awarded } = await awardGuddAndReset(req.schoolId, config);
     await audit(req.schoolId, "gudd.cleared", req, { awarded });
     res.json({ ok: true, resetAt, awarded });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Run the month-end conduct award on demand (admin) — a manual fallback, and a
+// way to grant it whenever the school wants to announce it. Forces past the
+// per-month idempotency guard so a deliberate click always awards.
+router.post("/house/monthly-conduct-award", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    const result = await awardMonthlyConduct(req.schoolId, config, { force: true });
+    await audit(req.schoolId, "house.monthly_conduct_award", req, { awarded: result.awarded, monthKey: result.monthKey });
+    res.json({ ok: true, ...result });
   } catch (err) {
     next(err);
   }

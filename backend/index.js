@@ -696,6 +696,8 @@ try {
   startAdminDigest();
   const { startGuddAutoReset } = await import("./behavior/jobs/guddReset.js");
   startGuddAutoReset();
+  const { startMonthlyConductAward } = await import("./behavior/jobs/monthlyConductAward.js");
+  startMonthlyConductAward();
   console.error("[boot] behaviours module loaded OK");
 } catch (e) {
   console.error("[boot] ❌ behaviours module FAILED to load — continuing without it:\n", e?.stack || e);
