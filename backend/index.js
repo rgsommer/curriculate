@@ -136,6 +136,7 @@ import profileInlineRouter from "./routes/profileInline.js";
 import adminCrudRouter from "./routes/adminCrud.js";
 import classRosterRouter from "./routes/classRoster.js";
 import savedRubricsRouter from "./routes/savedRubrics.js";
+import teacherSettingsRouter from "./routes/teacherSettings.js";
 import studentScavengerProgressRouter from "./routes/studentScavengerProgress.js";
 import studentContactRouter from "./routes/studentContact.js";
 import studentProgressRouter from "./routes/studentProgress.js";
@@ -634,6 +635,7 @@ startResearchWorker();
 // Class roster management (Edsby CSV upload, student lookup)
 app.use("/class-roster", classRosterRouter);
 app.use("/saved-rubrics", savedRubricsRouter);
+app.use("/teacher-settings", teacherSettingsRouter);
 // Homework Check: assignment page → capture lap → name-delimited grouping →
 // completeness/correctness table. Photo-heavy, so it owns its own resumable
 // upload store and background job map (see the router).

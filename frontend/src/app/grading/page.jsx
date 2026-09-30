@@ -1712,6 +1712,43 @@ export default function GradingPage() {
     // localStorage stays as the offline copy: it is what paints the list
     // before the fetch lands, and what the tool falls back to when the email
     // is blank or the server is unreachable.
+    // Whether marks are hidden from students and parents. Server-side, keyed
+    // by teacher, and enforced when a result is served — so it reaches work
+    // already shared and can be switched back.
+    const [hideGrades, setHideGrades] = useState(false);
+    const [hideGradesBusy, setHideGradesBusy] = useState(false);
+    useEffect(() => {
+      const email = (teacherEmail || "").trim();
+      if (!email.includes("@") || !backendBase) { setHideGrades(false); return; }
+      let cancelled = false;
+      fetch(`${backendBase}/teacher-settings?teacherEmail=${encodeURIComponent(email)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (!cancelled && d?.ok) setHideGrades(!!d.settings?.hideGradesFromStudents); })
+        .catch(() => {});
+      return () => { cancelled = true; };
+    }, [teacherEmail, backendBase]);
+
+    async function saveHideGrades(next) {
+      const email = (teacherEmail || "").trim();
+      if (!email.includes("@") || !backendBase) return;
+      setHideGrades(next);          // optimistic; the checkbox should not lag
+      setHideGradesBusy(true);
+      try {
+        const res = await fetch(`${backendBase}/teacher-settings`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ teacherEmail: email, hideGradesFromStudents: next }),
+        });
+        const d = await res.json().catch(() => null);
+        if (!res.ok || !d?.ok) throw new Error(d?.error || "save failed");
+      } catch {
+        setHideGrades(!next);       // put it back rather than lie about the state
+        alert("Could not save that setting. Marks are unchanged for students.");
+      } finally {
+        setHideGradesBusy(false);
+      }
+    }
+
     const rubricsSyncedRef = useRef("");   // teacherEmail whose library we've pulled
     useEffect(() => {
       const email = (teacherEmail || "").trim();
@@ -3935,6 +3972,38 @@ export default function GradingPage() {
             </div>
             {/* Start-of-year housekeeping: clear last year's published results
                 so a new cohort doesn't share a progress portal with the last. */}
+            {/* Pulse suggests a mark; the teacher awards one. When those
+                differ, the family sees the suggestion on the progress page
+                and is alarmed by a number that was never the grade — and the
+                gradebook, which is the record, is not what they are looking
+                at. This turns the number off for students and parents while
+                leaving the feedback and the achievement levels in place. The
+                teacher keeps seeing every mark. */}
+            {teacherEmail && (
+              <label
+                style={{
+                  marginTop: 8, display: "flex", gap: 8, alignItems: "flex-start",
+                  fontSize: 12, color: "#334155", cursor: "pointer", lineHeight: 1.45,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={hideGrades}
+                  disabled={hideGradesBusy}
+                  onChange={(e) => saveHideGrades(e.target.checked)}
+                  style={{ marginTop: 2 }}
+                />
+                <span>
+                  <b>Feedback only for students &amp; parents</b>
+                  <div style={{ color: "#64748b" }}>
+                    Hides the mark on the progress page and on shared result links.
+                    Comments, next steps and the achievement bars stay. You still see
+                    every mark here, in exports and in Edsby.
+                    {hideGrades && <> Applies to results already shared, and can be switched back.</>}
+                  </div>
+                </span>
+              </label>
+            )}
             {teacherEmail && (
               <div style={{ marginTop: 6 }}>
                 <NewYearReset
