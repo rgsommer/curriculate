@@ -38,7 +38,11 @@ function groupsFromCapture(attrib) {
         edsbyId: stu?.edsbyId || "",
         nameAsWritten: "",   // nothing was read off the page — the teacher said who this is
         matched: true,
-        matchConfidence: 1,
+        // "high", not 1. The model stores this as a String with an enum, so a
+        // number casts to "1", fails the enum, and the whole batch save
+        // throws — which left the teacher with a results table, no batchId,
+        // no Release, and nothing on the progress page.
+        matchConfidence: "high",
         superseded: false,
         photoIndexes: [],
       });
@@ -1807,7 +1811,13 @@ function ResultsTable({ result, onExportCsv, onExportEdsby, hwUrl, teacherEmail 
 
   async function toggleRelease(next) {
     if (!result.batchId) {
-      setReleaseError("This batch wasn't saved, so it can't be released. Re-run the check.");
+      // Say why. "Re-run the check" sent the teacher back to a run that would
+      // fail identically, having spent the model call and their time.
+      setReleaseError(
+        "This batch couldn't be saved, so it can't be released."
+        + (result.saveError ? ` The server said: ${result.saveError}` : "")
+        + " Your results are still here — export the CSV so nothing is lost."
+      );
       return;
     }
     setReleaseBusy(true);
