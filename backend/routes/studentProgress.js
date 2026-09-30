@@ -8,7 +8,7 @@ import PublishedResult from "../models/PublishedResult.js";
 import { resultExpiryDate } from "../utils/retention.js";
 import { sendWeeklyDigests } from "../email/gradeNotification.js";
 
-import { hidesGrades } from "../utils/gradeVisibility.js";
+import { hidesGradesForResult } from "../utils/gradeVisibility.js";
 const router = express.Router();
 
 /**
@@ -628,15 +628,14 @@ router.get("/results", studentAuth, async (req, res) => {
     //
     // Per result, not per student: a child may be taught by several teachers
     // and only one of them may have turned it on.
-    const teacherEmails = [...new Set(
-      results.map((r) => String(r?.meta?.teacherEmail || "").trim().toLowerCase()).filter(Boolean)
-    )];
-    const hideBy = new Map(
-      await Promise.all(teacherEmails.map(async (e) => [e, await hidesGrades(e)]))
+    // Keyed on the result's own meta, since the owner may have to be resolved
+    // from the class — most published results predate meta.teacherEmail.
+    const hideByCode = new Map(
+      await Promise.all(results.map(async (r) => [r.code, await hidesGradesForResult(r.meta)]))
     );
     let anyHidden = false;
     for (const entry of entries) {
-      if (!hideBy.get(String(entry.teacherEmail || "").trim().toLowerCase())) continue;
+      if (!hideByCode.get(entry.code)) continue;
       anyHidden = true;
       entry.score = null;
       entry.outOf = null;

@@ -8,7 +8,7 @@ import { sendSystemEmail } from "../email/shareInviteEmailer.js";
 import { notifyNewGrade } from "../email/gradeNotification.js";
 import { resultExpiryDate } from "../utils/retention.js";
 
-import { hidesGrades, stripGradesFromPayload } from "../utils/gradeVisibility.js";
+import { hidesGradesForResult, stripGradesFromPayload } from "../utils/gradeVisibility.js";
 const router = express.Router();
 
 /**
@@ -585,7 +585,9 @@ router.get("/:code", lookupLimiter, async (req, res) => {
     // The teacher may have chosen not to show marks to students and parents.
     // Applied here rather than at publish, so the switch reaches results that
     // were already out there — which is usually why it gets turned on.
-    const hide = await hidesGrades(doc.meta?.teacherEmail);
+    // Resolves the owner from the class when the result predates
+    // meta.teacherEmail, which most published results do.
+    const hide = await hidesGradesForResult(doc.meta);
     const meta = doc.meta ? { ...doc.meta } : null;
     if (hide && meta) {
       // The score is in meta too, and the portal reads it from there.

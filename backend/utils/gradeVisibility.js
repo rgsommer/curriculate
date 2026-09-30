@@ -39,6 +39,45 @@ export async function hidesGrades(teacherEmail) {
   return value;
 }
 
+// Which teacher a result belongs to.
+//
+// meta.teacherEmail is the answer when it is there — but it only started
+// being written recently, and every result published before that has none.
+// Those are exactly the ones a teacher turning this on wants covered, so fall
+// back to the class: a roster names both the class and its owner.
+//
+// If two teachers have a class of the same name we cannot tell which, and
+// guessing would hide one teacher's marks on another's say-so. No answer is
+// the right answer there.
+const ownerCache = new Map(); // className -> { value, expires }
+
+export async function teacherForResult(meta) {
+  const direct = String(meta?.teacherEmail || "").trim().toLowerCase();
+  if (direct) return direct;
+
+  const className = String(meta?.className || "").trim();
+  if (!className) return "";
+
+  const hit = ownerCache.get(className);
+  if (hit && hit.expires > Date.now()) return hit.value;
+
+  let value = "";
+  try {
+    const { default: ClassRoster } = await import("../models/ClassRoster.js");
+    const owners = await ClassRoster.distinct("teacherEmail", { className });
+    if (owners.length === 1) value = String(owners[0] || "").trim().toLowerCase();
+  } catch (err) {
+    console.warn("[gradeVisibility] owner lookup failed:", err?.message || err);
+  }
+  if (ownerCache.size > 500) ownerCache.clear();
+  ownerCache.set(className, { value, expires: Date.now() + CACHE_MS });
+  return value;
+}
+
+export async function hidesGradesForResult(meta) {
+  return hidesGrades(await teacherForResult(meta));
+}
+
 export function invalidateGradeVisibility(teacherEmail) {
   cache.delete(String(teacherEmail || "").trim().toLowerCase());
 }
@@ -51,6 +90,14 @@ export function invalidateGradeVisibility(teacherEmail) {
 // subtotals go too — "8/10 on Knowledge" is the same number by another name.
 // Everything else (strengths, next steps, comments, the level words the bars
 // are drawn from) is untouched.
+// A mark as a word. Four bands, because more would be a mark with letters on.
+export function band(ratio) {
+  if (ratio >= 0.9) return "VG";   // very good
+  if (ratio >= 0.75) return "G";   // good
+  if (ratio >= 0.5) return "S";    // satisfactory
+  return "N";                      // needs improvement
+}
+
 export function stripGradesFromPayload(payload) {
   const text = String(payload || "");
   if (!text) return text;
@@ -78,6 +125,21 @@ export function stripGradesFromPayload(payload) {
     // only the number out of it — dropping it whole would remove the bar too.
     const withLevel = line.match(/^(.*?)\s*[\d.]+\s*\/\s*[\d.]+\s*(\[[^\]]+\].*)$/);
     if (withLevel) { out.push(`${withLevel[1]} ${withLevel[2]}`); continue; }
+
+    // A criterion with a mark and no level of its own:
+    //   "- Title: 0/1 — Title 'Figure me out' not present"
+    // Deleting these would take the breakdown with them, which is the most
+    // useful part of the feedback. So the mark becomes a band — VG, G, S, N —
+    // which says how it went without putting a number on it.
+    const crit = line.match(/^(\s*[-•*]?\s*.+?[:\s])\s*([\d.]+)\s*\/\s*([\d.]+)(\s*(?:—|-|–|:).*)?$/);
+    if (crit) {
+      const got = parseFloat(crit[2]);
+      const max = parseFloat(crit[3]);
+      if (Number.isFinite(got) && Number.isFinite(max) && max > 0) {
+        out.push(`${crit[1].replace(/[:\s]+$/, "")}: ${band(got / max)}${crit[4] || ""}`);
+        continue;
+      }
+    }
 
     out.push(line);
   }
