@@ -25,6 +25,7 @@ module.exports = {
   sidOf_, sidsInSetCookie_, classifySetCookie_, explainStatusShort_,
   groupTokenOf_, isHomeroomClass_, ownedColumns_, clearImportedColumns_,
   planSync_, nameKey_, rowValuesFor_, writeRowValues_, archiveGuard_,
+  rowIsComplete_, studentFromCache_, deadline_,
   buildRosterCsv_, rowFieldsFor_, csvCell_, csvDate_, stripTags_, gradeFromGroup_,
   sectionTokensFromText_, pickSection_, extractGroupFromPanorama_, inferSectionsByTeacher_,
   zoomNodeIdsOf_, unionStudentRecords_, gradeBreakdown_,
@@ -539,6 +540,53 @@ const tagged = M.buildRosterCsv_([
 ]);
 ok("no bracketed tag in the output", !/\[/.test(tagged.csv));
 ok("the name survives", tagged.csv.includes("Smith"));
+
+// ── Incremental re-runs ─────────────────────────────────────────────────────
+// ~300 requests (one Panorama per student, one ParentDetails per parent) is
+// what pushes a run into Apps Script's execution limit. Both supply values that
+// never change, so a complete row is reused instead of re-fetched.
+group("Deciding what can be reused");
+ok("a row with a birthday is complete", M.rowIsComplete_({ dob: "2011-04-01" }));
+ok("a Date birthday counts", M.rowIsComplete_({ dob: new Date(2011, 3, 1) }));
+ok("an invalid Date does not", !M.rowIsComplete_({ dob: new Date("nope") }));
+ok("no birthday means fetch", !M.rowIsComplete_({ dob: "" }));
+ok("whitespace is not a birthday", !M.rowIsComplete_({ dob: "   " }));
+ok("a missing row means fetch", !M.rowIsComplete_(null));
+// Parents must NOT gate the decision, or a student with none on file would be
+// re-fetched on every run forever.
+ok("no parents but a birthday is still complete",
+   M.rowIsComplete_({ dob: "2011-04-01", momEmail: "", dadEmail: "", momName: "", dadName: "" }));
+
+group("Rebuilding a student without Panorama");
+// Everything but the birthday and parents comes from the zoom row.
+const zoomRec = { nid: 7640360, firstName: "Mya", prefName: "Mya", lastName: "Bassoo",
+                  gender: "F", grade: "8", hrTeacher: "Mr. Richard Sommer", classes: [] };
+const sheetRow = { dob: "2011-04-01", commonName: "Mya Bassoo", group: "8A",
+                   momName: "A Bassoo", momEmail: "mum@example.test", momNid: "5001",
+                   dadName: "B Bassoo", dadEmail: "dad@example.test", dadNid: "5002" };
+const rebuilt = M.studentFromCache_(zoomRec, sheetRow);
+eq("nid", rebuilt.nid, 7640360);
+eq("names from the zoom row", [rebuilt.lastName, rebuilt.prefFirst], ["Bassoo", "Mya"]);
+eq("gender and grade from the zoom row", [rebuilt.gender, rebuilt.grade], ["F", "8"]);
+eq("birthday from the sheet", rebuilt.dob, "2011-04-01");
+eq("homeroom teacher from the zoom row", rebuilt.firstHomeroomTeacher, "Mr. Richard Sommer");
+eq("parent links from the sheet", [rebuilt.momNid, rebuilt.dadNid], ["5001", "5002"]);
+ok("marked as reused", rebuilt.fromCache);
+eq("composes a name when the sheet has none",
+   M.studentFromCache_(zoomRec, { dob: "x", commonName: "" }).fullName, "Mya Bassoo");
+eq("falls back to FirstName when there is no PrefName",
+   M.studentFromCache_({ ...zoomRec, prefName: "" }, { dob: "x" }).prefFirst, "Mya");
+// A rebuilt student must still produce a complete sheet row.
+const vals = M.rowValuesFor_(rebuilt, { 5001: "mum@example.test" });
+eq("writes the nid", vals[M.CONFIG.COLS.edsbyNid], 7640360);
+eq("writes the birthday", vals[M.CONFIG.COLS.dob], "2011-04-01");
+eq("writes the mother's email", vals[M.CONFIG.COLS.momEmail], "mum@example.test");
+
+group("Runtime budget");
+const past = M.deadline_(Date.now() - 10 * 60 * 1000);
+ok("a long-running job is over budget", past.exceeded());
+ok("elapsed seconds are reported", past.elapsed() >= 600);
+ok("a fresh job is not", !M.deadline_(Date.now()).exceeded());
 
 // ── Regression: Benjamin Whitaker ───────────────────────────────────────────
 // A real student, present in Edsby, was archived. Cause: the student's nid

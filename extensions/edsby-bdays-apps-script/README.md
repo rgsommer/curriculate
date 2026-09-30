@@ -146,6 +146,47 @@ After grade filter: 104 students kept. By grade: {"6":28,"7":34,"8":42}
 Because the CSV export reads the sheet, adding the node fixes both **Update
 Roster** and **Export roster CSV** at once.
 
+## Timeouts, and why re-runs are fast
+
+Apps Script kills a run at its execution limit. The original shape of the work
+made that likely for a middle-sized school:
+
+| Stage | Requests |
+|---|---|
+| node probe | ~8 per node — six of them proving views that do not exist still do not exist — then discarding the students it had just parsed |
+| roster fetch | ~2 per node, re-fetching the same rows |
+| Panorama | one per student (~100) |
+| ParentDetails | one per parent (~200) |
+
+Three changes:
+
+- **The probe is gone from the happy path.** Configured nodes are fetched once;
+  discovery only runs if they all come back empty.
+- **`STUDENT_LIST_VIEWS` is just `ZoomMyStudents`.** The other three answered
+  `denied(xds not found)` here, costing six requests per probe to establish
+  nothing.
+- **Re-runs are incremental.** Panorama supplies only the birthday and the
+  parent links; ParentDetails only an email. None of it changes, and names,
+  gender, grade and classes all come from the zoom row — one request for the
+  whole school. A student already carrying a birthday is rebuilt from the zoom
+  row plus their existing sheet row, and their parents are never looked up.
+
+So the first run is the slow one. After that a run costs roughly two requests
+plus whatever is genuinely new. The log says what was skipped:
+
+```
+Panorama: 3 to fetch, 101 reused from the sheet.
+Parents:  5 to fetch, 196 reused from the sheet.
+Run took 11s.
+```
+
+If it still runs long, `MAX_RUNTIME_MS` (4.5 min) stops it **cleanly** rather
+than letting Google kill it mid-write: what was fetched is written, and the next
+run continues, because the students already written are reusable.
+
+Set `REFRESH_ALL: true` to force everything to be re-fetched — worth doing once
+a year, or if birthdays or parent emails have been corrected in Edsby.
+
 ## How the Group (section) is worked out
 
 The Group column wants `8A`, not `8`. Three sources are tried in order of

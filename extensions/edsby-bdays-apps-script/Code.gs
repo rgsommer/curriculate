@@ -67,6 +67,15 @@ const CONFIG = {
     // Drive whether or not you needed one.
     AUTO_EXPORT: false,
   },
+  // Re-runs are incremental: a student already carrying a birthday in the sheet
+  // needs no Panorama call, and a parent whose email is already there needs no
+  // ParentDetails call. Neither value changes. This is what keeps a re-run from
+  // hitting the Apps Script execution limit — the first run is the slow one.
+  // Set true to force every record to be re-fetched.
+  REFRESH_ALL: false,
+  // Stop cleanly at this point rather than being killed mid-write by Apps
+  // Script's execution limit. What has been fetched is still written.
+  MAX_RUNTIME_MS: 4.5 * 60 * 1000,
   FETCH_CHUNK_SIZE: 20,          // calls per fetchAll batch
   FETCH_SLEEP_MS: 1500,          // sleep between batches
   GRADE_FILTER: [],              // [] = all grades; or e.g. ["6","7","8"]
@@ -109,7 +118,10 @@ const DEFAULT_BASE_URL = "https://bcs.edsby.com";
 
 // Which Edsby view lists an account's students is role-specific: a teacher has
 // ZoomMyStudents, an admin is often denied it (Edsby error 1030). Tried in order.
-const STUDENT_LIST_VIEWS = ["ZoomMyStudents", "SchoolStudents", "Students", "ClassStudents"];
+// Only ZoomMyStudents exists on bcs.edsby.com — the others answered
+// 1030 "denied(xds not found)", i.e. no such view, costing six requests per
+// probe to establish nothing. Re-add them for a school where they do exist.
+const STUDENT_LIST_VIEWS = ["ZoomMyStudents"];
 
 
 /* ============================================================
@@ -1166,11 +1178,51 @@ function resolveZoomNodeIds_(sess) {
   return configured;
 }
 
+/**
+ * Fetch the roster, discovering a node id only if the configured ones fail.
+ *
+ * This used to probe every configured node first (parsing all their students,
+ * then throwing them away) and fetch the whole roster again afterwards — two
+ * full fetches per node, plus a formkey refresh and six requests per node
+ * proving that views which do not exist still do not exist. The happy path is
+ * now one fetch per node.
+ */
+function loadRoster_(sess) {
+  const ids = zoomNodeIdsOf_(sess.zoomNodeId);
+  if (!ids.length) {
+    Logger.log("No zoom node id configured. Set EDSBY_ZOOM_NODE_ID (comma-separate several).");
+    return { records: [], nodeIds: [] };
+  }
+
+  const records = fetchZoomMyStudents_(sess, ids);
+  if (records.length) return { records: records, nodeIds: ids };
+
+  // Nothing came back from any configured node — now it is worth hunting.
+  Logger.log("No students from the configured node(s). Searching for a working id…");
+  const found = harvestNavLinks_(sess);
+  const tried = {};
+  for (let i = 0; i < ids.length; i++) tried[ids[i]] = true;
+  for (let i = 0; i < found.links.length; i++) {
+    const nid = found.links[i].nid;
+    if (tried[nid]) continue;
+    tried[nid] = true;
+    const recs = fetchOneZoomNode_(sess, nid);
+    if (recs.length) {
+      Logger.log("Found node " + nid + " with " + recs.length + " students. " +
+        "Store it as EDSBY_ZOOM_NODE_ID to skip this search next run.");
+      return { records: recs, nodeIds: [nid] };
+    }
+  }
+  return { records: [], nodeIds: ids };
+}
+
 /* ============================================================
  * MAIN ENTRY POINT (assign this to your button)
  * ============================================================ */
 
 function populateBdays() {
+  const startedAt = Date.now();
+  const clock = deadline_(startedAt);
   const sess = getEdsbySession_();
   if (!sess.cookie) {
     Logger.log("Skipped: no EDSBY_SESSION_COOKIE in Script Properties. Run diagnoseEdsby().");
@@ -1184,8 +1236,9 @@ function populateBdays() {
   // 1. Get all student records (nid + Classes) from the students listing.
   //    Node ids are per-account and change across school years, so a stale id
   //    is resolved rather than fatal (Edsby error 1030 "no links to node").
-  const resolved = resolveZoomNodeIds_(sess);
-  const studentRecords = fetchZoomMyStudents_(sess, resolved);
+  const roster = loadRoster_(sess);
+  const studentRecords = roster.records;
+  const resolved = roster.nodeIds;
   if (studentRecords.length === 0) {
     const auth = checkAuthStatus_(sess);
     if (!auth.authenticated) {
@@ -1200,46 +1253,76 @@ function populateBdays() {
   Logger.log("Students listing: " + studentRecords.length + " students from node(s) " +
     resolved.join(", ") + ".");
 
-  // 2. Fetch each student's Panorama (chunked).
-  const studentReqs = studentRecords.map(function (r) {
+  // 2. Fetch Panorama only for students the sheet cannot already answer for.
+  //    Panorama supplies the birthday and the parent links; both are stable, so
+  //    a student already carrying a birthday is rebuilt from the zoom row plus
+  //    their existing row at no network cost.
+  const existingByNid = CONFIG.REFRESH_ALL ? {} : indexExistingByNid_(sheet);
+  const needFetch = [];
+  const cached = [];
+  for (let i = 0; i < studentRecords.length; i++) {
+    const rec = studentRecords[i];
+    const ex = existingByNid[String(rec.nid)];
+    if (rowIsComplete_(ex)) cached.push({ rec: rec, ex: ex });
+    else needFetch.push(rec);
+  }
+  Logger.log("Panorama: " + needFetch.length + " to fetch, " + cached.length +
+    " reused from the sheet" + (CONFIG.REFRESH_ALL ? " (REFRESH_ALL is on)" : "") + ".");
+
+  const studentReqs = needFetch.map(function (r) {
     return req_(sess, sess.baseUrl + "/core/node.json/" + r.nid + "?xds=Panorama",
                 { referer: sess.baseUrl + "/p/Panorama/" + r.nid });
   });
-  const studentResps = chunkedFetchAll_(studentReqs, CONFIG.FETCH_CHUNK_SIZE, CONFIG.FETCH_SLEEP_MS);
+  const studentResps = chunkedFetchAll_(studentReqs, CONFIG.FETCH_CHUNK_SIZE, CONFIG.FETCH_SLEEP_MS, clock);
 
   const grades = CONFIG.GRADE_FILTER || [];
   const students = [];
   const parentNidsToFetch = {};
+  const parentEmails = {};
 
-  for (let i = 0; i < studentResps.length; i++) {
-    const data = parse_(studentResps[i], "Panorama/" + studentRecords[i].nid);
-    if (!data) continue;
-    const s = extractStudent_(data);
-    if (!s) continue;
-    if (grades.length > 0 && grades.indexOf(String(s.grade)) < 0) continue;
-    // Group (section) resolution, in order of trust. Steps 1 and 2 are per
-    // student; the homeroom-teacher pass runs after the loop, once there are
-    // resolved students to learn from.
-    // The nid comes from the zoom row, not Panorama — extractStudent_ never had
-    // it. Without this, column U is written blank, every run falls back to name
-    // matching, and a sheet that says "Ben" where Edsby says "Benjamin"
-    // archives that student and re-adds them.
-    s.nid = studentRecords[i] && studentRecords[i].nid || "";
-    s.zoomClasses = studentRecords[i] && studentRecords[i].classes || [];
+  const addStudent = function (s, rec, data) {
+    if (grades.length > 0 && grades.indexOf(String(s.grade)) < 0) return;
+    s.zoomClasses = (rec && rec.classes) || [];
     s.group = extractGroupFromClasses_(s.zoomClasses, s.grade);
     s.groupSource = s.group ? "own classes" : "";
-    if (!s.group) {
+    if (!s.group && data) {
       // The zoom lists only classes shared with the signed-in teacher, so a
       // student whose one shared class carries no section resolves nothing
-      // above. Their Panorama — already fetched for DOB and parents — is their
-      // own page and carries their real homeroom.
+      // above. Their Panorama is their own page and carries the real homeroom.
       s.group = extractGroupFromPanorama_(data, s.grade);
       if (s.group) s.groupSource = "panorama";
     }
     students.push(s);
+  };
+
+  // 2a. Freshly fetched students.
+  for (let i = 0; i < studentResps.length; i++) {
+    const data = parse_(studentResps[i], "Panorama/" + needFetch[i].nid);
+    if (!data) continue;
+    const s = extractStudent_(data);
+    if (!s) continue;
+    // The nid comes from the zoom row, not Panorama.
+    s.nid = needFetch[i].nid;
+    addStudent(s, needFetch[i], data);
     if (s.dadNid) parentNidsToFetch[s.dadNid] = true;
     if (s.momNid) parentNidsToFetch[s.momNid] = true;
   }
+
+  // 2b. Students rebuilt from the sheet. Their known parent emails seed the
+  //     lookup, so those parents are never requested either.
+  for (let i = 0; i < cached.length; i++) {
+    const c = cached[i];
+    const s = studentFromCache_(c.rec, c.ex);
+    addStudent(s, c.rec, null);
+    // A cached student keeps the section already in the sheet when the zoom
+    // row cannot supply one — re-deriving it without Panorama would be worse.
+    if (!s.group && c.ex.group) { s.group = c.ex.group; s.groupSource = "sheet"; }
+    if (s.momNid && c.ex.momEmail) parentEmails[s.momNid] = c.ex.momEmail;
+    else if (s.momNid) parentNidsToFetch[s.momNid] = true;
+    if (s.dadNid && c.ex.dadEmail) parentEmails[s.dadNid] = c.ex.dadEmail;
+    else if (s.dadNid) parentNidsToFetch[s.dadNid] = true;
+  }
+
   Logger.log("After grade filter: " + students.length + " students kept. " +
     "By grade: " + JSON.stringify(gradeBreakdown_(students)) +
     (CONFIG.GRADE_FILTER && CONFIG.GRADE_FILTER.length
@@ -1270,15 +1353,16 @@ function populateBdays() {
       "CONFIG.TEACHER_TO_CLASS to fix:\n  " + inferred.unresolved.join("\n  "));
   }
 
-  // 3. Fetch parent ParentDetails (chunked).
-  const parentNids = Object.keys(parentNidsToFetch);
-  const parentEmails = {};
+  // 3. Fetch ParentDetails only for parents whose email we do not already have.
+  const parentNids = Object.keys(parentNidsToFetch).filter(function (nid) { return !parentEmails[nid]; });
+  Logger.log("Parents: " + parentNids.length + " to fetch, " +
+    Object.keys(parentEmails).length + " reused from the sheet.");
   if (parentNids.length > 0) {
     const parentReqs = parentNids.map(function (nid) {
       return req_(sess, sess.baseUrl + "/core/node.json/" + nid + "?xds=ParentDetails",
                   { referer: sess.baseUrl + "/p/Panorama/" + nid });
     });
-    const parentResps = chunkedFetchAll_(parentReqs, CONFIG.FETCH_CHUNK_SIZE, CONFIG.FETCH_SLEEP_MS);
+    const parentResps = chunkedFetchAll_(parentReqs, CONFIG.FETCH_CHUNK_SIZE, CONFIG.FETCH_SLEEP_MS, clock);
     for (let i = 0; i < parentResps.length; i++) {
       const data = parse_(parentResps[i], "ParentDetails/" + parentNids[i]);
       if (!data) continue;
@@ -1316,6 +1400,7 @@ function populateBdays() {
       : "Roster CSV skipped — no rows with a name.");
   }
 
+  Logger.log("Run took " + clock.elapsed() + "s.");
   Logger.log("Bdays synced: " + summary.updated + " updated, " + summary.added +
     " added, " + summary.archived + " archived to \"" + CONFIG.ARCHIVE_SHEET + "\", " +
     (summary.kept || 0) + " hand-added kept — " +
@@ -1818,7 +1903,19 @@ function collectStudentRecords_(data) {
       const nid = parseInt(String(r.nid != null ? r.nid : key.replace(/^r/, "")), 10);
       if (!nid || seen[nid]) return;
       seen[nid] = true;
-      out.push({ nid: nid, classes: r.Classes || r.classes || [] });
+      out.push({
+        nid: nid,
+        classes: r.Classes || r.classes || [],
+        // The zoom row already carries name, gender and grade. Panorama is
+        // fetched ONLY for DOB and parents, so keeping these lets a student
+        // who is already complete in the sheet skip that request entirely.
+        firstName: String(r.FirstName || ""),
+        prefName: String(r.PrefName || ""),
+        lastName: String(r.LastName || ""),
+        gender: String(r.Gender || ""),
+        grade: String(r.Grade || ""),
+        hrTeacher: (Array.isArray(r.hrTeacher) && r.hrTeacher[0] && r.hrTeacher[0].name) || "",
+      });
     });
   }
 
@@ -1986,9 +2083,20 @@ function extractParentEmail_(data) {
  * UTILITIES
  * ============================================================ */
 
-function chunkedFetchAll_(requests, chunkSize, sleepMs) {
+function chunkedFetchAll_(requests, chunkSize, sleepMs, clock) {
   const responses = [];
   for (let i = 0; i < requests.length; i += chunkSize) {
+    // Stop cleanly rather than being killed mid-write by the execution limit.
+    // Whatever has been fetched is still written, and the next run picks up the
+    // rest because completed students are then reusable from the sheet.
+    if (clock && clock.exceeded()) {
+      Logger.log("Time budget reached after " + i + " of " + requests.length +
+        " requests — stopping here and writing what was fetched. Run " +
+        "\"Update Roster\" again to continue; students already written are " +
+        "reused rather than re-fetched.");
+      while (responses.length < requests.length) responses.push(null);
+      return responses;
+    }
     const batch = requests.slice(i, i + chunkSize);
     let batchResps;
     try {
@@ -2024,6 +2132,90 @@ function escapeRegex_(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+
+/* ============================================================
+ * INCREMENTAL REFRESH
+ *
+ * The slow part of a run is one Panorama request per student plus one
+ * ParentDetails request per parent — roughly 300 calls for a middle school,
+ * which is what pushes a run into Apps Script's execution limit.
+ *
+ * Almost none of it needs repeating. Panorama is fetched only for a birthday
+ * and the parent links; ParentDetails only for a parent's email. Neither
+ * changes. Names, gender, grade and classes all come from the zoom row, which
+ * is one request for the whole school.
+ *
+ * So a student already carrying a birthday in the sheet is rebuilt from the
+ * zoom row plus their existing row, and a parent whose email is already there
+ * is never looked up. The first run is slow; later runs cost about two
+ * requests plus whatever is genuinely new.
+ * ============================================================ */
+
+/** Read the sheet into { nid: {…} } so a complete row can be reused as-is. */
+function indexExistingByNid_(sheet) {
+  const cols = CONFIG.COLS;
+  const out = {};
+  const rows = readSheetRows_(sheet);
+  for (let i = 0; i < rows.length; i++) {
+    const v = rows[i].values;
+    const at = function (c) { return c && v[c - 1] != null ? v[c - 1] : ""; };
+    const nid = String(at(cols.edsbyNid) || "").trim();
+    if (!nid) continue;
+    out[nid] = {
+      dob: at(cols.dob),
+      commonName: at(cols.commonName),
+      group: String(at(cols.group) || "").trim(),
+      momName: at(cols.momName), momEmail: String(at(cols.momEmail) || "").trim(),
+      dadName: at(cols.dadName), dadEmail: String(at(cols.dadEmail) || "").trim(),
+      momNid: String(at(cols.momEdsbyId) || "").trim(),
+      dadNid: String(at(cols.dadEdsbyId) || "").trim(),
+    };
+  }
+  return out;
+}
+
+/**
+ * Pure: is this row complete enough to skip its Panorama call?
+ *
+ * A birthday is the test. It is the one field only Panorama supplies, it never
+ * changes, and its presence means a previous run got that far. Parent details
+ * are carried over when present but do not gate the decision — a student with
+ * no parents on file would otherwise be re-fetched forever.
+ */
+function rowIsComplete_(existing) {
+  if (!existing) return false;
+  const dob = existing.dob;
+  if (dob instanceof Date) return !isNaN(dob.getTime());
+  return String(dob == null ? "" : dob).trim() !== "";
+}
+
+/** Pure: rebuild a student from the zoom row + their existing sheet row. */
+function studentFromCache_(rec, existing) {
+  const pref = rec.prefName || rec.firstName || "";
+  return {
+    nid: rec.nid,
+    fullName: existing.commonName || (pref + " " + (rec.lastName || "")).trim(),
+    lastName: rec.lastName || "",
+    firstName: rec.firstName || "",
+    prefFirst: pref,
+    gender: rec.gender || "",
+    grade: rec.grade || "",
+    dob: existing.dob,
+    firstHomeroomTeacher: rec.hrTeacher || "",
+    momNid: existing.momNid || null, momName: existing.momName || "",
+    dadNid: existing.dadNid || null, dadName: existing.dadName || "",
+    fromCache: true,
+  };
+}
+
+/** Elapsed-time budget, so a run stops cleanly instead of being killed. */
+function deadline_(startedAt) {
+  const limit = CONFIG.MAX_RUNTIME_MS || (4.5 * 60 * 1000);
+  return {
+    exceeded: function () { return (Date.now() - startedAt) > limit; },
+    elapsed: function () { return Math.round((Date.now() - startedAt) / 1000); },
+  };
+}
 
 /* ============================================================
  * SECTION (HOMEROOM) RESOLUTION
