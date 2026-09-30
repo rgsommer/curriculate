@@ -2022,17 +2022,21 @@ router.post("/roster/import", authAny, loadMembership, requireAdmin, upload.sing
     let updated = 0;
     const touchedIds = []; // every student present in this file (matched or created)
     for (const s of students) {
-      // Resolve + strip the parsed house name into a real houseId.
+      // Resolve + strip the parsed house name into a real houseId. A BLANK House
+      // column never clears an existing house/room — houseId is only set when the
+      // CSV actually names a house (so re-importing an export that omits House
+      // leaves assignments untouched).
       const { houseName, ...fields } = s;
       if (houseName) fields.houseId = await resolveHouseId(houseName);
 
-      // Match an existing student on externalId (preferred) or full name.
-      const match = fields.externalId
-        ? { schoolId: req.schoolId, externalId: fields.externalId }
-        : { schoolId: req.schoolId, lastName: fields.lastName, firstName: fields.firstName };
-      const existing = fields.externalId || (fields.lastName && fields.firstName)
-        ? await BehaviorStudent.findOne(match)
-        : null;
+      // Match on Student ID first, then FALL BACK to full name — so a roster that
+      // has gained Student IDs still updates the existing (previously no-ID)
+      // records instead of creating duplicates. A name match then adopts the ID.
+      let existing = null;
+      if (fields.externalId) existing = await BehaviorStudent.findOne({ schoolId: req.schoolId, externalId: fields.externalId });
+      if (!existing && fields.lastName && fields.firstName) {
+        existing = await BehaviorStudent.findOne({ schoolId: req.schoolId, lastName: fields.lastName, firstName: fields.firstName });
+      }
 
       if (existing) {
         // Update in place (same _id), so all incident/notice history stays
@@ -2053,19 +2057,29 @@ router.post("/roster/import", authAny, loadMembership, requireAdmin, upload.sing
     // open from the management view. This is fully reversible: re-importing the
     // complete roster matches them again and flips active back to true (above).
     // Guarded on touchedIds.length so an empty/garbage file never wipes the list.
+    // Safety: never let a partial/mismatched file deactivate most of the roster
+    // (the classic footgun). Only run the deactivation sweep when the file
+    // matched at least half of the currently-active students.
     let deactivated = 0;
+    let deactivateSkipped = false;
     if (touchedIds.length) {
-      const r = await BehaviorStudent.updateMany(
-        { schoolId: req.schoolId, active: true, _id: { $nin: touchedIds } },
-        { $set: { active: false } }
-      );
-      deactivated = r.modifiedCount ?? r.nModified ?? 0;
+      const currentActive = await BehaviorStudent.countDocuments({ schoolId: req.schoolId, active: true });
+      const matchedActive = await BehaviorStudent.countDocuments({ schoolId: req.schoolId, active: true, _id: { $in: touchedIds } });
+      if (currentActive === 0 || matchedActive >= currentActive * 0.5) {
+        const r = await BehaviorStudent.updateMany(
+          { schoolId: req.schoolId, active: true, _id: { $nin: touchedIds } },
+          { $set: { active: false } }
+        );
+        deactivated = r.modifiedCount ?? r.nModified ?? 0;
+      } else {
+        deactivateSkipped = true; // too few matched — likely a partial file; leave everyone active
+      }
     }
 
     await audit(req.schoolId, "roster.imported", req, {
       meta: { imported, updated, deactivated, skippedCount: skipped.length, housesCreated, headerMap },
     });
-    res.json({ ok: true, imported, updated, deactivated, skipped, housesCreated, headerMap });
+    res.json({ ok: true, imported, updated, deactivated, deactivateSkipped, skipped, housesCreated, headerMap });
   } catch (err) {
     next(err);
   }
