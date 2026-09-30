@@ -90,6 +90,8 @@ export default function BehaviorDashboard() {
         </Link>
       )}
 
+      {canLog && <PositiveNudge />}
+
       <Link
         href="/behavior/students"
         className="block rounded-xl border border-slate-300 bg-white px-5 py-3 text-center text-sm font-semibold text-slate-700"
@@ -150,6 +152,118 @@ export default function BehaviorDashboard() {
           <p className="mt-0.5 text-xs text-slate-500">Know a teacher who&apos;d find this useful? Send them an intro (you&apos;re cc&apos;d).</p>
           <div className="mt-2"><ReferColleague standalone /></div>
         </Card>
+      )}
+    </div>
+  );
+}
+
+// Periodic, one-tap "recognize a student for good behaviour" nudge. Shows a
+// green box on the dashboard (throttled via localStorage so it doesn't nag):
+// type a name → tap a positive → it logs immediately. Snoozes after use.
+function PositiveNudge() {
+  const SNOOZE_KEY = "compass_posnudge_snooze";
+  const [show, setShow] = useState(false);
+  const [students, setStudents] = useState<StudentSummary[] | null>(null);
+  const [positives, setPositives] = useState<{ _id: string; name: string }[]>([]);
+  const [q, setQ] = useState("");
+  const [picked, setPicked] = useState<StudentSummary | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [doneMsg, setDoneMsg] = useState("");
+
+  useEffect(() => {
+    try { if (Date.now() < Number(localStorage.getItem(SNOOZE_KEY) || 0)) return; } catch { /* ignore */ }
+    setShow(true);
+  }, []);
+
+  useEffect(() => {
+    if (!show) return;
+    api<{ students: StudentSummary[] }>("/students").then((d) => setStudents(d.students || [])).catch(() => setStudents([]));
+    api<{ behaviors: any[] }>("/behaviors")
+      .then((d) => setPositives((d.behaviors || []).filter((b) => b.kind === "positive" && b.active !== false).map((b) => ({ _id: b._id, name: b.name }))))
+      .catch(() => { /* ignore */ });
+  }, [show]);
+
+  function snooze(hours: number) {
+    try { localStorage.setItem(SNOOZE_KEY, String(Date.now() + hours * 3600 * 1000)); } catch { /* ignore */ }
+    setShow(false);
+  }
+
+  const matches = q.trim().length >= 1 && !picked
+    ? (students || []).filter((s) => `${s.preferredName || s.firstName} ${s.lastName || ""}`.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 6)
+    : [];
+
+  async function logPositive(behaviorId: string) {
+    if (!picked) return;
+    setBusyId(behaviorId);
+    try {
+      await api("/incidents", { body: { studentId: picked._id, behaviorIds: [behaviorId] } });
+      setDoneMsg(`✓ Nice! Recognized ${picked.preferredName || picked.firstName}.`);
+      try { localStorage.setItem(SNOOZE_KEY, String(Date.now() + 20 * 3600 * 1000)); } catch { /* ignore */ }
+      setTimeout(() => setShow(false), 1600);
+    } catch (e: any) {
+      setDoneMsg(`✗ ${e.message}`);
+      setBusyId(null);
+    }
+  }
+
+  if (!show) return null;
+  return (
+    <div className="rounded-xl border border-green-300 bg-green-50 p-4">
+      {doneMsg ? (
+        <p className="text-sm font-medium text-green-800">{doneMsg}</p>
+      ) : (
+        <>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p className="text-sm font-semibold text-green-900">🌟 Catch someone being good?</p>
+              <p className="text-xs text-green-700">Recognizing effort and character takes a few seconds — and it goes a long way.</p>
+            </div>
+            <button onClick={() => snooze(6)} className="shrink-0 text-green-700/70 hover:text-green-900" aria-label="Dismiss">✕</button>
+          </div>
+
+          {!picked ? (
+            <div className="relative mt-2">
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Start typing a student's name…"
+                className="w-full rounded-lg border border-green-300 bg-white px-3 py-2 text-sm"
+              />
+              {matches.length > 0 && (
+                <ul className="mt-1 divide-y divide-green-100 overflow-hidden rounded-lg border border-green-200 bg-white">
+                  {matches.map((s) => (
+                    <li key={s._id}>
+                      <button onClick={() => { setPicked(s); setQ(""); }} className="block w-full px-3 py-2 text-left text-sm hover:bg-green-50">
+                        {s.preferredName || s.firstName} {s.lastName}
+                        {s.grade ? <span className="ml-1 text-xs text-slate-400">Gr {s.grade}</span> : null}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ) : (
+            <div className="mt-2">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-green-900">{picked.preferredName || picked.firstName} {picked.lastName}</p>
+                <button onClick={() => setPicked(null)} className="text-xs text-green-700 underline">change</button>
+              </div>
+              <p className="mt-1 text-xs text-green-700">Tap what they did well — it logs right away:</p>
+              <div className="mt-1.5 flex max-h-40 flex-wrap gap-1.5 overflow-y-auto">
+                {positives.map((b) => (
+                  <button key={b._id} onClick={() => logPositive(b._id)} disabled={!!busyId}
+                    className="rounded-full border border-green-300 bg-white px-2.5 py-1 text-xs text-green-800 hover:bg-green-100 disabled:opacity-40">
+                    {busyId === b._id ? "…" : b.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-2">
+            <button onClick={() => snooze(20)} className="text-xs text-green-700/80 underline">Not now</button>
+          </div>
+        </>
       )}
     </div>
   );
