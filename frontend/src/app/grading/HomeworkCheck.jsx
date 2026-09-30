@@ -866,6 +866,20 @@ export default function HomeworkCheck({
     });
   }
 
+  // Drop a photo. It leaves the group and the batch; the upload itself is
+  // left alone, since re-checking should not need the photos sent again.
+  function dropPhoto(gi, pi) {
+    setGroups((prev) => {
+      if (!prev) return prev;
+      const next = prev.map((g, i) =>
+        i === gi ? { ...g, photoIndexes: g.photoIndexes.filter((x) => x !== pi) } : g
+      );
+      // A group with nothing left is not a student any more.
+      return next.filter((g) => (g.photoIndexes || []).length > 0);
+    });
+    setZoom(null);
+  }
+
   function splitAt(groupIndex, photoIdx) {
     setGroups((prev) => {
       const next = prev.map((g) => ({ ...g, photoIndexes: [...g.photoIndexes] }));
@@ -1617,7 +1631,14 @@ export default function HomeworkCheck({
                           .filter(Boolean)
                       );
                       const key = (s) => String(s.studentId || s.edsbyId || "").trim();
-                      const label = (s) => `${s.firstName} ${s.lastName}`;
+                      // First name and last initial — the surname is often the
+                      // part a teacher hasn't learned yet, especially in
+                      // September, and this is where they are naming a face.
+                      const label = (s) => {
+                        const f = String(s.firstName || "").trim();
+                        const l = String(s.lastName || "").trim();
+                        return f && l ? `${f} ${l.charAt(0)}.` : (f || l || "(unnamed)");
+                      };
                       const val = (s) => `${s.firstName}|${s.lastName}|${s.studentId || ""}|${s.edsbyId || ""}`;
                       const free = roster.filter((s) => !taken.has(key(s)));
                       const used = roster.filter((s) => taken.has(key(s)));
@@ -1673,6 +1694,18 @@ export default function HomeworkCheck({
                             />
                           : <div style={{ ...S.thumb, ...S.thumbMissing }}>?</div>}
                         <div style={S.thumbLabel}>#{pi + 1}</div>
+                        {/* A stray photo — a blank page, a thumb over the
+                            lens, the same sheet shot twice — was only
+                            movable, never removable, so it had to be parked
+                            on some student and graded. */}
+                        <button
+                          type="button"
+                          style={S.dropBtn}
+                          title="Remove this photo from the batch"
+                          onClick={(e) => { e.stopPropagation(); dropPhoto(gi, pi); }}
+                        >
+                          ✕
+                        </button>
                         {g.photoIndexes.indexOf(pi) > 0 && (
                           <button
                             type="button"
@@ -2250,6 +2283,12 @@ const S = {
   thumb: {
     width: 84, height: 108, objectFit: "cover", borderRadius: 8,
     border: "1px solid #cbd5e1", background: "#fff", display: "block",
+  },
+  dropBtn: {
+    position: "absolute", top: 2, right: 2,
+    background: "rgba(15,23,42,0.65)", color: "#fff", border: "none",
+    borderRadius: 4, width: 18, height: 18, lineHeight: "18px",
+    fontSize: 11, cursor: "pointer", padding: 0,
   },
   thumbMissing: {
     display: "flex", alignItems: "center", justifyContent: "center",
