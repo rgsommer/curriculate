@@ -137,13 +137,15 @@ async function fireWhiteSlip({ req, student, config, behaviorName, detailText, a
   const teacherEmail = req.user?.email || "";
   const vpEmail = (config?.vp?.email || "").trim();
   const when = new Date(at || Date.now());
+  let consId = "";
   try {
-    await BehaviorConsequence.create({
+    const cons = await BehaviorConsequence.create({
       schoolId: req.schoolId, studentId: student._id,
       type: "White slip", detail: behaviorName + (detailText ? ` — ${detailText}` : ""),
       byTeacherId: req.membership._id, byName: teacherName, relatedIncidentId, at: when,
       status: "recommended", // awaits a staff "issued? Yes" confirmation
     });
+    consId = String(cons._id);
   } catch (e) { console.warn("[behavior] white-slip consequence log failed:", e?.message || e); }
   if (!teacherEmail && !vpEmail) return;
   const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
@@ -169,6 +171,12 @@ async function fireWhiteSlip({ req, student, config, behaviorName, detailText, a
           `<tr><td style="padding:4px 0;color:#64748b">Teacher</td><td style="padding:4px 0">${escapeHtml(teacherName)}</td></tr>` +
           `<tr><td style="padding:4px 0;color:#64748b">Date</td><td style="padding:4px 0">${escapeHtml(when.toLocaleString("en-CA", { timeZone: SCHOOL_TZ }))}</td></tr>` +
           `</table>` +
+          (consId ? (() => {
+            const tok = consequenceActionToken(String(req.schoolId), consId, "issue");
+            const url = `${appBase()}/behavior/consequence-action?school=${req.schoolId}&id=${consId}&action=issue&token=${encodeURIComponent(tok)}`;
+            return `<p style="margin:12px 0 4px;color:#334155;font-size:14px">Once the white slip has been issued, you can confirm it right here — no need to open the app:</p>` +
+              emailButton("✓ Mark white slip as issued", url, "#2563eb");
+          })() : "") +
           emailButton(`View ${first} & strikes`, `${appBase()}/behavior/student/${student._id}#incident-log`, "#0f172a"),
       }),
     });
@@ -375,6 +383,28 @@ function verifyHrFollowupToken(schoolId, studentId, token) {
   const [wk, sig] = String(token).split(".");
   if (!wk || !sig) return false;
   const expected = crypto.createHmac("sha256", secret).update(`hr-fu:${schoolId}:${studentId}:${wk}`).digest("hex").slice(0, 32);
+  let ok = false;
+  try { ok = sig.length === expected.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected)); } catch { ok = false; }
+  if (!ok) return false;
+  const wkTime = Date.parse(wk + "T00:00:00Z");
+  return !isNaN(wkTime) && Date.now() - wkTime <= 28 * DAY_MS;
+}
+
+// Signed one-tap link for the VP to action a consequence from the email itself —
+// "mark white slip issued" (issue) or "mark done" (complete) — without logging
+// in. Bound to school+consequence+action+week; valid ~4 weeks.
+function consequenceActionToken(schoolId, consequenceId, action, wk = mondayKey()) {
+  const secret = guddResetSecret();
+  if (!secret) return "";
+  const sig = crypto.createHmac("sha256", secret).update(`cons-act:${schoolId}:${consequenceId}:${action}:${wk}`).digest("hex").slice(0, 32);
+  return `${wk}.${sig}`;
+}
+function verifyConsequenceActionToken(schoolId, consequenceId, action, token) {
+  const secret = guddResetSecret();
+  if (!secret || !token) return false;
+  const [wk, sig] = String(token).split(".");
+  if (!wk || !sig) return false;
+  const expected = crypto.createHmac("sha256", secret).update(`cons-act:${schoolId}:${consequenceId}:${action}:${wk}`).digest("hex").slice(0, 32);
   let ok = false;
   try { ok = sig.length === expected.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected)); } catch { ok = false; }
   if (!ok) return false;
@@ -4632,6 +4662,62 @@ router.post("/hr-followup/log", async (req, res, next) => {
     if (!student) return res.status(404).json({ ok: false, error: "Student not found." });
     const inc = await logHomeroomFollowup({ schoolId, student, teacherId: null, byName });
     await audit(schoolId, "homeroom_followup.log_via_link", { userId: null, user: { email: "" } }, { studentId, incidentId: String(inc._id) });
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+
+// Public one-tap consequence action from the VP's email: confirm a white slip was
+// issued, or mark a consequence done — without logging in. Confirm page reads
+// /info then POSTs /log. action ∈ { "issue", "complete" }.
+router.get("/consequence-action/info", async (req, res, next) => {
+  try {
+    const schoolId = String(req.query.school || "").trim();
+    const id = String(req.query.id || "").trim();
+    const action = String(req.query.action || "").trim();
+    const token = String(req.query.token || "").trim();
+    const valid = !!schoolId && !!id && ["issue", "complete"].includes(action) && verifyConsequenceActionToken(schoolId, id, action, token);
+    let studentName = "", type = "", schoolName = "", status = "", completed = false;
+    if (valid) {
+      try {
+        const c = await BehaviorConsequence.findOne({ _id: id, schoolId }).lean();
+        if (c) {
+          type = c.type || ""; status = c.status || ""; completed = !!c.completed;
+          const s = await BehaviorStudent.findOne({ _id: c.studentId, schoolId }).select("firstName preferredName lastName").lean();
+          studentName = s ? `${s.preferredName || s.firstName} ${s.lastName || ""}`.trim() : "";
+        }
+        const sc = await BehaviorSchool.findById(schoolId).select("name").lean();
+        schoolName = sc?.name || "";
+      } catch { /* ignore */ }
+    }
+    res.json({ ok: true, valid, action, studentName, type, schoolName, status, completed });
+  } catch (err) { next(err); }
+});
+
+router.post("/consequence-action/log", async (req, res, next) => {
+  try {
+    const schoolId = String(req.body?.school || "").trim();
+    const id = String(req.body?.id || "").trim();
+    const action = String(req.body?.action || "").trim();
+    const token = String(req.body?.token || "").trim();
+    const byName = String(req.body?.by || "").trim().slice(0, 80);
+    if (!schoolId || !id || !["issue", "complete"].includes(action) || !verifyConsequenceActionToken(schoolId, id, action, token)) {
+      return res.status(403).json({ ok: false, error: "This link is invalid or has expired. Please action it in the app instead." });
+    }
+    const c = await BehaviorConsequence.findOne({ _id: id, schoolId });
+    if (!c) return res.status(404).json({ ok: false, error: "That item was not found." });
+    if (action === "issue") {
+      if (c.status === "recommended") {
+        c.status = "issued"; c.issuedByName = byName || "Confirmed via email"; c.issuedAt = new Date();
+        await c.save();
+        await audit(schoolId, "consequence.issued_via_link", { userId: null, user: { email: "" } }, { studentId: String(c.studentId), meta: { type: c.type } });
+      }
+    } else {
+      if (!c.completed) {
+        c.completed = true; c.completedByName = byName || "Confirmed via email"; c.completedAt = new Date();
+        await c.save();
+        await audit(schoolId, "consequence.completed_via_link", { userId: null, user: { email: "" } }, { studentId: String(c.studentId), meta: { type: c.type } });
+      }
+    }
     res.json({ ok: true });
   } catch (err) { next(err); }
 });
