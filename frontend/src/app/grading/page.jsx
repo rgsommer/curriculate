@@ -4186,6 +4186,7 @@ export default function GradingPage() {
               rosterClasses={rosterClasses}
               setRosterClasses={setRosterClasses}
               rosterAccess={rosterAccess}
+              hideGrades={hideGrades}
               onClose={() => setInputMode("photo")}
             />
           ) : inputMode === "homework" ? (

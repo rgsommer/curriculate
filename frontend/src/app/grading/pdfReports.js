@@ -125,7 +125,15 @@ function letterGradeFromPct(pct) {
 }
 
 // ---------- Half-page PDF (2 per page, full feedback) ----------
-export async function buildResultsPdf(results, { title } = {}) {
+// Mirrors backend/utils/gradeVisibility.js. A mark as a word, four bands.
+export function bandFor(score, outOf) {
+  const g = Number(score), m = Number(outOf);
+  if (!Number.isFinite(g) || !Number.isFinite(m) || m <= 0) return "";
+  const r = g / m;
+  return r >= 0.9 ? "VG" : r >= 0.75 ? "G" : r >= 0.5 ? "S" : "N";
+}
+
+export async function buildResultsPdf(results, { title, hideGrades } = {}) {
   const { jsPDF } = await loadJsPdf();
   const doc = new jsPDF({ unit: "pt", format: "letter" });
 
@@ -167,7 +175,12 @@ export async function buildResultsPdf(results, { title } = {}) {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(12);
     const nameStr = getDisplayName(r);
-    const scoreStr = `${r.score} / ${r.outOf}  (${r.pct != null ? r.pct + "%" : "\u2014"})  ${r.letter || ""}`;
+    // A printed report goes home in a bag, so it follows the same setting as
+    // the progress page — otherwise turning marks off online just moves the
+    // number onto paper.
+    const scoreStr = hideGrades
+      ? bandFor(r.score, r.outOf)
+      : `${r.score} / ${r.outOf}  (${r.pct != null ? r.pct + "%" : "\u2014"})  ${r.letter || ""}`;
     doc.text(nameStr, MARGIN, y);
     doc.text(scoreStr, PAGE_W - MARGIN, y, { align: "right" });
     y += HEADER_H + 2;
@@ -419,7 +432,7 @@ export async function buildResultsPdf(results, { title } = {}) {
 }
 
 // ---------- Cut-strip PDF (3-column card grid) ----------
-export async function buildStripsPdf(results, { title } = {}) {
+export async function buildStripsPdf(results, { title, hideGrades } = {}) {
   const { jsPDF } = await loadJsPdf();
   const doc = new jsPDF({ unit: "pt", format: "letter" });
 
@@ -540,7 +553,9 @@ export async function buildStripsPdf(results, { title } = {}) {
     doc.setFont("helvetica", "normal");
     doc.setFontSize(9);
     doc.setTextColor(60, 60, 60);
-    const scoreStr = `${r.score}/${r.outOf}  ${r.pct != null ? r.pct + "%" : ""}  ${r.letter || ""}`;
+    const scoreStr = hideGrades
+      ? bandFor(r.score, r.outOf)
+      : `${r.score}/${r.outOf}  ${r.pct != null ? r.pct + "%" : ""}  ${r.letter || ""}`;
     doc.text(scoreStr, x + CARD_PAD, cy + 8);
     cy += 12;
 

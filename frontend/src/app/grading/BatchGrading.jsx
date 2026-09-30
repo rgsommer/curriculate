@@ -586,6 +586,7 @@ export default function BatchGrading({
   rosterClasses: parentRosterClasses,
   setRosterClasses: parentSetRosterClasses,
   rosterAccess,
+  hideGrades,
   onClose,
 }) {
   // Preload jsPDF + qrcode CDN scripts as soon as batch mode opens
@@ -2967,7 +2968,7 @@ export default function BatchGrading({
       let pdfBase64 = null;
       let stripsBase64 = null;
       try {
-        const pdfOpts = effectiveTitle ? { title: effectiveTitle } : {};
+        const pdfOpts = { ...(effectiveTitle ? { title: effectiveTitle } : {}), hideGrades: !!hideGrades };
         const pdfTimeout = (p) => Promise.race([
           p,
           new Promise((_, reject) => setTimeout(() => reject(new Error("PDF generation timed out (15s)")), 15000)),
@@ -4476,7 +4477,7 @@ export default function BatchGrading({
                   }
                   try {
                     const opts = title ? { title } : {};
-                    const b64 = await buildResultsPdf(results, opts);
+                    const b64 = await buildResultsPdf(results, { ...opts, hideGrades: !!hideGrades });
                     if (!b64) { alert("No results available."); return; }
                     const blob = new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: "application/pdf" });
                     const blobUrl = URL.createObjectURL(blob);
@@ -4505,7 +4506,7 @@ export default function BatchGrading({
                   }
                   try {
                     const opts = title ? { title } : {};
-                    const b64 = await buildStripsPdf(results, opts);
+                    const b64 = await buildStripsPdf(results, { ...opts, hideGrades: !!hideGrades });
                     if (!b64) { alert("No results available."); return; }
                     const blob = new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: "application/pdf" });
                     const blobUrl = URL.createObjectURL(blob);
