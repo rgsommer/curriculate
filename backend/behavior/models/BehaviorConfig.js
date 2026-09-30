@@ -239,6 +239,16 @@ const BehaviorConfigSchema = new mongoose.Schema(
     // still drive strikes/notices, but they don't move house totals.
     houseIndividualPoints: { type: Boolean, default: true },
 
+    // Bi-weekly teacher nudges: (a) a proactive "students in your homeroom to
+    // check in with" email to homeroom teachers, and (b) a gentle "how's it
+    // going?" note to teachers who've been quiet on Compass. intervalDays sets
+    // the cadence; lastRunAt guards against sending twice in a period.
+    teacherNudge: {
+      enabled: { type: Boolean, default: true },
+      intervalDays: { type: Number, default: 14 },
+      lastRunAt: { type: Date, default: null },
+    },
+
     // House points awarded to a student's house when a teacher sends them an
     // encouraging parent message (positive reinforcement). 0 = award none.
     encouragingMessagePoints: { type: Number, default: 5 },

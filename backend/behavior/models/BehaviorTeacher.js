@@ -44,6 +44,11 @@ const BehaviorTeacherSchema = new mongoose.Schema(
     // in parent message templates (e.g. "Grade 7 Math").
     subject: { type: String, default: "" },
 
+    // This teacher's homeroom class group(s), e.g. "7A" (comma-separate for more).
+    // Used to scope the proactive bi-weekly "students to check in with" nudge to
+    // the students in their homeroom.
+    homeroom: { type: String, default: "" },
+
     // Per-teacher parent-message templates (encouraging / proactive notes home the
     // teacher copies and sends themselves). Each has a name and a body with
     // placeholders like {student}, {parents}, {he}, {subject}. Seeded with a

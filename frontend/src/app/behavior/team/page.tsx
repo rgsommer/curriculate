@@ -11,6 +11,7 @@ type TeamRow = {
   email: string;
   role: string;
   housesCommittee?: boolean;
+  homeroom?: string;
   status: "pending" | "accepted";
   joinedAt: string | null;
   incidents: number;
@@ -18,7 +19,7 @@ type TeamRow = {
   notices: number;
   lastActiveAt: string | null;
 };
-type Pending = { email: string; role: string; invitedBy: string; invitedAt: string; lastSentAt?: string };
+type Pending = { email: string; role: string; invitedBy: string; invitedAt: string; lastSentAt?: string; homeroom?: string };
 type Stats = { members: number; pending: number; activeLast30: number; totalIncidents: number; totalNotices: number };
 type TeamResp = { teachers: TeamRow[]; pending: Pending[]; stats: Stats; viewerRole: string; viewerUserId: string };
 
@@ -72,6 +73,19 @@ export default function TeamPage() {
     } finally {
       setSavingSetup(null);
     }
+  }
+
+  async function saveHomeroomMember(userId: string, value: string) {
+    const v = value.trim();
+    setData((d) => d && { ...d, teachers: d.teachers.map((t) => (t.userId === userId ? { ...t, homeroom: v } : t)) });
+    try { await api("/team/homeroom", { method: "PUT", body: { userId, homeroom: v } }); }
+    catch (e: any) { setErr(e.message); }
+  }
+  async function saveHomeroomInvite(email: string, value: string) {
+    const v = value.trim();
+    setData((d) => d && { ...d, pending: d.pending.map((p) => (p.email === email ? { ...p, homeroom: v } : p)) });
+    try { await api("/team/homeroom", { method: "PUT", body: { email, homeroom: v } }); }
+    catch (e: any) { setErr(e.message); }
   }
 
   async function setCommittee(userId: string, on: boolean) {
@@ -140,6 +154,7 @@ export default function TeamPage() {
               <tr className="text-left text-xs uppercase tracking-wide text-slate-400">
                 <th className="py-1.5 pr-3">Teacher</th>
                 <th className="py-1.5 pr-3">Role</th>
+                <th className="py-1.5 pr-3" title="Homeroom class (e.g. 7A). Used for the proactive check-in email.">Homeroom</th>
                 <th className="py-1.5 pr-3">Joined</th>
                 <th className="py-1.5 pr-3">Last active</th>
                 <th className="py-1.5 pr-3 text-right">Incidents</th>
@@ -161,6 +176,18 @@ export default function TeamPage() {
                     <div className="text-xs text-slate-400">{t.email}</div>
                   </td>
                   <td className="py-2 pr-3 capitalize">{t.role}</td>
+                  <td className="py-2 pr-3">
+                    {isAdmin ? (
+                      <input
+                        defaultValue={t.homeroom || ""}
+                        onBlur={(e) => { if ((e.target.value.trim()) !== (t.homeroom || "")) saveHomeroomMember(t.userId, e.target.value); }}
+                        placeholder="e.g. 7A"
+                        className="w-16 rounded border border-slate-300 px-1.5 py-0.5 text-xs"
+                      />
+                    ) : (
+                      <span className="text-xs text-slate-500">{t.homeroom || "—"}</span>
+                    )}
+                  </td>
                   <td className="py-2 pr-3">{shortDate(t.joinedAt)}</td>
                   <td className="py-2 pr-3">
                     {t.status === "pending" ? (
@@ -209,7 +236,7 @@ export default function TeamPage() {
                 </tr>
               ))}
               {teachers.length === 0 && (
-                <tr><td colSpan={8} className="py-3 text-slate-400">No members yet.</td></tr>
+                <tr><td colSpan={9} className="py-3 text-slate-400">No members yet.</td></tr>
               )}
             </tbody>
           </table>
@@ -241,6 +268,10 @@ export default function TeamPage() {
                   </div>
                 </div>
                 <span className="flex shrink-0 items-center gap-1.5">
+                  <label className="flex items-center gap-1 text-xs text-slate-500">Homeroom
+                    <input defaultValue={p.homeroom || ""} onBlur={(e) => { if (e.target.value.trim() !== (p.homeroom || "")) saveHomeroomInvite(p.email, e.target.value); }}
+                      placeholder="7A" className="w-14 rounded border border-slate-300 px-1.5 py-0.5 text-xs" />
+                  </label>
                   <button onClick={() => resendInvite(p.email)} className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs">Resend</button>
                   <button onClick={() => revokeInvite(p.email)} className="rounded-lg border border-red-300 px-2.5 py-1 text-xs text-red-700">Revoke</button>
                 </span>

@@ -698,6 +698,8 @@ try {
   startGuddAutoReset();
   const { startMonthlyConductAward } = await import("./behavior/jobs/monthlyConductAward.js");
   startMonthlyConductAward();
+  const { startTeacherNudges } = await import("./behavior/jobs/teacherNudge.js");
+  startTeacherNudges();
   console.error("[boot] behaviours module loaded OK");
 } catch (e) {
   console.error("[boot] ❌ behaviours module FAILED to load — continuing without it:\n", e?.stack || e);
