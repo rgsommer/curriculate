@@ -33,6 +33,18 @@ const PRESET_HOUSE_EVENTS = [
   { name: "Class competition — win", points: 40 },
 ];
 
+// Suggested reward ladder (reach N points → unlock). Escalating whole-house
+// treats; admins load these to start, then edit the points/wording to taste.
+const PRESET_HOUSE_REWARDS = [
+  { points: 250, reward: "Freezies / ice-cream treat for the house" },
+  { points: 500, reward: "Extra 20 min recess or free time" },
+  { points: 750, reward: "Dress-down / free-dress day" },
+  { points: 1000, reward: "Movie & popcorn afternoon" },
+  { points: 1500, reward: "Pizza party" },
+  { points: 2000, reward: "Games / board-game afternoon" },
+  { points: 3000, reward: "House trophy + celebration outing" },
+];
+
 export default function SetupPage() {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1769,7 +1781,18 @@ function HousesSection({ config }: { config?: any }) {
         {/* Reward tiers */}
         <div className="mt-4 border-t border-slate-100 pt-3">
           <p className="text-sm font-medium text-slate-700">Rewards (reach X points → reward)</p>
-          <p className="text-xs text-slate-400">When a house&apos;s total reaches the points, it unlocks the reward — shown on the portal &amp; display board (e.g. 50 → “Ice cream sundae”).</p>
+          <p className="text-xs text-slate-400">When a house&apos;s total reaches the points, it unlocks the reward — shown on the portal &amp; display board (e.g. 50 → “Ice cream sundae”). Load a suggested ladder to start, then tune the points and wording to your school.</p>
+          <div className="mt-1">
+            <button type="button"
+              onClick={() => setRewards((p) => {
+                const have = new Set(p.map((r) => r.reward.trim().toLowerCase()).filter(Boolean));
+                const add = PRESET_HOUSE_REWARDS.filter((r) => !have.has(r.reward.toLowerCase()));
+                // Drop a single blank starter row if present, then append presets.
+                const base = p.filter((r) => r.reward.trim() || r.points);
+                return [...base, ...add];
+              })}
+              className="text-xs text-slate-500 underline">Load suggested rewards</button>
+          </div>
           <div className="mt-2 space-y-1.5">
             {rewards.map((r, i) => (
               <div key={i} className="flex items-center gap-2">

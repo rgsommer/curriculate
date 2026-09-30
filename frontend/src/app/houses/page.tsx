@@ -74,6 +74,18 @@ export default function HousesPortal() {
     if (initial) { localStorage.setItem(KEY, initial); setCode(initial); }
   }, []);
 
+  // Count a visit once per browser tab session (not on every 30s refresh),
+  // so the admin dashboard can see how many people open the standings.
+  useEffect(() => {
+    if (!code) return;
+    try {
+      const flag = `houses_visit_${code}`;
+      if (sessionStorage.getItem(flag)) return;
+      sessionStorage.setItem(flag, "1");
+      fetch(`${API_BASE}/api/behavior/public/houses/visit?code=${encodeURIComponent(code)}`, { method: "POST" }).catch(() => {});
+    } catch { /* ignore */ }
+  }, [code]);
+
   // Load + auto-refresh standings while a code is active.
   useEffect(() => {
     if (!code) return;

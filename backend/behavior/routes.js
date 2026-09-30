@@ -14,6 +14,7 @@ import crypto from "crypto";
 import multer from "multer";
 
 import authAny from "../middleware/authAny.js";
+import { requireAdminToken } from "../middleware/requireAdminToken.js";
 import { sendEmail } from "./lib/sendEmail.js";
 
 import BehaviorSchool from "./models/BehaviorSchool.js";
@@ -31,6 +32,7 @@ import { HonourRollSnapshot, HonourRollConfig } from "./models/HonourRoll.js";
 import { edsbyGetJson, extractZoomStudentsRaw, buildIxlRoster } from "./lib/edsbyRead.js";
 import BehaviorHouse from "./models/BehaviorHouse.js";
 import HousePointEvent from "./models/HousePointEvent.js";
+import HousesVisit from "./models/HousesVisit.js";
 import HomeworkAssignment from "./models/HomeworkAssignment.js";
 import HomeworkScore from "./models/HomeworkScore.js";
 import BehaviorCompetition from "./models/BehaviorCompetition.js";
@@ -6143,6 +6145,73 @@ router.get("/public/houses/lookup", async (req, res, next) => {
       };
     });
     res.json({ ok: true, matches });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Visit beacon for the House Standings portal. The public page fires this once
+// per browser tab session (not on its 30s auto-refresh), so one row per school
+// per local day tallies how many people opened the standings. Code-gated so it
+// only counts real portal opens; failures are swallowed (never block the page).
+router.post("/public/houses/visit", async (req, res) => {
+  try {
+    const code = String(req.query.code || req.body?.code || "").trim();
+    if (!/^\d{3,6}$/.test(code)) return res.json({ ok: true }); // ignore junk, never error the page
+    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true }).select("schoolId").lean();
+    if (!config) return res.json({ ok: true });
+    const day = new Date(); day.setHours(0, 0, 0, 0);
+    await HousesVisit.updateOne({ schoolId: config.schoolId, day }, { $inc: { views: 1 } }, { upsert: true });
+    res.json({ ok: true });
+  } catch {
+    res.json({ ok: true });
+  }
+});
+
+// Curriculate-internal: House Standings portal traffic, for the admin dashboard.
+// Guarded by the shared ADMIN_API_TOKEN (x-admin-token), same as other internal
+// admin stats. Returns totals + a 14-day daily series and a per-school split.
+router.get("/admin/houses-visits", requireAdminToken, async (req, res, next) => {
+  try {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const d7 = new Date(today); d7.setDate(d7.getDate() - 6);
+    const d30 = new Date(today); d30.setDate(d30.getDate() - 29);
+    const d14 = new Date(today); d14.setDate(d14.getDate() - 13);
+
+    const [all, schools] = await Promise.all([
+      HousesVisit.find({}).select("schoolId day views").lean(),
+      BehaviorSchool.find({}).select("name").lean(),
+    ]);
+    const nameById = Object.fromEntries(schools.map((s) => [String(s._id), s.name || ""]));
+
+    let total = 0, todayN = 0, last7 = 0, last30 = 0;
+    const seriesMap = {};       // dayKey -> views (last 14 days)
+    const bySchoolMap = {};     // schoolId -> total views
+    for (const r of all) {
+      const v = r.views || 0;
+      total += v;
+      bySchoolMap[String(r.schoolId)] = (bySchoolMap[String(r.schoolId)] || 0) + v;
+      const dt = new Date(r.day);
+      if (dt >= today) todayN += v;
+      if (dt >= d7) last7 += v;
+      if (dt >= d30) last30 += v;
+      if (dt >= d14) {
+        const key = dt.toISOString().slice(0, 10);
+        seriesMap[key] = (seriesMap[key] || 0) + v;
+      }
+    }
+    // Dense 14-day series (zero-filled) so the chart doesn't skip quiet days.
+    const series = [];
+    for (let i = 0; i < 14; i++) {
+      const dt = new Date(d14); dt.setDate(dt.getDate() + i);
+      const key = dt.toISOString().slice(0, 10);
+      series.push({ day: key, views: seriesMap[key] || 0 });
+    }
+    const bySchool = Object.entries(bySchoolMap)
+      .map(([id, views]) => ({ school: nameById[id] || "—", views }))
+      .sort((a, b) => b.views - a.views);
+
+    res.json({ ok: true, total, today: todayN, last7, last30, series, bySchool });
   } catch (err) {
     next(err);
   }
