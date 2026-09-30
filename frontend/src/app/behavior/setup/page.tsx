@@ -22,15 +22,31 @@ const RECOMMENDED_CONSEQUENCES = [
 // Starter whole-house activities with suggested point values. Admins load these
 // as a base and edit/add their own as new events come up through the year.
 const PRESET_HOUSE_EVENTS = [
+  // Whole-house games (award the winner; use "— participation" for taking part)
+  { name: "Scooter soccer — win", points: 100 },
+  { name: "Capture the flag — win", points: 100 },
+  { name: "Ultimate frisbee — win", points: 100 },
+  { name: "Dodgeball — win", points: 80 },
+  { name: "Tug-of-war — win", points: 80 },
+  { name: "Relay race — win", points: 80 },
+  { name: "House game / sports day — win", points: 100 },
+  { name: "House game — participation", points: 25 },
+  // Academic / knowledge
   { name: "Trivia — 1st", points: 50 },
   { name: "Trivia — 2nd", points: 30 },
   { name: "Trivia — 3rd", points: 20 },
-  { name: "House game / sports day — win", points: 100 },
-  { name: "House game — participation", points: 25 },
+  { name: "Scripture memory challenge", points: 50 },
+  { name: "Reading-minutes drive — winning house", points: 60 },
+  { name: "Class competition — win", points: 40 },
+  // Character / spirit / service
   { name: "Spirit day participation", points: 30 },
   { name: "Charity / service drive", points: 50 },
   { name: "Chapel / assembly excellence", points: 25 },
-  { name: "Class competition — win", points: 40 },
+  { name: "Kindness / caught being good", points: 15 },
+  { name: "Talent show / lip-sync — win", points: 80 },
+  { name: "House banner / crest design — win", points: 60 },
+  { name: "Cleanest classroom (weekly)", points: 30 },
+  { name: "Attendance / punctuality streak", points: 40 },
 ];
 
 // Suggested reward ladder (reach N points → unlock). Escalating whole-house
@@ -1470,6 +1486,63 @@ function HousesSection({ config }: { config?: any }) {
     }
   }
 
+  // Copy a ready-to-paste, richly-formatted invite for Edsby. We put BOTH an
+  // HTML flavour (so Edsby keeps the formatting) and a plain-text fallback on
+  // the clipboard, with the portal code baked into a one-click link.
+  const [inviteCopied, setInviteCopied] = useState(false);
+  async function copyInvite() {
+    const code = portalCode || "";
+    if (!code) { setPortalMsg("Generate or set a code first."); return; }
+    const url = `https://www.curriculate.net/houses?code=${encodeURIComponent(code)}`;
+    const html =
+      '<div style="font-family:Arial,Helvetica,sans-serif;color:#1e293b;line-height:1.5;">' +
+        '<h2 style="margin:0 0 4px;font-size:20px;">👀 Your House Standings are LIVE!</h2>' +
+        '<p style="margin:0 0 14px;color:#64748b;font-size:14px;">See where your house stands — and look up your own house anytime.</p>' +
+        '<p style="margin:0 0 14px;">Hi everyone,</p>' +
+        '<p style="margin:0 0 14px;">The house competition is heating up, and you can now follow it live! Every point your house earns for kindness, effort, honesty, and team events shows up on the board within seconds. Check where <strong>your</strong> house sits and cheer your teammates on. 🎉</p>' +
+        '<p style="margin:0 0 14px;padding:12px 16px;background:#eff6ff;border-left:4px solid #2563eb;border-radius:6px;"><strong>Not sure which house you’re in?</strong> Forgot your group or room, or missed the day it was announced? No problem — just type your last name and the site will tell you your house, group #, room, teachers, and captains.</p>' +
+        '<p style="margin:0 0 14px;text-align:center;"><a href="' + url + '" style="display:inline-block;background:#0f172a;color:#ffffff;text-decoration:none;padding:12px 26px;border-radius:10px;font-weight:bold;font-size:16px;">🏆 See the Standings &amp; Find Your House</a></p>' +
+        '<p style="margin:0 0 8px;font-weight:bold;">How to use it:</p>' +
+        '<ol style="margin:0 0 14px;padding-left:20px;">' +
+          '<li style="margin-bottom:6px;">Open <a href="' + url + '" style="color:#2563eb;">curriculate.net/houses</a> (the link above fills in the code for you).</li>' +
+          '<li style="margin-bottom:6px;">If asked, enter the House code <strong style="background:#fef9c3;padding:2px 8px;border-radius:6px;letter-spacing:2px;">' + code + '</strong> — you only do this once.</li>' +
+          '<li style="margin-bottom:6px;">Tap <strong>&ldquo;Find your house&rdquo;</strong> and type your last name to see your house, group #, room, teachers, and captains.</li>' +
+          '<li style="margin-bottom:6px;">Watch the <strong>leaderboard</strong>, <strong>top students</strong>, <strong>competitions</strong>, and <strong>latest points</strong> roll in.</li>' +
+        '</ol>' +
+        '<p style="margin:0 0 14px;padding:12px 16px;background:#f8fafc;border-left:4px solid #0f172a;border-radius:6px;font-style:italic;color:#334155;">&ldquo;Whatever you do, work at it with all your heart.&rdquo; — Colossians 3:23</p>' +
+        '<p style="margin:0;">Let’s make it a great season. Go teams! 💪</p>' +
+      '</div>';
+    const plain =
+      '👀 Your House Standings are LIVE!\n\n' +
+      'Hi everyone,\n\n' +
+      'The house competition is heating up, and you can now follow it live! Check where your house sits and cheer your teammates on.\n\n' +
+      'Not sure which house you’re in? Forgot your group or room, or missed the day it was announced? Just type your last name and the site will tell you your house, group #, room, teachers, and captains.\n\n' +
+      'See the standings & find your house: ' + url + '\n\n' +
+      'How to use it:\n' +
+      '1. Open curriculate.net/houses (the link above fills in the code for you).\n' +
+      '2. If asked, enter the House code ' + code + ' — you only do this once.\n' +
+      '3. Tap "Find your house" and type your last name to see your house, group #, room, teachers, and captains.\n' +
+      '4. Watch the leaderboard, top students, competitions, and latest points roll in.\n\n' +
+      '"Whatever you do, work at it with all your heart." — Colossians 3:23\n\n' +
+      'Let’s make it a great season. Go teams!';
+    try {
+      const w = window as any;
+      if (navigator.clipboard && w.ClipboardItem) {
+        await navigator.clipboard.write([new w.ClipboardItem({
+          "text/html": new Blob([html], { type: "text/html" }),
+          "text/plain": new Blob([plain], { type: "text/plain" }),
+        })]);
+      } else {
+        await navigator.clipboard.writeText(plain);
+      }
+      setPortalMsg("");
+      setInviteCopied(true);
+      setTimeout(() => setInviteCopied(false), 2500);
+    } catch {
+      setPortalMsg("Couldn’t copy automatically — use “open the portal” and copy the page instead.");
+    }
+  }
+
   // Term reset (only points after this date count toward standings).
   const [resetAt, setResetAt] = useState<string | null>(config?.housePointsResetAt || null);
   const [resetBusy, setResetBusy] = useState(false);
@@ -1823,6 +1896,15 @@ function HousesSection({ config }: { config?: any }) {
           {portalCode && <a href={`/houses?code=${encodeURIComponent(portalCode)}`} target="_blank" rel="noreferrer" className="text-xs text-slate-500 underline">open the portal ↗</a>}
           {portalCode && <a href={`/houses/display?code=${encodeURIComponent(portalCode)}`} target="_blank" rel="noreferrer" className="text-xs text-slate-500 underline">open the wall display ↗</a>}
         </div>
+        {portalCode && (
+          <div className="mt-2">
+            <button onClick={copyInvite}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-100">
+              {inviteCopied ? "✓ Copied — paste into Edsby" : "📋 Copy invite message (for Edsby)"}
+            </button>
+            <p className="mt-1 text-xs text-slate-400">Rich, ready-to-paste message inviting students to the portal — with your code built into a one-click link.</p>
+          </div>
+        )}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <input
             value={portalInput}
