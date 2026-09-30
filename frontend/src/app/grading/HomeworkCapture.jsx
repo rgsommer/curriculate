@@ -25,11 +25,14 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 const JPEG_QUALITY = 0.82;
 const MAX_EDGE = 1600; // enough for handwriting; keeps a 25-photo batch sane
 
+// "Aaryan S.", not "Sran, A.". A teacher walking the room early in the year
+// knows the first names and not yet the surnames, so surname-first is the one
+// ordering that makes the list unreadable at exactly the moment it is used.
 function labelOf(s) {
   const last = String(s?.lastName || "").trim();
   const first = String(s?.firstName || "").trim();
-  if (last && first) return `${last}, ${first.charAt(0)}.`;
-  return last || first || "(unnamed)";
+  if (first && last) return `${first} ${last.charAt(0)}.`;
+  return first || last || "(unnamed)";
 }
 
 export default function HomeworkCapture({ students = [], className = "", onDone, onCancel }) {

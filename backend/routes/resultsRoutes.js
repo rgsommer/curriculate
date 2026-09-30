@@ -8,6 +8,7 @@ import { sendSystemEmail } from "../email/shareInviteEmailer.js";
 import { notifyNewGrade } from "../email/gradeNotification.js";
 import { resultExpiryDate } from "../utils/retention.js";
 
+import { hidesGradesForResult, stripGradesFromPayload } from "../utils/gradeVisibility.js";
 const router = express.Router();
 
 /**
@@ -271,6 +272,27 @@ router.put("/:code", createLimiter, async (req, res) => {
  * Rescales all results in a batch session to a new denominator.
  * Returns { updated: number, results: [{ code, score, outOf, pct }] }
  */
+// DELETE /results/:code
+//
+// Withdraw a published result. A batch can double-count a student — two
+// entries for one person when their pages were split wrongly — and until now
+// the teacher could correct the list on screen while the stray result stayed
+// live on the student's progress page, with a code that still resolved.
+//
+// Hard delete rather than a flag: the point is that it stops existing.
+router.delete("/:code", createLimiter, async (req, res) => {
+  try {
+    const code = normalizeCode(req.params.code);
+    if (code.length !== 5) return res.status(404).json({ error: "Code not found." });
+    const r = await PublishedResult.deleteOne({ code });
+    // Already gone is the desired state, so it is not an error.
+    return res.json({ ok: true, deleted: r?.deletedCount || 0 });
+  } catch (err) {
+    console.error("[results delete]", err?.message || err);
+    return res.status(500).json({ error: "Could not delete that result." });
+  }
+});
+
 router.post("/batch-update-denom", createLimiter, async (req, res) => {
   try {
     const { sessionId, newDenom } = req.body || {};
@@ -560,9 +582,24 @@ router.get("/:code", lookupLimiter, async (req, res) => {
       return res.status(404).json({ error: "Code not found." });
     }
 
+    // The teacher may have chosen not to show marks to students and parents.
+    // Applied here rather than at publish, so the switch reaches results that
+    // were already out there — which is usually why it gets turned on.
+    // Resolves the owner from the class when the result predates
+    // meta.teacherEmail, which most published results do.
+    const hide = await hidesGradesForResult(doc.meta);
+    const meta = doc.meta ? { ...doc.meta } : null;
+    if (hide && meta) {
+      // The score is in meta too, and the portal reads it from there.
+      delete meta.score;
+      delete meta.outOf;
+      delete meta.pct;
+    }
+
     return res.json({
-      payload: doc.payload,
-      meta: doc.meta || null,
+      payload: hide ? stripGradesFromPayload(doc.payload) : doc.payload,
+      gradesHidden: hide,
+      meta,
       createdAt: doc.createdAt,
       expiresAt: doc.expiresAt,
       viewCount: doc.viewCount || 1,

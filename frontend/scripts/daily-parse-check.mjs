@@ -159,9 +159,6 @@ check("duty title: recess duty is what students are doing", P.friendlyDutyTitle(
 check("duty title: playground", P.friendlyDutyTitle("Playground") === "Out on the playground");
 check("duty title: dismissal", P.friendlyDutyTitle("Dismissal Rm212") === "Dismissal");
 check("duty title: no school", P.friendlyDutyTitle("No School (Labour Day)") === "No school today");
-// A chapel is not always the ordinary chapel, and each kind has its own shape
-// of morning — so the sheet's own words are kept where it says more than the
-// bare word, less the duty shorthand and the room.
 // The reminders carry the test and the due dates, and the sheet writes them as
 // one semicolon-separated run. On the half they are a list, one to a line.
 {
@@ -175,6 +172,9 @@ check("duty title: no school", P.friendlyDutyTitle("No School (Labour Day)") ===
   check("reminders: one note is one line", P.dueAndComingUp("Bring your textbook every class.").length === 1);
 }
 
+// A chapel is not always the ordinary chapel, and each kind has its own shape
+// of morning — so the sheet's own words are kept where it says more than the
+// bare word, less the duty shorthand and the room.
 check("duty title: a plain chapel", P.friendlyDutyTitle("Chapel") === "Chapel");
 check("duty title: chapel duty is still just chapel", P.friendlyDutyTitle("Chapel Duty") === "Chapel", P.friendlyDutyTitle("Chapel Duty"));
 check("duty title: the room comes off", P.friendlyDutyTitle("Chapel Rm 100") === "Chapel", P.friendlyDutyTitle("Chapel Rm 100"));

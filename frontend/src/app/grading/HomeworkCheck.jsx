@@ -38,7 +38,11 @@ function groupsFromCapture(attrib) {
         edsbyId: stu?.edsbyId || "",
         nameAsWritten: "",   // nothing was read off the page — the teacher said who this is
         matched: true,
-        matchConfidence: 1,
+        // "high", not 1. The model stores this as a String with an enum, so a
+        // number casts to "1", fails the enum, and the whole batch save
+        // throws — which left the teacher with a results table, no batchId,
+        // no Release, and nothing on the progress page.
+        matchConfidence: "high",
         superseded: false,
         photoIndexes: [],
       });
@@ -862,6 +866,20 @@ export default function HomeworkCheck({
     });
   }
 
+  // Drop a photo. It leaves the group and the batch; the upload itself is
+  // left alone, since re-checking should not need the photos sent again.
+  function dropPhoto(gi, pi) {
+    setGroups((prev) => {
+      if (!prev) return prev;
+      const next = prev.map((g, i) =>
+        i === gi ? { ...g, photoIndexes: g.photoIndexes.filter((x) => x !== pi) } : g
+      );
+      // A group with nothing left is not a student any more.
+      return next.filter((g) => (g.photoIndexes || []).length > 0);
+    });
+    setZoom(null);
+  }
+
   function splitAt(groupIndex, photoIdx) {
     setGroups((prev) => {
       const next = prev.map((g) => ({ ...g, photoIndexes: [...g.photoIndexes] }));
@@ -1599,14 +1617,45 @@ export default function HomeworkCheck({
                     <option value="">
                       {g.nameAsWritten ? `Unmatched: “${g.nameAsWritten}”` : "Choose student…"}
                     </option>
-                    {roster.map((s) => (
-                      <option
-                        key={`${s.studentId || s.edsbyId}-${s.firstName}${s.lastName}`}
-                        value={`${s.firstName}|${s.lastName}|${s.studentId || ""}|${s.edsbyId || ""}`}
-                      >
-                        {s.firstName} {s.lastName}
-                      </option>
-                    ))}
+                    {/* Students not yet assigned to a group come first. When
+                        you are naming an unmatched pile, the person you want
+                        is by definition one who has not been placed — and in
+                        a class of 25 they were scattered among the 24 already
+                        spoken for. Assigned names stay, below a divider,
+                        because a mis-grouping is fixed by reassigning one. */}
+                    {(() => {
+                      const taken = new Set(
+                        (groups || [])
+                          .filter((x, xi) => xi !== gi && !x.superseded)
+                          .map((x) => String(x.studentId || x.edsbyId || "").trim())
+                          .filter(Boolean)
+                      );
+                      const key = (s) => String(s.studentId || s.edsbyId || "").trim();
+                      // First name and last initial — the surname is often the
+                      // part a teacher hasn't learned yet, especially in
+                      // September, and this is where they are naming a face.
+                      const label = (s) => {
+                        const f = String(s.firstName || "").trim();
+                        const l = String(s.lastName || "").trim();
+                        return f && l ? `${f} ${l.charAt(0)}.` : (f || l || "(unnamed)");
+                      };
+                      const val = (s) => `${s.firstName}|${s.lastName}|${s.studentId || ""}|${s.edsbyId || ""}`;
+                      const free = roster.filter((s) => !taken.has(key(s)));
+                      const used = roster.filter((s) => taken.has(key(s)));
+                      return (
+                        <>
+                          {free.map((s) => (
+                            <option key={`free-${key(s)}-${label(s)}`} value={val(s)}>{label(s)}</option>
+                          ))}
+                          {free.length > 0 && used.length > 0 && (
+                            <option disabled value="">──────────</option>
+                          )}
+                          {used.map((s) => (
+                            <option key={`used-${key(s)}-${label(s)}`} value={val(s)}>{label(s)} ✓</option>
+                          ))}
+                        </>
+                      );
+                    })()}
                   </select>
                   <button
                     type="button"
@@ -1645,6 +1694,18 @@ export default function HomeworkCheck({
                             />
                           : <div style={{ ...S.thumb, ...S.thumbMissing }}>?</div>}
                         <div style={S.thumbLabel}>#{pi + 1}</div>
+                        {/* A stray photo — a blank page, a thumb over the
+                            lens, the same sheet shot twice — was only
+                            movable, never removable, so it had to be parked
+                            on some student and graded. */}
+                        <button
+                          type="button"
+                          style={S.dropBtn}
+                          title="Remove this photo from the batch"
+                          onClick={(e) => { e.stopPropagation(); dropPhoto(gi, pi); }}
+                        >
+                          ✕
+                        </button>
                         {g.photoIndexes.indexOf(pi) > 0 && (
                           <button
                             type="button"
@@ -1783,7 +1844,13 @@ function ResultsTable({ result, onExportCsv, onExportEdsby, hwUrl, teacherEmail 
 
   async function toggleRelease(next) {
     if (!result.batchId) {
-      setReleaseError("This batch wasn't saved, so it can't be released. Re-run the check.");
+      // Say why. "Re-run the check" sent the teacher back to a run that would
+      // fail identically, having spent the model call and their time.
+      setReleaseError(
+        "This batch couldn't be saved, so it can't be released."
+        + (result.saveError ? ` The server said: ${result.saveError}` : "")
+        + " Your results are still here — export the CSV so nothing is lost."
+      );
       return;
     }
     setReleaseBusy(true);
@@ -2216,6 +2283,12 @@ const S = {
   thumb: {
     width: 84, height: 108, objectFit: "cover", borderRadius: 8,
     border: "1px solid #cbd5e1", background: "#fff", display: "block",
+  },
+  dropBtn: {
+    position: "absolute", top: 2, right: 2,
+    background: "rgba(15,23,42,0.65)", color: "#fff", border: "none",
+    borderRadius: 4, width: 18, height: 18, lineHeight: "18px",
+    fontSize: 11, cursor: "pointer", padding: 0,
   },
   thumbMissing: {
     display: "flex", alignItems: "center", justifyContent: "center",

@@ -277,7 +277,9 @@ export default function StudentsPage() {
               <input type="checkbox" checked={!!selected[s._id]} onChange={(e) => setSelected((m) => ({ ...m, [s._id]: e.target.checked }))}
                 title="Select for a bulk parent message" className="shrink-0" />
             )}
-            <Link href={`/behavior/student/${s._id}`} className="flex min-w-0 flex-1 basis-48 items-center justify-between gap-2">
+            <Link href={`/behavior/student/${s._id}`}
+              title={housesOn && !s.houseId ? "No house assigned" : undefined}
+              className={`flex min-w-0 flex-1 basis-48 items-center justify-between gap-2 ${housesOn && !s.houseId ? "rounded-md bg-amber-100 px-1.5 ring-1 ring-amber-300" : ""}`}>
               <span className={`truncate font-medium ${rowNameColor(s.activeCount || 0, trigger)}`}>
                 {s.lastName}, {s.firstName}{s.preferredName && s.preferredName !== s.firstName && s.preferredName !== s.lastName ? ` (${s.preferredName})` : ""}
                 {s.activeCount ? <span className="ml-2 text-xs font-normal">({s.activeCount})</span> : null}

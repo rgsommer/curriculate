@@ -19,6 +19,20 @@ const RECOMMENDED_CONSEQUENCES = [
   "White slip",
 ];
 
+// Starter whole-house activities with suggested point values. Admins load these
+// as a base and edit/add their own as new events come up through the year.
+const PRESET_HOUSE_EVENTS = [
+  { name: "Trivia — 1st", points: 50 },
+  { name: "Trivia — 2nd", points: 30 },
+  { name: "Trivia — 3rd", points: 20 },
+  { name: "House game / sports day — win", points: 100 },
+  { name: "House game — participation", points: 25 },
+  { name: "Spirit day participation", points: 30 },
+  { name: "Charity / service drive", points: 50 },
+  { name: "Chapel / assembly excellence", points: 25 },
+  { name: "Class competition — win", points: 40 },
+];
+
 export default function SetupPage() {
   const [me, setMe] = useState<Me | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1281,6 +1295,9 @@ function HousesSection({ config }: { config?: any }) {
   function saveEncPts() {
     encSave.run(async () => { await api("/houses/config", { method: "PUT", body: { encouragingMessagePoints: Math.max(0, Number(encPts) || 0) } }); });
   }
+  // Apply the standard house-point scheme across all behaviours.
+  const [applyPtsBusy, setApplyPtsBusy] = useState(false);
+  const [applyPtsMsg, setApplyPtsMsg] = useState("");
 
   // House events with preset points.
   const [events, setEvents] = useState<{ name: string; points: number }[]>(
@@ -1464,6 +1481,21 @@ function HousesSection({ config }: { config?: any }) {
       const now = new Date().toISOString();
       await api("/houses/config", { method: "PUT", body: { housePointsResetAt: now } });
       setResetAt(now);
+      load();
+    } catch (e: any) { setErr(e.message); }
+    finally { setResetBusy(false); }
+  }
+  // Reset the standings as of a specific date (e.g. Sept 1 for a new year), so
+  // points earned before that date stop counting. Earlier points stay in history.
+  const [resetDate, setResetDate] = useState("");
+  async function setResetToDate() {
+    if (!resetDate) return;
+    if (!window.confirm(`Reset house standings as of ${resetDate}? Points earned before that date stop counting toward the leaderboard and competitions (kept in history).`)) return;
+    setResetBusy(true);
+    try {
+      const iso = new Date(resetDate + "T00:00:00").toISOString();
+      await api("/houses/config", { method: "PUT", body: { housePointsResetAt: iso } });
+      setResetAt(iso);
       load();
     } catch (e: any) { setErr(e.message); }
     finally { setResetBusy(false); }
@@ -1688,10 +1720,39 @@ function HousesSection({ config }: { config?: any }) {
           </div>
         </div>
 
+        {/* Standard add/deduct scheme for infractions & positives */}
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <p className="text-sm font-medium text-slate-700">Standard house points on behaviours</p>
+          <p className="text-xs text-slate-400">Give every behaviour a recommended house-point value so logging it auto-adds (positives) or deducts (infractions): −2 minor, −5 behaviour/respect, −10 serious/immediate; +5 positive, +10 notable. Only fills behaviours still at 0 — your custom values are kept. Tune any of them in the Behaviours list.</p>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <button type="button" disabled={applyPtsBusy}
+              onClick={async () => {
+                setApplyPtsBusy(true); setApplyPtsMsg("");
+                try { const r = await api<{ ok: boolean; updated: number }>("/behaviors/apply-house-points", { body: {} }); setApplyPtsMsg(`✓ Set house points on ${r.updated} behaviour${r.updated === 1 ? "" : "s"}.`); }
+                catch (e: any) { setApplyPtsMsg(`✗ ${e.message}`); } finally { setApplyPtsBusy(false); }
+              }}
+              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
+              {applyPtsBusy ? "Applying…" : "Apply recommended house points"}
+            </button>
+            {applyPtsMsg && <span className={`text-sm ${applyPtsMsg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{applyPtsMsg}</span>}
+          </div>
+        </div>
+
         {/* House events with preset points */}
         <div className="mt-4 border-t border-slate-100 pt-3">
           <p className="text-sm font-medium text-slate-700">House events (preset points)</p>
-          <p className="text-xs text-slate-400">Define events with set point values for quick awarding from the dashboard (e.g. “Trivia — 1st” = 50).</p>
+          <p className="text-xs text-slate-400">Define events with set point values for quick awarding from the dashboard (e.g. “Trivia — 1st” = 50). Load a preset list to start, then edit or add your own — including new events that come up during the year.</p>
+          <div className="mt-1">
+            <button type="button"
+              onClick={() => setEvents((p) => {
+                const have = new Set(p.map((e) => e.name.trim().toLowerCase()).filter(Boolean));
+                const add = PRESET_HOUSE_EVENTS.filter((e) => !have.has(e.name.toLowerCase()));
+                // Drop a single blank starter row if present, then append presets.
+                const base = p.filter((e) => e.name.trim() || e.points);
+                return [...base, ...add];
+              })}
+              className="text-xs text-slate-500 underline">Load preset activities</button>
+          </div>
           <div className="mt-2 space-y-1.5">
             {events.map((ev, i) => (
               <div key={i} className="flex items-center gap-2">
@@ -1838,7 +1899,7 @@ function HousesSection({ config }: { config?: any }) {
         <div className="mt-2 flex flex-wrap gap-2">
           <button onClick={startNewTerm} disabled={resetBusy}
             className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm disabled:opacity-40">
-            {resetBusy ? "…" : "Start a new term (reset standings)"}
+            {resetBusy ? "…" : "Reset now (start a new term/year)"}
           </button>
           {resetAt && (
             <button onClick={clearTermReset} disabled={resetBusy}
@@ -1846,6 +1907,13 @@ function HousesSection({ config }: { config?: any }) {
               Count all points again
             </button>
           )}
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-slate-500">Or reset as of a date:</span>
+          <input type="date" value={resetDate} onChange={(e) => setResetDate(e.target.value)}
+            className="rounded-lg border border-slate-300 px-2 py-1" />
+          <button onClick={setResetToDate} disabled={resetBusy || !resetDate}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:opacity-40">Set date</button>
         </div>
       </div>
 

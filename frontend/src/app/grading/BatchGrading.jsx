@@ -586,6 +586,7 @@ export default function BatchGrading({
   rosterClasses: parentRosterClasses,
   setRosterClasses: parentSetRosterClasses,
   rosterAccess,
+  hideGrades,
   onClose,
 }) {
   // Preload jsPDF + qrcode CDN scripts as soon as batch mode opens
@@ -610,6 +611,18 @@ export default function BatchGrading({
 
   const [grading, setGrading] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0, current: "" });
+  // Read at the moment of use, never captured. runBatch is a useCallback with
+  // 23 dependencies and the email was not among them, so gradeOneStudent
+  // published with whatever the prop held when that callback was last built —
+  // empty on a fresh mount, and empty is what reached meta.teacherEmail for
+  // every batch but one. Without it the session is invisible to anything that
+  // scopes by teacher, which is why they never appeared in the Edsby poster.
+  const currentTeacherEmail = useCallback(() => {
+    const fromProp = String(parentTeacherEmail || "").trim();
+    if (fromProp) return fromProp;
+    try { return (localStorage.getItem("curriculate_report_email") || "").trim(); } catch { return ""; }
+  }, [parentTeacherEmail]);
+
   const [results, setResults] = useState([]); // { index, studentName, score, outOf, pct, letter, strengths, improvements, comment, error }
   const [classSummary, setClassSummary] = useState(null);
   const [teacherAnalysis, setTeacherAnalysis] = useState(""); // AI-generated class analysis
@@ -1387,7 +1400,7 @@ export default function BatchGrading({
                   // For posting into an Edsby gradebook cell later: the
                   // payload is the whole student-facing report, far too long
                   // for a comment field, so carry a short form and the mark.
-                  teacherEmail: parentTeacherEmail || "",
+                  teacherEmail: currentTeacherEmail(),
                   edsbyComment: buildEdsbyComment(resultEntry),
                   score: resultEntry.score ?? null,
                   outOf: resultEntry.outOf ?? null,
@@ -2277,9 +2290,33 @@ export default function BatchGrading({
     perQuestionAudit,
     precisionMode,
     PRECISION_PASSES,
+    currentTeacherEmail,
   ]);
 
   // ---------- Re-grade a single student with adjusted strictness ----------
+  // Drop a result from the batch — the usual cause being one student counted
+  // twice because their pages were split wrongly.
+  const deleteResult = useCallback(async (r) => {
+    const who = r.studentName || `entry ${r.index}`;
+    const published = !!r.refCode;
+    if (!confirm(
+      `Remove ${who} from these results?`
+      + (published ? `\n\nThis also withdraws ${r.refCode} from the student's progress page.` : "")
+    )) return;
+
+    if (published && resultsUrl) {
+      try {
+        await fetch(`${resultsUrl.replace(/\/$/, "")}/${encodeURIComponent(r.refCode)}`, { method: "DELETE" });
+      } catch (err) {
+        // The row still goes; say what was left behind rather than pretending.
+        console.warn("[batch] withdraw published result failed:", err);
+        alert(`Removed from the list, but ${r.refCode} could not be withdrawn from the progress page. It may still be visible to the student.`);
+      }
+    }
+    setResults((prev) => prev.filter((x) => x.index !== r.index));
+    setExpandedIndex(null);
+  }, [resultsUrl]);
+
   async function regradeStudent(resultIndex, biasDelta) {
     const r = results.find((x) => x.index === resultIndex);
     if (!r || regradingIndex) return;
@@ -2438,6 +2475,7 @@ export default function BatchGrading({
                 payload: buildBatchPayloadText(updatedEntry, null, gradeBand),
                 meta: {
                   source: "batch-regrade", batchIndex: groupIdx, gradeBand,
+                  teacherEmail: currentTeacherEmail(),
                   studentName: updatedEntry.studentName || null,
                   studentId: updatedEntry.rosterStudentId || updatedEntry.rosterEdsbyId || updatedEntry.studentId || null,
                   subject: updatedEntry.subject || "",
@@ -2889,6 +2927,7 @@ export default function BatchGrading({
     return rows.join("\n");
   }, [results, emailTitle]);
 
+  const photoInputRef = useRef(null);
   const [edsbyExported, setEdsbyExported] = useState(false);
   const downloadEdsbyCsv = useCallback(() => {
     const csv = buildEdsbyCsv();
@@ -2929,7 +2968,7 @@ export default function BatchGrading({
       let pdfBase64 = null;
       let stripsBase64 = null;
       try {
-        const pdfOpts = effectiveTitle ? { title: effectiveTitle } : {};
+        const pdfOpts = { ...(effectiveTitle ? { title: effectiveTitle } : {}), hideGrades: !!hideGrades };
         const pdfTimeout = (p) => Promise.race([
           p,
           new Promise((_, reject) => setTimeout(() => reject(new Error("PDF generation timed out (15s)")), 15000)),
@@ -3818,6 +3857,20 @@ export default function BatchGrading({
           <div style={{ fontSize: 12, opacity: 0.6, marginTop: 4 }}>
             PDF from your copier's ADF, or select individual photos/scans
           </div>
+          {/* A second, explicit way in. On a phone the combined picker offers
+              "Take Photo" as well, and that returns one image — this goes
+              straight to the library where several can be chosen at once. */}
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); photoInputRef.current?.click(); }}
+            style={{
+              marginTop: 10, background: "#fff", border: "1px solid #cbd5e1",
+              borderRadius: 8, padding: "7px 14px", fontSize: 13, fontWeight: 700,
+              cursor: "pointer", color: "#334155",
+            }}
+          >
+            🖼 Choose photos
+          </button>
         </div>
       )}
 
@@ -3848,10 +3901,29 @@ export default function BatchGrading({
         } catch { return null; }
       })()}
 
+      {/* accept is a wildcard, not a list of MIME types.
+          "application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif"
+          is understood by desktop browsers but makes phone pickers fall back
+          to choosing one file — an enumerated list mixed with a document type
+          is the case they handle worst, and image/heic in particular is not
+          recognised everywhere. `image/*` is the form every picker honours,
+          and `multiple` then works. handleFileChange already accepts the whole
+          array; nothing downstream needed changing. */}
       <input
         ref={fileInputRef}
         type="file"
-        accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif"
+        accept="application/pdf,image/*"
+        multiple
+        onChange={handleFileChange}
+        style={{ display: "none" }}
+      />
+      {/* Photos only, for a phone. Tapping the combined input on iOS opens an
+          action sheet whose "Take Photo" gives exactly one image — this goes
+          straight to the library, where multi-select is the default. */}
+      <input
+        ref={photoInputRef}
+        type="file"
+        accept="image/*"
         multiple
         onChange={handleFileChange}
         style={{ display: "none" }}
@@ -4405,7 +4477,7 @@ export default function BatchGrading({
                   }
                   try {
                     const opts = title ? { title } : {};
-                    const b64 = await buildResultsPdf(results, opts);
+                    const b64 = await buildResultsPdf(results, { ...opts, hideGrades: !!hideGrades });
                     if (!b64) { alert("No results available."); return; }
                     const blob = new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: "application/pdf" });
                     const blobUrl = URL.createObjectURL(blob);
@@ -4434,7 +4506,7 @@ export default function BatchGrading({
                   }
                   try {
                     const opts = title ? { title } : {};
-                    const b64 = await buildStripsPdf(results, opts);
+                    const b64 = await buildStripsPdf(results, { ...opts, hideGrades: !!hideGrades });
                     if (!b64) { alert("No results available."); return; }
                     const blob = new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: "application/pdf" });
                     const blobUrl = URL.createObjectURL(blob);
@@ -4661,6 +4733,7 @@ export default function BatchGrading({
                   <th style={batchStyles.th}>Grade</th>
                   <th style={batchStyles.th}>Code</th>
                   <th style={{ ...batchStyles.th, textAlign: "left" }}>Comment</th>
+                  <th style={{ ...batchStyles.th, width: 34 }} aria-label="Remove" />
                 </tr>
               </thead>
               <tbody>
@@ -4675,7 +4748,17 @@ export default function BatchGrading({
                             ? "rgba(37,99,235,0.06)"
                             : r.error
                             ? "rgba(220,38,38,0.05)"
+                            : r.letter === "F"
+                            // A fail is the row a teacher acts on — a follow-up,
+                            // a phone call, a re-do — and the only thing marking
+                            // it was a letter in the eighth column. The tint is
+                            // lighter than the error row's: a failing grade is a
+                            // result, not a fault in the run.
+                            ? "rgba(220,38,38,0.07)"
                             : "transparent",
+                        ...(r.letter === "F" && expandedIndex !== r.index && !r.error
+                          ? { boxShadow: "inset 3px 0 0 #dc2626" }
+                          : null),
                       }}
                       onClick={() =>
                         setExpandedIndex(expandedIndex === r.index ? null : r.index)
@@ -4988,6 +5071,25 @@ export default function BatchGrading({
                             {r.comment.slice(0, r.detectedTitle ? 60 : 100)}
                           </>
                         )}
+                      </td>
+                      {/* Removing a row is not enough on its own: the result is
+                          already published, so a duplicate would stay live on
+                          the student's progress page with a code that still
+                          resolves. This withdraws it as well. */}
+                      <td style={{ ...batchStyles.td, width: 34 }}>
+                        <button
+                          type="button"
+                          title="Remove this result"
+                          onClick={(e) => { e.stopPropagation(); deleteResult(r); }}
+                          style={{
+                            background: "none", border: "none", cursor: "pointer",
+                            color: "#cbd5e1", fontSize: 14, padding: "2px 4px", lineHeight: 1,
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.color = "#dc2626"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.color = "#cbd5e1"; }}
+                        >
+                          ✕
+                        </button>
                       </td>
                     </tr>
 

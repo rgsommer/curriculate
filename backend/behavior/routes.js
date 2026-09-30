@@ -27,7 +27,8 @@ import BehaviorConfig from "./models/BehaviorConfig.js";
 import BehaviorAuditLog from "./models/BehaviorAuditLog.js";
 import BehaviorFollowup from "./models/BehaviorFollowup.js";
 import BehaviorConsequence from "./models/BehaviorConsequence.js";
-import { HonourRollSnapshot } from "./models/HonourRoll.js";
+import { HonourRollSnapshot, HonourRollConfig } from "./models/HonourRoll.js";
+import { edsbyGetJson, extractZoomStudentsRaw, buildIxlRoster } from "./lib/edsbyRead.js";
 import BehaviorHouse from "./models/BehaviorHouse.js";
 import HousePointEvent from "./models/HousePointEvent.js";
 import HomeworkAssignment from "./models/HomeworkAssignment.js";
@@ -38,7 +39,7 @@ import { evaluateIncident, activeThresholdIncidents, evaluatePositive } from "./
 import { nextSchoolDay } from "./lib/schoolCalendar.js";
 import { encrypt, decrypt } from "./lib/secretBox.js";
 import { EdsbyProvider } from "./lib/providers/EdsbyProvider.js";
-import { seedBehaviorDocs } from "./lib/seedBehaviors.js";
+import { seedBehaviorDocs, recommendedHousePoints } from "./lib/seedBehaviors.js";
 import { parseRoster, parseRosterFile } from "./lib/rosterImport.js";
 import { DEFAULT_PARENT_TEMPLATES, fillTemplate } from "./lib/parentTemplates.js";
 import { STANDARD_BEHAVIORS } from "./lib/standardBehaviors.js";
@@ -467,7 +468,24 @@ function sanitizeConfig(config) {
 
 router.get("/me", authAny, async (req, res, next) => {
   try {
-    const membership = await BehaviorTeacher.findOne({ userId: req.userId }).lean();
+    let membership = await BehaviorTeacher.findOne({ userId: req.userId }).lean();
+    // Auto-accept a pending invite for this signed-in user, so an invited teacher
+    // who just logs in (without clicking the emailed link again) is joined to
+    // their school instead of dead-ending on "no school".
+    if (!membership) {
+      const myEmail = String(req.user?.email || "").toLowerCase();
+      const invite = myEmail ? await BehaviorInvite.findOne({ email: myEmail, status: "pending" }) : null;
+      if (invite) {
+        membership = await BehaviorTeacher.findOneAndUpdate(
+          { schoolId: invite.schoolId, userId: req.userId },
+          { $set: { email: myEmail, name: req.user?.name || "", role: invite.role, status: "accepted" } },
+          { upsert: true, new: true }
+        ).lean();
+        invite.status = "accepted";
+        await invite.save();
+        await audit(invite.schoolId, "invite.accepted", req, { meta: { email: myEmail, role: invite.role, via: "auto-on-signin" } });
+      }
+    }
     if (!membership) return res.json({ ok: true, membership: null, needsSetup: true });
     // Lightweight usage signal: count this week's page loads (best-effort).
     try {
@@ -782,6 +800,123 @@ router.post("/edsby/ingest", async (req, res) => {
     await BehaviorConfig.updateOne({ _id: config._id }, { $set: set });
     await audit(config.schoolId, "edsby.ingested", req, { meta: { updated, via: "ingest-token" } });
     res.json({ ok: true, updated });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err?.message || String(err) });
+  }
+});
+
+// Token-authenticated ALL-FIELDS student export — for the Google Sheet script,
+// so the sheet never needs the Edsby cookie. Uses the session the Cookie Sync
+// extension keeps fresh here (BehaviorConfig.edsby), reads ZoomMyStudents
+// stage=1 for the configured node(s), and returns every field per student.
+// The ingest token already controls the Edsby connection, so it may read the
+// students that connection can see.
+router.post("/edsby/students-export", async (req, res) => {
+  try {
+    const token = String(req.headers["x-ingest-token"] || req.body?.token || "").trim();
+    if (!token) return res.status(401).json({ ok: false, error: "missing token" });
+    const config = await BehaviorConfig.findOne({ "edsby.ingestToken": token }).lean();
+    if (!config) return res.status(401).json({ ok: false, error: "invalid token" });
+
+    const e = config.edsby || {};
+    if (!e.baseUrl || !e.cookieEnc) {
+      return res.status(400).json({ ok: false, error: "Edsby isn't connected for this school. Run the Cookie Sync extension (or connect Edsby in Behaviours Setup) first." });
+    }
+    const session = { baseUrl: e.baseUrl, cookie: decrypt(e.cookieEnc), jver: e.jver || "", cver: e.cver || "", userNid: e.userNid || "" };
+
+    const hr = await HonourRollConfig.findOne({ schoolId: config.schoolId }).select("zoomNid").lean();
+    const nodeSpec = String(req.body?.node || hr?.zoomNid || e.zoomId || "").trim();
+    const nodeIds = nodeSpec.split(",").map((s) => s.trim()).filter(Boolean);
+    if (!nodeIds.length) {
+      return res.status(400).json({ ok: false, error: "No Edsby “My Students” node id set. Pass one as { node } or set it in the honour-roll setup." });
+    }
+
+    const byNid = new Map();
+    const allFields = new Set();
+    const edsbyErrors = [];
+    for (const node of nodeIds) {
+      const r = await edsbyGetJson(session, node, "ZoomMyStudents", "&stage=1");
+      if (r.status === 401 || r.text === "session-expired") {
+        return res.status(409).json({ ok: false, error: "Edsby session expired. Open Edsby so the Cookie Sync extension refreshes it, then retry." });
+      }
+      if (!r.ok) {
+        // Surface Edsby's own error (e.g. 1030 "denied nodetype") for this node.
+        const j = r.json || {};
+        const code = j.errorcode ?? j.error;
+        const str = j.errorstr || j.errorStr || "";
+        edsbyErrors.push({ node, status: r.status, code: code ?? null, message: str || `HTTP ${r.status}` });
+        continue;
+      }
+      const { students, fields } = extractZoomStudentsRaw(r.json);
+      fields.forEach((f) => allFields.add(f));
+      for (const s of students) if (s.nid && !byNid.has(s.nid)) byNid.set(s.nid, s);
+    }
+    const students = [...byNid.values()];
+    if (!students.length) {
+      const e0 = edsbyErrors[0];
+      let error = "Edsby returned no students. Check that the node has stage=1 student rows.";
+      if (e0) {
+        error = `Edsby refused node ${e0.node}` + (e0.code ? ` (error ${e0.code})` : "") + (e0.message ? `: ${e0.message}` : "") + ".";
+        if (String(e0.code) === "1030" || /denied nodetype/i.test(e0.message)) {
+          error += ' That node isn\'t a "My Students" the connected Edsby session can open. Use the number from THAT account\'s own Edsby URL /p/ZoomMyStudents/NUMBER (not a class or formkey id), and make sure the extension synced that same account\'s session.';
+        }
+      }
+      return res.status(502).json({ ok: false, error, edsbyErrors });
+    }
+    // Column order: the raw preferred columns first, then the rest sorted.
+    const PREF = ["nid", "SID", "MinistryID", "FirstName", "PrefName", "MName", "LastName", "Gender", "Grade", "Average", "accountStatus", "haveiep", "_HomeroomTeacher", "_Classes"];
+    const rest = [...allFields].filter((f) => !PREF.includes(f)).sort();
+    const fields = PREF.filter((f) => allFields.has(f)).concat(rest);
+
+    await audit(config.schoolId, "edsby.students_exported", req, { meta: { count: students.length, via: "ingest-token" } });
+    res.json({ ok: true, fields, students });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err?.message || String(err) });
+  }
+});
+
+// IXL import roster — token-authed, uses the extension-synced session (same as
+// students-export) so no cookie ever touches the sheet. Walks each student's
+// Panorama → parents → ParentDetails to fill parent emails. Returns the 14 IXL
+// columns + rows. Student email / race / home language aren't in Edsby (blank).
+router.post("/edsby/ixl-roster", async (req, res) => {
+  try {
+    const token = String(req.headers["x-ingest-token"] || req.body?.token || "").trim();
+    if (!token) return res.status(401).json({ ok: false, error: "missing token" });
+    const config = await BehaviorConfig.findOne({ "edsby.ingestToken": token }).lean();
+    if (!config) return res.status(401).json({ ok: false, error: "invalid token" });
+
+    const e = config.edsby || {};
+    if (!e.baseUrl || !e.cookieEnc) {
+      return res.status(400).json({ ok: false, error: "Edsby isn't connected for this school. Run the Cookie Sync extension (or connect Edsby in Behaviours Setup) first." });
+    }
+    const session = { baseUrl: e.baseUrl, cookie: decrypt(e.cookieEnc), jver: e.jver || "", cver: e.cver || "", userNid: e.userNid || "" };
+
+    const hr = await HonourRollConfig.findOne({ schoolId: config.schoolId }).select("zoomNid").lean();
+    const nodeSpec = String(req.body?.node || hr?.zoomNid || e.zoomId || "").trim();
+    const nodeIds = nodeSpec.split(",").map((s) => s.trim()).filter(Boolean);
+    if (!nodeIds.length) {
+      return res.status(400).json({ ok: false, error: "No Edsby “My Students” node id set. Pass one as { node } or set it in the honour-roll setup." });
+    }
+
+    const out = await buildIxlRoster(session, nodeIds, { teacher: req.body?.teacher || "" });
+    if (out.sessionExpired) {
+      return res.status(409).json({ ok: false, error: "Edsby session expired. Open Edsby so the Cookie Sync extension refreshes it, then retry." });
+    }
+    if (!out.rows.length) {
+      const e0 = (out.edsbyErrors || [])[0];
+      let error = "Edsby returned no students. Check that the node has stage=1 student rows.";
+      if (e0) {
+        error = `Edsby refused node ${e0.node}` + (e0.code ? ` (error ${e0.code})` : "") + (e0.message ? `: ${e0.message}` : "") + ".";
+        if (String(e0.code) === "1030" || /denied nodetype/i.test(e0.message || "")) {
+          error += ' Use the number from that account\'s own Edsby URL /p/ZoomMyStudents/NUMBER, and make sure the extension synced that same account.';
+        }
+      }
+      return res.status(502).json({ ok: false, error, edsbyErrors: out.edsbyErrors });
+    }
+
+    await audit(config.schoolId, "edsby.ixl_exported", req, { meta: { ...out.stats, via: "ingest-token" } });
+    res.json({ ok: true, columns: out.columns, rows: out.rows, sections: out.sections, stats: out.stats });
   } catch (err) {
     res.status(500).json({ ok: false, error: err?.message || String(err) });
   }
@@ -2322,6 +2457,7 @@ router.post("/behaviors/seed-standard", authAny, loadMembership, requireAdmin, a
         triggerMode: b.triggerMode || "THRESHOLD",
         followUpType: b.followUpType || "none",
         kind: "negative",
+        points: recommendedHousePoints({ ...b, kind: "negative" }),
         scope: "standard",
         ownerTeacherId: null,
       });
@@ -2329,6 +2465,28 @@ router.post("/behaviors/seed-standard", authAny, loadMembership, requireAdmin, a
     }
     await audit(req.schoolId, "behaviors.seed_standard", req, { meta: { created } });
     res.json({ ok: true, created, total: STANDARD_BEHAVIORS.length, skipped: STANDARD_BEHAVIORS.length - created });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Apply the standard house-point scheme (auto add/deduct on logging): fills in a
+// recommended value for each behaviour still at 0, without clobbering any the
+// admin has already customised. Positives add, negatives deduct by severity.
+router.post("/behaviors/apply-house-points", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const overwrite = req.body?.overwrite === true;
+    const behs = await Behavior.find({ schoolId: req.schoolId }).select("name keyword kind triggerMode points").lean();
+    let updated = 0;
+    for (const b of behs) {
+      if (!overwrite && (b.points || 0) !== 0) continue; // keep custom values
+      const pts = recommendedHousePoints(b);
+      if ((b.points || 0) === pts) continue;
+      await Behavior.updateOne({ _id: b._id }, { $set: { points: pts } });
+      updated += 1;
+    }
+    await audit(req.schoolId, "behaviors.apply_house_points", req, { meta: { updated, overwrite } });
+    res.json({ ok: true, updated });
   } catch (err) {
     next(err);
   }

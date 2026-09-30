@@ -1390,6 +1390,7 @@ export default function GradingPage() {
     useEffect(() => {
       try { localStorage.setItem(SAVED_RUBRICS_KEY, JSON.stringify(savedRubrics)); } catch {}
     }, [savedRubrics]);
+
     const [gradeBand, setGradeBand] = useState(() => {
       if (typeof window === "undefined") return "6-8";
       return loadLS(GRADE_BAND_KEY, "6-8");
@@ -1702,6 +1703,104 @@ export default function GradingPage() {
       () => stripTrailingSlash(process.env.NEXT_PUBLIC_BACKEND_URL),
       []
     );
+
+    // Rubrics follow the teacher, not the machine. They lived only in
+    // localStorage, so one written on the classroom desktop did not exist on
+    // the phone — and a rubric is written once and reused for a term, which
+    // is the worst possible fit for per-device storage.
+    //
+    // localStorage stays as the offline copy: it is what paints the list
+    // before the fetch lands, and what the tool falls back to when the email
+    // is blank or the server is unreachable.
+    // Whether marks are hidden from students and parents. Server-side, keyed
+    // by teacher, and enforced when a result is served — so it reaches work
+    // already shared and can be switched back.
+    const [hideGrades, setHideGrades] = useState(false);
+    const [hideGradesBusy, setHideGradesBusy] = useState(false);
+    useEffect(() => {
+      const email = (teacherEmail || "").trim();
+      if (!email.includes("@") || !backendBase) { setHideGrades(false); return; }
+      let cancelled = false;
+      fetch(`${backendBase}/teacher-settings?teacherEmail=${encodeURIComponent(email)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (!cancelled && d?.ok) setHideGrades(!!d.settings?.hideGradesFromStudents); })
+        .catch(() => {});
+      return () => { cancelled = true; };
+    }, [teacherEmail, backendBase]);
+
+    async function saveHideGrades(next) {
+      const email = (teacherEmail || "").trim();
+      if (!email.includes("@") || !backendBase) return;
+      setHideGrades(next);          // optimistic; the checkbox should not lag
+      setHideGradesBusy(true);
+      try {
+        const res = await fetch(`${backendBase}/teacher-settings`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ teacherEmail: email, hideGradesFromStudents: next }),
+        });
+        const d = await res.json().catch(() => null);
+        if (!res.ok || !d?.ok) throw new Error(d?.error || "save failed");
+      } catch {
+        setHideGrades(!next);       // put it back rather than lie about the state
+        alert("Could not save that setting. Marks are unchanged for students.");
+      } finally {
+        setHideGradesBusy(false);
+      }
+    }
+
+    const rubricsSyncedRef = useRef("");   // teacherEmail whose library we've pulled
+    useEffect(() => {
+      const email = (teacherEmail || "").trim();
+      if (!email.includes("@") || !backendBase) return;
+      if (rubricsSyncedRef.current === email) return;
+      let cancelled = false;
+      (async () => {
+        try {
+          const res = await fetch(`${backendBase}/saved-rubrics?teacherEmail=${encodeURIComponent(email)}`);
+          if (!res.ok) return;
+          const data = await res.json();
+          if (cancelled || !data?.ok) return;
+          const remote = Array.isArray(data.rubrics) ? data.rubrics : [];
+          rubricsSyncedRef.current = email;
+
+          // First sync from a device that already had rubrics: push the local
+          // ones up rather than letting the server's list erase them. Remote
+          // wins on a name clash — it is the shared copy.
+          setSavedRubrics((local) => {
+            const byName = new Map();
+            for (const r of local) if (r?.name) byName.set(String(r.name).toLowerCase(), r);
+            for (const r of remote) if (r?.name) byName.set(String(r.name).toLowerCase(), { name: r.name, text: r.text });
+            const merged = [...byName.values()].sort((a, b) => String(a.name).localeCompare(String(b.name)));
+            if (merged.length !== remote.length) {
+              fetch(`${backendBase}/saved-rubrics`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ teacherEmail: email, rubrics: merged }),
+              }).catch(() => {});
+            }
+            return merged;
+          });
+        } catch { /* offline — the local copy stands */ }
+      })();
+      return () => { cancelled = true; };
+    }, [teacherEmail, backendBase]);
+
+    // Every later change is pushed up. Only after the first pull, or an empty
+    // list on a fresh device would wipe the library before it arrived.
+    useEffect(() => {
+      const email = (teacherEmail || "").trim();
+      if (!email.includes("@") || !backendBase) return;
+      if (rubricsSyncedRef.current !== email) return;
+      const t = setTimeout(() => {
+        fetch(`${backendBase}/saved-rubrics`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ teacherEmail: email, rubrics: savedRubrics }),
+        }).catch(() => {});
+      }, 800);   // debounce a burst of edits into one write
+      return () => clearTimeout(t);
+    }, [savedRubrics, teacherEmail, backendBase]);
 
     // Adopt the signed-in account's email on a device that has never been used.
     // /login stores a JWT and redirects straight here, but this page only ever
@@ -3873,6 +3972,38 @@ export default function GradingPage() {
             </div>
             {/* Start-of-year housekeeping: clear last year's published results
                 so a new cohort doesn't share a progress portal with the last. */}
+            {/* Pulse suggests a mark; the teacher awards one. When those
+                differ, the family sees the suggestion on the progress page
+                and is alarmed by a number that was never the grade — and the
+                gradebook, which is the record, is not what they are looking
+                at. This turns the number off for students and parents while
+                leaving the feedback and the achievement levels in place. The
+                teacher keeps seeing every mark. */}
+            {teacherEmail && (
+              <label
+                style={{
+                  marginTop: 8, display: "flex", gap: 8, alignItems: "flex-start",
+                  fontSize: 12, color: "#334155", cursor: "pointer", lineHeight: 1.45,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={hideGrades}
+                  disabled={hideGradesBusy}
+                  onChange={(e) => saveHideGrades(e.target.checked)}
+                  style={{ marginTop: 2 }}
+                />
+                <span>
+                  <b>Feedback only for students &amp; parents</b>
+                  <div style={{ color: "#64748b" }}>
+                    Hides the mark on the progress page and on shared result links.
+                    Comments, next steps and the achievement bars stay. You still see
+                    every mark here, in exports and in Edsby.
+                    {hideGrades && <> Applies to results already shared, and can be switched back.</>}
+                  </div>
+                </span>
+              </label>
+            )}
             {teacherEmail && (
               <div style={{ marginTop: 6 }}>
                 <NewYearReset
@@ -4055,6 +4186,7 @@ export default function GradingPage() {
               rosterClasses={rosterClasses}
               setRosterClasses={setRosterClasses}
               rosterAccess={rosterAccess}
+              hideGrades={hideGrades}
               onClose={() => setInputMode("photo")}
             />
           ) : inputMode === "homework" ? (

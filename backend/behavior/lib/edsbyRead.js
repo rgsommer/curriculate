@@ -290,6 +290,50 @@ export function extractZoomStudents(root) {
   return out;
 }
 
+// Preferred column order for the raw export; everything else follows sorted.
+const RAW_PREFERRED = [
+  "nid", "SID", "MinistryID", "FirstName", "PrefName", "MName", "LastName",
+  "Gender", "Grade", "Average", "accountStatus", "haveiep",
+  "_HomeroomTeacher", "_Classes",
+];
+
+/**
+ * Extract EVERY field from each ZoomMyStudents record (not just the honour-roll
+ * subset) — for the "all fields" Students-tab export. Scalars are kept as-is,
+ * nested values JSON-stringified, plus friendly _HomeroomTeacher / _Classes
+ * columns. Returns { students: [flatObj], fields: [orderedColumnNames] }.
+ */
+export function extractZoomStudentsRaw(root) {
+  let rec = null;
+  (function find(node, depth) {
+    if (rec || !node || typeof node !== "object" || depth > 16) return;
+    if (Array.isArray(node)) { for (const v of node) find(v, depth + 1); return; }
+    const keys = Object.keys(node);
+    if (keys.length >= 3 && keys.filter((k) => /^r\d+$/.test(k)).length >= keys.length * 0.8) { rec = node; return; }
+    for (const k of keys) find(node[k], depth + 1);
+  })(root, 0);
+  if (!rec) return { students: [], fields: [] };
+
+  const students = [];
+  const all = new Set();
+  for (const [key, r] of Object.entries(rec)) {
+    if (!r || typeof r !== "object") continue;
+    const nid = String(r.nid ?? key.replace(/^r/, "")).trim();
+    if (!/^\d{3,}$/.test(nid)) continue;
+    const flat = {};
+    for (const [k, v] of Object.entries(r)) {
+      flat[k] = v === null || typeof v !== "object" ? (v ?? "") : JSON.stringify(v);
+    }
+    if (Array.isArray(r.Classes)) flat._Classes = r.Classes.map((c) => c.LastName || c.PrefName || c.name || "").filter(Boolean).join("; ");
+    if (Array.isArray(r.hrTeacher)) flat._HomeroomTeacher = r.hrTeacher.map((t) => t.name || t.display || "").filter(Boolean).join("; ");
+    Object.keys(flat).forEach((k) => all.add(k));
+    students.push(flat);
+  }
+  const rest = [...all].filter((k) => !RAW_PREFERRED.includes(k)).sort();
+  const fields = RAW_PREFERRED.filter((k) => all.has(k)).concat(rest);
+  return { students, fields };
+}
+
 const PERSON_NAME_KEYS = /^(name|fullname|studentname|displayname|text|title)$/i;
 const FIRST_KEYS = /^(first|firstname|givenname|given)$/i;
 const LAST_KEYS = /^(last|lastname|surname|familyname)$/i;
@@ -455,6 +499,171 @@ export async function fetchZoomStudents(sess, zoomId, formkey) {
   }
 
   return { people: [], diagnostics, formkey: fk };
+}
+
+// ── IXL import roster (roster → parents → parent emails) ──────────────────────
+
+// IXL's student-import template columns, in order.
+// EXACT IXL import-template headers (from Setup_templates_rosters.xlsx, 2026).
+// IXL matches columns by exact header text — a near-match is silently ignored.
+export const IXL_COLUMNS = [
+  "First name", "Last name", "Student ID number", "Grade level",
+  "Student email address (recommended)",
+  "First parent or guardian email address (optional)",
+  "Second parent or guardian email address (optional)",
+  "Teacher(s) by last name, username or email address (recommended)",
+  "Preferred username (optional)", "Preferred password (optional)",
+  "Gender (optional)", "Race (optional)", "IEP status (optional)",
+  "Home language (optional)",
+];
+
+/**
+ * A Panorama page's parents live at col1.parents.parents, an object keyed
+ * "r<x>"; the parent's own node is the inner `.nid` field (the r-key is a
+ * relationship id that 1030s on ParentDetails). Verified bcs.edsby.com 2026-09.
+ * Returns [{ pnid, order }].
+ */
+export function extractParentRefs(json) {
+  const d = json?.slices?.[0]?.data || json;
+  const P = d?.col1?.parents?.parents;
+  const refs = [];
+  if (P && typeof P === "object") {
+    for (const [k, p] of Object.entries(P)) {
+      if (!/^r\d+$/.test(k) || !p || typeof p !== "object") continue;
+      const pnid = String(p.nid ?? "").trim();
+      if (/^\d{3,}$/.test(pnid)) refs.push({ pnid, order: Number(p.contactorder ?? 0) });
+    }
+  }
+  return refs;
+}
+
+/**
+ * A student's homeroom section LETTER (e.g. "C") from their Panorama page. The
+ * classdata carries each class's code; the homeroom is coded "HR…<letter>" (the
+ * digits vary — grade 5 can read "HR55B"), so we take the trailing letter and
+ * let the caller pair it with the roster grade → "5B". Verified 2026-09. "" if none.
+ */
+export function extractHomeroomSectionLetter(json) {
+  const d = json?.slices?.[0]?.data || json;
+  const cd = d?.col1?.attainments?.classdata;
+  if (cd && typeof cd === "object") {
+    for (const c of Object.values(cd)) {
+      const m = String(c?.code || "").match(/^HR.*?([A-Za-z])$/);
+      if (m) return m[1].toUpperCase();
+    }
+  }
+  return "";
+}
+
+/** ParentDetails email: col1.col1.account.email, falling back to col2.info.email. */
+export function extractParentEmail(json) {
+  if (!json || json.errorcode || json.error) return "";
+  const d = json?.slices?.[0]?.data || json;
+  const get = (o, path) => path.split(".").reduce((a, k) => (a == null ? a : a[k]), o);
+  return String(get(d, "col1.col1.account.email") || get(d, "col2.info.email") || "").trim();
+}
+
+/**
+ * Build the IXL import roster from Edsby for one or more "My Students" nodes.
+ * Walk: ZoomMyStudents (roster) → Panorama per student (parent nids) →
+ * ParentDetails per parent (email). Student email / race / home language are
+ * NOT exposed by Edsby, so those columns stay blank (verified). `opts.teacher`
+ * fills the Teacher column for every row.
+ * Returns { columns, rows, stats, edsbyErrors } or { sessionExpired: true }.
+ */
+export async function buildIxlRoster(sess, nodeIds, opts = {}) {
+  const teacher = String(opts.teacher || "");
+  const CONC = Number(opts.concurrency) || 6; // Edsby throttles bursts; keep modest
+
+  // Edsby drops some requests under concurrency, and a dropped ParentDetails
+  // silently becomes a missing email. Retry transient failures with backoff so
+  // the roster is COMPLETE, not just fast. (401/session-expired is not retried.)
+  const getJsonRetry = async (nid, view, extra) => {
+    let r;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      r = await edsbyGetJson(sess, nid, view, extra);
+      if (r.ok || r.status === 401 || r.text === "session-expired") return r;
+      await new Promise((res) => setTimeout(res, 250 * (attempt + 1)));
+    }
+    return r;
+  };
+
+  // 1) roster
+  const byNid = new Map();
+  const edsbyErrors = [];
+  for (const node of nodeIds) {
+    const r = await edsbyGetJson(sess, node, "ZoomMyStudents", "&stage=1");
+    if (r.status === 401 || r.text === "session-expired") return { sessionExpired: true };
+    if (!r.ok) {
+      const j = r.json || {};
+      edsbyErrors.push({ node, status: r.status, code: j.errorcode ?? j.error ?? null, message: j.errorstr || j.errorStr || `HTTP ${r.status}` });
+      continue;
+    }
+    const { students } = extractZoomStudentsRaw(r.json);
+    for (const s of students) {
+      const nid = String(s.nid || "").trim();
+      if (/^\d{3,}$/.test(nid) && !byNid.has(nid)) byNid.set(nid, s);
+    }
+  }
+  const students = [...byNid.values()];
+  if (!students.length) return { columns: IXL_COLUMNS, rows: [], sections: [], stats: { students: 0, parents: 0, withEmail: 0 }, edsbyErrors };
+
+  // 2) Panorama per student → parent refs + homeroom section (retried)
+  let expired = false;
+  const pano = await mapPool(students, CONC, async (s) => {
+    if (expired) return { refs: [], section: "" };
+    const r = await getJsonRetry(String(s.nid), "Panorama", "&stage=1");
+    if (r.status === 401 || r.text === "session-expired") { expired = true; return { refs: [], section: "" }; }
+    if (!(r.ok && r.json)) return { refs: [], section: "" };
+    const letter = extractHomeroomSectionLetter(r.json);
+    const grade = String(s.Grade || "").trim();
+    return { refs: extractParentRefs(r.json), section: letter ? `${grade}${letter}` : "" };
+  });
+  if (expired) return { sessionExpired: true };
+  const refsByStudent = pano.map((p) => p.refs);
+  const sections = pano.map((p) => p.section);
+
+  // 3) unique parent nids → email (retried)
+  const pnids = [...new Set(refsByStudent.flat().map((p) => p.pnid))];
+  const emailPairs = await mapPool(pnids, CONC, async (pnid) => {
+    if (expired) return [pnid, ""];
+    const r = await getJsonRetry(pnid, "ParentDetails", "&stage=1");
+    if (r.status === 401 || r.text === "session-expired") { expired = true; return [pnid, ""]; }
+    return [pnid, r.ok && r.json ? extractParentEmail(r.json) : ""];
+  });
+  if (expired) return { sessionExpired: true };
+  const emailByPnid = new Map(emailPairs);
+
+  // 4) assemble IXL rows
+  let withEmail = 0;
+  const rows = students.map((s, i) => {
+    const refs = (refsByStudent[i] || []).slice().sort((a, b) => (a.order || 0) - (b.order || 0));
+    // Dedup case-insensitively — IXL rejects a student whose two parent emails
+    // match ignoring case (e.g. "a@x.com" vs "A@x.com"). Emit lowercased.
+    const seen = new Set();
+    const emails = [];
+    for (const p of refs) {
+      const e = String(emailByPnid.get(p.pnid) || "").trim().toLowerCase();
+      if (e && !seen.has(e)) { seen.add(e); emails.push(e); }
+    }
+    if (emails.length) withEmail++;
+    const iep = Number(s.haveiep) || s.haveiep === true;
+    return [
+      String(s.FirstName || s.PrefName || ""),
+      String(s.LastName || ""),
+      String(s.SID || ""),
+      String(s.Grade || ""),
+      "",                       // Student email — Edsby doesn't expose it
+      emails[0] || "", emails[1] || "",
+      teacher,
+      "", "",                   // Preferred username / password
+      String(s.Gender || ""),
+      "",                       // Race — never pulled
+      iep ? "Yes" : "",         // IEP status
+      "",                       // Home language — not in Edsby
+    ];
+  });
+  return { columns: IXL_COLUMNS, rows, sections, stats: { students: students.length, parents: pnids.length, withEmail }, edsbyErrors };
 }
 
 // ── Weights, averages, honours ────────────────────────────────────────────────

@@ -8,6 +8,7 @@ import PublishedResult from "../models/PublishedResult.js";
 import { resultExpiryDate } from "../utils/retention.js";
 import { sendWeeklyDigests } from "../email/gradeNotification.js";
 
+import { hidesGradesForResult } from "../utils/gradeVisibility.js";
 const router = express.Router();
 
 /**
@@ -539,6 +540,9 @@ router.get("/results", studentAuth, async (req, res) => {
       return {
         code: r.code,
         sessionId: r.sessionId || null,
+        // Carried so a per-teacher preference can be applied below: a child
+        // may be taught by several teachers and only one may hide marks.
+        teacherEmail: meta.teacherEmail || "",
         subject,
         assessmentType,
         title,
@@ -617,6 +621,40 @@ router.get("/results", studentAuth, async (req, res) => {
       }
     }
 
+    // A teacher can choose not to show marks to students and parents. The
+    // feedback, the next steps and the achievement levels the bars are drawn
+    // from all stay — only the number goes, along with the averages computed
+    // from it, which would otherwise hand the same figure back by other means.
+    //
+    // Per result, not per student: a child may be taught by several teachers
+    // and only one of them may have turned it on.
+    // Keyed on the result's own meta, since the owner may have to be resolved
+    // from the class — most published results predate meta.teacherEmail.
+    const hideByCode = new Map(
+      await Promise.all(results.map(async (r) => [r.code, await hidesGradesForResult(r.meta)]))
+    );
+    let anyHidden = false;
+    for (const entry of entries) {
+      if (!hideByCode.get(entry.code)) continue;
+      anyHidden = true;
+      entry.score = null;
+      entry.outOf = null;
+      entry.pct = null;
+      entry.classAvg = null;      // a class average of one number is that number
+      entry.gradeHidden = true;
+      // The category bars stay — they are the levels the teacher wants shown —
+      // but "3.5 / 5" beside one is the mark again in smaller print. Keep the
+      // level word and the comment, drop the number.
+      entry.categories = (entry.categories || []).map((c) => {
+        const { score, outOf, ...rest } = c;
+        return rest;
+      });
+    }
+    const shownPcts = entries.map((e) => e.pct).filter((p) => typeof p === "number");
+    const visibleAvg = shownPcts.length
+      ? Math.round(shownPcts.reduce((a, b) => a + b, 0) / shownPcts.length)
+      : null;
+
     return res.json({
       ok: true,
       student: {
@@ -626,7 +664,10 @@ router.get("/results", studentAuth, async (req, res) => {
         emailCount: (account.emails || []).length,
       },
       results: entries,
-      overallAvg,
+      // Recomputed from what is actually shown — the stored average was over
+      // every result, so leaving it would leak the hidden ones back.
+      overallAvg: anyHidden ? visibleAvg : overallAvg,
+      anyGradesHidden: anyHidden,
       totalAssignments: entries.length,
     });
   } catch (err) {

@@ -1959,21 +1959,37 @@ async function runCheckJob(ctx) {
     responseTimeMs: Date.now() - started,
   };
 
+  // matchConfidence is an enum; anything else fails the cast and takes the
+  // whole batch down with it. Coerce rather than throw — a grouping label
+  // being odd is not a reason to lose twenty-three graded students.
+  const CONF = new Set(["high", "medium", "low", "none"]);
+  for (const r of doc.results || []) {
+    if (!CONF.has(String(r.matchConfidence))) r.matchConfidence = r.matched ? "high" : "none";
+  }
+
   let batchId = null;
+  let saveError = "";
   try {
     const saved = await HomeworkCheckBatch.create(doc);
     batchId = String(saved._id);
   } catch (err) {
-    // A failed save must not lose the teacher's work — they still get the table.
-    console.error("[homework/check] batch save failed:", err?.message || err);
+    // A failed save must not lose the teacher's work — they still get the
+    // table. But it must not be silent either: without a batchId there is no
+    // Release, and therefore nothing reaches the student portal. Saying
+    // "this batch wasn't saved" and no more sent the teacher back to re-run a
+    // check that would fail again the same way.
+    saveError = String(err?.message || err).slice(0, 300);
+    console.error("[homework/check] batch save failed:", err);
   }
 
-  // The photos have served their purpose; free the memory.
-  if (uploadId) uploads.delete(uploadId);
+  // The photos stay. Deleting them here freed a little memory and made
+  // "Check 23 students" unusable a second time — the teacher fixes a
+  // mis-grouping, presses it again, and is told to go and re-photograph the
+  // class. The TTL sweeper clears them soon enough.
 
   setJob(jobId, {
     status: "done", progress: 100, stage: "done", finishedAt: Date.now(),
-    result: { ...doc, batchId },
+    result: { ...doc, batchId, saveError },
   });
 }
 
