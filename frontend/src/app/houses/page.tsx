@@ -150,6 +150,15 @@ export default function HousesPortal() {
   const ptSpan = Math.max(1, hiPts - loPts);
   const barPct = (p: number) => Math.max(3, Math.round((((p || 0) - loPts) / ptSpan) * 100));
 
+  // Standings rank with ties sharing a place (competition ranking: 1,1,3,…),
+  // so equal totals all show as 1st rather than 1/2/3/4 by list order.
+  const houseList = board?.houses || [];
+  const rankOf = (p: number) => 1 + houseList.filter((x) => (x.points || 0) > (p || 0)).length;
+  // Only single out a house in the cheer when there's an outright leader.
+  const maxPts = houseList.length ? Math.max(...houseList.map((h) => h.points || 0)) : 0;
+  const leaders = houseList.filter((h) => (h.points || 0) === maxPts);
+  const cheer = leaders.length === 1 ? leaders[0].name : "teams";
+
   // ── Leaderboard ────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4">
@@ -204,9 +213,11 @@ export default function HousesPortal() {
           <p className="mt-2 text-sm text-slate-400">No houses yet.</p>
         ) : (
           <ul className="mt-3 space-y-3">
-            {board.houses.map((h, i) => (
+            {board.houses.map((h) => {
+              const r = rankOf(h.points);
+              return (
               <li key={h.id} className="flex items-center gap-3">
-                <span className="w-6 text-center text-lg">{MEDAL[i] || <span className="text-sm text-slate-400">{i + 1}</span>}</span>
+                <span className="w-6 text-center text-lg">{MEDAL[r - 1] || <span className="text-sm text-slate-400">{r}</span>}</span>
                 {h.image
                   ? <img src={h.image} alt="" className="h-7 w-7 shrink-0 rounded-md object-cover" />
                   : <span className="inline-block h-4 w-4 shrink-0 rounded-full" style={{ background: h.color }} />}
@@ -223,7 +234,8 @@ export default function HousesPortal() {
                   )}
                 </div>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </section>
@@ -301,7 +313,7 @@ export default function HousesPortal() {
         </section>
       )}
 
-      <p className="pb-6 text-center text-xs text-slate-400">Updates automatically · go {board && board.houses[0] ? board.houses[0].name : "team"}!</p>
+      <p className="pb-6 text-center text-xs text-slate-400">Updates automatically · go {cheer}!</p>
     </div>
   );
 }
