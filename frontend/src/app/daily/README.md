@@ -179,6 +179,30 @@ The bubble says **what the benefit is**, not the sheet's shorthand
 | all three | All 3 | the whole class, from the first minute — it is the class's own reward | the "both" column, orange |
 | trailing ` 4` | `+2` | with whatever else shows | the bonus of two for being perfect the whole class |
 
+### What is due, and what is coming up
+
+The reminders cell is where the test and the due dates are — *"COMPLETE and HAND
+IN the Chapter 1 handout AND Crossword/Matching Due NEXT class; CHAPTER 1 TEST
+next class"* — and it was reaching the screen only in the last `remindersAdvance`
+minutes of the period, which is after the room has stopped reading. Worse, a
+lesson with no assignment and no homework row left the half sitting on the verse
+while the test went unannounced entirely.
+
+So **"Due and coming up"** has the half from the moment the lesson's own material
+is done with it, alongside the assignment or homework rather than instead of it —
+the work a class is doing and the test it is being told about are different
+things. The cell is split on its semicolons (`dueAndComingUp` in `parse.ts`),
+one note to a line, and the block takes the **alert colour** when a note names a
+test, a quiz, an exam, a due date or something to hand in; a standing note
+("Bring your textbook every class") stays quiet.
+
+The half is a column of a fixed height and its blocks do not shrink, so a panel
+with more than it can hold clips the bottom one. The blocks are therefore built
+in the order the room needs them — the opening note, the Formal Discussion, the
+day's notices, the work, what is due — with the riddle and the day's note last
+and `MAX_PANEL_BLOCKS` keeping only what fits. What falls off the end is the
+thing nobody is waiting for.
+
 ### The grace, and the blessing
 
 The grace before lunch belongs to **the window, not to the class**. The bell

@@ -2778,6 +2778,22 @@ export function statusStyle(status: string): StatusStyle | null {
  * what the students are doing. Returns "" when the row has no better wording,
  * in which case the cell's own text is used.
  */
+/**
+ * The reminders cell, as lines the room can read.
+ *
+ * The sheet writes them as one run with semicolons between — "COMPLETE and HAND
+ * IN the Chapter 1 handout AND Crossword/Matching Due NEXT class; CHAPTER 1 TEST
+ * next class; Study Guide: link posted" — which on a projector is a paragraph
+ * nobody finishes. One to a line is a list. A trailing full stop on the last
+ * one goes, since the others have none.
+ */
+export function dueAndComingUp(remind: string): string[] {
+  return String(remind || "")
+    .split(/\s*;\s*/)
+    .map((x) => x.trim().replace(/\s+/g, " "))
+    .filter(Boolean);
+}
+
 export function friendlyDutyTitle(text: string): string {
   const t = String(text || "").toLowerCase();
   if (/lunch/.test(t)) return "Enjoy your lunch";

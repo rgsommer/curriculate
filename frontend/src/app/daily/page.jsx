@@ -16,7 +16,7 @@
 // picture and any image the sheet puts in the feature cell E1).
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, evaluateNotice, firstClassStart, formalDiscussion, testWeekday, birthdaysToday, birthdaysForSection, joinNames, specialDays, calendarEvents, columnName, firstVerse, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
+import { EMPTY_SOURCES, dueAndComingUp, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, evaluateNotice, firstClassStart, formalDiscussion, testWeekday, birthdaysToday, birthdaysForSection, joinNames, specialDays, calendarEvents, columnName, firstVerse, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
 
 const CLASS_LABELS = ["7A", "7B", "7C", "8A", "8B", "8C"];
 // The Setup slot table's own columns, for ?debug=1.
@@ -53,6 +53,10 @@ const FIT_MAX = 1.9;
 const FIT_SLACK = 0.05;
 // The shortest a period may be cut to by the bell schedule.
 const MIN_PERIOD_MIN = 10;
+// How many blocks the right-hand half can hold on a projector before the last
+// one is clipped. They are built in order of what the room needs, so what falls
+// off the end is the riddle and the day's note.
+const MAX_PANEL_BLOCKS = 4;
 // A grace before lunch, where the end-of-day benediction used to appear. One
 // for each day of the week rather than the same words every noon, picked by the
 // date so it holds still while it is on the screen — a prayer the room can say
@@ -1469,25 +1473,36 @@ export default function DailyPage() {
     const v = verseBlock();
     return v ? <div className="panel verseonly">{v}</div> : null;
   };
-  // What has been set: a class's assignment, else its homework. The verse has
-  // the half for its first minutes and then gives it to this, because the room
-  // has read the verse by then — and it carries on along the bottom bar all day
-  // — while what they have to do is the thing they will ask about at the end.
+  // What has been set: a class's assignment, else its homework, else **the
+  // reminders**. The reminders are where the test and the due dates are — "Due
+  // NEXT class; CHAPTER 1 TEST next class" — and they were reaching the screen
+  // only in the last two minutes of the period, which is after the room has
+  // stopped reading. A lesson often has no assignment and no homework row at
+  // all, and then the half sat on the verse while the test went unannounced.
+  // What makes a reminder urgent rather than routine. "Bring your textbook every
+  // class" is a standing note and should not be red every day of the year; a
+  // test, a quiz or a due date is the thing nobody may miss.
+  const REMIND_URGENT = /\b(test|quiz|exam|due)\b|\bhand(ed)?\s+in\b/i;
   const workOf = (c) => {
     if (!c) return null;
-    const items = (c.assign || []).length
-      ? c.assign
-      : c.homework ? [c.homework] : [];
-    return items.length ? { head: (c.assign || []).length ? "Assignment" : "Homework", items } : null;
+    if ((c.assign || []).length) return { head: "Assignment", items: c.assign, kind: "assign" };
+    if (c.homework) return { head: "Homework", items: [c.homework], kind: "homework" };
+    const notes = dueAndComingUp(c.remind);
+    return notes.length ? { head: "Due and coming up", items: notes, kind: "remind" } : null;
   };
   const workBlock = (c) => {
     const w = workOf(c);
-    return w ? (
-      <div key="work" className="block sun">
+    if (!w) return null;
+    // A test being announced is the one thing on that half nobody may miss, so
+    // it takes the alert colour rather than sitting in the same wash as an
+    // ordinary note.
+    const urgent = w.kind === "remind" && w.items.some((x) => REMIND_URGENT.test(x));
+    return (
+      <div key="work" className={`block ${urgent ? "alert" : "sun"}`}>
         <h3>{w.head}</h3>
         {w.items.length > 1 ? list(w.items) : <p>{w.items[0]}</p>}
       </div>
-    ) : null;
+    );
   };
   // The same thing for the day's own screens, where there is no one class on
   // screen: every class that has something set, named.
@@ -2143,11 +2158,13 @@ export default function DailyPage() {
       if (fd) blocks.push(<div key="fd">{fd}</div>);
       const n = noticeBlock();
       if (n) blocks.push(<div key="n">{n}</div>);
-      const f = featureBlock();
-      if (f) blocks.push(<div key="f">{f}</div>);
-      const d = dailyBlock();
-      if (d) blocks.push(<div key="d">{d}</div>);
-      if (left <= setup.remindersAdvance && cur.remind) blocks.push(<div key="r" className="block navy"><h3>Reminders</h3><p>{cur.remind}</p></div>);
+      // The half carries the reminders from the moment the lesson's own material
+      // is done with it, so this late copy is only for a class whose half is
+      // busy with an assignment of its own.
+      const remindOnHalf = (workOf(cur) || {}).kind === "remind";
+      if (left <= setup.remindersAdvance && cur.remind && !remindOnHalf) {
+        blocks.push(<div key="r" className="block navy"><h3>Reminders</h3><p>{cur.remind}</p></div>);
+      }
       const agendaText = cur.assign.length ? cur.assign.join("; ") : cur.homework || cur.remind;
       if (left <= setup.homeworkAt) blocks.push(<div key="h" className="block alert"><h3>Write in your agenda</h3><p>{agendaText}</p></div>);
       else if (phase !== "open" && cur.assign.length && !assignOnLeft) blocks.push(<div key="a" className="block sun"><h3>Assign</h3>{list(cur.assign)}</div>);
@@ -2166,10 +2183,35 @@ export default function DailyPage() {
         || (phase !== "open" && cur.assign.length > 0);
       const vod = verseBlock();
       const work = assignShown ? null : workBlock(cur);
+      // What is due and what is coming up, in its own block. A class with an
+      // assignment of its own shows both: the work it is doing and the test it
+      // is being told about are different things, and the test was waiting for
+      // the last two minutes of the period to say so.
+      const notes = dueAndComingUp(cur.remind);
+      const dueBlock = notes.length && (work || assignShown) && !remindOnHalf ? (
+        <div key="due" className={`block ${notes.some((x) => REMIND_URGENT.test(x)) ? "alert" : "quiet"}`}>
+          <h3>Due and coming up</h3>
+          {notes.length > 1 ? list(notes) : <p>{notes[0]}</p>}
+        </div>
+      ) : null;
       if (verseInPanel && vod) { blocks.push(vod); verseUp = true; }
-      else if (work) blocks.push(work);
-      else if (!assignShown && vod) { blocks.push(vod); verseUp = true; }
-      side = blocks.length ? <div className="panel">{blocks}</div> : null;
+      else {
+        if (work) blocks.push(work);
+        if (dueBlock) blocks.push(dueBlock);
+        if (!work && !dueBlock && !assignShown && vod) { blocks.push(vod); verseUp = true; }
+      }
+      // Last, and first to go: the riddle and the day's note are the two things
+      // on that half nobody is waiting for. The half is a column of a fixed
+      // height, the blocks do not shrink, and a panel with more than it can hold
+      // clips the bottom one — which was cutting "Due and coming up" in half
+      // under a riddle about a horse.
+      const f = featureBlock();
+      if (f) blocks.push(<div key="f">{f}</div>);
+      const d = dailyBlock();
+      if (d) blocks.push(<div key="d">{d}</div>);
+      side = blocks.length
+        ? <div className="panel">{blocks.slice(0, MAX_PANEL_BLOCKS)}</div>
+        : null;
     }
 
     body = (
