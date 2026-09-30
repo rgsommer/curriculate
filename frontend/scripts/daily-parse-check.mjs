@@ -162,6 +162,19 @@ check("duty title: no school", P.friendlyDutyTitle("No School (Labour Day)") ===
 // A chapel is not always the ordinary chapel, and each kind has its own shape
 // of morning — so the sheet's own words are kept where it says more than the
 // bare word, less the duty shorthand and the room.
+// The reminders carry the test and the due dates, and the sheet writes them as
+// one semicolon-separated run. On the half they are a list, one to a line.
+{
+  const notes = P.dueAndComingUp(
+    "COMPLETE and HAND IN Chapter 1 handout AND Crossword/Matching Due NEXT class; "
+    + "CHAPTER 1 TEST next class; Study Guide: link posted"
+  );
+  check("reminders: split on the semicolons", notes.length === 3, notes);
+  check("reminders: the test is one of them", notes[1] === "CHAPTER 1 TEST next class", notes[1]);
+  check("reminders: nothing to say is no lines", P.dueAndComingUp("").length === 0);
+  check("reminders: one note is one line", P.dueAndComingUp("Bring your textbook every class.").length === 1);
+}
+
 check("duty title: a plain chapel", P.friendlyDutyTitle("Chapel") === "Chapel");
 check("duty title: chapel duty is still just chapel", P.friendlyDutyTitle("Chapel Duty") === "Chapel", P.friendlyDutyTitle("Chapel Duty"));
 check("duty title: the room comes off", P.friendlyDutyTitle("Chapel Rm 100") === "Chapel", P.friendlyDutyTitle("Chapel Rm 100"));
