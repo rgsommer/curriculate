@@ -6168,6 +6168,71 @@ router.post("/public/houses/visit", async (req, res) => {
   }
 });
 
+// Public per-house point breakdown — powers "tap a house to see where its
+// points came from". Strictly composite: points are grouped by reason and split
+// into individual Compass points (studentId set — good/bad behaviour) vs team &
+// house events (whole-house awards, studentId null). NEVER returns any student
+// name — only summed totals and per-reason lines, mirroring the leaderboard's
+// active-student + reset-date scope.
+router.get("/public/houses/detail", async (req, res, next) => {
+  try {
+    const code = String(req.query.code || "").trim();
+    if (!/^\d{3,6}$/.test(code)) return res.status(400).json({ ok: false, error: "Enter your school code." });
+    const houseId = String(req.query.houseId || "").trim();
+    if (!mongoose.Types.ObjectId.isValid(houseId)) return res.status(400).json({ ok: false, error: "Bad house." });
+    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true }).select("schoolId housePointsResetAt").lean();
+    if (!config) return res.status(404).json({ ok: false, error: "No school matches that code." });
+    const schoolId = config.schoolId;
+    const sid = new mongoose.Types.ObjectId(schoolId);
+    const house = await BehaviorHouse.findOne({ _id: houseId, schoolId }).select("name color").lean();
+    if (!house) return res.status(404).json({ ok: false, error: "House not found." });
+
+    // Same scope as the leaderboard: graduated students' individual points drop
+    // out; whole-house awards always count; only points after any reset date.
+    const activeIds = (await BehaviorStudent.find({ schoolId: sid, active: true }).select("_id").lean()).map((s) => s._id);
+    const match = { schoolId: sid, houseId: new mongoose.Types.ObjectId(houseId), $or: [{ studentId: null }, { studentId: { $in: activeIds } }] };
+    if (config.housePointsResetAt) match.at = { $gt: new Date(config.housePointsResetAt) };
+
+    const rows = await HousePointEvent.aggregate([
+      { $match: match },
+      { $group: {
+        _id: { team: { $eq: ["$studentId", null] }, reason: { $ifNull: ["$reason", ""] } },
+        points: { $sum: "$points" },
+        count: { $sum: 1 },
+      } },
+    ]);
+
+    const indMap = {}, teamMap = {};
+    let indPos = 0, indNeg = 0, teamTotal = 0;
+    for (const r of rows) {
+      const reason = (r._id.reason || "").trim() || "Other";
+      if (r._id.team) {
+        teamMap[reason] = (teamMap[reason] || { reason, points: 0, count: 0 });
+        teamMap[reason].points += r.points; teamMap[reason].count += r.count;
+        teamTotal += r.points;
+      } else {
+        indMap[reason] = (indMap[reason] || { reason, points: 0, count: 0 });
+        indMap[reason].points += r.points; indMap[reason].count += r.count;
+        if (r.points >= 0) indPos += r.points; else indNeg += r.points;
+      }
+    }
+    const byImpact = (a, b) => Math.abs(b.points) - Math.abs(a.points);
+    const individualItems = Object.values(indMap).sort(byImpact);
+    const teamItems = Object.values(teamMap).sort(byImpact);
+    const individualTotal = indPos + indNeg;
+
+    res.json({
+      ok: true,
+      house: { id: String(house._id), name: house.name, color: house.color || "#0f172a" },
+      total: individualTotal + teamTotal,
+      individual: { total: individualTotal, positive: indPos, negative: indNeg, items: individualItems },
+      team: { total: teamTotal, items: teamItems },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Curriculate-internal: House Standings portal traffic, for the admin dashboard.
 // Guarded by the shared ADMIN_API_TOKEN (x-admin-token), same as other internal
 // admin stats. Returns totals + a 14-day daily series and a per-school split.

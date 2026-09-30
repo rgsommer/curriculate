@@ -8,6 +8,13 @@ type Comp = { name: string; monthLabel: string; scored: boolean; results: { plac
 type Activity = { house: string; color: string; points: number; reason: string; at: string };
 type TopStudent = { rank: number; name: string; photoUrl?: string; house: string; color: string; points: number };
 type Board = { schoolName: string; houses: House[]; competitions: Comp[]; activity: Activity[]; topStudents: TopStudent[] };
+type DetailItem = { reason: string; points: number; count: number };
+type HouseDetail = {
+  house: { id: string; name: string; color: string };
+  total: number;
+  individual: { total: number; positive: number; negative: number; items: DetailItem[] };
+  team: { total: number; items: DetailItem[] };
+};
 
 const KEY = "houses_portal_code";
 const MEDAL = ["🥇", "🥈", "🥉"];
@@ -37,6 +44,32 @@ export default function HousesPortal() {
   const [matches, setMatches] = useState<Match[] | null>(null);
   const [lookupBusy, setLookupBusy] = useState(false);
   const [lookupErr, setLookupErr] = useState("");
+
+  // Tap a house on the leaderboard → composite breakdown of where its points
+  // came from (individual Compass points vs team/house events). Never any names.
+  const [openHouseId, setOpenHouseId] = useState<string | null>(null);
+  const [detailById, setDetailById] = useState<Record<string, HouseDetail>>({});
+  const [detailBusy, setDetailBusy] = useState(false);
+  const [detailErr, setDetailErr] = useState("");
+
+  async function toggleHouse(id: string) {
+    setDetailErr("");
+    if (openHouseId === id) { setOpenHouseId(null); return; }
+    setOpenHouseId(id);
+    if (!detailById[id]) {
+      setDetailBusy(true);
+      try {
+        const rr = await fetch(`${API_BASE}/api/behavior/public/houses/detail?code=${encodeURIComponent(code)}&houseId=${encodeURIComponent(id)}`);
+        const d = await rr.json();
+        if (!d.ok) setDetailErr(d.error || "Could not load details.");
+        else setDetailById((p) => ({ ...p, [id]: d as HouseDetail }));
+      } catch {
+        setDetailErr("Network error — try again.");
+      } finally {
+        setDetailBusy(false);
+      }
+    }
+  }
 
   async function doLookup(e?: React.FormEvent) {
     e?.preventDefault();
@@ -233,24 +266,85 @@ export default function HousesPortal() {
           <ul className="mt-3 space-y-3">
             {board.houses.map((h) => {
               const r = rankOf(h.points);
+              const open = openHouseId === h.id;
+              const d = detailById[h.id];
               return (
-              <li key={h.id} className="flex items-center gap-3">
-                <span className="w-6 text-center text-lg">{MEDAL[r - 1] || <span className="text-sm text-slate-400">{r}</span>}</span>
-                {h.image
-                  ? <img src={h.image} alt="" className="h-7 w-7 shrink-0 rounded-md object-cover" />
-                  : <span className="inline-block h-4 w-4 shrink-0 rounded-full" style={{ background: h.color }} />}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline justify-between">
-                    <span className="truncate font-semibold">{h.name}</span>
-                    <span className="ml-2 shrink-0 tabular-nums font-bold">{h.points.toLocaleString()}</span>
+              <li key={h.id}>
+                <button onClick={() => toggleHouse(h.id)} className="flex w-full items-center gap-3 text-left" aria-expanded={open}>
+                  <span className="w-6 text-center text-lg">{MEDAL[r - 1] || <span className="text-sm text-slate-400">{r}</span>}</span>
+                  {h.image
+                    ? <img src={h.image} alt="" className="h-7 w-7 shrink-0 rounded-md object-cover" />
+                    : <span className="inline-block h-4 w-4 shrink-0 rounded-full" style={{ background: h.color }} />}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline justify-between">
+                      <span className="truncate font-semibold">{h.name}</span>
+                      <span className="ml-2 shrink-0 tabular-nums font-bold">{h.points.toLocaleString()}</span>
+                    </div>
+                    <div className="mt-1 h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-full rounded-full" style={{ width: `${barPct(h.points)}%`, background: h.color, opacity: (h.points || 0) < 0 ? 0.45 : 1 }} />
+                    </div>
+                    {h.captains && h.captains.length > 0 && (
+                      <div className="mt-1 text-xs text-slate-400">© {h.captains.join(", ")}</div>
+                    )}
                   </div>
-                  <div className="mt-1 h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
-                    <div className="h-full rounded-full" style={{ width: `${barPct(h.points)}%`, background: h.color, opacity: (h.points || 0) < 0 ? 0.45 : 1 }} />
+                  <span className="ml-1 shrink-0 text-slate-300">{open ? "▾" : "▸"}</span>
+                </button>
+
+                {open && (
+                  <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
+                    {detailBusy && !d ? (
+                      <p className="text-slate-400">Loading…</p>
+                    ) : detailErr && !d ? (
+                      <p className="text-red-600">{detailErr}</p>
+                    ) : d ? (
+                      <>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="rounded-lg bg-white p-2">
+                            <div className="text-xs text-slate-400">Individual Compass points</div>
+                            <div className="font-bold tabular-nums">{d.individual.total > 0 ? `+${d.individual.total}` : d.individual.total}</div>
+                            <div className="text-[11px] text-slate-400">+{d.individual.positive} good{d.individual.negative ? ` · ${d.individual.negative} conduct` : ""}</div>
+                          </div>
+                          <div className="rounded-lg bg-white p-2">
+                            <div className="text-xs text-slate-400">Team &amp; house events</div>
+                            <div className="font-bold tabular-nums">{d.team.total > 0 ? `+${d.team.total}` : d.team.total}</div>
+                          </div>
+                        </div>
+
+                        {d.individual.items.length > 0 && (
+                          <div className="mt-3">
+                            <div className="text-xs font-semibold text-slate-600">Individual Compass points</div>
+                            <ul className="mt-1 divide-y divide-slate-100">
+                              {d.individual.items.map((it, i) => (
+                                <li key={i} className="flex items-center justify-between gap-2 py-1">
+                                  <span className="min-w-0 truncate text-slate-600">{it.reason} <span className="text-slate-300">×{it.count}</span></span>
+                                  <span className={`shrink-0 tabular-nums font-medium ${it.points < 0 ? "text-red-600" : "text-green-600"}`}>{it.points > 0 ? `+${it.points}` : it.points}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {d.team.items.length > 0 && (
+                          <div className="mt-3">
+                            <div className="text-xs font-semibold text-slate-600">Team &amp; house events</div>
+                            <ul className="mt-1 divide-y divide-slate-100">
+                              {d.team.items.map((it, i) => (
+                                <li key={i} className="flex items-center justify-between gap-2 py-1">
+                                  <span className="min-w-0 truncate text-slate-600">{it.reason} <span className="text-slate-300">×{it.count}</span></span>
+                                  <span className={`shrink-0 tabular-nums font-medium ${it.points < 0 ? "text-red-600" : "text-green-600"}`}>{it.points > 0 ? `+${it.points}` : it.points}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {d.individual.items.length === 0 && d.team.items.length === 0 && (
+                          <p className="text-slate-400">No points yet.</p>
+                        )}
+                      </>
+                    ) : null}
                   </div>
-                  {h.captains && h.captains.length > 0 && (
-                    <div className="mt-1 text-xs text-slate-400">© {h.captains.join(", ")}</div>
-                  )}
-                </div>
+                )}
               </li>
               );
             })}
