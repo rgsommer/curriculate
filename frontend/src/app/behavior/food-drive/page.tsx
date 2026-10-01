@@ -20,8 +20,31 @@ export default function FoodDrivePage() {
   const [hs, setHs] = useState("100,60,30");
   const [result, setResult] = useState<any>(null);
 
+  const [copied, setCopied] = useState(false);
+
   useEffect(() => { if (getToken()) api<Me>("/me").then(setMe).catch(() => {}); }, []);
   if (!getToken()) return <p className="text-slate-500">Please <Link href={loginHref("/behavior/food-drive")} className="underline">sign in</Link>.</p>;
+
+  const INSTRUCTIONS = [
+    "FOOD DRIVE — how to run it in Compass",
+    "",
+    "1. Give each homeroom the printed class list (names only).",
+    "2. During Christian Ed. (Mon–Thu), the class rep writes the NUMBER OF ITEMS beside each student's name.",
+    "3. Collect the sheets Thursday after class.",
+    "4. Photograph or scan each sheet (or save them as one PDF).",
+    "5. In Compass → Food Drive import, upload the sheets and click “Read sheets.”",
+    "6. Check the read-back: fix any unmatched name (dropdown) or wrong count, set the points, then “Award points.”",
+    "   • Top donors overall get bonus points (default 30 / 20 / 10).",
+    "   • The houses with the most total items place 1st/2nd/3rd (default 100 / 60 / 30).",
+    "7. Friday drop-offs are donated but NOT counted (they can't be recorded in class that day).",
+    "",
+    "Tip: decide the per-item scale and keep the same label each year for a clean record.",
+  ].join("\n");
+
+  async function copyInstructions() {
+    try { await navigator.clipboard.writeText(INSTRUCTIONS); setCopied(true); setTimeout(() => setCopied(false), 2500); }
+    catch { setErr("Couldn't copy — select and copy manually."); }
+  }
 
   async function parse() {
     if (!files.length) { setErr("Choose the sheet photos/scans or a PDF first."); return; }
@@ -56,7 +79,12 @@ export default function FoodDrivePage() {
     <div className="space-y-4">
       <div>
         <Link href="/behavior" className="text-sm text-slate-500 underline">← dashboard</Link>
-        <h1 className="mt-1 text-xl font-semibold">Food Drive import</h1>
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+          <h1 className="text-xl font-semibold">Food Drive import</h1>
+          <button onClick={copyInstructions} className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
+            {copied ? "✓ Copied" : "📋 Copy instructions (for reps / future years)"}
+          </button>
+        </div>
         <p className="text-sm text-slate-400">Upload the class sheets (typed names, handwritten item counts — photos, scans, or a PDF). Compass reads the counts, matches each name to a student &amp; house, then awards the top donors and the top houses.</p>
       </div>
 
