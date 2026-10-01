@@ -114,6 +114,9 @@ export default function NewEngagementPage() {
   const [excludedIds, setExcludedIds] = useState<string[]>([]);
   const [pendingInvitees, setPendingInvitees] = useState<{ email: string; name: string | null }[]>([]);
   const [excludedEmails, setExcludedEmails] = useState<string[]>([]);
+  // Inline "add the recipient by email" in the hide-from picker (when they're not
+  // already a member/invitee). They get the card at the reveal, nothing before.
+  const [hideFromPaste, setHideFromPaste] = useState("");
   // Cover images (a pool — Campfire shows a random one)
   const [coverUrls, setCoverUrls] = useState<string[]>([]);
   const [coverPaste, setCoverPaste] = useState("");
@@ -2659,7 +2662,7 @@ export default function NewEngagementPage() {
             )}
 
             {/* Surprise: hide from selected members / invitees until the reveal */}
-            {(groupMembers.length > 0 || pendingInvitees.length > 0) && (
+            {(groupMembers.length > 0 || pendingInvitees.length > 0 || excludedEmails.length > 0) && (
               <div className="rounded-xl border border-slate-200 bg-white p-3">
                 <div className="text-sm font-medium text-slate-700">
                   🎁 Surprise — hide from… <span className="text-slate-400">(optional)</span>
@@ -2715,6 +2718,32 @@ export default function NewEngagementPage() {
                       </button>
                     );
                   })}
+                </div>
+                <div className="mt-2">
+                  <input
+                    type="email"
+                    value={hideFromPaste}
+                    onChange={(e) => setHideFromPaste(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter") return;
+                      e.preventDefault();
+                      const em = hideFromPaste.trim().toLowerCase();
+                      if (!em || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) return;
+                      setPendingInvitees((prev) =>
+                        prev.some((p) => p.email.toLowerCase() === em)
+                          ? prev
+                          : [...prev, { email: em, name: null }]
+                      );
+                      setExcludedEmails((prev) => (prev.includes(em) ? prev : [...prev, em]));
+                      setHideFromPaste("");
+                    }}
+                    placeholder="➕ Not in the list? Add the recipient's email + Enter"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs focus:border-rose-400 outline-none"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    They get nothing until the reveal — then their card arrives by email. No
+                    account needed.
+                  </p>
                 </div>
               </div>
             )}
