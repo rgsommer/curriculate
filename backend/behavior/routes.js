@@ -3222,17 +3222,18 @@ async function composeAndCreateNotice({
       ? `Sincerely,\n${senderName}${schoolName ? `\nTeacher, ${schoolName}` : ", Teacher"}`
       : (config?.branding?.signatureBlock || `Sincerely,\n${schoolName}`).trim());
 
-  // Greeting addresses the parent(s) by name when we have them on file; a safe
-  // generic otherwise. Both AI + template notes start with exactly this line.
-  const parentNames = (student.parents || []).map((p) => (p.name || "").trim()).filter(Boolean);
-  const greeting =
-    parentNames.length === 1 ? `Dear ${parentNames[0]},`
-    : parentNames.length >= 2 ? `Dear ${parentNames[0]} and ${parentNames[1]},`
-    : "Dear Parent/Guardian,";
-
   // Replace the legacy "nnn" name placeholder with the student's name; the AI
   // otherwise handles naming/pronouns naturally from studentName + pronoun.
   const studentName = student.preferredName || student.firstName || "your child";
+
+  // Greeting addresses the STUDENT and their parents (the note is read by both).
+  // Includes the parents' names when we have them on file. Both AI + template
+  // notes start with exactly this line.
+  const parentNames = (student.parents || []).map((p) => (p.name || "").trim()).filter(Boolean);
+  const greeting =
+    parentNames.length >= 2 ? `Dear ${studentName}, and ${parentNames[0]} and ${parentNames[1]},`
+    : parentNames.length === 1 ? `Dear ${studentName}, and ${parentNames[0]},`
+    : `Dear ${studentName} and Parents,`;
   const personalize = (t) => String(t || "").replace(/\bnnn\b/gi, studentName);
 
   // Background history + recent positives are only relevant to the disciplinary
