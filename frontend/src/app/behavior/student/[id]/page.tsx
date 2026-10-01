@@ -151,6 +151,10 @@ export default function StudentPage() {
   if (!data) return <p className="text-slate-500">Loading…</p>;
 
   const s = data.student;
+  // Whether a notice goes out on an automatic channel, or comes back to the
+  // teacher to send themselves (BCS: no auto channel → record-only).
+  const autoSend = !!(me?.config?.edsby?.enabled || me?.config?.channels?.emailToParents);
+  const sendChannelLabel = me?.config?.edsby?.enabled ? "Edsby" : me?.config?.channels?.emailToParents ? "email" : "";
   const pct = Math.min(100, Math.round((data.activeCount / Math.max(1, data.triggerCount)) * 100));
   const myId = me?.membership?._id;
   const isAdmin = me?.membership?.role === "originator" || me?.membership?.role === "admin";
@@ -216,7 +220,7 @@ export default function StudentPage() {
   async function sendNoticeEdited(id: string) {
     try {
       await api(`/notices/${id}`, { method: "PUT", body: { renderedText: editText } });
-      await api(`/notices/${id}/send`, { body: { requestMeeting: !!meetingFor[id], includeEvidence } });
+      await api(`/notices/${id}/send`, { body: { requestMeeting: !!meetingFor[id], includeEvidence, recordOnly: !autoSend } });
       setEditId(null);
       load();
     } catch (e: any) {
@@ -226,7 +230,7 @@ export default function StudentPage() {
 
   async function sendNotice(id: string) {
     try {
-      await api(`/notices/${id}/send`, { body: { requestMeeting: !!meetingFor[id], includeEvidence } });
+      await api(`/notices/${id}/send`, { body: { requestMeeting: !!meetingFor[id], includeEvidence, recordOnly: !autoSend } });
       load();
     } catch (e: any) {
       setError(e.message);
@@ -708,7 +712,7 @@ export default function StudentPage() {
                     <p className="mt-1 text-xs text-amber-700">
                       {n.autoDispatch
                         ? `Sends automatically${n.cancelUntil ? ` around ${fmtDT(n.cancelUntil)}` : " shortly"} (within a minute after the review window).`
-                        : "Awaiting manual send."}
+                        : autoSend ? "Awaiting manual send." : "Awaiting your send — Compass won't email the parent; you post it yourself (e.g. in Edsby)."}
                     </p>
                   )}
                   {editId === n._id ? (
@@ -724,7 +728,7 @@ export default function StudentPage() {
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         {(n.status === "queued" || n.status === "failed") && (
                           <button onClick={() => openSend({ id: n._id, text: editText, edited: true, evidenceCount: evidenceCountForNotice(n) })} className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white">
-                            {n.status === "failed" ? "Save & retry send" : "Send now"}
+                            {n.status === "failed" ? "Save & retry send" : autoSend ? "Send now" : "Review & mark as sent"}
                           </button>
                         )}
                         <button onClick={() => saveNoticeEdit(n._id)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">{n.status === "sent" ? "Save changes" : "Save (keep queued)"}</button>
@@ -743,7 +747,7 @@ export default function StudentPage() {
                           </label>
                           <div className="mt-2 flex flex-wrap gap-2">
                             <button onClick={() => openSend({ id: n._id, text: n.renderedText, edited: false, evidenceCount: evidenceCountForNotice(n) })} className="rounded-lg bg-slate-900 px-3 py-1 text-xs text-white">
-                              {n.status === "failed" ? "Retry send" : "Send now"}
+                              {n.status === "failed" ? "Retry send" : autoSend ? "Send now" : "Review & mark as sent"}
                             </button>
                             <button onClick={() => dontSend(n._id)} className="rounded-lg border border-slate-300 px-3 py-1 text-xs">Don’t send</button>
                             <button onClick={() => { setEditId(n._id); setEditText(n.renderedText); }} className="rounded-lg border border-slate-300 px-3 py-1 text-xs">Edit note</button>
@@ -857,7 +861,8 @@ export default function StudentPage() {
       <SendNoticeModal
         open={!!sendModal}
         studentName={s.preferredName || s.firstName}
-        channelLabel="Edsby"
+        channelLabel={sendChannelLabel || undefined}
+        recordOnly={!autoSend}
         noteText={sendModal?.text || ""}
         requestMeeting={!!(sendModal && meetingFor[sendModal.id])}
         onToggleMeeting={(v) => sendModal && setMeetingFor((m) => ({ ...m, [sendModal.id]: v }))}

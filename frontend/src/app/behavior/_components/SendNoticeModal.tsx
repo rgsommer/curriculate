@@ -37,8 +37,8 @@ export default function SendNoticeModal({
           <h2 className="font-semibold text-slate-900">{recordOnly ? "Mark this note as sent to the parent?" : "Send this note to the parent?"}</h2>
           <p className="mt-0.5 text-xs text-slate-500">
             {recordOnly
-              ? `No automatic parent channel is set up, so you send this note yourself. Confirming files it in ${studentName ? `${studentName}'s` : "the"} record as sent — only confirm once you've sent it (or are about to).`
-              : `This is exactly what ${studentName ? `${studentName}'s` : "the"} parent will receive${channelLabel ? ` via ${channelLabel}` : ""}. Please read it before sending.`}
+              ? `Compass will NOT email this to the parent — you send it yourself (e.g. post it in Edsby). Confirming just files it in ${studentName ? `${studentName}'s` : "the"} record as sent, so only confirm once you've sent it (or are about to).`
+              : `This will be delivered to ${studentName ? `${studentName}'s` : "the"} parent${channelLabel ? ` via ${channelLabel}` : ""} when you confirm. This is exactly what they'll receive — please read it first.`}
           </p>
         </div>
         <div className="flex-1 overflow-auto px-5 py-3">
