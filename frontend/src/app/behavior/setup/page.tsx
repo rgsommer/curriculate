@@ -726,6 +726,13 @@ function RecommendedActionsSettings({ config }: { config: any }) {
   const [whitelistText, setWhitelistText] = useState<string>(
     (config?.consequenceWhitelist && config.consequenceWhitelist.length ? config.consequenceWhitelist : RECOMMENDED_CONSEQUENCES).join("\n")
   );
+  // Handbook white-slip escalation ladder.
+  const wl0 = config?.whiteSlipLadder || {};
+  const [wsOn, setWsOn] = useState<boolean>(!!wl0.enabled);
+  const [wsEmails, setWsEmails] = useState<number | string>(wl0.emailsPerTermToWhiteSlip ?? 5);
+  const [wsDet, setWsDet] = useState<number | string>(wl0.detentionFromCount ?? 3);
+  const [wsSus, setWsSus] = useState<number | string>(wl0.suspensionAtCount ?? 6);
+  const [wsSusDays, setWsSusDays] = useState<number | string>(wl0.suspensionDays ?? 2);
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -737,7 +744,7 @@ function RecommendedActionsSettings({ config }: { config: any }) {
     if (!mounted.current) { mounted.current = true; return; }
     setDirty(true);
     setSaved(false);
-  }, [ladder, whitelistText]);
+  }, [ladder, whitelistText, wsOn, wsEmails, wsDet, wsSus, wsSusDays]);
 
   async function save() {
     setErr(null);
@@ -745,7 +752,14 @@ function RecommendedActionsSettings({ config }: { config: any }) {
     try {
       const clean = ladder.filter((l) => l.noticeNumber && l.action.trim()).map((l) => ({ noticeNumber: Number(l.noticeNumber), action: l.action.trim() }));
       const whitelist = whitelistText.split("\n").map((s) => s.trim()).filter(Boolean);
-      await api("/config", { method: "PUT", body: { consequenceLadder: clean, consequenceWhitelist: whitelist } });
+      const whiteSlipLadder = {
+        enabled: wsOn,
+        emailsPerTermToWhiteSlip: Math.max(0, Number(wsEmails) || 0),
+        detentionFromCount: Math.max(0, Number(wsDet) || 0),
+        suspensionAtCount: Math.max(0, Number(wsSus) || 0),
+        suspensionDays: Math.max(0, Number(wsSusDays) || 0),
+      };
+      await api("/config", { method: "PUT", body: { consequenceLadder: clean, consequenceWhitelist: whitelist, whiteSlipLadder } });
       setDirty(false);
       setSaved(true);
       setTimeout(() => setSaved(false), 1800);
@@ -789,6 +803,35 @@ function RecommendedActionsSettings({ config }: { config: any }) {
         className={`${inputCls} mt-1 font-sans`}
         placeholder={"Lines (10×/20×/30×) — specify the line…\nEssay (150/200/350 words) on a relevant topic…\nApology letter…\nDetention\nWhite slip"}
       />
+
+      <div className="mt-4 border-t border-slate-100 pt-3">
+        <label className="flex items-start gap-2">
+          <input type="checkbox" checked={wsOn} onChange={(e) => setWsOn(e.target.checked)} className="mt-0.5" />
+          <span className="text-sm">
+            <span className="font-medium text-slate-700">Handbook white-slip escalation</span>
+            <span className="block text-xs text-slate-400">When on, the recommended consequence follows the handbook&apos;s numeric rules: enough notices home in a term → a white slip; and repeat white slips → detention, then suspension.</span>
+          </span>
+        </label>
+        <div className="mt-2 space-y-1.5 text-sm text-slate-600" style={{ opacity: wsOn ? 1 : 0.4 }}>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <input type="number" min={0} value={wsEmails} onChange={(e) => setWsEmails(e.target.value)} disabled={!wsOn} className="w-16 rounded border border-slate-300 px-2 py-1" />
+            <span>notices home in a term → recommend a <strong>white slip</strong> (0 = off)</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span>White slip #</span>
+            <input type="number" min={0} value={wsDet} onChange={(e) => setWsDet(e.target.value)} disabled={!wsOn} className="w-16 rounded border border-slate-300 px-2 py-1" />
+            <span>and up → <strong>after-school detention</strong></span>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span>White slip #</span>
+            <input type="number" min={0} value={wsSus} onChange={(e) => setWsSus(e.target.value)} disabled={!wsOn} className="w-16 rounded border border-slate-300 px-2 py-1" />
+            <span>→</span>
+            <input type="number" min={0} value={wsSusDays} onChange={(e) => setWsSusDays(e.target.value)} disabled={!wsOn} className="w-14 rounded border border-slate-300 px-2 py-1" />
+            <span>-day <strong>suspension</strong></span>
+          </div>
+          <p className="text-xs text-slate-400">Handbook defaults: 5 notices → white slip; 3rd–5th white slip → detention; 6th → 2-day suspension.</p>
+        </div>
+      </div>
 
       <button
         onClick={save}

@@ -153,6 +153,10 @@ export type StudentSummary = {
   pendingConsequences?: { id: string; type: string }[];
   // Whether a homeroom follow-up has been logged for this student this week.
   hrFollowedUpThisWeek?: boolean;
+  // White slips given this term + the handbook-ladder recommended next consequence
+  // (null when the ladder is off / no rule applies → fall back to the admin ladder).
+  whiteSlipCount?: number;
+  recommendedConsequence?: string | null;
 };
 
 export type ParentTemplate = { name: string; body: string; kind?: "encouraging" | "corrective" };

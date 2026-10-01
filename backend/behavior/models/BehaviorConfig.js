@@ -99,6 +99,19 @@ const BehaviorConfigSchema = new mongoose.Schema(
     // (the ladder / AI coach) to the teacher and VP — just not a white slip.
     autoRecommendWhiteSlipAtThreshold: { type: Boolean, default: false },
 
+    // Handbook white-slip escalation (Part C/D), configurable + off by default:
+    //  • emailsPerTermToWhiteSlip: N notices home in a term → recommend a white slip (0 = off)
+    //  • detentionFromCount: the white-slip number (this term) that starts after-school detention
+    //  • suspensionAtCount: the white-slip number that triggers a suspension
+    //  • suspensionDays: length of that suspension
+    whiteSlipLadder: {
+      enabled: { type: Boolean, default: false },
+      emailsPerTermToWhiteSlip: { type: Number, default: 5 },
+      detentionFromCount: { type: Number, default: 3 },
+      suspensionAtCount: { type: Number, default: 6 },
+      suspensionDays: { type: Number, default: 2 },
+    },
+
     // The ONLY consequences the AI coach may suggest — keeps suggestions
     // school-approved, age-appropriate and defensible (no freeform invention).
     consequenceWhitelist: {

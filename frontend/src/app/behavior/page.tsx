@@ -598,7 +598,9 @@ function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: st
       </p>
       <ul className="mt-2 divide-y divide-slate-100">
         {rows.map((s) => {
-          const action = nextAction(s.noticesHomeCount || 0);
+          // Prefer the handbook-ladder recommendation (white-slip count / notices
+          // this term) when the backend provides it; else the admin ladder step.
+          const action = s.recommendedConsequence || nextAction(s.noticesHomeCount || 0);
           return (
             <li key={s._id} className="py-2">
               <div className="flex items-center justify-between gap-2 text-sm">

@@ -149,6 +149,22 @@ async function fireWhiteSlip({ req, student, config, behaviorName, detailText, a
     consId = String(cons._id);
   } catch (e) { console.warn("[behavior] white-slip consequence log failed:", e?.message || e); }
   if (!teacherEmail && !vpEmail) return;
+
+  // Handbook ladder: how many white slips this term (incl. this one) and what the
+  // handbook says should follow (3/4/5 → detention, 6th → suspension).
+  let ladderLineHtml = "", ladderLineText = "";
+  if (config?.whiteSlipLadder?.enabled) {
+    try {
+      const prior = (await periodWhiteSlipsByStudent(req.schoolId, [student._id], config))[String(student._id)] || 0;
+      const nth = prior + 1;
+      const next = whiteSlipLadderRecommendation(config, { periodWhiteSlips: nth });
+      const ordinalish = nth === 1 ? "1st" : nth === 2 ? "2nd" : nth === 3 ? "3rd" : `${nth}th`;
+      ladderLineText = `\nThis is white slip #${nth} this term${next ? ` → recommended: ${next}` : ""}.`;
+      ladderLineHtml = `<p style="margin:12px 0 0;padding:10px 12px;background:#fef2f2;border-left:4px solid #dc2626;border-radius:6px;color:#334155;font-size:14px">` +
+        `This is the <strong>${ordinalish} white slip this term</strong>${next ? ` — the handbook calls for <strong>${escapeHtml(next)}</strong>.` : "."}</p>`;
+    } catch { /* ignore */ }
+  }
+
   const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
   try {
     await sendEmail({
@@ -159,7 +175,7 @@ async function fireWhiteSlip({ req, student, config, behaviorName, detailText, a
       text:
         `WHITE SLIP\n\nStudent: ${studentName}${student.classGroup ? ` (${student.classGroup})` : ""}\n` +
         `Reason: ${behaviorName}${detailText ? `\nDetail: ${detailText}` : ""}\n` +
-        `Teacher: ${teacherName}\nDate: ${when.toLocaleString("en-CA", { timeZone: SCHOOL_TZ })}\n\n— Compass`,
+        `Teacher: ${teacherName}\nDate: ${when.toLocaleString("en-CA", { timeZone: SCHOOL_TZ })}${ladderLineText}\n\n— Compass`,
       html: emailShell({
         title: "White Slip",
         schoolName: config?.branding?.schoolName || "Compass",
@@ -172,6 +188,7 @@ async function fireWhiteSlip({ req, student, config, behaviorName, detailText, a
           `<tr><td style="padding:4px 0;color:#64748b">Teacher</td><td style="padding:4px 0">${escapeHtml(teacherName)}</td></tr>` +
           `<tr><td style="padding:4px 0;color:#64748b">Date</td><td style="padding:4px 0">${escapeHtml(when.toLocaleString("en-CA", { timeZone: SCHOOL_TZ }))}</td></tr>` +
           `</table>` +
+          ladderLineHtml +
           (consId ? (() => {
             const tok = consequenceActionToken(String(req.schoolId), consId, "issue");
             const url = `${appBase()}/behavior/consequence-action?school=${req.schoolId}&id=${consId}&action=issue&token=${encodeURIComponent(tok)}`;
@@ -341,6 +358,29 @@ async function periodNoticesByStudent(schoolId, studentIds, config) {
     { $group: { _id: "$studentId", n: { $sum: 1 } } },
   ]);
   return Object.fromEntries(rows.map((r) => [String(r._id), r.n]));
+}
+
+// Bulk: white slips given this period (issued or resolved-as-other) per student —
+// for the handbook escalation ladder (3/4/5 → detention, 6th → suspension).
+async function periodWhiteSlipsByStudent(schoolId, studentIds, config) {
+  const rows = await BehaviorConsequence.aggregate([
+    { $match: { schoolId, studentId: { $in: studentIds }, type: "White slip", status: { $in: ["issued", "other"] }, at: { $gte: new Date(periodStartMs(config)) } } },
+    { $group: { _id: "$studentId", n: { $sum: 1 } } },
+  ]);
+  return Object.fromEntries(rows.map((r) => [String(r._id), r.n]));
+}
+
+// The recommended consequence per the handbook's two numeric escalation rules.
+// Returns null when the ladder is off or no rule applies (fall back to the
+// admin's consequence ladder). `nthWhiteSlip` is the count INCLUDING a slip
+// about to be issued, when relevant.
+function whiteSlipLadderRecommendation(config, { periodNotices = 0, periodWhiteSlips = 0 } = {}) {
+  const l = config?.whiteSlipLadder || {};
+  if (!l.enabled) return null;
+  if (l.suspensionAtCount && periodWhiteSlips >= l.suspensionAtCount) return `${l.suspensionDays || 2}-day suspension`;
+  if (l.detentionFromCount && periodWhiteSlips >= l.detentionFromCount) return "After-school detention";
+  if (l.emailsPerTermToWhiteSlip && periodNotices >= l.emailsPerTermToWhiteSlip) return "White slip";
+  return null;
 }
 
 // A signed, unauthenticated capability link for the "Reset the GUDD list" button
@@ -676,6 +716,10 @@ router.put("/config", authAny, loadMembership, requireAdmin, async (req, res, ne
     // points never clobbers lastAwardMonth (the idempotency marker).
     if (req.body?.monthlyConductAward && typeof req.body.monthlyConductAward === "object") {
       for (const [k, v] of Object.entries(req.body.monthlyConductAward)) update[`monthlyConductAward.${k}`] = v;
+    }
+    // Handbook white-slip escalation ladder (field-merge).
+    if (req.body?.whiteSlipLadder && typeof req.body.whiteSlipLadder === "object") {
+      for (const [k, v] of Object.entries(req.body.whiteSlipLadder)) update[`whiteSlipLadder.${k}`] = v;
     }
     const config = await BehaviorConfig.findOneAndUpdate(
       { schoolId: req.schoolId },
@@ -2288,16 +2332,26 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
 
     // Notices home THIS PERIOD per student (prior-year notices don't count).
     const noticesPeriod = await periodNoticesByStudent(req.schoolId, students.map((s) => s._id), config);
+    // White slips THIS PERIOD per student (for the handbook escalation ladder).
+    const wsLadderOn = !!config?.whiteSlipLadder?.enabled;
+    const wsPeriod = wsLadderOn ? await periodWhiteSlipsByStudent(req.schoolId, students.map((s) => s._id), config) : {};
 
-    const out = students.map((s) => ({
-      ...s,
-      noticesHomeCount: noticesPeriod[String(s._id)] || 0,
-      activeCount: cnt[String(s._id)] || 0,
-      guddCount: gcnt[String(s._id)] || 0,
-      pendingWhiteSlipId: pend[String(s._id)] || null,
-      pendingConsequences: (consByStudent[String(s._id)] || []).slice(0, 6),
-      hrFollowedUpThisWeek: hrWeek.has(String(s._id)),
-    }));
+    const out = students.map((s) => {
+      const periodNotices = noticesPeriod[String(s._id)] || 0;
+      const periodWhiteSlips = wsPeriod[String(s._id)] || 0;
+      return {
+        ...s,
+        noticesHomeCount: periodNotices,
+        activeCount: cnt[String(s._id)] || 0,
+        guddCount: gcnt[String(s._id)] || 0,
+        pendingWhiteSlipId: pend[String(s._id)] || null,
+        pendingConsequences: (consByStudent[String(s._id)] || []).slice(0, 6),
+        hrFollowedUpThisWeek: hrWeek.has(String(s._id)),
+        whiteSlipCount: periodWhiteSlips,
+        // Handbook-consistent recommendation (null → client falls back to the ladder).
+        recommendedConsequence: whiteSlipLadderRecommendation(config, { periodNotices, periodWhiteSlips }),
+      };
+    });
     res.json({
       ok: true, students: out, triggerCount,
       gudd: guddOn ? { enabled: true, name: gcfg.name || "GUDD", threshold: gcfg.threshold ?? 3 } : { enabled: false },
@@ -5363,7 +5417,8 @@ async function composeAdminDigest(schoolId, config) {
     section("Most-logged (60 days)", top(insights.topRepeat, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.count}`)) +
     section("Suggested support for staff", suggestions) +
     `<hr style="border:none;border-top:1px solid #e2e8f0;margin:18px 0">` +
-    `<p style="margin:0;font-size:13px;color:#64748b">Open the dashboard → <strong>School insights</strong> for trends, the full staff view, and to act on any of the above.</p>`;
+    `<p style="margin:0;font-size:13px;color:#64748b">Open the dashboard → <strong>School insights</strong> for trends, the full staff view, and to act on any of the above.</p>` +
+    `<p style="margin:12px 0 0;font-size:12px;color:#94a3b8"><strong>P.S.</strong> Compass is fully aligned with the most recent BCS Staff Handbook — white-slip offences, minor-infraction handling, and the GUDD dress-down policy all follow it.</p>`;
 
   const text =
     `Week in review for ${school?.name || "your school"}.\n` +
@@ -5375,7 +5430,8 @@ async function composeAdminDigest(schoolId, config) {
     `Rising lately: ${insights.proactive.slice(0, 6).map((r) => `${r.name} (${r.recent}/2wk)`).join(", ") || "none"}.\n` +
     (insights.gudd?.enabled ? `${gName}: ${gStuds.length ? `${gLost.length} lost, ${gRisk.length} at risk — reset the list from the emailed report.` : "no infractions this period."}\n` : "") +
     `Staff who may welcome support: ${flagged.map((t) => t.name).join(", ") || "none"}.\n\n` +
-    `Open the dashboard → School insights for the full picture.`;
+    `Open the dashboard → School insights for the full picture.\n\n` +
+    `P.S. Compass is fully aligned with the most recent BCS Staff Handbook — white-slip offences, minor-infraction handling, and the GUDD dress-down policy all follow it.`;
 
   return {
     subject: `Compass weekly digest — ${school?.name || "your school"}`,
