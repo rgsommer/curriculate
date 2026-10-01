@@ -118,6 +118,35 @@ export default function NewEngagementPage() {
   const [coverUrls, setCoverUrls] = useState<string[]>([]);
   const [coverPaste, setCoverPaste] = useState("");
   const [coverUploading, setCoverUploading] = useState(false);
+  // Which cover is featured (non-recurring only; recurring rotates at random).
+  const [coverChosen, setCoverChosen] = useState<string | null>(null);
+  // Picture bank: the host's previously uploaded covers, reusable across engagements.
+  const [coverBank, setCoverBank] = useState<string[]>([]);
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.storage
+        .from("campfire-media")
+        .list(`${user.id}/covers`, {
+          limit: 100,
+          sortBy: { column: "created_at", order: "desc" },
+        });
+      if (cancelled || !data) return;
+      const urls = data
+        .filter((f) => f.name && !f.name.startsWith("."))
+        .map(
+          (f) =>
+            supabase.storage
+              .from("campfire-media")
+              .getPublicUrl(`${user.id}/covers/${f.name}`).data.publicUrl
+        );
+      setCoverBank(urls);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
   const [pendingForTarget, setPendingForTarget] = useState(0);
   const waitTouched = useRef(false); // don't override a manual toggle
   const [recurrence, setRecurrence] = useState<
@@ -1033,11 +1062,16 @@ export default function NewEngagementPage() {
       excluded_user_ids: makingNewGroup ? [] : excludedIds,
       excluded_emails: makingNewGroup ? [] : excludedEmails,
       cover_image_urls: coverUrls,
-      // Show a random one from the pool (a fresh pick each year for a birthday).
+      // Recurring: show a random one (fresh pick each cycle). Non-recurring: the one the
+      // host featured (falls back to the first if they didn't pick).
       cover_image_url:
-        coverUrls.length > 0
+        coverUrls.length === 0
+          ? undefined
+          : recurrence !== "none"
           ? coverUrls[Math.floor(Math.random() * coverUrls.length)]
-          : undefined,
+          : coverChosen && coverUrls.includes(coverChosen)
+          ? coverChosen
+          : coverUrls[0],
     });
 
     if (result.error) {
@@ -2691,9 +2725,9 @@ export default function NewEngagementPage() {
                 🖼️ Cover image(s) <span className="text-slate-400">(optional)</span>
               </div>
               <p className="text-xs text-slate-500 mb-2">
-                A banner at the top. Add as many as you like — Campfire shows a{" "}
-                <span className="font-semibold">random one</span> (a fresh pick each year
-                for a birthday).
+                A banner at the top. Add as many as you like. For a recurring card a{" "}
+                <span className="font-semibold">fresh one shows each time</span>; otherwise{" "}
+                <span className="font-semibold">tap the one to feature</span>.
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 <label className="cursor-pointer rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
@@ -2721,6 +2755,9 @@ export default function NewEngagementPage() {
                         }
                         const { data } = supabase.storage.from("campfire-media").getPublicUrl(path);
                         setCoverUrls((prev) => [...prev, data.publicUrl]);
+                        setCoverBank((prev) =>
+                          prev.includes(data.publicUrl) ? prev : [data.publicUrl, ...prev]
+                        );
                       }
                       setCoverUploading(false);
                     }}
@@ -2743,29 +2780,72 @@ export default function NewEngagementPage() {
               </div>
               {coverUrls.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {coverUrls.map((u, i) => (
-                    <div key={i} className="relative">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={u}
-                        alt=""
-                        className="h-20 w-28 rounded-lg object-cover border border-slate-200"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setCoverUrls((prev) => prev.filter((_, j) => j !== i))}
-                        className="absolute -top-1.5 -right-1.5 rounded-full bg-white border border-slate-300 w-5 h-5 text-xs text-slate-500 hover:text-red-600 shadow"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
+                  {coverUrls.map((u, i) => {
+                    // Non-recurring: the host picks the one to feature. Recurring rotates.
+                    const pickable = recurrence === "none" && coverUrls.length > 1;
+                    const chosen = pickable && (coverChosen ? coverChosen === u : i === 0);
+                    return (
+                      <div key={i} className="relative">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={u}
+                          alt=""
+                          onClick={pickable ? () => setCoverChosen(u) : undefined}
+                          className={`h-20 w-28 rounded-lg object-cover border ${
+                            chosen ? "border-orange-500 ring-2 ring-orange-400" : "border-slate-200"
+                          } ${pickable ? "cursor-pointer" : ""}`}
+                        />
+                        {chosen && (
+                          <span className="absolute bottom-1 left-1 rounded-full bg-orange-500 px-1.5 py-0.5 text-[10px] font-bold text-white shadow">
+                            Shown
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCoverUrls((prev) => prev.filter((_, j) => j !== i));
+                            if (coverChosen === u) setCoverChosen(null);
+                          }}
+                          className="absolute -top-1.5 -right-1.5 rounded-full bg-white border border-slate-300 w-5 h-5 text-xs text-slate-500 hover:text-red-600 shadow"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
               {coverUrls.length > 1 && (
                 <p className="mt-1 text-[11px] text-slate-400">
-                  {coverUrls.length} images — one is shown at random.
+                  {recurrence === "none"
+                    ? "Tap an image to feature it — that one shows on the card."
+                    : `${coverUrls.length} images — a fresh one shows each time.`}
                 </p>
+              )}
+              {/* Picture bank — reuse the host's previously uploaded covers. */}
+              {coverBank.filter((u) => !coverUrls.includes(u)).length > 0 && (
+                <div className="mt-3 border-t border-slate-100 pt-2">
+                  <div className="mb-1.5 text-[11px] font-semibold text-slate-500">
+                    🗂️ From your uploads — tap to add
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {coverBank
+                      .filter((u) => !coverUrls.includes(u))
+                      .slice(0, 12)
+                      .map((u) => (
+                        <button
+                          key={u}
+                          type="button"
+                          onClick={() => setCoverUrls((prev) => [...prev, u])}
+                          title="Add to this card"
+                          className="h-16 w-24 overflow-hidden rounded-lg border border-slate-200 hover:border-orange-400"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={u} alt="" className="h-full w-full object-cover" />
+                        </button>
+                      ))}
+                  </div>
+                </div>
               )}
             </div>
 
