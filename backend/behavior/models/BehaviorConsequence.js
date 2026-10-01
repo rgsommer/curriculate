@@ -40,9 +40,14 @@ const BehaviorConsequenceSchema = new mongoose.Schema(
     issuedByName: { type: String, default: "" },
     issuedAt: { type: Date, default: null },
 
-    // Follow-through: whether the consequence has actually been carried out (e.g.
-    // the detention was served, the lines handed in). Any staff member marks it
-    // done; the strike-threshold notice then shows the consequence as completed.
+    // Stage 1 of follow-through — the family has been notified (the message was
+    // posted to Edsby / sent). Distinct from "completed": this is "note sent".
+    notifiedAt: { type: Date, default: null },
+    notifiedByName: { type: String, default: "" },
+
+    // Stage 2 — the consequence has actually been carried out (e.g. the detention
+    // was served, the lines handed in). Any staff member marks it done; the
+    // strike-threshold notice then shows the consequence as completed.
     completed: { type: Boolean, default: false, index: true },
     completedByTeacherId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorTeacher", default: null },
     completedByName: { type: String, default: "" },

@@ -5010,6 +5010,24 @@ router.post("/consequences/:id/complete", authAny, loadMembership, canLog, async
   }
 });
 
+// Stage 1: mark that the family has been notified (the message was posted to
+// Edsby / sent). Distinct from "completed" (the student carried the consequence
+// out). The Copy-message action sets this, and it can be toggled manually.
+router.post("/consequences/:id/notified", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const c = await BehaviorConsequence.findOne({ _id: req.params.id, schoolId: req.schoolId });
+    if (!c) return res.status(404).json({ ok: false, error: "Not found" });
+    const sent = req.body?.sent === false ? false : true;
+    c.notifiedAt = sent ? new Date() : null;
+    c.notifiedByName = sent ? actorName(req) : "";
+    await c.save();
+    await audit(req.schoolId, "consequence.notified", req, { studentId: String(c.studentId), meta: { type: c.type, sent } });
+    res.json({ ok: true, consequence: c.toObject() });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // White-slip recommendation: compose a parent-facing note recommending a white
 // slip (with the behaviour-category reasons), return it for the clipboard, AND
 // email a copy to the teacher (CC the VP). Records the recommendation as a

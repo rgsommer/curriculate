@@ -50,7 +50,7 @@ type StudentDetail = {
     deliveries?: Array<{ channel: string; ok: boolean; error?: string }>;
     fromTeachers: Array<{ name: string; behaviorName: string }>;
   }>;
-  consequences?: Array<{ _id: string; type: string; detail?: string; byName?: string; at: string; kind?: "encouraging" | "corrective"; completed?: boolean; completedByName?: string; completedAt?: string }>;
+  consequences?: Array<{ _id: string; type: string; detail?: string; byName?: string; at: string; kind?: "encouraging" | "corrective"; completed?: boolean; completedByName?: string; completedAt?: string; notifiedAt?: string | null; notifiedByName?: string }>;
 };
 
 const fmtDT = (d: string) =>
@@ -379,6 +379,10 @@ export default function StudentPage() {
   async function markConsequenceDone(id: string, completed: boolean) {
     try { await api(`/consequences/${id}/complete`, { body: { completed } }); load(); } catch (e: any) { setConsMsg(`✗ ${e.message}`); }
   }
+  // Stage 1: parents notified (message posted/sent). Separate from completed.
+  async function markConsequenceNotified(id: string, sent: boolean) {
+    try { await api(`/consequences/${id}/notified`, { body: { sent } }); load(); } catch (e: any) { setConsMsg(`✗ ${e.message}`); }
+  }
 
   // Compose an AI student/parent-directed message for a consequence and copy it
   // (rich text, ready to paste into Edsby). Never sent automatically.
@@ -396,7 +400,9 @@ export default function StudentPage() {
         } else {
           await navigator.clipboard.writeText(r.message);
         }
-        setConsMsg("✓ Message copied — paste it into Edsby. (Nothing was sent.)");
+        setConsMsg("✓ Message copied — paste it into Edsby. Marked as sent to parents.");
+        // Copying it is the act of taking it to post → mark stage 1 (sent).
+        markConsequenceNotified(id, true);
       } catch {
         setConsMsg("Composed, but couldn't copy automatically — try again.");
       }
@@ -658,33 +664,58 @@ export default function StudentPage() {
         {consMsg && <p className={`mt-2 text-sm ${consMsg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{consMsg}</p>}
         {(data.consequences || []).filter((c) => c.kind !== "encouraging").length > 0 && (
           <>
-            <p className="mt-4 text-xs font-medium text-slate-600">Already given — mark done when completed:</p>
+            <p className="mt-4 text-xs font-medium text-slate-600">Already given — track each through to completion:</p>
             <ul className="mt-1 divide-y divide-slate-100">
-              {data.consequences!.filter((c) => c.kind !== "encouraging").map((c) => (
-                <li key={c._id} className="flex items-start justify-between gap-2 py-1.5 text-sm">
-                  <span>
-                    <span className="font-medium text-slate-900">{c.type}</span>
-                    {c.detail ? <span className="text-slate-600"> — {c.detail}</span> : null}
-                    <span className="ml-2 text-xs text-slate-400">{fmtDT(c.at)}{c.byName ? ` · ${c.byName}` : ""}</span>
-                    {c.completed && (
-                      <span className="ml-2 rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-700">
-                        ✓ Completed{c.completedByName ? ` · ${c.completedByName}` : ""}
+              {data.consequences!.filter((c) => c.kind !== "encouraging").map((c) => {
+                const notified = !!c.notifiedAt;
+                const done = !!c.completed;
+                const resolved = notified && done;
+                return (
+                <li key={c._id} className="py-2 text-sm">
+                  <div className="flex items-start justify-between gap-2">
+                    <span>
+                      <span className="font-medium text-slate-900">{c.type}</span>
+                      {c.detail ? <span className="text-slate-600"> — {c.detail}</span> : null}
+                      <span className="ml-2 text-xs text-slate-400">{fmtDT(c.at)}{c.byName ? ` · ${c.byName}` : ""}</span>
+                    </span>
+                    <button onClick={() => removeConsequence(c._id)} className="no-print shrink-0 text-xs text-red-600">remove</button>
+                  </div>
+                  {/* Lifecycle: ① parents notified  ②  student completed it */}
+                  <div className="no-print mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                    {/* Stage 1 — notify parents (post to Edsby) */}
+                    {notified ? (
+                      <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                        <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">✉ Sent to parents{c.notifiedByName ? ` · ${c.notifiedByName}` : ""}</span>
+                        <button onClick={() => markConsequenceNotified(c._id, false)} className="text-slate-400 hover:underline">undo</button>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-2">
+                        <button onClick={() => copyConsequenceMessage(c._id)} disabled={cmBusy === c._id}
+                          title="Compose a message to the student/parents and copy it for Edsby — also marks it sent"
+                          className="rounded-lg border border-slate-300 px-2 py-0.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40">
+                          {cmBusy === c._id ? "…" : "📋 Copy message & mark sent"}
+                        </button>
+                        <button onClick={() => markConsequenceNotified(c._id, true)} className="text-xs text-slate-500 hover:underline">mark sent only</button>
                       </span>
                     )}
-                  </span>
-                  <span className="no-print flex shrink-0 items-center gap-2">
-                    <button onClick={() => copyConsequenceMessage(c._id)} disabled={cmBusy === c._id}
-                      title="Compose a message to the student/parents about this and copy it for Edsby"
-                      className="rounded-lg border border-slate-300 px-2 py-0.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40">
-                      {cmBusy === c._id ? "…" : "📋 Copy message"}
-                    </button>
-                    {c.completed
-                      ? <button onClick={() => markConsequenceDone(c._id, false)} className="text-xs text-slate-500 hover:underline">undo</button>
-                      : <button onClick={() => markConsequenceDone(c._id, true)} className="rounded-lg border border-green-300 px-2 py-0.5 text-xs font-medium text-green-700 hover:bg-green-50">Mark done</button>}
-                    <button onClick={() => removeConsequence(c._id)} className="text-xs text-red-600">remove</button>
-                  </span>
+                    {/* Stage 2 — student completed the consequence */}
+                    {done ? (
+                      <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                        <span className="rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-700">✓ Completed{c.completedByName ? ` · ${c.completedByName}` : ""}</span>
+                        <button onClick={() => markConsequenceDone(c._id, false)} className="text-slate-400 hover:underline">undo</button>
+                      </span>
+                    ) : (
+                      <button onClick={() => markConsequenceDone(c._id, true)}
+                        title="The student has carried this out (e.g. handed in the lines / served the detention)"
+                        className="rounded-lg border border-green-300 px-2 py-0.5 text-xs font-medium text-green-700 hover:bg-green-50">
+                        ✓ Mark completed
+                      </button>
+                    )}
+                    {resolved && <span className="text-[10px] font-semibold text-green-700">— resolved</span>}
+                  </div>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           </>
         )}

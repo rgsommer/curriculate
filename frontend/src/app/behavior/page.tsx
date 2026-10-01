@@ -634,7 +634,8 @@ function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: st
                 <div key={c.id} className="mt-1 flex flex-wrap items-center gap-2 text-xs">
                   <span className="text-slate-500">Consequence: <span className="font-medium text-slate-700">{c.type}</span></span>
                   <button type="button" onClick={() => markDone(s, c.id)}
-                    className="rounded-md border border-green-300 px-2 py-0.5 font-semibold text-green-700 hover:bg-green-50">Mark done</button>
+                    title="The student has carried this out (e.g. handed in the lines)"
+                    className="rounded-md border border-green-300 px-2 py-0.5 font-semibold text-green-700 hover:bg-green-50">✓ Mark completed</button>
                 </div>
               ))}
             </li>
