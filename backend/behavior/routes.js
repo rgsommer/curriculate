@@ -135,14 +135,11 @@ async function fireWhiteSlip({ req, student, config, behaviorName, detailText, a
   const studentName = `${student.preferredName || student.firstName} ${student.lastName}`.trim();
   const first = student.preferredName || student.firstName || studentName;
   const teacherEmail = req.user?.email || "";
-  // Always identify the issuing teacher. Fall back to their email (never the
-  // bare word "Teacher") so the VP can see exactly who issued it, even when a
-  // teacher hasn't set a display name.
-  const teacherDisplayName = req.membership?.name || req.user?.name || "";
-  const teacherName = teacherDisplayName || teacherEmail || "Unknown teacher";
-  const loggedByLabel = teacherDisplayName
-    ? `${teacherDisplayName}${teacherEmail ? ` (${teacherEmail})` : ""}`
-    : (teacherEmail || "Unknown — teacher has not set a display name");
+  // Always identify the issuing teacher. When they haven't set a display name we
+  // derive one from their email (rgsommer@me.com → "rgsommer"), never the bare
+  // word "Teacher", so the VP can always see who issued it.
+  const teacherName = actorName(req);
+  const loggedByLabel = teacherEmail && !teacherName.includes("@") ? `${teacherName} (${teacherEmail})` : teacherName;
   const vpEmail = (config?.vp?.email || "").trim();
   const when = new Date(at || Date.now());
   let consId = "";
@@ -260,8 +257,8 @@ function buildConsequenceMessage({ studentName, behaviorName, detailText, conseq
 // Record a logged (non-white-slip) consequence on the student record so it shows
 // immediately and can be marked done. Returns the created doc (or null on error).
 async function recordLoggedConsequence({ req, student, behavior, detailText, at, incidentId }) {
-  // Always attributable — fall back to the teacher's email, never a bare "Teacher".
-  const teacherName = req.membership?.name || req.user?.name || req.user?.email || "Unknown teacher";
+  // Always attributable — derive from email when no display name, never "Teacher".
+  const teacherName = actorName(req);
   try {
     return await BehaviorConsequence.create({
       schoolId: req.schoolId, studentId: student._id,
@@ -336,6 +333,19 @@ async function awardEncouragingMessagePoints({ schoolId, student, teacherId, kin
 
 function appBase() {
   return (process.env.APP_BASE_URL || "https://www.curriculate.net").replace(/\/+$/, "");
+}
+
+// A readable name for a teacher who hasn't set a display name: the email's local
+// part (e.g. "rgsommer@me.com" → "rgsommer"). "" when there's no email.
+function emailLocalName(email) {
+  const s = String(email || "").trim();
+  const i = s.indexOf("@");
+  return i > 0 ? s.slice(0, i) : "";
+}
+// Best available name for the acting teacher: their set display name, else a name
+// derived from their email, else a safe placeholder. Never the bare "Teacher".
+function actorName(req) {
+  return (req?.membership?.name || req?.user?.name || "").trim() || emailLocalName(req?.user?.email) || "Unknown teacher";
 }
 
 // Start of the current "notices home" period (school year by default: most
