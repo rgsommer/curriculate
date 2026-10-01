@@ -356,6 +356,28 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
         reveal: "sealed",
       },
       {
+        id: "get-well-card",
+        name: "Get Well Card 🌻",
+        type: "birthday",
+        title: "Get well soon! 🌻",
+        description:
+          "A surprise card the group signs for someone who's unwell or recovering — each note stays hidden until it opens, then arrives all at once to lift their spirits. Add a group gift to send flowers or a gift card together.",
+        occasion: "once",
+        onceLabel: "Get Well",
+        reveal: "sealed",
+      },
+      {
+        id: "farewell-card",
+        name: "Farewell Card 👋",
+        type: "birthday",
+        title: "We'll miss you! 👋",
+        description:
+          "A surprise send-off card the group signs for someone moving on — a coworker, classmate, or friend who's leaving or relocating. Notes stay hidden until it opens. Add a group gift so everyone can chip in for a parting gift.",
+        occasion: "once",
+        onceLabel: "Farewell",
+        reveal: "sealed",
+      },
+      {
         id: "meal-train",
         name: "Meal Train 🍲",
         type: "signup",

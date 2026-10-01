@@ -96,6 +96,8 @@ export default function NewEngagementPage() {
   const { user } = useAuth();
 
   const [step, setStep] = useState<"type" | "details" | "options">("type");
+  // Template picker: collapsed to category headers; one open at a time (accordion).
+  const [openPack, setOpenPack] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<EngagementType | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -1242,26 +1244,42 @@ export default function NewEngagementPage() {
             <p className="text-sm font-semibold text-slate-700 mb-3">
               ⚡ Start from a template
             </p>
-            <div className="space-y-4">
-              {TEMPLATE_PACKS.map((pack) => (
-                <div key={pack.id}>
-                  <div className="text-xs font-semibold text-slate-500 mb-1.5">
-                    {pack.emoji} {pack.name}
+            <div className="space-y-2">
+              {TEMPLATE_PACKS.map((pack) => {
+                const open = openPack === pack.id;
+                return (
+                  <div key={pack.id} className="rounded-xl border border-orange-100 bg-white/70">
+                    <button
+                      type="button"
+                      onClick={() => setOpenPack(open ? null : pack.id)}
+                      aria-expanded={open}
+                      className="flex w-full items-center justify-between px-3 py-2.5 text-left"
+                    >
+                      <span className="text-sm font-semibold text-slate-700">
+                        {pack.emoji} {pack.name}
+                      </span>
+                      <span className="flex items-center gap-2 text-xs text-slate-400">
+                        {pack.templates.length}
+                        <span className={`transition-transform ${open ? "rotate-180" : ""}`}>⌄</span>
+                      </span>
+                    </button>
+                    {open && (
+                      <div className="flex flex-wrap gap-2 border-t border-orange-100 p-3">
+                        {pack.templates.map((t) => (
+                          <button
+                            key={t.id}
+                            onClick={() => applyTemplate(t)}
+                            title={t.title}
+                            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:border-orange-300 hover:bg-orange-50"
+                          >
+                            {ENGAGEMENT_TYPES[t.type].icon} {t.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {pack.templates.map((t) => (
-                      <button
-                        key={t.id}
-                        onClick={() => applyTemplate(t)}
-                        title={t.title}
-                        className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:border-orange-300 hover:bg-orange-50"
-                      >
-                        {ENGAGEMENT_TYPES[t.type].icon} {t.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
