@@ -555,15 +555,21 @@ export function reminderEmail(opts: {
   hoursLeft?: number;
   // An optional one-line personal note from the member sending the nudge.
   note?: string;
+  // Sign-ups have no reveal — frame the whole email as an RSVP, not a sealed response.
+  isSignup?: boolean;
 }) {
-  const { groupName, title, url, responded, total, responderNames, hoursLeft, note } = opts;
-  // Social proof: "Maria, Jon, Sara and 5 others already responded (8 of 14)".
+  const { groupName, title, url, responded, total, responderNames, hoursLeft, note, isSignup = false } = opts;
+  const verb = isSignup ? "signed up" : "responded";
+  // Social proof: "Maria, Jon, Sara and 5 others already signed up (8 so far)".
   const shownNames = (responderNames ?? []).filter(Boolean).slice(0, 3);
   const otherResp = Math.max(0, responded - shownNames.length);
+  const tally = isSignup ? `${responded} so far` : `${responded} of ${total}`;
   const who = shownNames.length
     ? `${shownNames.join(", ")}${
         otherResp > 0 ? ` and ${otherResp} other${otherResp === 1 ? "" : "s"}` : ""
-      } already responded (${responded} of ${total})`
+      } already ${verb} (${tally})`
+    : isSignup
+    ? `${responded} ${responded === 1 ? "person has" : "people have"} signed up so far`
     : `${responded} of ${total} have responded`;
   const noteText = note ? `\n\n💬 "${note}"` : "";
   const noteHtml = note
@@ -579,29 +585,48 @@ export function reminderEmail(opts: {
         : `in about ${hoursLeft} hours`
       : "";
   const subject = finalCall
-    ? `⏰ Final call: "${title}" closes ${closes} (${groupName})`
+    ? isSignup
+      ? `⏰ Last call to sign up: "${title}" (${groupName})`
+      : `⏰ Final call: "${title}" closes ${closes} (${groupName})`
+    : isSignup
+    ? `Don't forget to sign up: "${title}" (${groupName})`
     : `Your response is needed: "${title}" (${groupName})`;
-  const heading = finalCall ? "Final call — last chance to respond" : "Your response is needed";
-  const text = `${
-    finalCall
-      ? `⏰ Final call — "${title}" in "${groupName}" closes ${closes}.`
-      : `The group "${groupName}" is waiting on you for "${title}".`
-  }
-${who} — be one of the ones that unlocks the reveal!${noteText}
+  const heading = isSignup
+    ? finalCall
+      ? "Last chance to sign up"
+      : "Don't forget to sign up"
+    : finalCall
+    ? "Final call — last chance to respond"
+    : "Your response is needed";
+  const closingText = isSignup
+    ? "Add your name before the date!"
+    : "be one of the ones that unlocks the reveal!";
+  const closingHtml = isSignup
+    ? "Add your name before the date."
+    : "nobody sees the results until everyone's in.";
+  const introText = finalCall
+    ? `⏰ ${isSignup ? "Last call" : "Final call"} — "${title}" in "${groupName}" closes ${closes}.`
+    : isSignup
+    ? `"${title}" in "${groupName}" still needs your sign-up.`
+    : `The group "${groupName}" is waiting on you for "${title}".`;
+  const introHtml = finalCall
+    ? `<strong>"${escapeHtml(title)}"</strong> in <strong>${escapeHtml(groupName)}</strong> closes <strong>${closes}</strong>.`
+    : isSignup
+    ? `<strong>"${escapeHtml(title)}"</strong> in <strong>${escapeHtml(groupName)}</strong> still needs your sign-up.`
+    : `The group <strong>${escapeHtml(groupName)}</strong> is waiting on you for <strong>"${escapeHtml(title)}"</strong>.`;
+  const cta = isSignup ? "Sign up" : "Respond now";
+  const text = `${introText}
+${who} — ${closingText}${noteText}
 
-Respond here: ${url}${appPromoBlock(url).text}`;
+${isSignup ? "Sign up here" : "Respond here"}: ${url}${appPromoBlock(url).text}`;
   const html = `
 <div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
-  <div style="font-size:40px;">⏰</div>
+  <div style="font-size:40px;">${isSignup ? "📋" : "⏰"}</div>
   <h1 style="font-size:20px; margin:8px 0;">${heading}</h1>
-  <p style="color:#475569; margin:0 0 12px;">${
-    finalCall
-      ? `<strong>"${escapeHtml(title)}"</strong> in <strong>${escapeHtml(groupName)}</strong> closes <strong>${closes}</strong>.`
-      : `The group <strong>${escapeHtml(groupName)}</strong> is waiting on you for <strong>"${escapeHtml(title)}"</strong>.`
-  } ${who} — nobody sees the results until everyone's in.</p>
+  <p style="color:#475569; margin:0 0 12px;">${introHtml} ${who} — ${closingHtml}</p>
   ${noteHtml}
   <p style="text-align:center; margin:24px 0;">
-    <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">Respond now</a>
+    <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">${cta}</a>
   </p>
   <p style="margin:0;"><a href="${url}" style="color:#ea580c; word-break:break-all;">${url}</a></p>
   ${appPromoBlock(url).html}
