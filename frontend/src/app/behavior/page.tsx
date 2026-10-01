@@ -140,6 +140,11 @@ export default function BehaviorDashboard() {
                 House competitions
               </Link>
             )}
+            {housesOn && (
+              <Link href="/behavior/food-drive" className="rounded-lg border border-slate-300 px-3 py-1.5">
+                Food Drive import
+              </Link>
+            )}
           </div>
           <ReferColleague canInviteAdmin />
         </Card>

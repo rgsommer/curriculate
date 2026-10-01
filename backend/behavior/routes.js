@@ -36,6 +36,7 @@ import HousesVisit from "./models/HousesVisit.js";
 import MerchRedemption from "./models/MerchRedemption.js";
 import { awardGuddAndReset } from "./lib/guddAward.js";
 import { awardMonthlyConduct } from "./lib/monthlyConductAward.js";
+import { readFoodDriveSheets } from "./lib/foodDriveVision.js";
 import HomeworkAssignment from "./models/HomeworkAssignment.js";
 import HomeworkScore from "./models/HomeworkScore.js";
 import BehaviorCompetition from "./models/BehaviorCompetition.js";
@@ -59,6 +60,8 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 *
 // Photo/video evidence — larger cap (short phone clips), held in memory only
 // long enough to push to S3. 30 MB covers photos + brief videos.
 const uploadMedia = multer({ storage: multer.memoryStorage(), limits: { fileSize: 30 * 1024 * 1024, files: 5 } });
+// Food Drive class sheets (photos/scans or a PDF) for AI handwriting read.
+const uploadSheets = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024, files: 25 } });
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -5994,6 +5997,115 @@ router.post("/house-points", authAny, loadMembership, canLog, async (req, res, n
     });
     await audit(req.schoolId, "house.points", req, { studentId, meta: { houseId: String(houseId), points } });
     res.json({ ok: true, event });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Food Drive import (AI handwriting read of class sheets) ───────────────────
+const normName = (s) => String(s || "").toLowerCase().replace(/[^a-z\s'-]/g, "").replace(/\s+/g, " ").trim();
+// Match a sheet name ("First Last" or "Last, First"/"Last First") to a student.
+function matchStudent(raw, index) {
+  const n = normName(raw);
+  if (!n) return null;
+  if (index.exact[n]) return index.exact[n];
+  // try swapping order (handles "Last First" vs "First Last")
+  const parts = n.split(" ");
+  if (parts.length >= 2) {
+    const swapped = [parts.slice(1).join(" "), parts[0]].join(" ");
+    if (index.exact[swapped]) return index.exact[swapped];
+    // last + first-initial fallback
+    const li = `${parts[parts.length - 1]} ${parts[0][0]}`;
+    if (index.liLast[li]) return index.liLast[li];
+  }
+  return null;
+}
+function buildStudentIndex(students) {
+  const exact = {}, liLast = {};
+  for (const s of students) {
+    const first = s.preferredName || s.firstName || "";
+    const names = new Set([`${first} ${s.lastName}`, `${s.firstName} ${s.lastName}`, `${s.lastName} ${first}`, `${s.lastName} ${s.firstName}`]);
+    for (const nm of names) { const k = normName(nm); if (k) exact[k] = s; }
+    const li = normName(`${s.lastName} ${(first || "")[0] || ""}`);
+    if (li) liLast[li] = s;
+  }
+  return { exact, liLast };
+}
+
+// 1) Read the sheets → return parsed rows matched to students (for review).
+router.post("/house/food-drive/parse", authAny, loadMembership, canLog, uploadSheets.array("files", 25), async (req, res, next) => {
+  try {
+    if (!req.files?.length) return res.status(400).json({ ok: false, error: "Upload at least one sheet (photo, scan, or PDF)." });
+    const { rows, images } = await readFoodDriveSheets(req.files);
+    const students = await BehaviorStudent.find({ schoolId: req.schoolId, active: true }).select("firstName preferredName lastName classGroup houseId").lean();
+    const houses = await BehaviorHouse.find({ schoolId: req.schoolId }).select("name color").lean();
+    const houseById = Object.fromEntries(houses.map((h) => [String(h._id), h]));
+    const index = buildStudentIndex(students);
+    const out = rows.map((r) => {
+      const s = matchStudent(r.name, index);
+      const h = s?.houseId ? houseById[String(s.houseId)] : null;
+      return {
+        name: r.name,
+        items: Number.isFinite(r.items) ? r.items : null,
+        studentId: s ? String(s._id) : null,
+        studentLabel: s ? `${s.preferredName || s.firstName} ${s.lastName}${s.classGroup ? ` (${s.classGroup})` : ""}` : null,
+        house: h?.name || null,
+        houseColor: h?.color || null,
+      };
+    });
+    const roster = students
+      .map((s) => ({ id: String(s._id), label: `${s.preferredName || s.firstName} ${s.lastName}${s.classGroup ? ` (${s.classGroup})` : ""}`, house: s.houseId ? (houseById[String(s.houseId)]?.name || "") : "" }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+    res.json({ ok: true, images, rows: out, roster, unmatched: out.filter((r) => !r.studentId).length });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 2) Apply: award top donors + house placements from the confirmed rows.
+router.post("/house/food-drive/apply", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const rows = (req.body?.rows || []).filter((r) => r.studentId && Number(r.items) > 0).map((r) => ({ studentId: String(r.studentId), items: Math.round(Number(r.items)) }));
+    if (!rows.length) return res.status(400).json({ ok: false, error: "No rows with a matched student and a positive count." });
+    const indPts = Array.isArray(req.body?.individual) ? req.body.individual.map(Number) : [30, 20, 10];
+    const housePts = Array.isArray(req.body?.house) ? req.body.house.map(Number) : [100, 60, 30];
+    const label = String(req.body?.label || "Food Drive").trim() || "Food Drive";
+    const at = new Date();
+
+    const ids = rows.map((r) => new mongoose.Types.ObjectId(r.studentId));
+    const students = await BehaviorStudent.find({ _id: { $in: ids }, schoolId: req.schoolId }).select("firstName preferredName lastName houseId").lean();
+    const sById = Object.fromEntries(students.map((s) => [String(s._id), s]));
+
+    // House totals (sum of items by each student's house).
+    const houseTotalsMap = {};
+    for (const r of rows) { const s = sById[r.studentId]; if (!s?.houseId) continue; const k = String(s.houseId); houseTotalsMap[k] = (houseTotalsMap[k] || 0) + r.items; }
+    const houses = await BehaviorHouse.find({ schoolId: req.schoolId }).select("name").lean();
+    const houseName = Object.fromEntries(houses.map((h) => [String(h._id), h.name]));
+    const rankedHouses = Object.entries(houseTotalsMap).map(([id, total]) => ({ id, total })).sort((a, b) => b.total - a.total);
+
+    const awardedHouses = [];
+    for (let i = 0; i < rankedHouses.length && i < housePts.length; i++) {
+      const p = Math.round(housePts[i]) || 0;
+      if (!p) continue;
+      const hid = rankedHouses[i].id;
+      await HousePointEvent.create({ schoolId: req.schoolId, houseId: new mongoose.Types.ObjectId(hid), studentId: null, points: p, reason: `${label} — ${["1st","2nd","3rd","4th","5th"][i]||`#${i+1}`} most items (${rankedHouses[i].total})`, awardedByTeacherId: req.membership._id, at });
+      awardedHouses.push({ house: houseName[hid] || "—", place: i + 1, points: p, items: rankedHouses[i].total });
+    }
+
+    // Top individual donors (regardless of house) → bonus points to their house.
+    const rankedStudents = rows.slice().sort((a, b) => b.items - a.items);
+    const awardedStudents = [];
+    for (let i = 0; i < rankedStudents.length && i < indPts.length; i++) {
+      const p = Math.round(indPts[i]) || 0;
+      if (!p) continue;
+      const r = rankedStudents[i]; const s = sById[r.studentId];
+      if (!s?.houseId) continue;
+      await HousePointEvent.create({ schoolId: req.schoolId, houseId: s.houseId, studentId: new mongoose.Types.ObjectId(r.studentId), points: p, reason: `${label} — top donor ${["1st","2nd","3rd"][i]||`#${i+1}`} (${r.items} items)`, awardedByTeacherId: req.membership._id, at });
+      awardedStudents.push({ name: `${s.preferredName || s.firstName} ${s.lastName}`.trim(), place: i + 1, points: p, items: r.items });
+    }
+
+    await audit(req.schoolId, "house.food_drive", req, { meta: { label, rows: rows.length, houses: awardedHouses.length, donors: awardedStudents.length } });
+    res.json({ ok: true, houses: awardedHouses, students: awardedStudents, totalItems: rows.reduce((a, b) => a + b.items, 0) });
   } catch (err) {
     next(err);
   }
