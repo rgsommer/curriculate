@@ -2089,6 +2089,13 @@ export default function BatchGrading({
                     title: r.detectedTitle || effectiveTitle || "",
                     pdfName: pdfName || "",
                     className: r.rosterClassName || "",
+                    // Carried through the roster pass too. These are what the
+                    // Edsby poster reads, and this update used to drop them.
+                    teacherEmail: currentTeacherEmail(),
+                    edsbyComment: buildEdsbyComment(r),
+                    score: r.score ?? null,
+                    outOf: r.outOf ?? null,
+                    pct: r.pct ?? null,
                   },
                 }),
               });
@@ -2871,7 +2878,19 @@ export default function BatchGrading({
   const buildEdsbyCsv = useCallback(() => {
     if (!results.length) return null;
 
-    const assessmentName = effectiveTitle || "Curriculate Grade";
+    // What the work actually says it is, where the students agree.
+    // effectiveTitle is whatever was typed or taken from the filename —
+    // "Math — Quiz" — while the pages themselves read "Math Snap Quiz:
+    // Equations & Expressions". The detected title is the specific one, and
+    // a gradebook column named vaguely is hard to find again in December.
+    const titleVotes = {};
+    for (const r of results) {
+      const t = String(r?.detectedTitle || "").trim();
+      if (t) titleVotes[t] = (titleVotes[t] || 0) + 1;
+    }
+    const topTitle = Object.entries(titleVotes).sort((a, b) => b[1] - a[1])[0];
+    const assessmentName = (topTitle && topTitle[1] >= 2 ? topTitle[0] : "")
+      || effectiveTitle || "Curriculate Grade";
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
     const headers = ["Student ID", "First Name", "Last Name", "Assessment Name", "Date", "Grade", "Out Of", "Comment"];
     const escCsv = (v) => {

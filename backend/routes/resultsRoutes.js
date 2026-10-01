@@ -247,7 +247,14 @@ router.put("/:code", createLimiter, async (req, res) => {
     if (payload == null) return res.status(400).json({ error: "Missing payload." });
 
     const update = { payload };
-    if (meta) update.meta = meta;
+    // Merge, do not replace. A caller sending a partial meta — the roster
+    // pass sends eight fields of a dozen — was silently erasing everything it
+    // did not mention, including the teacherEmail and comment the Edsby
+    // poster needs. Nobody writing that caller could see what they were
+    // deleting.
+    if (meta && typeof meta === "object") {
+      for (const [k, v] of Object.entries(meta)) update[`meta.${k}`] = v;
+    }
 
     const doc = await PublishedResult.findOneAndUpdate(
       { code },
