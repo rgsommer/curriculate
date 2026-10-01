@@ -48,7 +48,7 @@ import { seedBehaviorDocs, recommendedHousePoints } from "./lib/seedBehaviors.js
 import { parseRoster, parseRosterFile } from "./lib/rosterImport.js";
 import { DEFAULT_PARENT_TEMPLATES, fillTemplate } from "./lib/parentTemplates.js";
 import { STANDARD_BEHAVIORS } from "./lib/standardBehaviors.js";
-import { composeNotice, composePositiveNotice, makeDefaultAiClient, deterministicNote, deterministicPositiveNote, composeParentMessage, hasBibleVerse } from "./lib/aiNote.js";
+import { composeNotice, composePositiveNotice, makeDefaultAiClient, deterministicNote, deterministicPositiveNote, composeParentMessage, hasBibleVerse, stripMarkdown } from "./lib/aiNote.js";
 import { buildAvgsRouter } from "./avgsRoutes.js";
 import { emailShell, emailButton, noteToHtml, mdToHtml, monthlyKindChartHtml, pasteableNote } from "./lib/emailTemplate.js";
 import { scheduleDispatch, dispatchNotice, sendHomeworkMessage, recordNoticeAsSent } from "./lib/notify.js";
@@ -2424,7 +2424,15 @@ router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
         new Date(inc.timestamp).getTime() > resetAt && new Date(inc.timestamp).getTime() > cutoff &&
         (inc.behaviorSnapshot?.categories || []).includes("behaviour");
     });
-    const whiteSlipEligible = activeBehaviour.length >= triggerCount;
+    // White slips come from logging a handbook offence (fires immediately) or, per
+    // the handbook accumulation rule, after enough notices home in a term. When the
+    // ladder is on, the manual "Recommend a white slip" button only appears once
+    // that notices threshold is reached — NOT merely at the strike trigger (which
+    // now recommends a detention). Falls back to the old strike basis when off.
+    const wsL = config?.whiteSlipLadder || {};
+    const whiteSlipEligible = (wsL.enabled && wsL.emailsPerTermToWhiteSlip)
+      ? noticesThisPeriod >= wsL.emailsPerTermToWhiteSlip
+      : activeBehaviour.length >= triggerCount;
     const whiteSlipReasons = activeBehaviour.slice(0, 6).map((i) => ({
       name: i.behaviorSnapshot?.name || "", detail: i.detailText || "", date: i.timestamp,
     }));
@@ -4925,6 +4933,61 @@ router.post("/consequences/:id/issue", authAny, loadMembership, canLog, async (r
   } catch (err) {
     next(err);
   }
+});
+
+// A human day phrase for a date, school-local: "today" / "yesterday" / "on Oct 1".
+function relativeSchoolDay(d) {
+  const dt = new Date(d);
+  const startOf = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((startOf(new Date()) - startOf(dt)) / DAY_MS);
+  if (diff <= 0) return "today";
+  if (diff === 1) return "yesterday";
+  return `on ${dt.toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: SCHOOL_TZ })}`;
+}
+
+// Compose a student + parent directed message for a recorded consequence — explains
+// what happened and the action taken, ready to paste into Edsby. AI-polished with a
+// deterministic fallback; retains the school's Christian, firm-but-warm tone.
+router.post("/consequences/:id/message", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const c = await BehaviorConsequence.findOne({ _id: req.params.id, schoolId: req.schoolId }).lean();
+    if (!c) return res.status(404).json({ ok: false, error: "Not found" });
+    const student = await BehaviorStudent.findOne({ _id: c.studentId, schoolId: req.schoolId }).lean();
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    const studentName = student ? (student.preferredName || student.firstName) : "the student";
+    const teacherName = actorName(req);
+    let incident = null;
+    if (c.relatedIncidentId) incident = await BehaviorIncident.findOne({ _id: c.relatedIncidentId, schoolId: req.schoolId }).select("behaviorSnapshot detailText timestamp").lean();
+    const behaviourName = incident?.behaviorSnapshot?.name || c.detail || c.type;
+    const incidentDetail = incident?.detailText || "";
+    const dayPhrase = relativeSchoolDay(incident?.timestamp || c.at);
+
+    const det = [
+      `Dear ${studentName} (and parents),`, ``,
+      `Something in ${studentName}'s conduct ${dayPhrase} needs improvement. ${studentName} was logged for ${behaviourName}${incidentDetail ? ` — ${incidentDetail}` : ""}.`, ``,
+      `As a result: ${c.type}${c.detail ? ` — ${c.detail}` : ""}. Please take care of this promptly.`, ``,
+      `From now on, let's aim for a fresh start. Thank you,`, `${teacherName}`,
+    ].join("\n");
+
+    let message = det;
+    const aiClient = makeDefaultAiClient(config || {});
+    if (aiClient) {
+      const prompt = [
+        `Write a brief, warm-but-firm message from a Christian-school teacher to a student (with their parents reading too), to be posted in Edsby. Address the student as "you".`,
+        `It must: say that something in their conduct ${dayPhrase} needs improvement; state what happened (${behaviourName}${incidentDetail ? `: ${incidentDetail}` : ""}); and clearly state what they must now do / the consequence (${c.type}${c.detail ? `: ${c.detail}` : ""}). Close with an encouraging "from now on" note and sign off as ${teacherName}.`,
+        `3–6 short sentences, plain prose. No placeholders, no invented facts, no bullet points.`,
+      ].join("\n");
+      try {
+        const out = await Promise.race([
+          aiClient.complete(prompt),
+          new Promise((_, rej) => setTimeout(() => rej(new Error("AI timeout")), 15000)),
+        ]);
+        const t = stripMarkdown(String(out || "").trim());
+        if (t) message = t;
+      } catch (e) { console.warn("[behavior] consequence message AI failed:", e?.message || e); }
+    }
+    res.json({ ok: true, message, html: noteToHtml(message) });
+  } catch (err) { next(err); }
 });
 
 // Mark a consequence as completed (or not). Any teacher can confirm follow-

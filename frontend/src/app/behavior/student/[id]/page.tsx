@@ -119,6 +119,7 @@ export default function StudentPage() {
   const [consDetail, setConsDetail] = useState("");
   const [consBusy, setConsBusy] = useState(false);
   const [consMsg, setConsMsg] = useState("");
+  const [cmBusy, setCmBusy] = useState<string | null>(null);
 
   // White-slip recommendation (eligible students)
   const [wsBusy, setWsBusy] = useState(false);
@@ -379,6 +380,33 @@ export default function StudentPage() {
     try { await api(`/consequences/${id}/complete`, { body: { completed } }); load(); } catch (e: any) { setConsMsg(`✗ ${e.message}`); }
   }
 
+  // Compose an AI student/parent-directed message for a consequence and copy it
+  // (rich text, ready to paste into Edsby). Never sent automatically.
+  async function copyConsequenceMessage(id: string) {
+    setCmBusy(id); setConsMsg("");
+    try {
+      const r = await api<{ message: string; html: string }>(`/consequences/${id}/message`, { method: "POST", body: {} });
+      try {
+        const w = window as any;
+        if (navigator.clipboard && w.ClipboardItem) {
+          await navigator.clipboard.write([new w.ClipboardItem({
+            "text/html": new Blob([r.html], { type: "text/html" }),
+            "text/plain": new Blob([r.message], { type: "text/plain" }),
+          })]);
+        } else {
+          await navigator.clipboard.writeText(r.message);
+        }
+        setConsMsg("✓ Message copied — paste it into Edsby. (Nothing was sent.)");
+      } catch {
+        setConsMsg("Composed, but couldn't copy automatically — try again.");
+      }
+    } catch (e: any) {
+      setConsMsg(`✗ ${e.message}`);
+    } finally {
+      setCmBusy(null);
+    }
+  }
+
   async function logMeeting() {
     const text = meetingNote.trim();
     if (!text) return;
@@ -608,9 +636,10 @@ export default function StudentPage() {
 
       {/* Document a consequence actually applied */}
       <section className="no-print rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="font-semibold">Consequences applied</h2>
-        <p className="text-xs text-slate-400">Record a consequence you or an admin gave (e.g. work detention, white slip, call home). Kept in the record and included in summaries.</p>
-        <div className="mt-2 flex flex-wrap gap-2">
+        <h2 className="font-semibold">Consequences given</h2>
+        <p className="text-xs text-slate-400">These are consequences that have <strong>already been given</strong> (by you or an admin) — not suggestions. Record one here, then tick <strong>Mark done</strong> once the student has completed it.</p>
+        <p className="mt-2 text-xs font-medium text-slate-600">Record a consequence you gave:</p>
+        <div className="mt-1 flex flex-wrap gap-2">
           <input list="consequence-types" value={consType} onChange={(e) => setConsType(e.target.value)}
             placeholder="Consequence (e.g. Work detention)"
             className="min-w-[12rem] flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
@@ -628,28 +657,36 @@ export default function StudentPage() {
         </div>
         {consMsg && <p className={`mt-2 text-sm ${consMsg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{consMsg}</p>}
         {(data.consequences || []).filter((c) => c.kind !== "encouraging").length > 0 && (
-          <ul className="mt-3 divide-y divide-slate-100">
-            {data.consequences!.filter((c) => c.kind !== "encouraging").map((c) => (
-              <li key={c._id} className="flex items-center justify-between gap-2 py-1.5 text-sm">
-                <span>
-                  <span className="font-medium text-slate-900">{c.type}</span>
-                  {c.detail ? <span className="text-slate-600"> — {c.detail}</span> : null}
-                  <span className="ml-2 text-xs text-slate-400">{fmtDT(c.at)}{c.byName ? ` · ${c.byName}` : ""}</span>
-                  {c.completed && (
-                    <span className="ml-2 rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-700">
-                      ✓ Completed{c.completedByName ? ` · ${c.completedByName}` : ""}
-                    </span>
-                  )}
-                </span>
-                <span className="no-print flex shrink-0 items-center gap-2">
-                  {c.completed
-                    ? <button onClick={() => markConsequenceDone(c._id, false)} className="text-xs text-slate-500 hover:underline">undo</button>
-                    : <button onClick={() => markConsequenceDone(c._id, true)} className="rounded-lg border border-green-300 px-2 py-0.5 text-xs font-medium text-green-700 hover:bg-green-50">Mark done</button>}
-                  <button onClick={() => removeConsequence(c._id)} className="text-xs text-red-600">remove</button>
-                </span>
-              </li>
-            ))}
-          </ul>
+          <>
+            <p className="mt-4 text-xs font-medium text-slate-600">Already given — mark done when completed:</p>
+            <ul className="mt-1 divide-y divide-slate-100">
+              {data.consequences!.filter((c) => c.kind !== "encouraging").map((c) => (
+                <li key={c._id} className="flex items-start justify-between gap-2 py-1.5 text-sm">
+                  <span>
+                    <span className="font-medium text-slate-900">{c.type}</span>
+                    {c.detail ? <span className="text-slate-600"> — {c.detail}</span> : null}
+                    <span className="ml-2 text-xs text-slate-400">{fmtDT(c.at)}{c.byName ? ` · ${c.byName}` : ""}</span>
+                    {c.completed && (
+                      <span className="ml-2 rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-700">
+                        ✓ Completed{c.completedByName ? ` · ${c.completedByName}` : ""}
+                      </span>
+                    )}
+                  </span>
+                  <span className="no-print flex shrink-0 items-center gap-2">
+                    <button onClick={() => copyConsequenceMessage(c._id)} disabled={cmBusy === c._id}
+                      title="Compose a message to the student/parents about this and copy it for Edsby"
+                      className="rounded-lg border border-slate-300 px-2 py-0.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40">
+                      {cmBusy === c._id ? "…" : "📋 Copy message"}
+                    </button>
+                    {c.completed
+                      ? <button onClick={() => markConsequenceDone(c._id, false)} className="text-xs text-slate-500 hover:underline">undo</button>
+                      : <button onClick={() => markConsequenceDone(c._id, true)} className="rounded-lg border border-green-300 px-2 py-0.5 text-xs font-medium text-green-700 hover:bg-green-50">Mark done</button>}
+                    <button onClick={() => removeConsequence(c._id)} className="text-xs text-red-600">remove</button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </section>
 
