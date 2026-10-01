@@ -152,6 +152,21 @@ async function fireWhiteSlip({ req, student, config, behaviorName, detailText, a
     });
     consId = String(cons._id);
   } catch (e) { console.warn("[behavior] white-slip consequence log failed:", e?.message || e); }
+
+  // Optional one-off house-point penalty for a white slip. Meant for schools that
+  // don't deduct per-infraction, so only applied when negative deductions are off
+  // (avoids double-counting the white-slip offence's own points).
+  try {
+    const pen = Number(config?.houseWhiteSlipPoints) || 0;
+    if (config?.houseWhiteSlipDeduct && !config?.houseNegativePoints && pen > 0 && student.houseId) {
+      await HousePointEvent.create({
+        schoolId: req.schoolId, houseId: student.houseId, studentId: student._id,
+        points: -Math.abs(pen), reason: `White slip — ${behaviorName}`,
+        awardedByTeacherId: req.membership?._id || null, at: when,
+      });
+    }
+  } catch (e) { console.warn("[behavior] white-slip house penalty failed:", e?.message || e); }
+
   if (!teacherEmail && !vpEmail) return;
 
   // Handbook ladder: how many white slips this term (incl. this one) and what the
@@ -346,6 +361,24 @@ function emailLocalName(email) {
 // derived from their email, else a safe placeholder. Never the bare "Teacher".
 function actorName(req) {
   return (req?.membership?.name || req?.user?.name || "").trim() || emailLocalName(req?.user?.email) || "Unknown teacher";
+}
+
+// Whether an individual behaviour's house points should apply, by sign:
+// positives gated by housePositivePoints, negatives by houseNegativePoints.
+// Falls back to the legacy houseIndividualPoints switch when the granular ones
+// aren't set, so existing schools behave as before until they choose.
+function applyIndividualPoints(config, pts) {
+  if (pts > 0) {
+    return config?.housePositivePoints !== undefined
+      ? config.housePositivePoints !== false
+      : config?.houseIndividualPoints !== false;
+  }
+  if (pts < 0) {
+    return config?.houseNegativePoints !== undefined
+      ? !!config.houseNegativePoints
+      : config?.houseIndividualPoints !== false;
+  }
+  return false;
 }
 
 // Start of the current "notices home" period (school year by default: most
@@ -722,6 +755,7 @@ router.put("/config", authAny, loadMembership, requireAdmin, async (req, res, ne
       "reminderTime", "manualNonSchoolDays", "houseReport", "housesEnabled", "housePointsResetAt",
       "homework", "vpNotify", "teacherDraft", "consequenceLadder", "consequenceWhitelist", "adminDigest", "houseCaps", "houseEvents", "houseRewards",
       "encouragingMessagePoints", "houseIndividualPoints", "autoRecommendWhiteSlipAtThreshold",
+      "housePositivePoints", "houseNegativePoints", "houseWhiteSlipDeduct", "houseWhiteSlipPoints",
     ];
     const update = {};
     for (const k of allowed) if (k in (req.body || {})) update[k] = req.body[k];
@@ -2875,9 +2909,9 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
       }
 
       // House points: this behaviour's value scaled by the intensity weight.
-      // Skipped when the school has turned off individual behaviour points.
+      // Positives add / negatives deduct, each gated by its own school switch.
       const pts = Math.round((behavior.points || 0) * weight);
-      if (pts && student.houseId && config?.houseIndividualPoints !== false) {
+      if (pts && student.houseId && applyIndividualPoints(config, pts)) {
         await HousePointEvent.create({
           schoolId: req.schoolId, houseId: student.houseId, studentId: student._id,
           points: pts, reason: weight !== 1 ? `${behavior.name} (×${weight})` : behavior.name, behaviorId: behavior._id,
@@ -3055,7 +3089,7 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
       });
 
       const pts = Math.round((behavior.points || 0) * weight);
-      if (pts && student.houseId && config?.houseIndividualPoints !== false) {
+      if (pts && student.houseId && applyIndividualPoints(config, pts)) {
         await HousePointEvent.create({
           schoolId: req.schoolId, houseId: student.houseId, studentId: student._id,
           points: pts, reason: weight !== 1 ? `${behavior.name} (×${weight})` : behavior.name, behaviorId: behavior._id,
@@ -4974,6 +5008,7 @@ router.post("/consequences/:id/message", authAny, loadMembership, async (req, re
     if (aiClient) {
       const prompt = [
         `Write a brief, warm-but-firm message from a Christian-school teacher to a student (with their parents reading too), to be posted in Edsby. Address the student as "you".`,
+        `The student's name is ${studentName} — use it directly where natural. NEVER output a placeholder such as [Student name], [name], [student], or any bracketed token; all specifics are given below.`,
         `It must: say that something in their conduct ${dayPhrase} needs improvement; state what happened (${behaviourName}${incidentDetail ? `: ${incidentDetail}` : ""}); and clearly state what they must now do / the consequence (${c.type}${c.detail ? `: ${c.detail}` : ""}). Close with an encouraging "from now on" note and sign off as ${teacherName}.`,
         `3–6 short sentences, plain prose. No placeholders, no invented facts, no bullet points.`,
       ].join("\n");
@@ -4982,7 +5017,10 @@ router.post("/consequences/:id/message", authAny, loadMembership, async (req, re
           aiClient.complete(prompt),
           new Promise((_, rej) => setTimeout(() => rej(new Error("AI timeout")), 15000)),
         ]);
-        const t = stripMarkdown(String(out || "").trim());
+        let t = stripMarkdown(String(out || "").trim());
+        // Safeguard: if the model still emitted a bracketed name placeholder,
+        // swap in the real name (or drop a generic bracket token).
+        t = t.replace(/\[[^\]]*\b(student|name|pupil|child)\b[^\]]*\]/gi, studentName).replace(/\[[^\]]*\]/g, "").replace(/\s{2,}/g, " ").trim();
         if (t) message = t;
       } catch (e) { console.warn("[behavior] consequence message AI failed:", e?.message || e); }
     }

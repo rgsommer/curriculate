@@ -250,7 +250,20 @@ const BehaviorConfigSchema = new mongoose.Schema(
     // Master switch for applying house points from individual Compass behaviour
     // logging (good adds, bad subtracts). Off = behaviours are still recorded and
     // still drive strikes/notices, but they don't move house totals.
+    // (Legacy — superseded by the granular switches below; kept for migration.)
     houseIndividualPoints: { type: Boolean, default: true },
+
+    // Granular house-point switches:
+    //  • housePositivePoints — positive behaviours ADD to the student's house.
+    //  • houseNegativePoints — negative behaviours DEDUCT from the house.
+    //  • houseWhiteSlipDeduct — a white slip deducts houseWhiteSlipPoints (a single,
+    //    larger penalty). Meant for schools that DON'T deduct per-infraction but
+    //    still want a real cost for a white slip, so only applied when negative
+    //    deductions are off (avoids double-counting a white-slip offence).
+    housePositivePoints: { type: Boolean, default: true },
+    houseNegativePoints: { type: Boolean, default: false },
+    houseWhiteSlipDeduct: { type: Boolean, default: false },
+    houseWhiteSlipPoints: { type: Number, default: 10 },
 
     // Bi-weekly teacher nudges: (a) a proactive "students in your homeroom to
     // check in with" email to homeroom teachers, and (b) a gentle "how's it

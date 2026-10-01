@@ -400,9 +400,13 @@ export default function StudentPage() {
         } else {
           await navigator.clipboard.writeText(r.message);
         }
-        setConsMsg("✓ Message copied — paste it into Edsby. Marked as sent to parents.");
         // Copying it is the act of taking it to post → mark stage 1 (sent).
-        markConsequenceNotified(id, true);
+        // Non-fatal: swallow errors so a success isn't overwritten by, e.g., a
+        // not-yet-deployed endpoint; the chip updates on reload when it works.
+        let marked = false;
+        try { await api(`/consequences/${id}/notified`, { body: { sent: true } }); marked = true; } catch { /* ignore */ }
+        setConsMsg(marked ? "✓ Message copied — paste it into Edsby. Marked as sent to parents." : "✓ Message copied — paste it into Edsby.");
+        load();
       } catch {
         setConsMsg("Composed, but couldn't copy automatically — try again.");
       }

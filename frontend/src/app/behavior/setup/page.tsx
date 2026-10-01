@@ -1377,12 +1377,25 @@ function HousesSection({ config }: { config?: any }) {
     encSave.run(async () => { await api("/houses/config", { method: "PUT", body: { encouragingMessagePoints: Math.max(0, Number(encPts) || 0) } }); });
   }
 
-  // ── How houses earn points: the three switches ──────────────────────────────
-  // 1) individual add/subtract from behaviour logging
-  const [indivPts, setIndivPts] = useState<boolean>(config?.houseIndividualPoints !== false);
-  const indivSave = useSaveState([indivPts]);
+  // ── How houses earn points ───────────────────────────────────────────────────
+  // 1) individual points, now split: add for positives, deduct for negatives, and
+  //    an optional one-off white-slip deduction (only when negatives aren't deducted).
+  const legacyIndiv = config?.houseIndividualPoints !== false;
+  const [posPts, setPosPts] = useState<boolean>(config?.housePositivePoints !== undefined ? !!config.housePositivePoints : legacyIndiv);
+  const [negPts, setNegPts] = useState<boolean>(config?.houseNegativePoints !== undefined ? !!config.houseNegativePoints : legacyIndiv);
+  const [wsDeduct, setWsDeduct] = useState<boolean>(!!config?.houseWhiteSlipDeduct);
+  const [wsPts, setWsPts] = useState<number | string>(config?.houseWhiteSlipPoints ?? 10);
+  const indivSave = useSaveState([posPts, negPts, wsDeduct, wsPts]);
   function saveIndiv() {
-    indivSave.run(async () => { await api("/config", { method: "PUT", body: { houseIndividualPoints: indivPts } }); });
+    indivSave.run(async () => {
+      await api("/config", { method: "PUT", body: {
+        housePositivePoints: posPts,
+        houseNegativePoints: negPts,
+        // White-slip deduction only makes sense when not already deducting negatives.
+        houseWhiteSlipDeduct: negPts ? false : wsDeduct,
+        houseWhiteSlipPoints: Math.max(0, Number(wsPts) || 0),
+      } });
+    });
   }
   // 2) month-end conduct award (fewest infractions OR most positive points)
   const mc0 = config?.monthlyConductAward || {};
@@ -1881,15 +1894,32 @@ function HousesSection({ config }: { config?: any }) {
           <p className="text-sm font-medium text-slate-700">How houses earn points</p>
           <p className="text-xs text-slate-400">Choose which point systems are active. You can run individual points, the monthly award, and the GUDD award in any combination.</p>
 
-          {/* 1) Individual add/subtract */}
+          {/* 1) Individual points — split by positive / negative / white slip */}
           <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
-            <label className="flex items-start gap-2">
-              <input type="checkbox" checked={indivPts} onChange={(e) => setIndivPts(e.target.checked)} className="mt-0.5" />
-              <span className="text-sm">
-                <span className="font-medium text-slate-700">Add &amp; subtract individual points for good/bad behaviour</span>
-                <span className="block text-xs text-slate-400">When on, logging a Compass behaviour moves the student&apos;s house total (good adds, infractions deduct). When off, behaviours are still recorded and still drive strikes/notices — they just don&apos;t change house points.</span>
-              </span>
-            </label>
+            <p className="text-sm font-medium text-slate-700">Individual behaviour points</p>
+            <p className="text-xs text-slate-400">Behaviours are always recorded and still drive strikes/notices — these only control whether they move house points.</p>
+            <div className="mt-2 space-y-2">
+              <label className="flex items-start gap-2">
+                <input type="checkbox" checked={posPts} onChange={(e) => setPosPts(e.target.checked)} className="mt-0.5" />
+                <span className="text-sm"><span className="font-medium text-green-700">Add points for positive behaviour</span>
+                  <span className="block text-xs text-slate-400">Logging a positive adds its points to the student&apos;s house.</span></span>
+              </label>
+              <label className="flex items-start gap-2">
+                <input type="checkbox" checked={negPts} onChange={(e) => setNegPts(e.target.checked)} className="mt-0.5" />
+                <span className="text-sm"><span className="font-medium text-red-600">Deduct points for negative behaviour (infractions)</span>
+                  <span className="block text-xs text-slate-400">Logging an infraction subtracts its points. Leave off to keep the house board all-positive.</span></span>
+              </label>
+              <label className={`flex items-start gap-2 ${negPts ? "opacity-40" : ""}`}>
+                <input type="checkbox" checked={wsDeduct && !negPts} disabled={negPts} onChange={(e) => setWsDeduct(e.target.checked)} className="mt-0.5" />
+                <span className="text-sm"><span className="font-medium text-red-700">Deduct for a white slip</span>
+                  <span className="inline-flex items-center gap-1"> —
+                    <input type="number" min={0} value={wsPts} disabled={negPts || !wsDeduct} onChange={(e) => setWsPts(e.target.value)} className="w-16 rounded border border-slate-300 px-1.5 py-0.5 text-sm disabled:opacity-50" />
+                    <span className="text-xs text-slate-500">points per white slip</span>
+                  </span>
+                  <span className="block text-xs text-slate-400">{negPts ? "Turn off per-infraction deductions to use this (avoids double-counting)." : "A single, larger penalty for a white slip while everyday infractions don't cost points."}</span>
+                </span>
+              </label>
+            </div>
             <div className="mt-2"><SaveButton state={indivSave} onClick={saveIndiv} label="Save" /></div>
           </div>
 
