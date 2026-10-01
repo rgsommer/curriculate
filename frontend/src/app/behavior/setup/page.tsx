@@ -1995,7 +1995,7 @@ function HousesSection({ config }: { config?: any }) {
         {/* Standard add/deduct scheme for infractions & positives */}
         <div className="mt-4 border-t border-slate-100 pt-3">
           <p className="text-sm font-medium text-slate-700">Standard house points on behaviours</p>
-          <p className="text-xs text-slate-400">Give every behaviour a recommended house-point value so logging it auto-adds (positives) or deducts (infractions): −2 minor, −5 behaviour/respect, −10 serious/immediate; +5 positive, +10 notable. Only fills behaviours still at 0 — your custom values are kept. Tune any of them in the Behaviours list.</p>
+          <p className="text-xs text-slate-400">Give every behaviour a recommended house-point value: −1 minor, −2 moderate, −3 serious/values-based, −5 immediate; +3 positive, +5 notable. Only fills behaviours still at 0 — your custom values are kept. You usually don&apos;t need this: positives are already set, and infractions only move house points if you&apos;ve turned on &ldquo;Deduct for negatives.&rdquo; Tune any value in the Behaviours list.</p>
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <button type="button" disabled={applyPtsBusy}
               onClick={async () => {
