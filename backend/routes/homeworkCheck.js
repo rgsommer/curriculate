@@ -1474,6 +1474,83 @@ function consensusScope(results) {
   return agreed;
 }
 
+// What the class as a whole appears not to have been asked to do.
+//
+// A SUGGESTION, never a decision. The trap is that a question nobody
+// attempted because it was hard looks exactly like one that was never set,
+// and silently excusing it would delete the single most useful finding a
+// batch produces. So this only reports, and only where the shape of the gap
+// argues for it:
+//
+//   * a run of untouched questions at the START or END of the sheet — work
+//     that was cut off, which is what an assignment boundary looks like
+//   * a clean odds/evens split — the other common way a teacher sets half
+//
+// An isolated untouched question in the middle is a hard question. It is
+// never suggested, however few attempted it.
+function suggestUnassigned(results, { minStudents = 5 } = {}) {
+  const graded = results.filter(
+    (r) => r && !r.superseded && !r.noPageFound && !r.error && Array.isArray(r.questions) && r.questions.length
+  );
+  if (graded.length < minStudents) return null;
+
+  const tally = new Map();
+  for (const r of graded) {
+    for (const q of r.questions) {
+      const k = String(q?.q || "").trim();
+      if (!k) continue;
+      if (!tally.has(k)) tally.set(k, 0);
+      if (q.work === "attempted" || q.work === "unreadable") tally.set(k, tally.get(k) + 1);
+    }
+  }
+  const labels = [...tally.keys()];
+  if (labels.length < 4) return null;
+
+  const numOf = (l) => { const m = String(l).match(/^(\d+)/); return m ? parseInt(m[1], 10) : NaN; };
+  const sorted = [...labels].sort((a, b) => (numOf(a) - numOf(b)) || String(a).localeCompare(String(b)));
+  const zero = new Set(labels.filter((l) => tally.get(l) === 0));
+  if (!zero.size || zero.size === labels.length) return null;
+
+  const out = new Set();
+  let why = "";
+
+  // A block nobody touched at either end.
+  let head = 0;
+  while (head < sorted.length && zero.has(sorted[head])) head++;
+  if (head >= 2) { for (let i = 0; i < head; i++) out.add(sorted[i]); why = "nothing was attempted at the start of the sheet"; }
+
+  let tail = sorted.length - 1;
+  while (tail >= 0 && zero.has(sorted[tail])) tail--;
+  const tailLen = sorted.length - 1 - tail;
+  if (tailLen >= 2) {
+    for (let i = tail + 1; i < sorted.length; i++) out.add(sorted[i]);
+    why = why ? "nothing was attempted at either end of the sheet" : "nothing was attempted after this point";
+  }
+
+  // Or a clean odds/evens split.
+  if (!out.size && zero.size >= 3) {
+    const par = (l) => numOf(l) % 2;
+    const zeroPar = new Set([...zero].map(par));
+    const donePar = new Set(labels.filter((l) => !zero.has(l)).map(par));
+    if (zeroPar.size === 1 && donePar.size === 1 && [...zeroPar][0] !== [...donePar][0]) {
+      for (const l of zero) out.add(l);
+      why = [...zeroPar][0] === 0 ? "only the odd-numbered questions were attempted"
+                                  : "only the even-numbered questions were attempted";
+    }
+  }
+
+  if (!out.size) return null;
+  const questions = [...out].sort((a, b) => (numOf(a) - numOf(b)) || String(a).localeCompare(String(b)));
+  return {
+    questions,
+    why,
+    studentCount: graded.length,
+    // The teacher acts on this by typing it into "What was assigned?", so
+    // hand them the sentence rather than a list to translate.
+    scopeSuggestion: `skip ${questions.join(", ")}`,
+  };
+}
+
 // Two independent marks, never merged.
 function scoreStudent(questions, hasAnswerKey) {
   const qs = Array.isArray(questions) ? questions : [];
@@ -1925,6 +2002,15 @@ async function runCheckJob(ctx) {
       ? `The pages read "${detected.code}" (${detected.agreed} of ${detected.of}) but this batch was labelled ${lessonCode}.`
       : "";
 
+  // Only worth suggesting when the teacher did not say — if they typed a
+  // scope or a list, they have already answered the question.
+  const unassignedHint = (!assigned.length && !String(scopeRule || "").trim())
+    ? suggestUnassigned(results)
+    : null;
+  if (unassignedHint) {
+    console.log(`[homework/check] suggestion: ${unassignedHint.questions.length} question(s) look unassigned (${unassignedHint.why})`);
+  }
+
   const unmatchedPhotoIndexes = results
     .filter((r) => r && r.unmatched && !r.superseded)
     .flatMap((r) => r.photoIndexes || []);
@@ -1955,6 +2041,7 @@ async function runCheckJob(ctx) {
     unmatchedPhotoIndexes,
     missingStudents,
     unreadableCount,
+    unassignedHint,
     model: MODEL,
     responseTimeMs: Date.now() - started,
   };

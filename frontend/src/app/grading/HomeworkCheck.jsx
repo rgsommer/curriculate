@@ -1761,6 +1761,7 @@ export default function HomeworkCheck({
           onExportEdsby={exportEdsbyCsv}
           hwUrl={hwUrl}
           teacherEmail={teacherEmail}
+          onApplyScope={setAssignmentScope}
         />
       )}
 
@@ -1826,7 +1827,7 @@ const zoomBtn = {
 /*  Results                                                            */
 /* ------------------------------------------------------------------ */
 
-function ResultsTable({ result, onExportCsv, onExportEdsby, hwUrl, teacherEmail }) {
+function ResultsTable({ result, onExportCsv, onExportEdsby, hwUrl, teacherEmail, onApplyScope }) {
   const [expanded, setExpanded] = useState(null);
 
   // Teacher release gate. Nothing reaches /progress until this is pressed —
@@ -1988,6 +1989,44 @@ function ResultsTable({ result, onExportCsv, onExportEdsby, hwUrl, teacherEmail 
             <b>No page found ({missing.length}):</b> {missing.map((r) => r.studentName).join(", ")}
           </div>
         )}
+        {/* A suggestion, not a decision — see suggestUnassigned on the server.
+            It is shown after the results so the teacher reads it against the
+            marks it would change, and acting on it means re-running: the
+            scores already on screen counted those questions. */}
+        {result.unassignedHint && (
+          <div
+            style={{
+              margin: "8px 0", padding: "8px 10px", borderRadius: 8, fontSize: 13, lineHeight: 1.5,
+              background: "rgba(234,88,12,0.09)", border: "1px solid rgba(234,88,12,0.35)", color: "#7c2d12",
+            }}
+          >
+            <b>Were {result.unassignedHint.questions.join(", ")} actually set?</b>{" "}
+            Across {result.unassignedHint.studentCount} students, {result.unassignedHint.why}.
+            If they weren't assigned, they're counting against everyone's completeness.
+            <div style={{ marginTop: 6 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  onApplyScope?.(result.unassignedHint.scopeSuggestion);
+                  alert(
+                    `Set to "${result.unassignedHint.scopeSuggestion}".\n\n`
+                    + "Run the check again to apply it — the marks on screen still count those questions."
+                  );
+                }}
+                style={{
+                  background: "#b45309", color: "#fff", border: "none", borderRadius: 6,
+                  padding: "5px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                }}
+              >
+                Exclude them and re-check
+              </button>
+              <span style={{ marginLeft: 8, fontSize: 12, color: "#9a3412" }}>
+                Or ignore this — a question the whole class found hard looks the same from here.
+              </span>
+            </div>
+          </div>
+        )}
+
         {unmatched.length > 0 && (
           <div style={S.flagWarn}>
             <b>Unmatched photos ({unmatched.length}):</b>{" "}
