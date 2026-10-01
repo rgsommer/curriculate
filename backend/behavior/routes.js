@@ -134,8 +134,15 @@ const SCHOOL_TZ = process.env.SCHOOL_TZ || "America/Toronto";
 async function fireWhiteSlip({ req, student, config, behaviorName, detailText, at, relatedIncidentId = null }) {
   const studentName = `${student.preferredName || student.firstName} ${student.lastName}`.trim();
   const first = student.preferredName || student.firstName || studentName;
-  const teacherName = req.membership?.name || req.user?.name || "Teacher";
   const teacherEmail = req.user?.email || "";
+  // Always identify the issuing teacher. Fall back to their email (never the
+  // bare word "Teacher") so the VP can see exactly who issued it, even when a
+  // teacher hasn't set a display name.
+  const teacherDisplayName = req.membership?.name || req.user?.name || "";
+  const teacherName = teacherDisplayName || teacherEmail || "Unknown teacher";
+  const loggedByLabel = teacherDisplayName
+    ? `${teacherDisplayName}${teacherEmail ? ` (${teacherEmail})` : ""}`
+    : (teacherEmail || "Unknown — teacher has not set a display name");
   const vpEmail = (config?.vp?.email || "").trim();
   const when = new Date(at || Date.now());
   let consId = "";
@@ -175,7 +182,7 @@ async function fireWhiteSlip({ req, student, config, behaviorName, detailText, a
       text:
         `WHITE SLIP\n\nStudent: ${studentName}${student.classGroup ? ` (${student.classGroup})` : ""}\n` +
         `Reason: ${behaviorName}${detailText ? `\nDetail: ${detailText}` : ""}\n` +
-        `Teacher: ${teacherName}\nDate: ${when.toLocaleString("en-CA", { timeZone: SCHOOL_TZ })}${ladderLineText}\n\n— Compass`,
+        `Logged by: ${loggedByLabel}\nDate: ${when.toLocaleString("en-CA", { timeZone: SCHOOL_TZ })}${ladderLineText}\n\n— Compass`,
       html: emailShell({
         title: "White Slip",
         schoolName: config?.branding?.schoolName || "Compass",
@@ -185,7 +192,7 @@ async function fireWhiteSlip({ req, student, config, behaviorName, detailText, a
           `<tr><td style="padding:4px 0;width:90px;color:#64748b">Student</td><td style="padding:4px 0"><strong>${escapeHtml(studentName)}</strong>${student.classGroup ? ` (${escapeHtml(student.classGroup)})` : ""}</td></tr>` +
           `<tr><td style="padding:4px 0;color:#64748b">Reason</td><td style="padding:4px 0">${escapeHtml(behaviorName)}</td></tr>` +
           (detailText ? `<tr><td style="padding:4px 0;color:#64748b">Detail</td><td style="padding:4px 0">${escapeHtml(detailText)}</td></tr>` : "") +
-          `<tr><td style="padding:4px 0;color:#64748b">Teacher</td><td style="padding:4px 0">${escapeHtml(teacherName)}</td></tr>` +
+          `<tr><td style="padding:4px 0;color:#64748b">Logged by</td><td style="padding:4px 0">${escapeHtml(loggedByLabel)}</td></tr>` +
           `<tr><td style="padding:4px 0;color:#64748b">Date</td><td style="padding:4px 0">${escapeHtml(when.toLocaleString("en-CA", { timeZone: SCHOOL_TZ }))}</td></tr>` +
           `</table>` +
           ladderLineHtml +
@@ -253,7 +260,8 @@ function buildConsequenceMessage({ studentName, behaviorName, detailText, conseq
 // Record a logged (non-white-slip) consequence on the student record so it shows
 // immediately and can be marked done. Returns the created doc (or null on error).
 async function recordLoggedConsequence({ req, student, behavior, detailText, at, incidentId }) {
-  const teacherName = req.membership?.name || req.user?.name || "Teacher";
+  // Always attributable — fall back to the teacher's email, never a bare "Teacher".
+  const teacherName = req.membership?.name || req.user?.name || req.user?.email || "Unknown teacher";
   try {
     return await BehaviorConsequence.create({
       schoolId: req.schoolId, studentId: student._id,
