@@ -291,7 +291,7 @@ async function composeConsequenceMessageAI(opts) {
     `Note that ${dayPhrase} there was a concern — ${opts.behaviorName}${opts.detailText ? `: ${opts.detailText}` : ""}. Then clearly state what the student must now do: ${opts.consequenceText}. ${deadline}`,
     `For any deadline, keep the wording EXACTLY "the next school day" — do NOT say "tomorrow", "Saturday", a weekday, or a date (the next school day may be after the weekend or a holiday).`,
     `Close with a brief encouraging "fresh start / from now on" line and sign off exactly as: ${opts.teacherName}.`,
-    `3–6 short sentences, plain prose, no bullet points, no invented facts, no placeholders.`,
+    `FORMAT: do NOT write one block. Use short paragraphs separated by a blank line: (1) the greeting on its own line; (2) a sentence on what happened; (3) the task SET OFF on its own line(s) — the action, the exact words to write in quotation marks, and the deadline; (4) the encouraging line; (5) the sign-off. Plain text with real line breaks, no bullets, no invented facts, no placeholders.`,
   ].join("\n");
   try {
     const out = await Promise.race([
@@ -299,7 +299,10 @@ async function composeConsequenceMessageAI(opts) {
       new Promise((_, rej) => setTimeout(() => rej(new Error("AI timeout")), 15000)),
     ]);
     let t = stripMarkdown(String(out || "").trim());
-    t = t.replace(/\[[^\]]*\b(student|name|pupil|child)\b[^\]]*\]/gi, opts.studentName || "").replace(/\[[^\]]*\]/g, "").replace(/\s{2,}/g, " ").trim();
+    t = t.replace(/\[[^\]]*\b(student|name|pupil|child)\b[^\]]*\]/gi, opts.studentName || "").replace(/\[[^\]]*\]/g, "")
+      .replace(/[ \t]{2,}/g, " ")   // tidy runs of spaces WITHOUT collapsing line breaks
+      .replace(/\n{3,}/g, "\n\n")    // at most one blank line between paragraphs
+      .trim();
     // Guardrail: a deadline must never read "tomorrow" (could be a weekend/holiday).
     t = t.replace(/\bby\s+tomorrow\b/gi, "by the next school day").replace(/\btomorrow\b/gi, "the next school day");
     return t || det;
