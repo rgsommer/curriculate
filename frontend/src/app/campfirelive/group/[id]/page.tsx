@@ -15,7 +15,7 @@ export default function GroupDetailPage() {
   const router = useRouter();
   const groupId = params.id as string;
   const { user, session } = useAuth();
-  const { group, members, engagements, streaks, invitations, loading, refresh, renameGroup, setMyGroupName, setNotifyOnResponse, setNotifyHost, leaveGroup, deleteGroup, setMemberRole, setMemberName } = useGroup(groupId);
+  const { group, members, engagements, streaks, invitations, loading, refresh, renameGroup, setMyGroupName, setNotifyOnResponse, setNotifyHost, leaveGroup, removeMember, deleteGroup, setMemberRole, setMemberName } = useGroup(groupId);
   const { onlineUsers } = usePresence(groupId);
   const [showMembers, setShowMembers] = useState(false);
   const [showInvitePanel, setShowInvitePanel] = useState(false);
@@ -1145,19 +1145,39 @@ See you around the campfire! 🏕️`
                     )}
                   </div>
                 </div>
-                {/* Admins can promote/demote (creator/host is locked as admin) */}
+                {/* Admins can promote/demote + remove (creator/host is locked as admin) */}
                 {isAdmin && m.user_id !== group.creator_id ? (
-                  <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer flex-shrink-0">
-                    <input
-                      type="checkbox"
-                      checked={m.role === "admin"}
-                      onChange={(e) =>
-                        setMemberRole(m.user_id, e.target.checked ? "admin" : "member")
-                      }
-                      className="w-3.5 h-3.5 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
-                    />
-                    Admin
-                  </label>
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={m.role === "admin"}
+                        onChange={(e) =>
+                          setMemberRole(m.user_id, e.target.checked ? "admin" : "member")
+                        }
+                        className="w-3.5 h-3.5 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                      />
+                      Admin
+                    </label>
+                    {m.user_id !== user?.id && (
+                      <button
+                        onClick={async () => {
+                          if (
+                            !confirm(
+                              `Remove ${nameOf(m.user_id)} from "${group.name}"? They lose access to this group — you can re-invite them later.`
+                            )
+                          )
+                            return;
+                          const { error } = await removeMember(m.user_id);
+                          if (error) alert("Couldn't remove: " + error);
+                        }}
+                        title="Remove from group"
+                        className="text-xs font-semibold text-rose-500 hover:text-rose-700 hover:underline"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
                 ) : (
                   m.role === "admin" &&
                   m.user_id !== group.creator_id && (
