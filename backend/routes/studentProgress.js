@@ -643,12 +643,21 @@ router.get("/results", studentAuth, async (req, res) => {
       entry.classAvg = null;      // a class average of one number is that number
       entry.gradeHidden = true;
       // The category bars stay — they are the levels the teacher wants shown —
-      // but "3.5 / 5" beside one is the mark again in smaller print. Keep the
-      // level word and the comment, drop the number.
-      entry.categories = (entry.categories || []).map((c) => {
-        const { score, outOf, ...rest } = c;
-        return rest;
-      });
+      // but "3.5 / 5" beside one is the mark again in smaller print, and the
+      // weighted total is the mark outright. Keep the level word, the
+      // weighting and the comment; drop the numbers.
+      //
+      // parseCategories returns { isKita, categories: [...], weightedTotal }
+      // or null — an object, not an array. Treating it as an array threw, and
+      // a throw here is a 500 on the whole dashboard: the student saw
+      // "Failed to load results" and no feedback at all.
+      if (entry.categories && Array.isArray(entry.categories.categories)) {
+        entry.categories = {
+          ...entry.categories,
+          weightedTotal: null,
+          categories: entry.categories.categories.map(({ score, outOf, ...rest }) => rest),
+        };
+      }
     }
     const shownPcts = entries.map((e) => e.pct).filter((p) => typeof p === "number");
     const visibleAvg = shownPcts.length

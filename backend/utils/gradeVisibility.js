@@ -51,21 +51,28 @@ export async function hidesGrades(teacherEmail) {
 // the right answer there.
 const ownerCache = new Map(); // className -> { value, expires }
 
-export async function teacherForResult(meta) {
-  const direct = String(meta?.teacherEmail || "").trim().toLowerCase();
-  if (direct) return direct;
+// Everyone who could own this result. A list, not one answer: a class can
+// have more than one roster row, and a teacherEmail field has been seen
+// holding two addresses at once ("a@x.org, b@y.org"), which is why asking for
+// a single owner found none and the setting appeared to do nothing.
+export async function teachersForResult(meta) {
+  const split = (v) => String(v || "")
+    .split(/[,;]+/).map((x) => x.trim().toLowerCase()).filter((x) => x.includes("@"));
+
+  const direct = split(meta?.teacherEmail);
+  if (direct.length) return direct;
 
   const className = String(meta?.className || "").trim();
-  if (!className) return "";
+  if (!className) return [];
 
   const hit = ownerCache.get(className);
   if (hit && hit.expires > Date.now()) return hit.value;
 
-  let value = "";
+  let value = [];
   try {
     const { default: ClassRoster } = await import("../models/ClassRoster.js");
-    const owners = await ClassRoster.distinct("teacherEmail", { className });
-    if (owners.length === 1) value = String(owners[0] || "").trim().toLowerCase();
+    const raw = await ClassRoster.distinct("teacherEmail", { className });
+    value = [...new Set(raw.flatMap(split))];
   } catch (err) {
     console.warn("[gradeVisibility] owner lookup failed:", err?.message || err);
   }
@@ -74,8 +81,19 @@ export async function teacherForResult(meta) {
   return value;
 }
 
+// Hide when somebody who could own this has asked to, and nobody has asked
+// not to.
+//
+// With one owner this is just their setting. With several — a shared class,
+// or two addresses in one field — it honours the only teacher who has
+// expressed a view, rather than doing nothing because the data is untidy.
+// The asymmetry is deliberate: hiding a mark is recoverable in a click,
+// showing a family a mark that was never the grade is not.
 export async function hidesGradesForResult(meta) {
-  return hidesGrades(await teacherForResult(meta));
+  const owners = await teachersForResult(meta);
+  if (!owners.length) return false;
+  const views = await Promise.all(owners.map((e) => hidesGrades(e)));
+  return views.some(Boolean);
 }
 
 export function invalidateGradeVisibility(teacherEmail) {
