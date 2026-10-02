@@ -235,7 +235,7 @@ export default function StudentPage() {
     setHrNoteBusy(true); setHrNoteMsg("");
     try {
       const r = await api<{ sentTo: string; hrName: string; cc: string | null }>(`/students/${params.id}/hr-note`, { body: {}, timeoutMs: 45000 });
-      setHrNoteMsg(`Sent to ${r.hrName}${r.cc ? ` (cc ${r.cc})` : ""} — logged as an intervention.`);
+      setHrNoteMsg(`Sent to ${r.hrName}${r.cc ? ` (cc ${r.cc})` : ""} on ${new Date().toLocaleString()} — logged as an intervention.`);
       load();
     } catch (e: any) { setHrNoteMsg(e.message); }
     finally { setHrNoteBusy(false); }
@@ -627,7 +627,7 @@ export default function StudentPage() {
                 className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40">
                 {hrNoteBusy ? "Sending…" : hrNoteSentAt ? "✉ Re-send to homeroom teacher (cc VP)" : "✉ Send to homeroom teacher (cc VP)"}
               </button>
-              {hrNoteSentAt && <span className="text-xs text-slate-400">Last sent {new Date(hrNoteSentAt).toLocaleDateString()}</span>}
+              {hrNoteSentAt && <span className="text-xs text-slate-400">Last sent {new Date(hrNoteSentAt).toLocaleString()}</span>}
             </div>
             {hrNoteMsg && <p className={`mt-2 text-sm ${hrNoteMsg.startsWith("Sent") ? "text-green-700" : "text-red-600"}`}>{hrNoteMsg}</p>}
           </div>
