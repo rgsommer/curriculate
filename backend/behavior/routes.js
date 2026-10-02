@@ -4250,24 +4250,34 @@ router.post("/students/:id/parent-summary", authAny, loadMembership, async (req,
     // Parent-facing → prefer the official/courtesy name.
     const tName = Object.fromEntries(tDocs.map((t) => [String(t._id), (t.courtesyName || t.name || "a teacher")]));
 
+    // Who is writing this — and how they relate to the student, so the framing
+    // is honest. The homeroom teacher (or anyone who didn't personally witness
+    // every incident) writes as a coordinator pulling colleagues' observations
+    // together, NOT as if it all happened "in my class."
+    const writerId = String(req.membership?._id || "");
+    const isHomeroom = !!(req.membership?.homeroom && student.classGroup &&
+      String(req.membership.homeroom).trim().toLowerCase() === String(student.classGroup).trim().toLowerCase());
+
     // Split positives (to keep the note balanced & upbuilding) from concerns,
     // and group the concerns BY TEACHER, as requested.
     const positives = [];
-    const byTeacher = {}; // teacherName -> [lines]
+    const byTeacher = {}; // teacherId -> { name, isWriter, lines[] }
     for (const i of incidents) {
       const isPositive = i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0;
       const isInteraction = i.behaviorSnapshot?.triggerMode === "INTERACTION";
       const d = new Date(i.timestamp).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: SCHOOL_TZ });
-      const who = tName[String(i.teacherId)] || "a teacher";
+      const tid = String(i.teacherId);
+      const who = tName[tid] || "a teacher";
       const what = i.behaviorSnapshot?.name || "";
       const detail = (i.detailText || "").trim();
       const line = `${d} — ${what}${detail ? `: ${detail}` : ""}`;
       if (isPositive) { positives.push(`${d} — ${what}${detail ? `: ${detail}` : ""} (noted by ${who})`); continue; }
       if (isInteraction) continue; // parent meetings handled separately below
-      (byTeacher[who] ||= []).push(line);
+      (byTeacher[tid] ||= { name: who, isWriter: tid === writerId, lines: [] }).lines.push(line);
     }
-    const concernGroups = Object.entries(byTeacher)
-      .map(([who, lines]) => `From ${who}:\n${lines.map((l) => `  - ${l}`).join("\n")}`)
+    const writerLoggedCount = (byTeacher[writerId]?.lines || []).length;
+    const concernGroups = Object.values(byTeacher)
+      .map((g) => `From ${g.name}${g.isWriter ? " (THIS IS YOU, the writer — your own class)" : ""}:\n${g.lines.map((l) => `  - ${l}`).join("\n")}`)
       .join("\n\n");
 
     // Partnership / staff-response context — shows parents the school has been
@@ -4313,14 +4323,25 @@ router.post("/students/:id/parent-summary", authAny, loadMembership, async (req,
 
     const teacherSig = (req.membership?.courtesyName || "").trim() || actorName(req);
     const schoolName = config?.branding?.schoolName || "";
-    const concernCount = Object.values(byTeacher).reduce((a, l) => a + l.length, 0);
+    const concernCount = Object.values(byTeacher).reduce((a, g) => a + g.lines.length, 0);
     const spanTs = incidents.map((i) => new Date(i.timestamp).getTime()).filter(Boolean).sort((a, b) => a - b);
     const span = spanTs.length
       ? `${new Date(spanTs[0]).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ })} to ${new Date(spanTs[spanTs.length - 1]).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ })}`
       : "recently";
 
+    // How the writer relates to the student → how the letter should be framed.
+    const writerRole = isHomeroom
+      ? `The writer (${teacherSig}) is ${studentFirst}'s HOMEROOM teacher. Write as the homeroom teacher who is bringing together observations from ${studentFirst}'s teachers. ` +
+        (writerLoggedCount
+          ? `Some concerns are the writer's own (marked "THIS IS YOU" above) — those may be in the first person ("in my own class"); attribute all others to the colleague by name (third person). `
+          : `The writer did not personally log these — attribute each concern to the colleague who observed it, by name (third person); do NOT write as if they happened "in my class." `)
+      : writerLoggedCount && Object.keys(byTeacher).length <= 1
+        ? `The writer (${teacherSig}) personally observed these concerns in their own class — the first person ("in my class") is appropriate. `
+        : `The writer (${teacherSig}) is one of ${studentFirst}'s teachers. Speak in the first person only for the concerns marked "THIS IS YOU" above; attribute every other teacher's observations to that colleague by name (third person). Do NOT imply the writer witnessed concerns they did not log. `;
+
     const ctxText =
       `Student first name: ${studentFirst}.\n` +
+      `WRITER / PERSPECTIVE: ${writerRole}\n` +
       `Window: ${scope === "period" ? `current behaviour period${resetDateLabel ? ` (since ${resetDateLabel})` : ""}` : "full record"} — ${span}.\n` +
       `Number of concerns in this window: ${concernCount}, observed by ${tIds.length} teacher(s).\n\n` +
       `CONCERNS GROUPED BY TEACHER:\n${concernGroups || "(none in this window)"}\n\n` +
@@ -4336,16 +4357,21 @@ router.post("/students/:id/parent-summary", authAny, loadMembership, async (req,
       `You are writing a warm, honest, and up-building letter to the PARENTS/GUARDIANS of a junior-high student, from their teacher, to bring the whole picture together in one place. ` +
       `This is pastoral and partnership-minded — the goal is to help the parents understand the pattern and to invite them to work WITH the school, never to shame the child. ` +
       `TONE: caring, respectful, hopeful, specific, and truthful. Do not exaggerate, but do not downplay genuine safety concerns either. Assume the best about the student and the family. ` +
-      `STRUCTURE: (1) a warm, genuine opening that greets the student and parents (you may say you're glad to have the student in class — a relational affirmation — but do NOT assert specific talents or traits as fact); (2) a concise, factual recap of the concerns ORGANISED BY TEACHER (e.g. "In {Teacher}'s class…"), kept brief; (3) encouraging moments ONLY IF they are listed on record above; (4) a short note on what the school has ALREADY done, using the exact facts above (omit this if nothing is recorded); (5) a forward-looking close that invites a conversation and expresses confidence in the student. ` +
-      `HARD RULES — these override tone: (a) Use ONLY the information below. Do NOT invent, infer, round, or embellish ANY fact — not events, dates, consequences, quotes, meetings, calls, OR praise. (b) Do NOT attribute specific strengths/talents (e.g. "creativity", "leadership", "enthusiasm") unless such a positive is explicitly listed on record above; if none are listed, keep affirmation purely relational and general. (c) If no meetings/calls/notices/consequences are listed, do NOT say the school has met with, called, or contacted the family. (d) Never name, describe, or hint at any OTHER student (write "a classmate"). (e) Never quote slurs, profanity, or crude language — describe it sensitively (e.g. "used hurtful language toward a classmate"). (f) Do not reproduce private staff notes verbatim. ` +
+      `PERSPECTIVE: Write in the first person AS the writer described under "WRITER / PERSPECTIVE" below, and follow that framing exactly — if the writer is the homeroom teacher pulling colleagues' observations together, do NOT write as though everything happened in the writer's own class; attribute each concern to the teacher who observed it. ` +
+      `STRUCTURE: (1) a warm, genuine opening that greets the student and parents (a homeroom/coordinating writer can say they're writing as ${studentFirst}'s homeroom teacher on behalf of ${studentFirst}'s teachers; you may say you're glad to have the student at the school — a relational affirmation — but do NOT assert specific talents or traits as fact); (2) a concise, factual recap of the concerns ORGANISED BY TEACHER and correctly attributed (e.g. "In Mr. X's class…", "Miss Y noted…", or "In my own class…" only where marked THIS IS YOU), kept brief; (3) encouraging moments ONLY IF they are listed on record above; (4) a short note on what the school has ALREADY done, using the exact facts above (omit this if nothing is recorded); (5) a forward-looking close that invites a conversation and expresses confidence in the student. ` +
+      `HARD RULES — these override tone: (a) Use ONLY the information below. Do NOT invent, infer, round, or embellish ANY fact — not events, dates, consequences, quotes, meetings, calls, OR praise. (b) Do NOT attribute specific strengths/talents (e.g. "creativity", "leadership", "enthusiasm") unless such a positive is explicitly listed on record above; if none are listed, keep affirmation purely relational and general. (c) If no meetings/calls/notices/consequences are listed, do NOT say the school has met with, called, or contacted the family. (d) Never name, describe, or hint at any OTHER student (write "a classmate"). (e) Never quote slurs, profanity, or crude language — describe it sensitively (e.g. "used hurtful language toward a classmate"). (f) Do not reproduce private staff notes verbatim. (g) Do NOT claim the writer personally witnessed concerns that another teacher logged. ` +
       `A precise factual record (date · offence · teacher · consequence) will be appended beneath your letter automatically, so you do NOT need to reproduce a table of every date — write the narrative and let the record carry the details. ` +
       `Address the parents and the student (e.g. "Dear ${studentFirst} and parents,"). Sign off as ${teacherSig}${schoolName ? `, ${schoolName}` : ""}. ` +
       `LENGTH: about 200–280 words of flowing prose.\n\n${ctxText}`;
 
-    // Deterministic fallback (no AI key): a plain, kind, teacher-grouped note.
+    // Deterministic fallback (no AI key): a plain, kind, teacher-grouped note,
+    // framed from the writer's actual relationship to the student.
+    const fallbackOpen = isHomeroom
+      ? `As ${studentFirst}'s homeroom teacher, I wanted to bring together, in one place, what ${studentFirst}'s teachers have observed, so we can support ${studentFirst} together.`
+      : `I wanted to bring together, in one place, how things have been going for ${studentFirst} so we can support ${studentFirst} together.`;
     let summary =
       `Dear ${studentFirst} and parents,\n\n` +
-      `I wanted to bring together, in one place, how things have been going for ${studentFirst} so we can support ${studentFirst} together.\n\n` +
+      `${fallbackOpen}\n\n` +
       (concernGroups ? `${concernGroups}\n\n` : `There have been a few things we've been working through.\n\n`) +
       (positives.length ? `We've also seen encouraging moments:\n${positives.map((p) => `  - ${p}`).join("\n")}\n\n` : "") +
       (partnershipBits.length ? `The school has stayed engaged: ${partnershipBits.join("; ")}.\n\n` : "") +
