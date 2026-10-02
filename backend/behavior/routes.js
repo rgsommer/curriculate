@@ -272,6 +272,37 @@ function buildConsequenceMessage({ studentName, behaviorName, detailText, conseq
   return lines.join("\n");
 }
 
+// AI-polished version of the consequence message (warm but firm, Christian tone,
+// student-directed with parents reading), falling back to the deterministic text
+// if the AI is unavailable. Used by both the auto-email and the Copy-message button.
+async function composeConsequenceMessageAI(opts) {
+  const det = buildConsequenceMessage(opts);
+  const aiClient = makeDefaultAiClient(opts.config || {});
+  if (!aiClient) return det;
+  const first = (opts.studentName || "the student").split(" ")[0] || "the student";
+  const dayPhrase = relativeSchoolDay(opts.when || Date.now());
+  const deadline =
+    opts.followUpType === "next_school_day" ? "It must be handed in by 9:00 AM the next school day." :
+    opts.followUpType === "custom_deadline" ? "It must be done by the deadline the teacher gave." : "";
+  const prompt = [
+    `Write a brief, warm-but-firm message from a Christian-school teacher to a student (with parents reading too), to post in Edsby. Address the student directly as "you".`,
+    `Begin with the greeting: "Dear ${first} and parents,".`,
+    `The student's name is ${opts.studentName} — use it where natural; NEVER output a bracketed placeholder.`,
+    `Note that ${dayPhrase} there was a concern — ${opts.behaviorName}${opts.detailText ? `: ${opts.detailText}` : ""}. Then clearly state what the student must now do: ${opts.consequenceText}. ${deadline}`,
+    `Close with a brief encouraging "fresh start / from now on" line and sign off exactly as: ${opts.teacherName}.`,
+    `3–6 short sentences, plain prose, no bullet points, no invented facts, no placeholders.`,
+  ].join("\n");
+  try {
+    const out = await Promise.race([
+      aiClient.complete(prompt),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("AI timeout")), 15000)),
+    ]);
+    let t = stripMarkdown(String(out || "").trim());
+    t = t.replace(/\[[^\]]*\b(student|name|pupil|child)\b[^\]]*\]/gi, opts.studentName || "").replace(/\[[^\]]*\]/g, "").replace(/\s{2,}/g, " ").trim();
+    return t || det;
+  } catch (e) { console.warn("[behavior] consequence message AI failed:", e?.message || e); return det; }
+}
+
 // Record a logged (non-white-slip) consequence on the student record so it shows
 // immediately and can be marked done. Returns the created doc (or null on error).
 async function recordLoggedConsequence({ req, student, behavior, detailText, at, incidentId }) {
@@ -294,12 +325,12 @@ async function sendConsequenceMessage({ req, student, config, behavior, detailTe
   const teacherEmail = req.user?.email || "";
   if (!teacherEmail) return;
   const studentName = `${student.preferredName || student.firstName} ${student.lastName || ""}`.trim();
-  const teacherName = req.membership?.name || req.user?.name || "Teacher";
+  const teacherName = (req.membership?.courtesyName || "").trim() || actorName(req);
   const schoolName = config?.branding?.schoolName || "";
-  const message = buildConsequenceMessage({
+  const message = await composeConsequenceMessageAI({
     studentName, behaviorName: behavior.name, detailText,
     consequenceText: behavior.consequenceText, when: at,
-    followUpType: behavior.followUpType, teacherName, schoolName,
+    followUpType: behavior.followUpType, teacherName, schoolName, config,
   });
   const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
   try {
@@ -3002,7 +3033,8 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
     const noticeCovered = notice ? new Set((notice.triggeringIncidentIds || []).map(String)) : new Set();
     for (const cn of consequenceNotes) {
       if (noticeCovered.has(String(cn.incidentId))) continue;
-      await sendConsequenceMessage({ req, student, config, behavior: cn.behavior, detailText: cn.detailText, at: cn.at });
+      // Fire-and-forget: the AI compose shouldn't delay the logging response.
+      sendConsequenceMessage({ req, student, config, behavior: cn.behavior, detailText: cn.detailText, at: cn.at }).catch(() => {});
     }
 
     // Auto-recommend a white slip at the behaviour-strike threshold ONLY if the
@@ -3152,7 +3184,7 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
       // carries this consequence (avoids telling the family twice).
       if (wantConsequenceNote) {
         const covered = notice && (notice.triggeringIncidentIds || []).some((x) => String(x) === String(inc._id));
-        if (!covered) await sendConsequenceMessage({ req, student, config, behavior, detailText, at: timestamp });
+        if (!covered) sendConsequenceMessage({ req, student, config, behavior, detailText, at: timestamp }).catch(() => {}); // fire-and-forget (AI compose)
       }
 
       // Auto-recommend a white slip at the threshold ONLY if opted in (see above).
@@ -5008,42 +5040,19 @@ router.post("/consequences/:id/message", authAny, loadMembership, async (req, re
     if (!c) return res.status(404).json({ ok: false, error: "Not found" });
     const student = await BehaviorStudent.findOne({ _id: c.studentId, schoolId: req.schoolId }).lean();
     const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
-    const studentName = student ? (student.preferredName || student.firstName) : "the student";
-    const teacherName = actorName(req);
+    const studentName = student ? `${student.preferredName || student.firstName} ${student.lastName || ""}`.trim() : "the student";
+    const teacherName = (req.membership?.courtesyName || "").trim() || actorName(req);
     let incident = null;
     if (c.relatedIncidentId) incident = await BehaviorIncident.findOne({ _id: c.relatedIncidentId, schoolId: req.schoolId }).select("behaviorSnapshot detailText timestamp").lean();
     const behaviourName = incident?.behaviorSnapshot?.name || c.detail || c.type;
     const incidentDetail = incident?.detailText || "";
-    const dayPhrase = relativeSchoolDay(incident?.timestamp || c.at);
 
-    const det = [
-      `Dear ${studentName} (and parents),`, ``,
-      `Something in ${studentName}'s conduct ${dayPhrase} needs improvement. ${studentName} was logged for ${behaviourName}${incidentDetail ? ` — ${incidentDetail}` : ""}.`, ``,
-      `As a result: ${c.type}${c.detail ? ` — ${c.detail}` : ""}. Please take care of this promptly.`, ``,
-      `From now on, let's aim for a fresh start. Thank you,`, `${teacherName}`,
-    ].join("\n");
-
-    let message = det;
-    const aiClient = makeDefaultAiClient(config || {});
-    if (aiClient) {
-      const prompt = [
-        `Write a brief, warm-but-firm message from a Christian-school teacher to a student (with their parents reading too), to be posted in Edsby. Address the student as "you".`,
-        `The student's name is ${studentName} — use it directly where natural. NEVER output a placeholder such as [Student name], [name], [student], or any bracketed token; all specifics are given below.`,
-        `It must: say that something in their conduct ${dayPhrase} needs improvement; state what happened (${behaviourName}${incidentDetail ? `: ${incidentDetail}` : ""}); and clearly state what they must now do / the consequence (${c.type}${c.detail ? `: ${c.detail}` : ""}). Close with an encouraging "from now on" note and sign off as ${teacherName}.`,
-        `3–6 short sentences, plain prose. No placeholders, no invented facts, no bullet points.`,
-      ].join("\n");
-      try {
-        const out = await Promise.race([
-          aiClient.complete(prompt),
-          new Promise((_, rej) => setTimeout(() => rej(new Error("AI timeout")), 15000)),
-        ]);
-        let t = stripMarkdown(String(out || "").trim());
-        // Safeguard: if the model still emitted a bracketed name placeholder,
-        // swap in the real name (or drop a generic bracket token).
-        t = t.replace(/\[[^\]]*\b(student|name|pupil|child)\b[^\]]*\]/gi, studentName).replace(/\[[^\]]*\]/g, "").replace(/\s{2,}/g, " ").trim();
-        if (t) message = t;
-      } catch (e) { console.warn("[behavior] consequence message AI failed:", e?.message || e); }
-    }
+    const message = await composeConsequenceMessageAI({
+      studentName, behaviorName: behaviourName, detailText: incidentDetail,
+      consequenceText: `${c.type}${c.detail ? ` — ${c.detail}` : ""}`,
+      when: incident?.timestamp || c.at, followUpType: incident ? "next_school_day" : "none",
+      teacherName, schoolName: config?.branding?.schoolName || "", config,
+    });
     res.json({ ok: true, message, html: noteToHtml(message) });
   } catch (err) { next(err); }
 });
