@@ -1370,7 +1370,14 @@ export default function EngagementDetailPage() {
   };
 
   const saveEdit = async () => {
-    if (!editTitle.trim()) return;
+    if (!editTitle.trim()) {
+      alert(
+        engagement.type === "birthday"
+          ? "Add a card title / message at the top before saving."
+          : "Add a prompt before saving."
+      );
+      return;
+    }
     setSavingEdit(true);
     const isBirthday = engagement.type === "birthday";
     // Birthday: let the host fix the date / birth year. The deadline is the
@@ -6995,7 +7002,7 @@ export default function EngagementDetailPage() {
               <div className="flex gap-2">
                 <button
                   onClick={saveEdit}
-                  disabled={!editTitle.trim() || savingEdit}
+                  disabled={savingEdit}
                   className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
                 >
                   {savingEdit ? "Saving..." : "Save"}
