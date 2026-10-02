@@ -935,14 +935,15 @@ function ReminderToday() {
               <p className="text-sm text-slate-600">
                 {f.behaviorName}: {f.consequenceText}
               </p>
+              <p className="mt-1 text-xs text-slate-400">Did the student complete this? (About the task itself — not the parent message.)</p>
               <div className="mt-2 flex gap-2">
-                <button onClick={() => resolve(f._id, "done")} className="rounded-lg bg-green-600 px-3 py-1 text-xs font-medium text-white">
-                  Done
+                <button onClick={() => resolve(f._id, "done")} title="The student completed the task (e.g. handed in the lines)" className="rounded-lg bg-green-600 px-3 py-1 text-xs font-medium text-white">
+                  Completed
                 </button>
-                <button onClick={() => resolve(f._id, "not_done")} className="rounded-lg bg-red-600 px-3 py-1 text-xs font-medium text-white">
+                <button onClick={() => resolve(f._id, "not_done")} title="Not completed — re-issues/escalates" className="rounded-lg bg-red-600 px-3 py-1 text-xs font-medium text-white">
                   Not done
                 </button>
-                <button onClick={() => resolve(f._id, "waived")} className="rounded-lg border border-slate-300 px-3 py-1 text-xs">
+                <button onClick={() => resolve(f._id, "waived")} title="Cancel this task — no penalty" className="rounded-lg border border-slate-300 px-3 py-1 text-xs">
                   Waive
                 </button>
               </div>
