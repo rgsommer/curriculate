@@ -93,6 +93,10 @@ export default function StudentPage() {
   const [parentMsg, setParentMsg] = useState<string>("");
   const [parentBusy, setParentBusy] = useState<"" | "period" | "all">("");
 
+  // Send a whole-picture note to the student's HR teacher (cc VP) — server-side.
+  const [hrNoteBusy, setHrNoteBusy] = useState(false);
+  const [hrNoteMsg, setHrNoteMsg] = useState<string>("");
+
   // Notice editing
   const [editId, setEditId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
@@ -217,6 +221,17 @@ export default function StudentPage() {
   async function copyParentSummary() {
     try { await navigator.clipboard.writeText(parentFullText(parentSummary, parentHistoryText)); setParentMsg("Copied note + record to clipboard."); }
     catch { setParentMsg("Clipboard blocked — select and copy manually."); }
+  }
+
+  async function sendHrNote() {
+    if (!window.confirm("Send a whole-picture note to this student's homeroom teacher (cc the VP) to review and post to Edsby? It's logged as an intervention — nothing is sent to parents automatically.")) return;
+    setHrNoteBusy(true); setHrNoteMsg("");
+    try {
+      const r = await api<{ sentTo: string; hrName: string; cc: string | null }>(`/students/${params.id}/hr-note`, { body: {}, timeoutMs: 45000 });
+      setHrNoteMsg(`Sent to ${r.hrName}${r.cc ? ` (cc ${r.cc})` : ""} — logged as an intervention.`);
+      load();
+    } catch (e: any) { setHrNoteMsg(e.message); }
+    finally { setHrNoteBusy(false); }
   }
 
   async function copySummary() {
@@ -597,6 +612,15 @@ export default function StudentPage() {
             </button>
           </div>
           {parentMsg && <p className="mt-2 text-sm text-green-700">{parentMsg}</p>}
+
+          <div className="mt-3 border-t border-slate-100 pt-3">
+            <p className="text-xs text-slate-400">Or send it straight to the student&apos;s <span className="font-medium text-slate-600">homeroom teacher</span> to post — the VP is copied, and it&apos;s logged as an intervention. Nothing reaches parents automatically.</p>
+            <button onClick={sendHrNote} disabled={hrNoteBusy}
+              className="mt-2 rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40">
+              {hrNoteBusy ? "Sending…" : "✉ Send to homeroom teacher (cc VP)"}
+            </button>
+            {hrNoteMsg && <p className={`mt-2 text-sm ${hrNoteMsg.startsWith("Sent") ? "text-green-700" : "text-red-600"}`}>{hrNoteMsg}</p>}
+          </div>
           {parentSummary && (
             <button
               onClick={copyParentSummary}

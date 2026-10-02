@@ -4452,6 +4452,127 @@ router.post("/students/:id/parent-summary", authAny, loadMembership, async (req,
   }
 });
 
+// Send the student's HOMEROOM teacher a ready-to-post "whole picture" parent
+// note (in their voice), CC the VP for awareness. The HR teacher reviews, edits,
+// and posts it to Edsby — nothing reaches parents automatically. No white slip
+// is implied and no consequence is stated (the VP's discretion). This is the
+// on-demand version of the threshold flow, for catching up or any student.
+router.post("/students/:id/hr-note", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const student = await BehaviorStudent.findOne({ _id: req.params.id, schoolId: req.schoolId }).lean();
+    if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    const first = student.preferredName || student.firstName || "the student";
+    const cls = (student.classGroup || "").trim();
+
+    // The student's homeroom teacher authors & receives it.
+    const hr = cls ? await BehaviorTeacher.findOne({ schoolId: req.schoolId, homeroom: cls }).lean() : null;
+    if (!hr?.email) {
+      return res.status(400).json({ ok: false, error: `No homeroom teacher with an email is set for ${cls || "this class"}. Set the homeroom on the Team page first.` });
+    }
+    const hrName = (hr.courtesyName || hr.name || "").trim() || "the homeroom teacher";
+
+    // Whole picture by default (parents may only know part of it); grouped by teacher.
+    const scope = req.body?.scope === "period" ? "period" : "all";
+    const cutoff = scope === "period" && student.thresholdResetAt ? new Date(student.thresholdResetAt).getTime() : 0;
+    let incidents = await BehaviorIncident.find({ studentId: student._id }).sort({ timestamp: 1 }).lean();
+    if (cutoff) incidents = incidents.filter((i) => new Date(i.timestamp).getTime() >= cutoff);
+    const tIds = [...new Set(incidents.map((i) => String(i.teacherId)))];
+    const tDocs = await BehaviorTeacher.find({ _id: { $in: tIds } }).select("name courtesyName").lean();
+    const tName = Object.fromEntries(tDocs.map((t) => [String(t._id), (t.courtesyName || t.name || "a teacher")]));
+
+    const byTeacher = {}; const history = [];
+    for (const i of incidents) {
+      const isPositive = i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0;
+      if (isPositive || i.behaviorSnapshot?.triggerMode === "INTERACTION") continue;
+      const who = tName[String(i.teacherId)] || "a teacher";
+      const d = new Date(i.timestamp).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: SCHOOL_TZ });
+      (byTeacher[who] ||= []).push(`${d} — ${i.behaviorSnapshot?.name || ""}${i.detailText ? `: ${i.detailText}` : ""}`);
+      history.push({ date: d, offense: i.behaviorSnapshot?.name || "—", teacher: who });
+    }
+    const concernCount = Object.values(byTeacher).reduce((a, l) => a + l.length, 0);
+    if (!concernCount) return res.status(400).json({ ok: false, error: "No concerns on record to write about." });
+    const groups = Object.entries(byTeacher).map(([w, l]) => `From ${w}:\n${l.map((x) => `  - ${x}`).join("\n")}`).join("\n\n");
+
+    const parentNames = (student.parents || []).map((p) => (p.name || "").trim()).filter(Boolean);
+    const greeting = parentNames.length ? `Dear ${first} and ${parentNames.join(" and ")},` : `Dear ${first} and parents,`;
+    const schoolName = config?.branding?.schoolName || "";
+
+    const prompt =
+      `You are ${first}'s HOMEROOM teacher (${hrName}) writing a warm, honest, up-building note to ${first}'s PARENTS to bring the whole picture together, since concerns have come from several teachers. ` +
+      `Write in the first person as the homeroom teacher COORDINATING what ${first}'s teachers have observed — attribute each concern to the teacher who noted it (e.g. "In Mr. X's class…"); do not imply you witnessed them all. ` +
+      `HARD RULES: use ONLY the facts below; do not invent events, praise, meetings, or consequences. Never name or hint at any OTHER student (write "a classmate"). Never quote slurs/profanity — describe sensitively. Do NOT state or recommend any consequence (handled separately). ` +
+      `Open with the greeting exactly: "${greeting}". ~220-280 words of flowing prose, organised by teacher, ending with an invitation to partner and confidence in ${first}. Sign as ${hrName}${schoolName ? `, ${schoolName}` : ""}.\n\nCONCERNS BY TEACHER:\n${groups}`;
+
+    let note = `${greeting}\n\nI wanted to bring together what ${first}'s teachers have observed so we can support ${first} together.\n\n${groups}\n\nI'd welcome the chance to partner with you on next steps. Warm regards,\n${hrName}${schoolName ? `\n${schoolName}` : ""}`;
+    let aiUsed = false;
+    try {
+      const client = makeDefaultAiClient(config || {});
+      if (client) {
+        const out = await Promise.race([
+          client.complete(prompt, { maxTokens: 1100 }),
+          new Promise((_, r) => setTimeout(() => r(new Error("AI timeout")), 30000)),
+        ]);
+        if (out && String(out).trim()) { note = stripMarkdown(String(out).trim()); aiUsed = true; }
+      }
+    } catch { /* keep deterministic */ }
+
+    const historyText = history.map((h) => `• ${h.date} — ${h.offense} — ${h.teacher}`).join("\n");
+    const fullText = note + (historyText ? `\n\n— Behaviour record —\n${historyText}` : "");
+
+    const vpEmail = (config?.vp?.email || "").trim();
+    const hrFirst = (hr.name || hrName).trim().split(/\s+/)[0];
+    const intro = `${first} has reached the point where it helps to bring the whole picture together for the family. Here's a proposed note for you to review, edit, and post to Edsby${vpEmail ? " — John is copied for awareness" : ""}.`;
+    const note2 = `No white slip is implied, and no consequence is stated — that's left to the VP's discretion.`;
+    const recordHtml = history.length
+      ? `<p style="margin:14px 0 4px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#64748b">Behaviour record</p><ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6;font-size:13px">${history.map((h) => `<li>${escapeHtml(h.date)} — ${escapeHtml(h.offense)} <span style="color:#94a3b8">· ${escapeHtml(h.teacher)}</span></li>`).join("")}</ul>`
+      : "";
+    const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+    await sendEmail({
+      from: fromAddr ? { name: "Compass", address: fromAddr } : undefined,
+      to: hr.email, cc: vpEmail || undefined, replyTo: (req.user?.email || "").trim() || undefined,
+      subject: `Proposed note for ${first} ${student.lastName} (${cls}) — review & post to Edsby`,
+      text: `Hi ${hrFirst},\n\n${intro} ${note2}\n\n----- PROPOSED NOTE -----\n${fullText}`,
+      html: emailShell({
+        title: `Proposed note for ${escapeHtml(first)} ${escapeHtml(student.lastName || "")} (${escapeHtml(cls)})`,
+        schoolName: schoolName || "Compass",
+        preheader: `A whole-picture note to review and post to Edsby${vpEmail ? " — John is copied" : ""}.`,
+        footnote: "Nothing reaches parents automatically — post it to Edsby when you're happy with it. No white slip is implied; any consequence is at the VP's discretion.",
+        contentHtml:
+          `<p style="margin:0 0 8px;color:#334155">Hi ${escapeHtml(hrFirst)},</p>` +
+          `<p style="margin:0 0 12px;color:#334155">${escapeHtml(intro)} ${escapeHtml(note2)}</p>` +
+          `<hr style="border:none;border-top:1px solid #e2e8f0;margin:12px 0">` +
+          pasteableNote(noteToHtml(note), { channel: "Edsby" }) +
+          recordHtml,
+      }),
+    });
+
+    // Log the send itself as a documented INTERVENTION on the student's record.
+    // Compass's responsibility ends here: this is the intervention. There is no
+    // nagging and no confirmation chase — acting on it is the HR teacher's / VP's.
+    try {
+      let beh = await Behavior.findOne({ schoolId: req.schoolId, name: "Whole-picture note recommended" });
+      if (!beh) beh = await Behavior.create({
+        schoolId: req.schoolId, name: "Whole-picture note recommended", keyword: "intervention", kind: "negative", triggerMode: "INTERACTION",
+        description: "A whole-picture parent note was prepared and sent to the homeroom teacher (VP copied) to review and post to Edsby. A documented intervention — not a strike, nothing auto-sent home.",
+        consequenceText: "", points: 0,
+      });
+      await BehaviorIncident.create({
+        schoolId: req.schoolId, studentId: student._id, teacherId: req.membership._id,
+        behaviorId: beh._id,
+        behaviorSnapshot: { name: beh.name, description: beh.description, triggerMode: "INTERACTION", kind: "negative", consequenceText: "", points: 0 },
+        detailText: `Whole-picture note sent to ${hrName} (homeroom)${vpEmail ? ", cc VP," : ""} to review and post to Edsby.`,
+        immediateFlag: false, timestamp: new Date(),
+      });
+    } catch (e) { console.warn("[behavior/hr-note] intervention log failed:", e?.message || e); }
+
+    await audit(req.schoolId, "hr_note.sent", req, { studentId: student._id, meta: { to: hr.email, cc: vpEmail, aiUsed, concerns: concernCount } });
+    res.json({ ok: true, sentTo: hr.email, hrName, cc: vpEmail || null, preview: fullText, aiUsed });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Division/teacher EXECUTIVE summary — an AI overview over a 6/12-month window,
 // scoped to me (this teacher) or all teachers. Behaviour trend, interaction
 // patterns, notices home, current strike load. Copied to clipboard by the UI.
