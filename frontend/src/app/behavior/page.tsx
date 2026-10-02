@@ -675,9 +675,28 @@ function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: st
   );
 }
 
+type Occ = { date: string; name: string; detail?: string; teacher?: string };
 function StudentsToWatch({ fadeDays }: { fadeDays?: number }) {
   const [rows, setRows] = useState<StudentSummary[] | null>(null);
   const [trigger, setTrigger] = useState(3);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [occById, setOccById] = useState<Record<string, Occ[] | "loading">>({});
+
+  async function toggleOcc(id: string) {
+    if (openId === id) { setOpenId(null); return; }
+    setOpenId(id);
+    if (occById[id] && occById[id] !== "loading") return;
+    setOccById((m) => ({ ...m, [id]: "loading" }));
+    try {
+      const d = await api<{ incidents: Array<{ behaviorSnapshot: { name: string; kind?: string }; detailText?: string; teacherName?: string; timestamp: string }> }>(`/students/${id}`);
+      const occ: Occ[] = (d.incidents || [])
+        .filter((inc) => inc.behaviorSnapshot?.kind !== "positive")
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        .slice(0, 12)
+        .map((inc) => ({ date: inc.timestamp, name: inc.behaviorSnapshot?.name || "Offence", detail: inc.detailText || "", teacher: inc.teacherName || "" }));
+      setOccById((m) => ({ ...m, [id]: occ }));
+    } catch { setOccById((m) => ({ ...m, [id]: [] })); }
+  }
 
   useEffect(() => {
     api<{ students: StudentSummary[]; triggerCount: number }>("/students")
@@ -712,6 +731,7 @@ function StudentsToWatch({ fadeDays }: { fadeDays?: number }) {
             )}
             <li className="flex items-center justify-between gap-2 py-2 text-sm">
               <span className="flex min-w-0 items-center gap-2">
+                <button onClick={() => toggleOcc(s._id)} title="Show the occurrences" className="shrink-0 text-slate-400 hover:text-slate-700">{openId === s._id ? "▾" : "▸"}</button>
                 <Link href={`/behavior/student/${s._id}`} className="min-w-0 truncate font-medium hover:text-slate-600">
                   {s.lastName}, {s.firstName} <span className="text-slate-400">{s.classGroup}</span>
                 </Link>
@@ -721,6 +741,26 @@ function StudentsToWatch({ fadeDays }: { fadeDays?: number }) {
                 {s.activeCount}/{trigger} →
               </span>
             </li>
+            {openId === s._id && (
+              <li className="!border-t-0 pb-2 pl-6 text-xs text-slate-600">
+                {occById[s._id] === "loading" ? (
+                  <span className="text-slate-400">Loading…</span>
+                ) : (occById[s._id] as Occ[])?.length ? (
+                  <ul className="space-y-0.5">
+                    {(occById[s._id] as Occ[]).map((o, k) => (
+                      <li key={k}>
+                        <span className="text-slate-400">{new Date(o.date).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}</span>
+                        {" · "}<span className="font-medium">{o.name}</span>
+                        {o.detail ? <span className="text-slate-500"> — {o.detail}</span> : null}
+                        {o.teacher ? <span className="text-slate-400"> ({o.teacher})</span> : null}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <span className="text-slate-400">No recent occurrences.</span>
+                )}
+              </li>
+            )}
           </Fragment>
           );
         })}
