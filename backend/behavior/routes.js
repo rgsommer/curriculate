@@ -6528,7 +6528,7 @@ router.get("/houses", authAny, loadMembership, async (req, res, next) => {
   try {
     // Master switch: when Houses is off, the whole aspect is hidden — report no
     // houses so every consumer surface (leaderboard, assignment dropdown) hides.
-    const cfg = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("housesEnabled housePointsResetAt houseCaps").lean();
+    const cfg = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("housesEnabled housePointsResetAt houseNegativeResetAt houseCaps").lean();
     if (!cfg?.housesEnabled) return res.json({ ok: true, enabled: false, houses: [] });
 
     const houses = await BehaviorHouse.find({ schoolId: req.schoolId, active: true }).sort({ sortOrder: 1, name: 1 }).lean();
