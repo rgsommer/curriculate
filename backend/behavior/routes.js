@@ -6144,9 +6144,11 @@ export async function sendTeacherNudgesForSchool(schoolId, { force = false } = {
   // Recent incidents for strike counting + "what to talk about".
   const since = new Date(Date.now() - Math.max(fadeDays, 60) * DAY_MS);
   const incs = await BehaviorIncident.find({ schoolId, timestamp: { $gt: since } })
-    .select("studentId behaviorSnapshot timestamp immediateFlag whiteSlip countedInNoticeId").lean();
+    .select("studentId behaviorSnapshot timestamp immediateFlag whiteSlip countedInNoticeId teacherId detailText").lean();
   const incByStudent = {};
   for (const i of incs) (incByStudent[String(i.studentId)] ||= []).push(i);
+  // Teacher names for attributing each occurrence in the "what to talk about" list.
+  const nudgeTeacherName = Object.fromEntries(teachers.map((t) => [String(t._id), (t.courtesyName || t.name || "").trim()]));
 
   // Students already followed-up within this period drop off the list.
   const fuSince = new Date(Date.now() - intervalDays * DAY_MS);
@@ -6170,7 +6172,17 @@ export async function sendTeacherNudgesForSchool(schoolId, { force = false } = {
         const byType = {};
         for (const i of active) { const n = i.behaviorSnapshot?.name || "Other"; byType[n] = (byType[n] || 0) + 1; }
         const about = Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}${v > 1 ? ` ×${v}` : ""}`).slice(0, 4).join(", ");
-        watch.push({ id: String(s._id), name: `${s.preferredName || s.firstName} ${s.lastName || ""}`.trim(), strikes: active.length, about });
+        // Dated occurrence list (most recent first) so the HR teacher walks into
+        // the chat with specifics, not just a summary.
+        const occurrences = active
+          .slice().sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 8)
+          .map((i) => ({
+            date: new Date(i.timestamp).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: SCHOOL_TZ }),
+            name: i.behaviorSnapshot?.name || "Offence",
+            detail: (i.detailText || "").trim(),
+            teacher: nudgeTeacherName[String(i.teacherId)] || "",
+          }));
+        watch.push({ id: String(s._id), name: `${s.preferredName || s.firstName} ${s.lastName || ""}`.trim(), strikes: active.length, about, occurrences });
       }
       watch.sort((a, b) => b.strikes - a.strikes);
     }
@@ -6187,10 +6199,19 @@ export async function sendTeacherNudgesForSchool(schoolId, { force = false } = {
       const rowsHtml = watch.map((w) => {
         const tok = hrFollowupToken(String(schoolId), w.id);
         const link = `${appBase()}/behavior/hr-followup?school=${schoolId}&student=${w.id}&token=${encodeURIComponent(tok)}`;
+        const occHtml = (w.occurrences || []).length
+          ? `<ul style="margin:6px 0 2px;padding-left:18px;color:#475569;font-size:13px;line-height:1.6">` +
+            w.occurrences.map((o) =>
+              `<li><span style="color:#94a3b8">${escapeHtml(o.date)}</span> — ${escapeHtml(o.name)}` +
+              `${o.detail ? `: ${escapeHtml(o.detail)}` : ""}` +
+              `${o.teacher ? ` <span style="color:#94a3b8">(${escapeHtml(o.teacher)})</span>` : ""}</li>`
+            ).join("") + `</ul>`
+          : (w.about ? `<div style="color:#475569;font-size:13px;margin-top:2px">What to talk about: ${escapeHtml(w.about)}</div>` : "");
         return (
           `<div style="border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin:8px 0">` +
           `<div style="font-weight:700">${escapeHtml(w.name)} <span style="font-weight:400;color:#64748b;font-size:13px">— ${w.strikes} recent offences</span></div>` +
-          (w.about ? `<div style="color:#475569;font-size:13px;margin-top:2px">What to talk about: ${escapeHtml(w.about)}</div>` : "") +
+          `<div style="color:#64748b;font-size:12px;margin-top:4px">What to talk about:</div>` +
+          occHtml +
           emailButton("✓ I've talked to them", link, "#2563eb") +
           `</div>`
         );
@@ -6202,7 +6223,9 @@ export async function sendTeacherNudgesForSchool(schoolId, { force = false } = {
         `<p style="margin:14px 0 6px;color:#334155">Once you've had a conversation, just tap <strong>“I've talked to them”</strong> above — or tap the blue homeroom-follow-up button beside their name on your Compass dashboard. Either way it's logged as a supportive check-in (never a strike, nothing goes home).</p>` +
         emailButton("Open Compass", `${appBase()}/behavior`, "#0f172a");
       text = `Hi ${first},\n\nA few of your homeroom students could use a proactive check-in:\n\n` +
-        watch.map((w) => `• ${w.name} — ${w.strikes} recent offences${w.about ? ` (${w.about})` : ""}`).join("\n") +
+        watch.map((w) => `• ${w.name} — ${w.strikes} recent offences\n` +
+          (w.occurrences || []).map((o) => `    - ${o.date} — ${o.name}${o.detail ? `: ${o.detail}` : ""}${o.teacher ? ` (${o.teacher})` : ""}`).join("\n")
+        ).join("\n") +
         `\n\nAfter you've talked with them, tap the blue homeroom follow-up button in Compass, or the link in the email version of this message.\n\n${appBase()}/behavior`;
     } else if (inactive) {
       subject = "How are things going in your class?";
