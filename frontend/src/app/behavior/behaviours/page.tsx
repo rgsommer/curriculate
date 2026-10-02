@@ -263,12 +263,10 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
         {!positive && !interaction && (
           <>
             <input value={consequenceText} onChange={(e) => setConsequenceText(e.target.value)} placeholder="Consequence (in the note home)" className={`${inputCls} col-span-2`} />
-            {consequenceText.trim() && (
-              <select value={consequenceTiming} onChange={(e) => setConsequenceTiming(e.target.value)} className={inputCls} title="When the consequence applies">
-                <option value="first">Consequence on first occasion</option>
-                <option value="after_first">Consequence after first occasion (1st = warning)</option>
-              </select>
-            )}
+            <select value={consequenceTiming} onChange={(e) => setConsequenceTiming(e.target.value)} className={inputCls} title="When the consequence applies">
+              <option value="first">Consequence on first occasion</option>
+              <option value="after_first">Consequence after first occasion (1st = warning)</option>
+            </select>
             <select value={followUpType} onChange={(e) => setFollowUpType(e.target.value)} className={inputCls}>
               {FOLLOWUPS.map((f) => <option key={f.v} value={f.v}>{f.label}</option>)}
             </select>
