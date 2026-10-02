@@ -12,6 +12,7 @@ type TeamRow = {
   role: string;
   housesCommittee?: boolean;
   homeroom?: string;
+  courtesyName?: string;
   status: "pending" | "accepted";
   joinedAt: string | null;
   incidents: number;
@@ -87,6 +88,12 @@ export default function TeamPage() {
     try { await api("/team/homeroom", { method: "PUT", body: { email, homeroom: v } }); }
     catch (e: any) { setErr(e.message); }
   }
+  async function saveCourtesy(userId: string, value: string) {
+    const v = value.trim();
+    setData((d) => d && { ...d, teachers: d.teachers.map((t) => (t.userId === userId ? { ...t, courtesyName: v } : t)) });
+    try { await api("/team/courtesy", { method: "PUT", body: { userId, courtesyName: v } }); }
+    catch (e: any) { setErr(e.message); }
+  }
 
   async function setCommittee(userId: string, on: boolean) {
     setData((d) => d && { ...d, teachers: d.teachers.map((t) => (t.userId === userId ? { ...t, housesCommittee: on } : t)) });
@@ -154,6 +161,7 @@ export default function TeamPage() {
               <tr className="text-left text-xs uppercase tracking-wide text-slate-400">
                 <th className="py-1.5 pr-3">Teacher</th>
                 <th className="py-1.5 pr-3">Role</th>
+                <th className="py-1.5 pr-3" title="How this teacher is named in parent notices, e.g. Mr. Sommer / Miss Lau.">Official name</th>
                 <th className="py-1.5 pr-3" title="Homeroom class (e.g. 7A). Used for the proactive check-in email.">Homeroom</th>
                 <th className="py-1.5 pr-3">Joined</th>
                 <th className="py-1.5 pr-3">Last active</th>
@@ -176,6 +184,18 @@ export default function TeamPage() {
                     <div className="text-xs text-slate-400">{t.email}</div>
                   </td>
                   <td className="py-2 pr-3 capitalize">{t.role}</td>
+                  <td className="py-2 pr-3">
+                    {isAdmin && t.status !== "pending" ? (
+                      <input
+                        defaultValue={t.courtesyName || ""}
+                        onBlur={(e) => { if ((e.target.value.trim()) !== (t.courtesyName || "")) saveCourtesy(t.userId, e.target.value); }}
+                        placeholder="Mr. Sommer"
+                        className="w-28 rounded border border-slate-300 px-1.5 py-0.5 text-xs"
+                      />
+                    ) : (
+                      <span className="text-xs text-slate-500">{t.courtesyName || "—"}</span>
+                    )}
+                  </td>
                   <td className="py-2 pr-3">
                     {isAdmin ? (
                       <input
@@ -236,7 +256,7 @@ export default function TeamPage() {
                 </tr>
               ))}
               {teachers.length === 0 && (
-                <tr><td colSpan={9} className="py-3 text-slate-400">No members yet.</td></tr>
+                <tr><td colSpan={10} className="py-3 text-slate-400">No members yet.</td></tr>
               )}
             </tbody>
           </table>

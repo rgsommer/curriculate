@@ -49,6 +49,11 @@ const BehaviorTeacherSchema = new mongoose.Schema(
     // the students in their homeroom.
     homeroom: { type: String, default: "" },
 
+    // How this teacher is named in PARENT-FACING notices — the school's proper
+    // form, e.g. "Mr. Sommer" / "Miss Lau". Used for the sign-off and for
+    // "logged by / reported by" attribution. Falls back to the display name.
+    courtesyName: { type: String, default: "" },
+
     // Per-teacher parent-message templates (encouraging / proactive notes home the
     // teacher copies and sends themselves). Each has a name and a body with
     // placeholders like {student}, {parents}, {he}, {subject}. Seeded with a

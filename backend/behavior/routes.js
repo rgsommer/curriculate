@@ -1906,7 +1906,7 @@ router.get("/team", authAny, loadMembership, async (req, res, next) => {
       return res.status(403).json({ ok: false, error: "Admins and principals only" });
     }
     const teachers = await BehaviorTeacher.find({ schoolId: req.schoolId })
-      .select("name email role status createdAt userId housesCommittee homeroom")
+      .select("name email role status createdAt userId housesCommittee homeroom courtesyName")
       .lean();
 
     const incAgg = await BehaviorIncident.aggregate([
@@ -1960,6 +1960,7 @@ router.get("/team", authAny, loadMembership, async (req, res, next) => {
           role: t.role,
           status: t.status,
           homeroom: t.homeroom || "",
+          courtesyName: t.courtesyName || "",
           joinedAt: t.createdAt,
           // History-inclusive: itemised incidents + standalone legacy offences.
           incidents: (inc?.n || 0) + legOff,
@@ -2091,6 +2092,20 @@ router.put("/team/homeroom", authAny, loadMembership, requireAdmin, async (req, 
       return res.json({ ok: true, email, homeroom });
     }
     return res.status(400).json({ ok: false, error: "Missing userId or email." });
+  } catch (err) { next(err); }
+});
+
+// Set a member's courtesy name (e.g. "Mr. Sommer") for parent-facing notices.
+router.put("/team/courtesy", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const courtesyName = String(req.body?.courtesyName || "").trim().slice(0, 60);
+    const userId = String(req.body?.userId || "").trim();
+    if (!userId) return res.status(400).json({ ok: false, error: "Missing userId." });
+    const target = await BehaviorTeacher.findOne({ schoolId: req.schoolId, userId });
+    if (!target) return res.status(404).json({ ok: false, error: "Member not found in this school." });
+    await BehaviorTeacher.updateOne({ _id: target._id }, { $set: { courtesyName } });
+    await audit(req.schoolId, "team.courtesy_changed", req, { meta: { target: target.email, courtesyName } });
+    res.json({ ok: true, userId, courtesyName });
   } catch (err) { next(err); }
 });
 
@@ -3214,7 +3229,7 @@ async function composeAndCreateNotice({
   // Sign with the SENDING TEACHER's name so a parent always knows who it's from.
   // Only fall back to the division block when there's no teacher name at all —
   // never sign a note "Teachers at …" when we know the individual teacher.
-  const senderName = (sender?.name || "").trim();
+  const senderName = (sender?.courtesyName || sender?.name || "").trim();
   const schoolName = config?.branding?.schoolName || "";
   const signature =
     (sender?.signature || "").trim() ||
@@ -3388,10 +3403,11 @@ async function fireNotice({ req, student, config, decision, awaitDecision = fals
   const teacherIds = [...new Set(contributing.map((i) => String(i.teacherId)))];
   const teachers = await BehaviorTeacher.find({ _id: { $in: teacherIds } }).lean();
   const teacherById = Object.fromEntries(teachers.map((t) => [String(t._id), t]));
-  for (const i of contributing) i.__teacherName = teacherById[String(i.teacherId)]?.name || "";
+  const tdisplay = (t) => (t?.courtesyName || t?.name || "").trim();
+  for (const i of contributing) i.__teacherName = tdisplay(teacherById[String(i.teacherId)]);
   const fromTeachers = contributing.map((i) => ({
     teacherId: i.teacherId,
-    name: teacherById[String(i.teacherId)]?.name || "",
+    name: tdisplay(teacherById[String(i.teacherId)]),
     behaviorName: i.behaviorSnapshot?.name || "",
   }));
   // List the consequences, preferring the actually-logged consequence records
