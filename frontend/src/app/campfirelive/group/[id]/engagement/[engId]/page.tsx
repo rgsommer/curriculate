@@ -6931,6 +6931,21 @@ export default function EngagementDetailPage() {
                       type="email"
                       value={addRecipEmail}
                       onChange={(e) => setAddRecipEmail(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key !== "Enter") return;
+                        e.preventDefault(); // don't submit/reload — just add
+                        const em = (
+                          addRecipEmail.match(
+                            /[^\s<>,;"']+@[^\s<>,;"']+\.[^\s<>,;"']+/
+                          )?.[0] || ""
+                        )
+                          .trim()
+                          .toLowerCase();
+                        if (em && !editExcludedEmails.includes(em)) {
+                          setEditExcludedEmails((prev) => [...prev, em]);
+                          setAddRecipEmail("");
+                        }
+                      }}
                       placeholder="Add a recipient by email…"
                       className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-rose-400"
                     />
