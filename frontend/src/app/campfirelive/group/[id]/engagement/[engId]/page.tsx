@@ -6220,12 +6220,16 @@ export default function EngagementDetailPage() {
             <div className="flex-1 min-w-0 space-y-3">
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">
-                  Prompt / question
+                  {isBirthdayCard ? "Card title / message (shown at the top)" : "Prompt / question"}
                 </label>
                 <textarea
                   value={editTitle}
                   onChange={(e) => setEditTitle(e.target.value)}
-                  placeholder="Prompt / question"
+                  placeholder={
+                    isBirthdayCard
+                      ? "e.g. Happy Teacher Appreciation Day, Miss McKenzie! 💌"
+                      : "Prompt / question"
+                  }
                   rows={2}
                   className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-lg font-semibold leading-snug text-slate-900 focus:border-orange-500 outline-none resize-y"
                   autoFocus
@@ -6233,12 +6237,17 @@ export default function EngagementDetailPage() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">
-                  Details <span className="text-slate-400">(optional)</span>
+                  {isBirthdayCard ? "Note to signers" : "Details"}{" "}
+                  <span className="text-slate-400">(optional)</span>
                 </label>
                 <textarea
                   value={editDesc}
                   onChange={(e) => setEditDesc(e.target.value)}
-                  placeholder="Add more detail (optional)"
+                  placeholder={
+                    isBirthdayCard
+                      ? "A line for the people signing — e.g. Add your note; they'll all show when it opens."
+                      : "Add more detail (optional)"
+                  }
                   rows={5}
                   className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-base leading-relaxed text-slate-700 focus:border-orange-500 outline-none resize-y"
                 />

@@ -1494,13 +1494,17 @@ export default function NewEngagementPage() {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Title</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                {selectedType === "birthday" ? "Card title / message (shown at the top)" : "Title"}
+              </label>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder={
-                  selectedType === "poll"
+                  selectedType === "birthday"
+                    ? "e.g. Happy Teacher Appreciation Day, Miss McKenzie! 💌"
+                    : selectedType === "poll"
                     ? "e.g. What should we eat on Saturday?"
                     : selectedType === "challenge"
                     ? "e.g. Best sunset photo this week"
@@ -1512,12 +1516,17 @@ export default function NewEngagementPage() {
 
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
-                Description <span className="text-slate-400">(optional)</span>
+                {selectedType === "birthday" ? "Note to signers" : "Description"}{" "}
+                <span className="text-slate-400">(optional)</span>
               </label>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Add more context or rules..."
+                placeholder={
+                  selectedType === "birthday"
+                    ? "A line for the people signing — e.g. Add your note; they'll all show when it opens."
+                    : "Add more context or rules..."
+                }
                 rows={3}
                 className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none resize-none"
               />
