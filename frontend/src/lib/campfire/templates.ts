@@ -150,6 +150,17 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
         title: "Record your answer 🎤",
         description: "Leave a quick voice note instead of typing it out.",
       },
+      {
+        id: "class-card",
+        name: "Class Card 💌",
+        type: "birthday",
+        title: "A card from the class 💌",
+        description:
+          "The class signs a surprise card together — for a teacher, a classmate's birthday, a farewell, or a get-well. Paste the join link in Edsby and students add their note with just a name — each message stays hidden until it opens.",
+        occasion: "once",
+        onceLabel: "Class Card",
+        reveal: "sealed",
+      },
     ],
   },
   {
@@ -353,6 +364,28 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
         description:
           "A surprise card the group signs for a couple's wedding — perfect for coworkers and friends, especially anyone who can't make it. Notes stay hidden until the wedding day. Add a group gift so everyone can chip in together, attending or not.",
         occasion: "wedding",
+        reveal: "sealed",
+      },
+      {
+        id: "get-well-card",
+        name: "Get Well Card 🌻",
+        type: "birthday",
+        title: "Get well soon! 🌻",
+        description:
+          "A surprise card the group signs for someone who's unwell or recovering — each note stays hidden until it opens, then arrives all at once to lift their spirits. Add a group gift to send flowers or a gift card together.",
+        occasion: "once",
+        onceLabel: "Get Well",
+        reveal: "sealed",
+      },
+      {
+        id: "farewell-card",
+        name: "Farewell Card 👋",
+        type: "birthday",
+        title: "We'll miss you! 👋",
+        description:
+          "A surprise send-off card the group signs for someone moving on — a coworker, classmate, or friend who's leaving or relocating. Notes stay hidden until it opens. Add a group gift so everyone can chip in for a parting gift.",
+        occasion: "once",
+        onceLabel: "Farewell",
         reveal: "sealed",
       },
       {

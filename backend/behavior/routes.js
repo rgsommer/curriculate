@@ -14,6 +14,7 @@ import crypto from "crypto";
 import multer from "multer";
 
 import authAny from "../middleware/authAny.js";
+import { requireAdminToken } from "../middleware/requireAdminToken.js";
 import { sendEmail } from "./lib/sendEmail.js";
 
 import BehaviorSchool from "./models/BehaviorSchool.js";
@@ -31,6 +32,11 @@ import { HonourRollSnapshot, HonourRollConfig } from "./models/HonourRoll.js";
 import { edsbyGetJson, extractZoomStudentsRaw, buildIxlRoster } from "./lib/edsbyRead.js";
 import BehaviorHouse from "./models/BehaviorHouse.js";
 import HousePointEvent from "./models/HousePointEvent.js";
+import HousesVisit from "./models/HousesVisit.js";
+import MerchRedemption from "./models/MerchRedemption.js";
+import { awardGuddAndReset } from "./lib/guddAward.js";
+import { awardMonthlyConduct } from "./lib/monthlyConductAward.js";
+import { readFoodDriveSheets } from "./lib/foodDriveVision.js";
 import HomeworkAssignment from "./models/HomeworkAssignment.js";
 import HomeworkScore from "./models/HomeworkScore.js";
 import BehaviorCompetition from "./models/BehaviorCompetition.js";
@@ -43,7 +49,7 @@ import { seedBehaviorDocs, recommendedHousePoints } from "./lib/seedBehaviors.js
 import { parseRoster, parseRosterFile } from "./lib/rosterImport.js";
 import { DEFAULT_PARENT_TEMPLATES, fillTemplate } from "./lib/parentTemplates.js";
 import { STANDARD_BEHAVIORS } from "./lib/standardBehaviors.js";
-import { composeNotice, composePositiveNotice, makeDefaultAiClient, deterministicNote, deterministicPositiveNote, composeParentMessage, hasBibleVerse } from "./lib/aiNote.js";
+import { composeNotice, composePositiveNotice, makeDefaultAiClient, deterministicNote, deterministicPositiveNote, composeParentMessage, hasBibleVerse, stripMarkdown } from "./lib/aiNote.js";
 import { buildAvgsRouter } from "./avgsRoutes.js";
 import { emailShell, emailButton, noteToHtml, mdToHtml, monthlyKindChartHtml, pasteableNote } from "./lib/emailTemplate.js";
 import { scheduleDispatch, dispatchNotice, sendHomeworkMessage, recordNoticeAsSent } from "./lib/notify.js";
@@ -54,6 +60,8 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 *
 // Photo/video evidence — larger cap (short phone clips), held in memory only
 // long enough to push to S3. 30 MB covers photos + brief videos.
 const uploadMedia = multer({ storage: multer.memoryStorage(), limits: { fileSize: 30 * 1024 * 1024, files: 5 } });
+// Food Drive class sheets (photos/scans or a PDF) for AI handwriting read.
+const uploadSheets = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024, files: 25 } });
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -129,19 +137,56 @@ const SCHOOL_TZ = process.env.SCHOOL_TZ || "America/Toronto";
 async function fireWhiteSlip({ req, student, config, behaviorName, detailText, at, relatedIncidentId = null }) {
   const studentName = `${student.preferredName || student.firstName} ${student.lastName}`.trim();
   const first = student.preferredName || student.firstName || studentName;
-  const teacherName = req.membership?.name || req.user?.name || "Teacher";
   const teacherEmail = req.user?.email || "";
+  // Always identify the issuing teacher. When they haven't set a display name we
+  // derive one from their email (rgsommer@me.com → "rgsommer"), never the bare
+  // word "Teacher", so the VP can always see who issued it.
+  const teacherName = actorName(req);
+  const loggedByLabel = teacherEmail && !teacherName.includes("@") ? `${teacherName} (${teacherEmail})` : teacherName;
   const vpEmail = (config?.vp?.email || "").trim();
   const when = new Date(at || Date.now());
+  let consId = "";
   try {
-    await BehaviorConsequence.create({
+    const cons = await BehaviorConsequence.create({
       schoolId: req.schoolId, studentId: student._id,
       type: "White slip", detail: behaviorName + (detailText ? ` — ${detailText}` : ""),
       byTeacherId: req.membership._id, byName: teacherName, relatedIncidentId, at: when,
       status: "recommended", // awaits a staff "issued? Yes" confirmation
     });
+    consId = String(cons._id);
   } catch (e) { console.warn("[behavior] white-slip consequence log failed:", e?.message || e); }
+
+  // Optional one-off house-point penalty for a white slip. Meant for schools that
+  // don't deduct per-infraction, so only applied when negative deductions are off
+  // (avoids double-counting the white-slip offence's own points).
+  try {
+    const pen = Number(config?.houseWhiteSlipPoints) || 0;
+    if (config?.houseWhiteSlipDeduct && !config?.houseNegativePoints && pen > 0 && student.houseId) {
+      await HousePointEvent.create({
+        schoolId: req.schoolId, houseId: student.houseId, studentId: student._id,
+        points: -Math.abs(pen), reason: `White slip — ${behaviorName}`,
+        awardedByTeacherId: req.membership?._id || null, at: when,
+      });
+    }
+  } catch (e) { console.warn("[behavior] white-slip house penalty failed:", e?.message || e); }
+
   if (!teacherEmail && !vpEmail) return;
+
+  // Handbook ladder: how many white slips this term (incl. this one) and what the
+  // handbook says should follow (3/4/5 → detention, 6th → suspension).
+  let ladderLineHtml = "", ladderLineText = "";
+  if (config?.whiteSlipLadder?.enabled) {
+    try {
+      const prior = (await periodWhiteSlipsByStudent(req.schoolId, [student._id], config))[String(student._id)] || 0;
+      const nth = prior + 1;
+      const next = whiteSlipLadderRecommendation(config, { periodWhiteSlips: nth });
+      const ordinalish = nth === 1 ? "1st" : nth === 2 ? "2nd" : nth === 3 ? "3rd" : `${nth}th`;
+      ladderLineText = `\nThis is white slip #${nth} this term${next ? ` → recommended: ${next}` : ""}.`;
+      ladderLineHtml = `<p style="margin:12px 0 0;padding:10px 12px;background:#fef2f2;border-left:4px solid #dc2626;border-radius:6px;color:#334155;font-size:14px">` +
+        `This is the <strong>${ordinalish} white slip this term</strong>${next ? ` — the handbook calls for <strong>${escapeHtml(next)}</strong>.` : "."}</p>`;
+    } catch { /* ignore */ }
+  }
+
   const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
   try {
     await sendEmail({
@@ -152,7 +197,7 @@ async function fireWhiteSlip({ req, student, config, behaviorName, detailText, a
       text:
         `WHITE SLIP\n\nStudent: ${studentName}${student.classGroup ? ` (${student.classGroup})` : ""}\n` +
         `Reason: ${behaviorName}${detailText ? `\nDetail: ${detailText}` : ""}\n` +
-        `Teacher: ${teacherName}\nDate: ${when.toLocaleString("en-CA", { timeZone: SCHOOL_TZ })}\n\n— Compass`,
+        `Logged by: ${loggedByLabel}\nDate: ${when.toLocaleString("en-CA", { timeZone: SCHOOL_TZ })}${ladderLineText}\n\n— Compass`,
       html: emailShell({
         title: "White Slip",
         schoolName: config?.branding?.schoolName || "Compass",
@@ -162,9 +207,16 @@ async function fireWhiteSlip({ req, student, config, behaviorName, detailText, a
           `<tr><td style="padding:4px 0;width:90px;color:#64748b">Student</td><td style="padding:4px 0"><strong>${escapeHtml(studentName)}</strong>${student.classGroup ? ` (${escapeHtml(student.classGroup)})` : ""}</td></tr>` +
           `<tr><td style="padding:4px 0;color:#64748b">Reason</td><td style="padding:4px 0">${escapeHtml(behaviorName)}</td></tr>` +
           (detailText ? `<tr><td style="padding:4px 0;color:#64748b">Detail</td><td style="padding:4px 0">${escapeHtml(detailText)}</td></tr>` : "") +
-          `<tr><td style="padding:4px 0;color:#64748b">Teacher</td><td style="padding:4px 0">${escapeHtml(teacherName)}</td></tr>` +
+          `<tr><td style="padding:4px 0;color:#64748b">Logged by</td><td style="padding:4px 0">${escapeHtml(loggedByLabel)}</td></tr>` +
           `<tr><td style="padding:4px 0;color:#64748b">Date</td><td style="padding:4px 0">${escapeHtml(when.toLocaleString("en-CA", { timeZone: SCHOOL_TZ }))}</td></tr>` +
           `</table>` +
+          ladderLineHtml +
+          (consId ? (() => {
+            const tok = consequenceActionToken(String(req.schoolId), consId, "issue");
+            const url = `${appBase()}/behavior/consequence-action?school=${req.schoolId}&id=${consId}&action=issue&token=${encodeURIComponent(tok)}`;
+            return `<p style="margin:12px 0 4px;color:#334155;font-size:14px">Once the white slip has been issued, you can confirm it right here — no need to open the app:</p>` +
+              emailButton("✓ Mark white slip as issued", url, "#2563eb");
+          })() : "") +
           emailButton(`View ${first} & strikes`, `${appBase()}/behavior/student/${student._id}#incident-log`, "#0f172a"),
       }),
     });
@@ -220,10 +272,48 @@ function buildConsequenceMessage({ studentName, behaviorName, detailText, conseq
   return lines.join("\n");
 }
 
+// AI-polished version of the consequence message (warm but firm, Christian tone,
+// student-directed with parents reading), falling back to the deterministic text
+// if the AI is unavailable. Used by both the auto-email and the Copy-message button.
+async function composeConsequenceMessageAI(opts) {
+  const det = buildConsequenceMessage(opts);
+  const aiClient = makeDefaultAiClient(opts.config || {});
+  if (!aiClient) return det;
+  const first = (opts.studentName || "the student").split(" ")[0] || "the student";
+  const dayPhrase = relativeSchoolDay(opts.when || Date.now());
+  const deadline =
+    opts.followUpType === "next_school_day" ? "It must be handed in by 9:00 AM the next school day." :
+    opts.followUpType === "custom_deadline" ? "It must be done by the deadline the teacher gave." : "";
+  const prompt = [
+    `Write a brief, warm-but-firm message from a Christian-school teacher to a student (with parents reading too), to post in Edsby. Address the student directly as "you".`,
+    `Begin with the greeting: "Dear ${first} and parents,".`,
+    `The student's name is ${opts.studentName} — use it where natural; NEVER output a bracketed placeholder.`,
+    `Note that ${dayPhrase} there was a concern — ${opts.behaviorName}${opts.detailText ? `: ${opts.detailText}` : ""}. Then clearly state what the student must now do: ${opts.consequenceText}. ${deadline}`,
+    `For any deadline, keep the wording EXACTLY "the next school day" — do NOT say "tomorrow", "Saturday", a weekday, or a date (the next school day may be after the weekend or a holiday).`,
+    `Close with a brief encouraging "fresh start / from now on" line and sign off exactly as: ${opts.teacherName}.`,
+    `FORMAT: do NOT write one block. Use short paragraphs separated by a blank line: (1) the greeting on its own line; (2) a sentence on what happened; (3) the task SET OFF on its own line(s) — the action, the exact words to write in quotation marks, and the deadline; (4) the encouraging line; (5) the sign-off. Plain text with real line breaks, no bullets, no invented facts, no placeholders.`,
+  ].join("\n");
+  try {
+    const out = await Promise.race([
+      aiClient.complete(prompt),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("AI timeout")), 15000)),
+    ]);
+    let t = stripMarkdown(String(out || "").trim());
+    t = t.replace(/\[[^\]]*\b(student|name|pupil|child)\b[^\]]*\]/gi, opts.studentName || "").replace(/\[[^\]]*\]/g, "")
+      .replace(/[ \t]{2,}/g, " ")   // tidy runs of spaces WITHOUT collapsing line breaks
+      .replace(/\n{3,}/g, "\n\n")    // at most one blank line between paragraphs
+      .trim();
+    // Guardrail: a deadline must never read "tomorrow" (could be a weekend/holiday).
+    t = t.replace(/\bby\s+tomorrow\b/gi, "by the next school day").replace(/\btomorrow\b/gi, "the next school day");
+    return t || det;
+  } catch (e) { console.warn("[behavior] consequence message AI failed:", e?.message || e); return det; }
+}
+
 // Record a logged (non-white-slip) consequence on the student record so it shows
 // immediately and can be marked done. Returns the created doc (or null on error).
 async function recordLoggedConsequence({ req, student, behavior, detailText, at, incidentId }) {
-  const teacherName = req.membership?.name || req.user?.name || "Teacher";
+  // Always attributable — derive from email when no display name, never "Teacher".
+  const teacherName = actorName(req);
   try {
     return await BehaviorConsequence.create({
       schoolId: req.schoolId, studentId: student._id,
@@ -241,12 +331,12 @@ async function sendConsequenceMessage({ req, student, config, behavior, detailTe
   const teacherEmail = req.user?.email || "";
   if (!teacherEmail) return;
   const studentName = `${student.preferredName || student.firstName} ${student.lastName || ""}`.trim();
-  const teacherName = req.membership?.name || req.user?.name || "Teacher";
+  const teacherName = (req.membership?.courtesyName || "").trim() || actorName(req);
   const schoolName = config?.branding?.schoolName || "";
-  const message = buildConsequenceMessage({
+  const message = await composeConsequenceMessageAI({
     studentName, behaviorName: behavior.name, detailText,
     consequenceText: behavior.consequenceText, when: at,
-    followUpType: behavior.followUpType, teacherName, schoolName,
+    followUpType: behavior.followUpType, teacherName, schoolName, config,
   });
   const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
   try {
@@ -300,6 +390,37 @@ function appBase() {
   return (process.env.APP_BASE_URL || "https://www.curriculate.net").replace(/\/+$/, "");
 }
 
+// A readable name for a teacher who hasn't set a display name: the email's local
+// part (e.g. "rgsommer@me.com" → "rgsommer"). "" when there's no email.
+function emailLocalName(email) {
+  const s = String(email || "").trim();
+  const i = s.indexOf("@");
+  return i > 0 ? s.slice(0, i) : "";
+}
+// Best available name for the acting teacher: their set display name, else a name
+// derived from their email, else a safe placeholder. Never the bare "Teacher".
+function actorName(req) {
+  return (req?.membership?.name || req?.user?.name || "").trim() || emailLocalName(req?.user?.email) || "Unknown teacher";
+}
+
+// Whether an individual behaviour's house points should apply, by sign:
+// positives gated by housePositivePoints, negatives by houseNegativePoints.
+// Falls back to the legacy houseIndividualPoints switch when the granular ones
+// aren't set, so existing schools behave as before until they choose.
+function applyIndividualPoints(config, pts) {
+  if (pts > 0) {
+    return config?.housePositivePoints !== undefined
+      ? config.housePositivePoints !== false
+      : config?.houseIndividualPoints !== false;
+  }
+  if (pts < 0) {
+    return config?.houseNegativePoints !== undefined
+      ? !!config.houseNegativePoints
+      : config?.houseIndividualPoints !== false;
+  }
+  return false;
+}
+
 // Start of the current "notices home" period (school year by default: most
 // recent Sept 1). Notices sent before this stay in history but don't count
 // toward the current period's sequence number, CC-VP rule, or escalation.
@@ -330,6 +451,29 @@ async function periodNoticesByStudent(schoolId, studentIds, config) {
   return Object.fromEntries(rows.map((r) => [String(r._id), r.n]));
 }
 
+// Bulk: white slips given this period (issued or resolved-as-other) per student —
+// for the handbook escalation ladder (3/4/5 → detention, 6th → suspension).
+async function periodWhiteSlipsByStudent(schoolId, studentIds, config) {
+  const rows = await BehaviorConsequence.aggregate([
+    { $match: { schoolId, studentId: { $in: studentIds }, type: "White slip", status: { $in: ["issued", "other"] }, at: { $gte: new Date(periodStartMs(config)) } } },
+    { $group: { _id: "$studentId", n: { $sum: 1 } } },
+  ]);
+  return Object.fromEntries(rows.map((r) => [String(r._id), r.n]));
+}
+
+// The recommended consequence per the handbook's two numeric escalation rules.
+// Returns null when the ladder is off or no rule applies (fall back to the
+// admin's consequence ladder). `nthWhiteSlip` is the count INCLUDING a slip
+// about to be issued, when relevant.
+function whiteSlipLadderRecommendation(config, { periodNotices = 0, periodWhiteSlips = 0 } = {}) {
+  const l = config?.whiteSlipLadder || {};
+  if (!l.enabled) return null;
+  if (l.suspensionAtCount && periodWhiteSlips >= l.suspensionAtCount) return `${l.suspensionDays || 2}-day suspension`;
+  if (l.detentionFromCount && periodWhiteSlips >= l.detentionFromCount) return "After-school detention";
+  if (l.emailsPerTermToWhiteSlip && periodNotices >= l.emailsPerTermToWhiteSlip) return "White slip";
+  return null;
+}
+
 // A signed, unauthenticated capability link for the "Reset the GUDD list" button
 // in the admin digest — so the VP can reset without logging in. Bound to the
 // school AND the current week, so an old email's link stops working after ~3
@@ -356,8 +500,86 @@ function verifyGuddResetToken(schoolId, token) {
   return !isNaN(wkTime) && Date.now() - wkTime <= 21 * DAY_MS; // link valid ~3 weeks
 }
 
+// Signed one-tap link for "I've talked to this student" in the homeroom check-in
+// email — logs a homeroom follow-up without logging in. Bound to school+student+
+// week; valid ~4 weeks. Same low-stakes, reversible spirit as the GUDD link.
+function hrFollowupToken(schoolId, studentId, wk = mondayKey()) {
+  const secret = guddResetSecret();
+  if (!secret) return "";
+  const sig = crypto.createHmac("sha256", secret).update(`hr-fu:${schoolId}:${studentId}:${wk}`).digest("hex").slice(0, 32);
+  return `${wk}.${sig}`;
+}
+function verifyHrFollowupToken(schoolId, studentId, token) {
+  const secret = guddResetSecret();
+  if (!secret || !token) return false;
+  const [wk, sig] = String(token).split(".");
+  if (!wk || !sig) return false;
+  const expected = crypto.createHmac("sha256", secret).update(`hr-fu:${schoolId}:${studentId}:${wk}`).digest("hex").slice(0, 32);
+  let ok = false;
+  try { ok = sig.length === expected.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected)); } catch { ok = false; }
+  if (!ok) return false;
+  const wkTime = Date.parse(wk + "T00:00:00Z");
+  return !isNaN(wkTime) && Date.now() - wkTime <= 28 * DAY_MS;
+}
+
+// Signed one-tap link for the VP to action a consequence from the email itself —
+// "mark white slip issued" (issue) or "mark done" (complete) — without logging
+// in. Bound to school+consequence+action+week; valid ~4 weeks.
+function consequenceActionToken(schoolId, consequenceId, action, wk = mondayKey()) {
+  const secret = guddResetSecret();
+  if (!secret) return "";
+  const sig = crypto.createHmac("sha256", secret).update(`cons-act:${schoolId}:${consequenceId}:${action}:${wk}`).digest("hex").slice(0, 32);
+  return `${wk}.${sig}`;
+}
+function verifyConsequenceActionToken(schoolId, consequenceId, action, token) {
+  const secret = guddResetSecret();
+  if (!secret || !token) return false;
+  const [wk, sig] = String(token).split(".");
+  if (!wk || !sig) return false;
+  const expected = crypto.createHmac("sha256", secret).update(`cons-act:${schoolId}:${consequenceId}:${action}:${wk}`).digest("hex").slice(0, 32);
+  let ok = false;
+  try { ok = sig.length === expected.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected)); } catch { ok = false; }
+  if (!ok) return false;
+  const wkTime = Date.parse(wk + "T00:00:00Z");
+  return !isNaN(wkTime) && Date.now() - wkTime <= 28 * DAY_MS;
+}
+
+// Record a homeroom follow-up (a neutral documented interaction — never a strike,
+// sends nothing home). Shared by the in-app button and the emailed one-tap link.
+async function logHomeroomFollowup({ schoolId, student, teacherId = null, byName = "" }) {
+  let beh = await Behavior.findOne({ schoolId, name: "Homeroom follow-up" });
+  if (!beh) {
+    beh = await Behavior.create({
+      schoolId, name: "Homeroom follow-up", keyword: "homeroom", kind: "negative", triggerMode: "INTERACTION",
+      description: "A relational check-in: the homeroom teacher discusses the situation with the student to steer them right. Supportive — does not count as a strike and sends nothing home.",
+      consequenceText: "", points: 0,
+    });
+  }
+  const note = `Homeroom follow-up${byName ? ` by ${byName}` : ""} — homeroom teacher discussed the situation with the student to steer them in the right direction.`;
+  return BehaviorIncident.create({
+    schoolId, studentId: student._id, teacherId,
+    behaviorId: beh._id,
+    behaviorSnapshot: { name: beh.name, description: beh.description, triggerMode: "INTERACTION", kind: "negative", consequenceText: "", points: 0 },
+    detailText: note, immediateFlag: false, timestamp: new Date(),
+  });
+}
+
 function escapeHtml(s) {
   return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// INTERACTION-mode incidents come in a few flavours. For parent-facing notes we
+// distinguish a real parent contact from a teacher↔student conversation (which
+// often IS the concern the teacher wants to raise), and from internal support/
+// meta records that should never be surfaced to parents.
+const PARENT_CONTACT_NAME = "Parent meeting / contact";
+const SUPPORT_INTERACTION_NAMES = new Set(["Homeroom follow-up", "Whole-picture note recommended"]);
+// A teacher↔student conversation worth telling parents about: INTERACTION mode,
+// not a parent-contact log, and not an internal support/meta record.
+function isConcernConversation(inc) {
+  if (inc?.behaviorSnapshot?.triggerMode !== "INTERACTION") return false;
+  const n = inc?.behaviorSnapshot?.name || "";
+  return n !== PARENT_CONTACT_NAME && !SUPPORT_INTERACTION_NAMES.has(n);
 }
 
 // The Monday (UTC, YYYY-MM-DD) of the week containing `d` — a stable weekly key
@@ -478,7 +700,7 @@ router.get("/me", authAny, async (req, res, next) => {
       if (invite) {
         membership = await BehaviorTeacher.findOneAndUpdate(
           { schoolId: invite.schoolId, userId: req.userId },
-          { $set: { email: myEmail, name: req.user?.name || "", role: invite.role, status: "accepted" } },
+          { $set: { email: myEmail, name: req.user?.name || "", role: invite.role, status: "accepted", ...(invite.homeroom ? { homeroom: invite.homeroom } : {}) } },
           { upsert: true, new: true }
         ).lean();
         invite.status = "accepted";
@@ -524,7 +746,7 @@ router.post("/setup", authAny, async (req, res, next) => {
     if (pendingInvite) {
       await BehaviorTeacher.findOneAndUpdate(
         { schoolId: pendingInvite.schoolId, userId: req.userId },
-        { $set: { email: myEmail, name: req.user.name || "", role: pendingInvite.role, status: "accepted" } },
+        { $set: { email: myEmail, name: req.user.name || "", role: pendingInvite.role, status: "accepted", ...(pendingInvite.homeroom ? { homeroom: pendingInvite.homeroom } : {}) } },
         { upsert: true }
       );
       await BehaviorInvite.updateOne({ _id: pendingInvite._id }, { $set: { status: "accepted" } });
@@ -585,8 +807,9 @@ router.put("/config", authAny, loadMembership, requireAdmin, async (req, res, ne
       "aiSendMode", "cancelWindowSeconds", "aiProvider", "aiModel",
       "noticesResetMode", "termStartDates", "repeatScopeDays",
       "reminderTime", "manualNonSchoolDays", "houseReport", "housesEnabled", "housePointsResetAt",
-      "homework", "vpNotify", "teacherDraft", "consequenceLadder", "consequenceWhitelist", "adminDigest", "houseCaps", "houseEvents", "houseRewards",
-      "encouragingMessagePoints",
+      "homework", "vpNotify", "teacherDraft", "thresholdNotice", "consequenceLadder", "consequenceWhitelist", "adminDigest", "houseCaps", "houseEvents", "houseRewards",
+      "encouragingMessagePoints", "houseIndividualPoints", "autoRecommendWhiteSlipAtThreshold",
+      "housePositivePoints", "houseNegativePoints", "houseWhiteSlipDeduct", "houseWhiteSlipPoints",
     ];
     const update = {};
     for (const k of allowed) if (k in (req.body || {})) update[k] = req.body[k];
@@ -594,6 +817,20 @@ router.put("/config", authAny, loadMembership, requireAdmin, async (req, res, ne
     // period reset (resetAt) or the auto-Friday flag it didn't send.
     if (req.body?.gudd && typeof req.body.gudd === "object") {
       for (const [k, v] of Object.entries(req.body.gudd)) update[`gudd.${k}`] = v;
+    }
+    // Same field-merge for the month-end conduct award, so saving its toggle/
+    // points never clobbers lastAwardMonth (the idempotency marker).
+    if (req.body?.monthlyConductAward && typeof req.body.monthlyConductAward === "object") {
+      for (const [k, v] of Object.entries(req.body.monthlyConductAward)) update[`monthlyConductAward.${k}`] = v;
+    }
+    // Handbook white-slip escalation ladder (field-merge).
+    if (req.body?.whiteSlipLadder && typeof req.body.whiteSlipLadder === "object") {
+      for (const [k, v] of Object.entries(req.body.whiteSlipLadder)) update[`whiteSlipLadder.${k}`] = v;
+    }
+    // Daily VP consequence-digest settings (field-merge, so toggling never
+    // clobbers lastSentAt, the once-a-day idempotency marker).
+    if (req.body?.consequenceDigest && typeof req.body.consequenceDigest === "object") {
+      for (const [k, v] of Object.entries(req.body.consequenceDigest)) update[`consequenceDigest.${k}`] = v;
     }
     const config = await BehaviorConfig.findOneAndUpdate(
       { schoolId: req.schoolId },
@@ -1725,7 +1962,7 @@ router.get("/team", authAny, loadMembership, async (req, res, next) => {
       return res.status(403).json({ ok: false, error: "Admins and principals only" });
     }
     const teachers = await BehaviorTeacher.find({ schoolId: req.schoolId })
-      .select("name email role status createdAt userId housesCommittee")
+      .select("name email role status createdAt userId housesCommittee homeroom courtesyName monthlySummary")
       .lean();
 
     const incAgg = await BehaviorIncident.aggregate([
@@ -1778,6 +2015,9 @@ router.get("/team", authAny, loadMembership, async (req, res, next) => {
           email: t.email,
           role: t.role,
           status: t.status,
+          homeroom: t.homeroom || "",
+          courtesyName: t.courtesyName || "",
+          monthlySummary: t.monthlySummary !== false,
           joinedAt: t.createdAt,
           // History-inclusive: itemised incidents + standalone legacy offences.
           incidents: (inc?.n || 0) + legOff,
@@ -1792,7 +2032,7 @@ router.get("/team", authAny, loadMembership, async (req, res, next) => {
     // originator, or someone invited then created/accepted separately).
     const memberEmails = new Set(teachers.map((t) => (t.email || "").toLowerCase()));
     const pendingInvites = (await BehaviorInvite.find({ schoolId: req.schoolId, status: "pending" })
-      .select("email role invitedByEmail createdAt lastSentAt")
+      .select("email role invitedByEmail createdAt lastSentAt homeroom")
       .sort({ createdAt: -1 })
       .lean()
     ).filter((p) => !memberEmails.has((p.email || "").toLowerCase()));
@@ -1804,7 +2044,7 @@ router.get("/team", authAny, loadMembership, async (req, res, next) => {
     res.json({
       ok: true,
       teachers: rows,
-      pending: pendingInvites.map((p) => ({ email: p.email, role: p.role, invitedBy: p.invitedByEmail, invitedAt: p.createdAt, lastSentAt: p.lastSentAt || p.createdAt })),
+      pending: pendingInvites.map((p) => ({ email: p.email, role: p.role, invitedBy: p.invitedByEmail, invitedAt: p.createdAt, lastSentAt: p.lastSentAt || p.createdAt, homeroom: p.homeroom || "" })),
       stats: { members: rows.length, pending: pendingInvites.length, activeLast30, totalIncidents, totalNotices },
       // Who's viewing — the UI shows the setup-access toggle only to the originator.
       viewerRole: req.membership.role,
@@ -1866,9 +2106,12 @@ router.put("/my-name", authAny, loadMembership, async (req, res, next) => {
   try {
     const name = String(req.body?.name || "").trim().slice(0, 80);
     if (!name) return res.status(400).json({ ok: false, error: "Please enter a name." });
-    await BehaviorTeacher.updateOne({ _id: req.membership._id }, { $set: { name } });
-    await audit(req.schoolId, "team.self_name_set", req, { meta: { name } });
-    res.json({ ok: true, name });
+    const $set = { name };
+    // Optionally set the parent-facing official name in the same call (first sign-in prompt).
+    if (req.body?.courtesyName !== undefined) $set.courtesyName = String(req.body.courtesyName || "").trim().slice(0, 60);
+    await BehaviorTeacher.updateOne({ _id: req.membership._id }, { $set });
+    await audit(req.schoolId, "team.self_name_set", req, { meta: { name, courtesyName: $set.courtesyName } });
+    res.json({ ok: true, name, courtesyName: $set.courtesyName });
   } catch (err) { next(err); }
 });
 
@@ -1883,6 +2126,60 @@ router.put("/team/name", authAny, loadMembership, requireAdmin, async (req, res,
     await BehaviorTeacher.updateOne({ _id: target._id }, { $set: { name } });
     await audit(req.schoolId, "team.name_changed", req, { meta: { target: target.email, name } });
     res.json({ ok: true, userId, name });
+  } catch (err) { next(err); }
+});
+
+// Set a member's (or a pending invitee's) homeroom class group(s). Admin-only.
+// Accepts { userId } for a joined member or { email } for a pending invite.
+router.put("/team/homeroom", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const homeroom = String(req.body?.homeroom || "").trim().slice(0, 60);
+    const userId = String(req.body?.userId || "").trim();
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    if (userId) {
+      const target = await BehaviorTeacher.findOne({ schoolId: req.schoolId, userId });
+      if (!target) return res.status(404).json({ ok: false, error: "Member not found in this school." });
+      await BehaviorTeacher.updateOne({ _id: target._id }, { $set: { homeroom } });
+      await audit(req.schoolId, "team.homeroom_changed", req, { meta: { target: target.email, homeroom } });
+      return res.json({ ok: true, userId, homeroom });
+    }
+    if (email) {
+      const r = await BehaviorInvite.updateOne({ schoolId: req.schoolId, email, status: "pending" }, { $set: { homeroom } });
+      // Also set it on a member with that email, if one exists.
+      await BehaviorTeacher.updateOne({ schoolId: req.schoolId, email }, { $set: { homeroom } });
+      if (!r.matchedCount) { /* member-only update still fine */ }
+      await audit(req.schoolId, "team.homeroom_changed", req, { meta: { target: email, homeroom } });
+      return res.json({ ok: true, email, homeroom });
+    }
+    return res.status(400).json({ ok: false, error: "Missing userId or email." });
+  } catch (err) { next(err); }
+});
+
+// Set a member's courtesy name (e.g. "Mr. Sommer") for parent-facing notices.
+router.put("/team/courtesy", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const courtesyName = String(req.body?.courtesyName || "").trim().slice(0, 60);
+    const userId = String(req.body?.userId || "").trim();
+    if (!userId) return res.status(400).json({ ok: false, error: "Missing userId." });
+    const target = await BehaviorTeacher.findOne({ schoolId: req.schoolId, userId });
+    if (!target) return res.status(404).json({ ok: false, error: "Member not found in this school." });
+    await BehaviorTeacher.updateOne({ _id: target._id }, { $set: { courtesyName } });
+    await audit(req.schoolId, "team.courtesy_changed", req, { meta: { target: target.email, courtesyName } });
+    res.json({ ok: true, userId, courtesyName });
+  } catch (err) { next(err); }
+});
+
+// Toggle a member's monthly "your month in Compass" encouragement email (admin).
+router.put("/team/monthly-summary", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const userId = String(req.body?.userId || "").trim();
+    const on = !!req.body?.on;
+    if (!userId) return res.status(400).json({ ok: false, error: "Missing userId." });
+    const target = await BehaviorTeacher.findOne({ schoolId: req.schoolId, userId });
+    if (!target) return res.status(404).json({ ok: false, error: "Member not found in this school." });
+    await BehaviorTeacher.updateOne({ _id: target._id }, { $set: { monthlySummary: on } });
+    await audit(req.schoolId, "team.monthly_summary_changed", req, { meta: { target: target.email, on } });
+    res.json({ ok: true, userId, monthlySummary: on });
   } catch (err) { next(err); }
 });
 
@@ -2022,17 +2319,21 @@ router.post("/roster/import", authAny, loadMembership, requireAdmin, upload.sing
     let updated = 0;
     const touchedIds = []; // every student present in this file (matched or created)
     for (const s of students) {
-      // Resolve + strip the parsed house name into a real houseId.
+      // Resolve + strip the parsed house name into a real houseId. A BLANK House
+      // column never clears an existing house/room — houseId is only set when the
+      // CSV actually names a house (so re-importing an export that omits House
+      // leaves assignments untouched).
       const { houseName, ...fields } = s;
       if (houseName) fields.houseId = await resolveHouseId(houseName);
 
-      // Match an existing student on externalId (preferred) or full name.
-      const match = fields.externalId
-        ? { schoolId: req.schoolId, externalId: fields.externalId }
-        : { schoolId: req.schoolId, lastName: fields.lastName, firstName: fields.firstName };
-      const existing = fields.externalId || (fields.lastName && fields.firstName)
-        ? await BehaviorStudent.findOne(match)
-        : null;
+      // Match on Student ID first, then FALL BACK to full name — so a roster that
+      // has gained Student IDs still updates the existing (previously no-ID)
+      // records instead of creating duplicates. A name match then adopts the ID.
+      let existing = null;
+      if (fields.externalId) existing = await BehaviorStudent.findOne({ schoolId: req.schoolId, externalId: fields.externalId });
+      if (!existing && fields.lastName && fields.firstName) {
+        existing = await BehaviorStudent.findOne({ schoolId: req.schoolId, lastName: fields.lastName, firstName: fields.firstName });
+      }
 
       if (existing) {
         // Update in place (same _id), so all incident/notice history stays
@@ -2053,19 +2354,29 @@ router.post("/roster/import", authAny, loadMembership, requireAdmin, upload.sing
     // open from the management view. This is fully reversible: re-importing the
     // complete roster matches them again and flips active back to true (above).
     // Guarded on touchedIds.length so an empty/garbage file never wipes the list.
+    // Safety: never let a partial/mismatched file deactivate most of the roster
+    // (the classic footgun). Only run the deactivation sweep when the file
+    // matched at least half of the currently-active students.
     let deactivated = 0;
+    let deactivateSkipped = false;
     if (touchedIds.length) {
-      const r = await BehaviorStudent.updateMany(
-        { schoolId: req.schoolId, active: true, _id: { $nin: touchedIds } },
-        { $set: { active: false } }
-      );
-      deactivated = r.modifiedCount ?? r.nModified ?? 0;
+      const currentActive = await BehaviorStudent.countDocuments({ schoolId: req.schoolId, active: true });
+      const matchedActive = await BehaviorStudent.countDocuments({ schoolId: req.schoolId, active: true, _id: { $in: touchedIds } });
+      if (currentActive === 0 || matchedActive >= currentActive * 0.5) {
+        const r = await BehaviorStudent.updateMany(
+          { schoolId: req.schoolId, active: true, _id: { $nin: touchedIds } },
+          { $set: { active: false } }
+        );
+        deactivated = r.modifiedCount ?? r.nModified ?? 0;
+      } else {
+        deactivateSkipped = true; // too few matched — likely a partial file; leave everyone active
+      }
     }
 
     await audit(req.schoolId, "roster.imported", req, {
       meta: { imported, updated, deactivated, skippedCount: skipped.length, housesCreated, headerMap },
     });
-    res.json({ ok: true, imported, updated, deactivated, skipped, housesCreated, headerMap });
+    res.json({ ok: true, imported, updated, deactivated, deactivateSkipped, skipped, housesCreated, headerMap });
   } catch (err) {
     next(err);
   }
@@ -2165,16 +2476,26 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
 
     // Notices home THIS PERIOD per student (prior-year notices don't count).
     const noticesPeriod = await periodNoticesByStudent(req.schoolId, students.map((s) => s._id), config);
+    // White slips THIS PERIOD per student (for the handbook escalation ladder).
+    const wsLadderOn = !!config?.whiteSlipLadder?.enabled;
+    const wsPeriod = wsLadderOn ? await periodWhiteSlipsByStudent(req.schoolId, students.map((s) => s._id), config) : {};
 
-    const out = students.map((s) => ({
-      ...s,
-      noticesHomeCount: noticesPeriod[String(s._id)] || 0,
-      activeCount: cnt[String(s._id)] || 0,
-      guddCount: gcnt[String(s._id)] || 0,
-      pendingWhiteSlipId: pend[String(s._id)] || null,
-      pendingConsequences: (consByStudent[String(s._id)] || []).slice(0, 6),
-      hrFollowedUpThisWeek: hrWeek.has(String(s._id)),
-    }));
+    const out = students.map((s) => {
+      const periodNotices = noticesPeriod[String(s._id)] || 0;
+      const periodWhiteSlips = wsPeriod[String(s._id)] || 0;
+      return {
+        ...s,
+        noticesHomeCount: periodNotices,
+        activeCount: cnt[String(s._id)] || 0,
+        guddCount: gcnt[String(s._id)] || 0,
+        pendingWhiteSlipId: pend[String(s._id)] || null,
+        pendingConsequences: (consByStudent[String(s._id)] || []).slice(0, 6),
+        hrFollowedUpThisWeek: hrWeek.has(String(s._id)),
+        whiteSlipCount: periodWhiteSlips,
+        // Handbook-consistent recommendation (null → client falls back to the ladder).
+        recommendedConsequence: whiteSlipLadderRecommendation(config, { periodNotices, periodWhiteSlips }),
+      };
+    });
     res.json({
       ok: true, students: out, triggerCount,
       gudd: guddOn ? { enabled: true, name: gcfg.name || "GUDD", threshold: gcfg.threshold ?? 3 } : { enabled: false },
@@ -2229,7 +2550,15 @@ router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
         new Date(inc.timestamp).getTime() > resetAt && new Date(inc.timestamp).getTime() > cutoff &&
         (inc.behaviorSnapshot?.categories || []).includes("behaviour");
     });
-    const whiteSlipEligible = activeBehaviour.length >= triggerCount;
+    // White slips come from logging a handbook offence (fires immediately) or, per
+    // the handbook accumulation rule, after enough notices home in a term. When the
+    // ladder is on, the manual "Recommend a white slip" button only appears once
+    // that notices threshold is reached — NOT merely at the strike trigger (which
+    // now recommends a detention). Falls back to the old strike basis when off.
+    const wsL = config?.whiteSlipLadder || {};
+    const whiteSlipEligible = (wsL.enabled && wsL.emailsPerTermToWhiteSlip)
+      ? noticesThisPeriod >= wsL.emailsPerTermToWhiteSlip
+      : activeBehaviour.length >= triggerCount;
     const whiteSlipReasons = activeBehaviour.slice(0, 6).map((i) => ({
       name: i.behaviorSnapshot?.name || "", detail: i.detailText || "", date: i.timestamp,
     }));
@@ -2516,6 +2845,7 @@ router.post("/behaviors", authAny, loadMembership, canLog, async (req, res, next
       kind,
       triggerMode,
       consequenceText: kind === "positive" ? "" : String(req.body?.consequenceText || ""),
+      consequenceTiming: req.body?.consequenceTiming === "after_first" ? "after_first" : "first",
       points: Number(req.body?.points) || 0,
       categories,
       uniform: kind === "negative" && Array.isArray(req.body?.categories) && req.body.categories.includes("uniform"),
@@ -2558,6 +2888,7 @@ router.put("/behaviors/:id", authAny, loadMembership, canLog, async (req, res, n
     if ("keyword" in b) beh.keyword = String(b.keyword || "").trim();
     if (b.kind === "positive" || b.kind === "negative") beh.kind = b.kind;
     if ("consequenceText" in b) beh.consequenceText = String(b.consequenceText || "");
+    if (["first", "after_first"].includes(b.consequenceTiming)) beh.consequenceTiming = b.consequenceTiming;
     if (["THRESHOLD", "IMMEDIATE", "INTERACTION"].includes(b.triggerMode)) beh.triggerMode = b.triggerMode;
     if ("points" in b) beh.points = Number(b.points) || 0;
     if ("immediateWhiteSlip" in b) beh.immediateWhiteSlip = !!b.immediateWhiteSlip;
@@ -2664,16 +2995,26 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
       if (behavior.immediateWhiteSlip) {
         await fireWhiteSlip({ req, student, config, behaviorName: behavior.name, detailText, at: timestamp, relatedIncidentId: inc._id });
       } else if (shouldSendConsequenceNote(behavior)) {
-        // A non-white-slip consequence: record it now (shows on the record, can be
-        // marked done) and queue a "post to Edsby" message so the family hears
-        // about it now — not only if/when the threshold notice fires.
-        await recordLoggedConsequence({ req, student, behavior, detailText, at: timestamp, incidentId: inc._id });
-        consequenceNotes.push({ incidentId: inc._id, behavior, detailText, at: timestamp });
+        // "After first occasion": the first time is a warning only — the
+        // consequence applies from the second occurrence of THIS behaviour onward.
+        let applyConsequence = true;
+        if (behavior.consequenceTiming === "after_first") {
+          const priorSame = await BehaviorIncident.countDocuments({ schoolId: req.schoolId, studentId: student._id, behaviorId: behavior._id, _id: { $ne: inc._id } });
+          applyConsequence = priorSame > 0;
+        }
+        if (applyConsequence) {
+          // A non-white-slip consequence: record it now (shows on the record, can be
+          // marked done) and queue a "post to Edsby" message so the family hears
+          // about it now — not only if/when the threshold notice fires.
+          await recordLoggedConsequence({ req, student, behavior, detailText, at: timestamp, incidentId: inc._id });
+          consequenceNotes.push({ incidentId: inc._id, behavior, detailText, at: timestamp });
+        }
       }
 
       // House points: this behaviour's value scaled by the intensity weight.
+      // Positives add / negatives deduct, each gated by its own school switch.
       const pts = Math.round((behavior.points || 0) * weight);
-      if (pts && student.houseId) {
+      if (pts && student.houseId && applyIndividualPoints(config, pts)) {
         await HousePointEvent.create({
           schoolId: req.schoolId, houseId: student.houseId, studentId: student._id,
           points: pts, reason: weight !== 1 ? `${behavior.name} (×${weight})` : behavior.name, behaviorId: behavior._id,
@@ -2733,6 +3074,21 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
       }
     }
 
+    // Event-driven homeroom check-in: the moment a student crosses to 2 active
+    // strikes (climbing from fewer — including again after a notice/white-slip
+    // reset), nudge the homeroom teacher for an encouraging talk. Not the notice
+    // threshold itself (that's handled above). Fire-and-forget.
+    try {
+      const trig = config?.triggerCount ?? 3;
+      const fw = config?.fadeWindowDays ?? 30;
+      const createdSet = new Set(createdIncidents.map((i) => String(i._id)));
+      const afterN = activeThresholdIncidents(priorIncidents, { fadeWindowDays: fw, thresholdResetAt: student.thresholdResetAt }).length;
+      const beforeN = activeThresholdIncidents(priorIncidents.filter((i) => !createdSet.has(String(i._id))), { fadeWindowDays: fw, thresholdResetAt: student.thresholdResetAt }).length;
+      if (beforeN < 2 && afterN >= 2 && afterN < trig) {
+        sendHomeroomCheckinForStudent({ schoolId: req.schoolId, student, config }).catch(() => {});
+      }
+    } catch { /* never block logging on the check-in */ }
+
     // Independent POSITIVE trigger: when a positive was just logged, check whether
     // the student has accumulated enough positives for a good-news note home.
     let positiveNotice = null;
@@ -2746,12 +3102,17 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
     const noticeCovered = notice ? new Set((notice.triggeringIncidentIds || []).map(String)) : new Set();
     for (const cn of consequenceNotes) {
       if (noticeCovered.has(String(cn.incidentId))) continue;
-      await sendConsequenceMessage({ req, student, config, behavior: cn.behavior, detailText: cn.detailText, at: cn.at });
+      // Fire-and-forget: the AI compose shouldn't delay the logging response.
+      sendConsequenceMessage({ req, student, config, behavior: cn.behavior, detailText: cn.detailText, at: cn.at }).catch(() => {});
     }
 
-    // Auto-recommend a white slip if this submission pushed the student to the
-    // behaviour-strike threshold (no more waiting for a manual click).
-    await maybeAutoRecommendWhiteSlip({ req, student, config, incidents: priorIncidents });
+    // Auto-recommend a white slip at the behaviour-strike threshold ONLY if the
+    // school has opted in. Off by default: white slips are reserved for handbook
+    // offences (immediateWhiteSlip behaviours), while the threshold still surfaces
+    // a recommended consequence via the ladder / AI coach.
+    if (config?.autoRecommendWhiteSlipAtThreshold) {
+      await maybeAutoRecommendWhiteSlip({ req, student, config, incidents: priorIncidents });
+    }
 
     // The incidents that make up the CURRENT trigger, for the teacher to review:
     // if a notice just fired, the incidents that fed it; otherwise the running
@@ -2847,7 +3208,7 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
       });
 
       const pts = Math.round((behavior.points || 0) * weight);
-      if (pts && student.houseId) {
+      if (pts && student.houseId && applyIndividualPoints(config, pts)) {
         await HousePointEvent.create({
           schoolId: req.schoolId, houseId: student.houseId, studentId: student._id,
           points: pts, reason: weight !== 1 ? `${behavior.name} (×${weight})` : behavior.name, behaviorId: behavior._id,
@@ -2892,11 +3253,13 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
       // carries this consequence (avoids telling the family twice).
       if (wantConsequenceNote) {
         const covered = notice && (notice.triggeringIncidentIds || []).some((x) => String(x) === String(inc._id));
-        if (!covered) await sendConsequenceMessage({ req, student, config, behavior, detailText, at: timestamp });
+        if (!covered) sendConsequenceMessage({ req, student, config, behavior, detailText, at: timestamp }).catch(() => {}); // fire-and-forget (AI compose)
       }
 
-      // Auto-recommend a white slip if this pushed the student to the threshold.
-      await maybeAutoRecommendWhiteSlip({ req, student, config, incidents: priorIncidents });
+      // Auto-recommend a white slip at the threshold ONLY if opted in (see above).
+      if (config?.autoRecommendWhiteSlipAtThreshold) {
+        await maybeAutoRecommendWhiteSlip({ req, student, config, incidents: priorIncidents });
+      }
 
       results.push({
         studentId: String(student._id),
@@ -2963,11 +3326,26 @@ async function composeAndCreateNotice({
 
   const firstTs = contextIncidents.length ? new Date(contextIncidents[0].timestamp).getTime() : Date.now();
   const daysSinceFirst = Math.max(0, Math.round((Date.now() - firstTs) / DAY_MS));
-  const sender = await BehaviorTeacher.findById(sentByTeacherId).lean();
+
+  // Threshold-notice policy: a pattern of notes (not a handbook offence) can be
+  // routed to the student's HOMEROOM teacher to author & send (their voice), with
+  // the VP copied the recommendation — and, when configured, no consequence is
+  // stated (left to the VP's discretion). Positive notes are never re-routed.
+  const tn = (config?.thresholdNotice) || {};
+  let hrTeacher = null;
+  let effectiveSenderId = sentByTeacherId;
+  if (!isPositive && tn.sender === "homeroom" && student.classGroup) {
+    hrTeacher = await BehaviorTeacher.findOne({ schoolId, homeroom: student.classGroup }).lean();
+    if (hrTeacher) effectiveSenderId = hrTeacher._id;
+  }
+  const omitConsequence = !isPositive && !!tn.omitConsequence;
+  const effectiveConsequenceTexts = omitConsequence ? [] : consequenceTexts;
+
+  const sender = await BehaviorTeacher.findById(effectiveSenderId).lean();
   // Sign with the SENDING TEACHER's name so a parent always knows who it's from.
   // Only fall back to the division block when there's no teacher name at all —
   // never sign a note "Teachers at …" when we know the individual teacher.
-  const senderName = (sender?.name || "").trim();
+  const senderName = (sender?.courtesyName || sender?.name || "").trim();
   const schoolName = config?.branding?.schoolName || "";
   const signature =
     (sender?.signature || "").trim() ||
@@ -2975,17 +3353,18 @@ async function composeAndCreateNotice({
       ? `Sincerely,\n${senderName}${schoolName ? `\nTeacher, ${schoolName}` : ", Teacher"}`
       : (config?.branding?.signatureBlock || `Sincerely,\n${schoolName}`).trim());
 
-  // Greeting addresses the parent(s) by name when we have them on file; a safe
-  // generic otherwise. Both AI + template notes start with exactly this line.
-  const parentNames = (student.parents || []).map((p) => (p.name || "").trim()).filter(Boolean);
-  const greeting =
-    parentNames.length === 1 ? `Dear ${parentNames[0]},`
-    : parentNames.length >= 2 ? `Dear ${parentNames[0]} and ${parentNames[1]},`
-    : "Dear Parent/Guardian,";
-
   // Replace the legacy "nnn" name placeholder with the student's name; the AI
   // otherwise handles naming/pronouns naturally from studentName + pronoun.
   const studentName = student.preferredName || student.firstName || "your child";
+
+  // Greeting addresses the STUDENT and their parents (the note is read by both).
+  // Includes the parents' names when we have them on file. Both AI + template
+  // notes start with exactly this line.
+  const parentNames = (student.parents || []).map((p) => (p.name || "").trim()).filter(Boolean);
+  const greeting =
+    parentNames.length >= 2 ? `Dear ${studentName}, and ${parentNames[0]} and ${parentNames[1]},`
+    : parentNames.length === 1 ? `Dear ${studentName}, and ${parentNames[0]},`
+    : `Dear ${studentName} and Parents,`;
   const personalize = (t) => String(t || "").replace(/\bnnn\b/gi, studentName);
 
   // Background history + recent positives are only relevant to the disciplinary
@@ -3038,12 +3417,16 @@ async function composeAndCreateNotice({
       detail: personalize(i.detailText || ""),
       uniform: !!i.behaviorSnapshot?.uniform,
     })),
-    consequences: consequenceTexts.map(personalize),
+    consequences: effectiveConsequenceTexts.map(personalize),
     sequenceNo,
     daysSinceFirst,
     schoolName: config?.branding?.schoolName || "",
     signature,
-    toneGuidance: config?.branding?.toneGuidance || "",
+    toneGuidance: [
+      config?.branding?.toneGuidance || "",
+      hrTeacher ? `Write in the first person AS ${studentName}'s homeroom teacher bringing together what ${studentName}'s teachers have observed; attribute each concern to the teacher who noted it, and do not imply you personally witnessed them all.` : "",
+      omitConsequence ? "Do NOT state or recommend a specific consequence; this note simply makes the family aware of the pattern." : "",
+    ].filter(Boolean).join(" "),
     ccVp,
   };
   const aiClient = makeDefaultAiClient(config || {});
@@ -3061,8 +3444,8 @@ async function composeAndCreateNotice({
   const autoDispatch = !awaitDecision && config?.aiSendMode !== "draft";
   const notice = await BehaviorNotice.create({
     schoolId, studentId: student._id, periodNo: 1, sequenceNo, reason,
-    fromTeachers, triggeringIncidentIds, consequenceTexts, channels, recipients, ccVp,
-    renderedText: text, aiUsed, status: "queued", sentByTeacherId,
+    fromTeachers, triggeringIncidentIds, consequenceTexts: effectiveConsequenceTexts, channels, recipients, ccVp,
+    renderedText: text, aiUsed, status: "queued", sentByTeacherId: effectiveSenderId,
     cancelUntil: new Date(Date.now() + cancelWindow * 1000),
     autoDispatch,
   });
@@ -3103,6 +3486,41 @@ async function composeAndCreateNotice({
     console.warn("[behavior] teacher copy email failed:", e?.message || e);
   }
 
+  // VP recommendation copy: at a threshold pattern (not a handbook offence), send
+  // the VP the proposed parent note as a recommendation for awareness — the HR
+  // teacher is asked to send it; whether any further consequence follows is the
+  // VP's call. No white slip is implied. Best-effort; never blocks the notice.
+  if (!isPositive && tn.notifyVp && (config?.vp?.email || "").trim()) {
+    try {
+      const hrLabel = (hrTeacher?.courtesyName || hrTeacher?.name || senderName || "the homeroom teacher").trim();
+      const cls = student.classGroup ? ` (${student.classGroup})` : "";
+      const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+      await sendEmail({
+        from: fromAddr ? { name: "Compass", address: fromAddr } : undefined,
+        to: config.vp.email.trim(),
+        subject: `For your awareness — recommended parent note for ${studentName}${cls}`,
+        text:
+          `A pattern of notes has reached the threshold for ${studentName}${cls}.\n\n` +
+          `Below is a proposed note home, recommended for ${hrLabel} (homeroom) to review and send. ` +
+          `No white slip has been issued — those are reserved for handbook offences. ` +
+          `Whether any further consequence should follow is left to your discretion.\n\n----- PROPOSED NOTE -----\n${text}`,
+        html: emailShell({
+          title: `Recommended parent note — ${escapeHtml(studentName)}${escapeHtml(cls)}`,
+          schoolName: schoolName || "Compass",
+          preheader: `A proposed note for ${escapeHtml(hrLabel)} to send — for your awareness.`,
+          footnote: "No white slip is implied (those are reserved for handbook offences). Any further consequence is at your discretion.",
+          contentHtml:
+            `<p style="margin:0 0 10px;color:#334155">A pattern of notes has reached the threshold for <strong>${escapeHtml(studentName)}${escapeHtml(cls)}</strong>.</p>` +
+            `<p style="margin:0 0 12px;color:#334155">Below is a proposed note home, recommended for <strong>${escapeHtml(hrLabel)}</strong> (homeroom) to review and send. No white slip has been issued — those are reserved for handbook offences — and whether any further consequence should follow is left to your discretion.</p>` +
+            `<hr style="border:none;border-top:1px solid #e2e8f0;margin:12px 0">` +
+            pasteableNote(noteToHtml(richText), { channel: "Edsby" }),
+        }),
+      });
+    } catch (e) {
+      console.warn("[behavior] VP recommendation email failed:", e?.message || e);
+    }
+  }
+
   if (autoDispatch) scheduleDispatch(notice._id, cancelWindow);
   return notice;
 }
@@ -3121,7 +3539,11 @@ async function createFollowups({ schoolId, student, config, contributingIncident
       await BehaviorFollowup.create({
         schoolId, studentId: student._id, behaviorId: bid, behaviorName: beh.name,
         consequenceText: inc.behaviorSnapshot?.consequenceText || beh.consequenceText,
-        multiplier, missLevel, assignedByTeacherId: sentByTeacherId, noticeId, dueDate: due, status: "open",
+        multiplier, missLevel,
+        // Prompt the teacher who LOGGED the offence (not just the notice sender).
+        assignedByTeacherId: inc.teacherId || sentByTeacherId,
+        incidentId: inc._id || null, incidentAt: inc.timestamp || null,
+        noticeId, dueDate: due, status: "open",
       })
     );
   }
@@ -3140,10 +3562,11 @@ async function fireNotice({ req, student, config, decision, awaitDecision = fals
   const teacherIds = [...new Set(contributing.map((i) => String(i.teacherId)))];
   const teachers = await BehaviorTeacher.find({ _id: { $in: teacherIds } }).lean();
   const teacherById = Object.fromEntries(teachers.map((t) => [String(t._id), t]));
-  for (const i of contributing) i.__teacherName = teacherById[String(i.teacherId)]?.name || "";
+  const tdisplay = (t) => (t?.courtesyName || t?.name || "").trim();
+  for (const i of contributing) i.__teacherName = tdisplay(teacherById[String(i.teacherId)]);
   const fromTeachers = contributing.map((i) => ({
     teacherId: i.teacherId,
-    name: teacherById[String(i.teacherId)]?.name || "",
+    name: tdisplay(teacherById[String(i.teacherId)]),
     behaviorName: i.behaviorSnapshot?.name || "",
   }));
   // List the consequences, preferring the actually-logged consequence records
@@ -3902,6 +4325,341 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
   }
 });
 
+// PARENT-FACING "whole picture" summary. When a student has accumulated a
+// pattern across several teachers, this pulls it together into one warm,
+// honest, upbuilding note the teacher can review and post to Edsby — grouped
+// by teacher, solution-focused, inviting partnership. Record-only / clipboard:
+// never sent automatically (BCS has no auto parent channel).
+//
+// Window (scope):
+//   "period" (default) — back to when the slate was last wiped
+//      (student.thresholdResetAt, e.g. after a prior VP meeting/behaviour plan
+//      that cleared the strikes); full record if there's been no such reset.
+//   "all" — the entire record.
+//
+// SAFETY: this is parent-facing, so the prompt forbids naming any OTHER student
+// and forbids quoting slurs/profanity (describe sensitively instead). Private
+// teacher notes are NOT fed in verbatim. The teacher reviews before posting.
+router.post("/students/:id/parent-summary", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const scope = req.body?.scope === "all" ? "all" : "period";
+    const student = await BehaviorStudent.findOne({ _id: req.params.id, schoolId: req.schoolId }).lean();
+    if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+
+    const name = `${student.preferredName || student.firstName} ${student.lastName}`.trim();
+    const studentFirst = student.preferredName || student.firstName || name;
+
+    // Window cutoff: the current behaviour period (since strikes were last
+    // cleared) by default; the whole record for "all".
+    const resetAt = student.thresholdResetAt ? new Date(student.thresholdResetAt).getTime() : 0;
+    const cutoff = scope === "period" ? resetAt : 0;
+    const resetDateLabel = resetAt && scope === "period"
+      ? new Date(resetAt).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ }) : "";
+
+    let incidents = await BehaviorIncident.find({ studentId: student._id }).sort({ timestamp: 1 }).lean();
+    if (cutoff) incidents = incidents.filter((i) => new Date(i.timestamp).getTime() >= cutoff);
+
+    const tIds = [...new Set(incidents.map((i) => String(i.teacherId)))];
+    const tDocs = await BehaviorTeacher.find({ _id: { $in: tIds } }).select("name courtesyName").lean();
+    // Parent-facing → prefer the official/courtesy name.
+    const tName = Object.fromEntries(tDocs.map((t) => [String(t._id), (t.courtesyName || t.name || "a teacher")]));
+
+    // Who is writing this — and how they relate to the student, so the framing
+    // is honest. The homeroom teacher (or anyone who didn't personally witness
+    // every incident) writes as a coordinator pulling colleagues' observations
+    // together, NOT as if it all happened "in my class."
+    const writerId = String(req.membership?._id || "");
+    const isHomeroom = !!(req.membership?.homeroom && student.classGroup &&
+      String(req.membership.homeroom).trim().toLowerCase() === String(student.classGroup).trim().toLowerCase());
+
+    // Split positives (to keep the note balanced & upbuilding) from concerns,
+    // and group the concerns BY TEACHER, as requested.
+    const positives = [];
+    const byTeacher = {}; // teacherId -> { name, isWriter, lines[] }
+    for (const i of incidents) {
+      const isPositive = i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0;
+      const isInteraction = i.behaviorSnapshot?.triggerMode === "INTERACTION";
+      const d = new Date(i.timestamp).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: SCHOOL_TZ });
+      const tid = String(i.teacherId);
+      const who = tName[tid] || "a teacher";
+      const what = i.behaviorSnapshot?.name || "";
+      const detail = (i.detailText || "").trim();
+      const line = `${d} — ${what}${detail ? `: ${detail}` : ""}`;
+      if (isPositive) { positives.push(`${d} — ${what}${detail ? `: ${detail}` : ""} (noted by ${who})`); continue; }
+      if (isInteraction) {
+        // A teacher↔student conversation is often the very concern to convey —
+        // include it (marked "conversation") so the note acknowledges it. Parent
+        // contacts and internal support/meta records stay out.
+        if (isConcernConversation(i)) {
+          (byTeacher[tid] ||= { name: who, isWriter: tid === writerId, lines: [] }).lines.push(`${d} — conversation: ${detail || what}`);
+        }
+        continue;
+      }
+      (byTeacher[tid] ||= { name: who, isWriter: tid === writerId, lines: [] }).lines.push(line);
+    }
+    const writerLoggedCount = (byTeacher[writerId]?.lines || []).length;
+    const concernGroups = Object.values(byTeacher)
+      .map((g) => `From ${g.name}${g.isWriter ? " (THIS IS YOU, the writer — your own class)" : ""}:\n${g.lines.map((l) => `  - ${l}`).join("\n")}`)
+      .join("\n\n");
+
+    // Partnership / staff-response context — shows parents the school has been
+    // engaged (keeps the tone collaborative, not accusatory).
+    const notices = await BehaviorNotice.find({ studentId: student._id }).sort({ createdAt: 1 }).lean();
+    const noticesInWindow = notices.filter((n) => !cutoff || new Date(n.sentAt || n.createdAt).getTime() >= cutoff);
+    // Real parent contacts only (not teacher↔student conversations) for the
+    // "the school has been in touch" partnership line.
+    const meetings = await BehaviorIncident.find({ studentId: student._id, "behaviorSnapshot.name": PARENT_CONTACT_NAME })
+      .sort({ timestamp: 1 }).select("timestamp detailText teacherId").lean();
+    const meetingsInWindow = meetings.filter((m) => !cutoff || new Date(m.timestamp).getTime() >= cutoff);
+    const consequences = await BehaviorConsequence.find({ studentId: student._id, kind: "corrective" }).sort({ at: 1 }).lean();
+    const consInWindow = consequences.filter((c) => !cutoff || new Date(c.at).getTime() >= cutoff);
+    // Map a consequence to the incident it was given for (when linked), so the
+    // factual record can show "what consequence, if any" per offence.
+    const consByIncident = new Map();
+    for (const c of consequences) if (c.relatedIncidentId) consByIncident.set(String(c.relatedIncidentId), c);
+
+    // Deterministic factual record: date · offence · teacher · consequence (if
+    // any). Built from the data, NOT the AI, so it's always accurate. Offences
+    // only (positives and parent-contact logs are summarised elsewhere).
+    const history = [];
+    for (const i of incidents) {
+      const isPositive = i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0;
+      if (isPositive) continue;
+      const isConvo = isConcernConversation(i);
+      if (i.behaviorSnapshot?.triggerMode === "INTERACTION" && !isConvo) continue; // skip parent-contact/support logs
+      const c = consByIncident.get(String(i._id));
+      history.push({
+        date: new Date(i.timestamp).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: SCHOOL_TZ }),
+        kind: isConvo ? "conversation" : "offense",
+        offense: isConvo ? "Conversation" : (i.behaviorSnapshot?.name || "—"),
+        teacher: tName[String(i.teacherId)] || "a teacher",
+        consequence: isConvo ? "" : (c ? (c.detail && c.detail.length <= 70 ? `${c.type} — ${c.detail}` : c.type) : ""),
+      });
+    }
+    const historyText = history
+      .map((h) => h.kind === "conversation"
+        ? `• ${h.date} — Conversation with ${studentFirst} — ${h.teacher}`
+        : `• ${h.date} — ${h.offense} — ${h.teacher}${h.consequence ? ` — consequence: ${h.consequence}` : " — (no consequence recorded)"}`)
+      .join("\n");
+
+    // Partnership facts — ONLY what's actually on record, stated with exact
+    // counts (the AI must not round or invent these). Parent "contacts" are
+    // logged calls/meetings; we don't claim more than one unless there is more.
+    const partnershipBits = [];
+    if (meetingsInWindow.length) partnershipBits.push(`${meetingsInWindow.length} parent contact${meetingsInWindow.length === 1 ? "" : "s"} logged with the family`);
+    if (noticesInWindow.length) partnershipBits.push(`${noticesInWindow.length} notice${noticesInWindow.length === 1 ? "" : "s"} sent home this period`);
+    if (consInWindow.length) partnershipBits.push(`${consInWindow.length} consequence${consInWindow.length === 1 ? "" : "s"} applied at school`);
+
+    const teacherSig = (req.membership?.courtesyName || "").trim() || actorName(req);
+    const schoolName = config?.branding?.schoolName || "";
+    const concernCount = Object.values(byTeacher).reduce((a, g) => a + g.lines.length, 0);
+    const spanTs = incidents.map((i) => new Date(i.timestamp).getTime()).filter(Boolean).sort((a, b) => a - b);
+    const span = spanTs.length
+      ? `${new Date(spanTs[0]).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ })} to ${new Date(spanTs[spanTs.length - 1]).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ })}`
+      : "recently";
+
+    // How the writer relates to the student → how the letter should be framed.
+    const writerRole = isHomeroom
+      ? `The writer (${teacherSig}) is ${studentFirst}'s HOMEROOM teacher. Write as the homeroom teacher who is bringing together observations from ${studentFirst}'s teachers. ` +
+        (writerLoggedCount
+          ? `Some concerns are the writer's own (marked "THIS IS YOU" above) — those may be in the first person ("in my own class"); attribute all others to the colleague by name (third person). `
+          : `The writer did not personally log these — attribute each concern to the colleague who observed it, by name (third person); do NOT write as if they happened "in my class." `)
+      : writerLoggedCount && Object.keys(byTeacher).length <= 1
+        ? `The writer (${teacherSig}) personally observed these concerns in their own class — the first person ("in my class") is appropriate. `
+        : `The writer (${teacherSig}) is one of ${studentFirst}'s teachers. Speak in the first person only for the concerns marked "THIS IS YOU" above; attribute every other teacher's observations to that colleague by name (third person). Do NOT imply the writer witnessed concerns they did not log. `;
+
+    const ctxText =
+      `Student first name: ${studentFirst}.\n` +
+      `WRITER / PERSPECTIVE: ${writerRole}\n` +
+      `Window: ${scope === "period" ? `current behaviour period${resetDateLabel ? ` (since ${resetDateLabel})` : ""}` : "full record"} — ${span}.\n` +
+      `Number of concerns in this window: ${concernCount}, observed by ${tIds.length} teacher(s).\n\n` +
+      `CONCERNS GROUPED BY TEACHER:\n${concernGroups || "(none in this window)"}\n\n` +
+      (positives.length
+        ? `POSITIVE / ENCOURAGING moments actually on record in this window (you MAY reference these honestly):\n${positives.map((p) => `  - ${p}`).join("\n")}\n\n`
+        : `POSITIVE / ENCOURAGING moments on record in this window: NONE. Do NOT invent any, and do NOT mention their absence — simply omit any positives section entirely (never write "I have not noted any positive moments" or similar).\n\n`) +
+      (partnershipBits.length
+        ? `WHAT THE SCHOOL HAS ACTUALLY DONE (these exact facts only — do not round up, add, or embellish): ${partnershipBits.join("; ")}.\n\n`
+        : `WHAT THE SCHOOL HAS ACTUALLY DONE: nothing is recorded yet in this window — do NOT claim any meetings, calls, notices, or consequences happened.\n\n`) +
+      `Signed by: ${teacherSig}${schoolName ? `, ${schoolName}` : ""}.`;
+
+    const prompt =
+      `You are writing a warm, honest, and up-building letter to the PARENTS/GUARDIANS of a junior-high student, from their teacher, to bring the whole picture together in one place. ` +
+      `This is pastoral and partnership-minded — the goal is to help the parents understand the pattern and to invite them to work WITH the school, never to shame the child. ` +
+      `TONE: caring, respectful, hopeful, specific, and truthful. Do not exaggerate, but do not downplay genuine safety concerns either. Assume the best about the student and the family. ` +
+      `PERSPECTIVE: Write in the first person AS the writer described under "WRITER / PERSPECTIVE" below, and follow that framing exactly — if the writer is the homeroom teacher pulling colleagues' observations together, do NOT write as though everything happened in the writer's own class; attribute each concern to the teacher who observed it. ` +
+      `An item marked "conversation:" is a talk the teacher ALREADY had directly with the student about that concern — acknowledge it naturally and in the first person where the writer had it (e.g. "I spoke with ${studentFirst} about…"), as the reason for reaching out; it is the concern itself, not an offence tally. ` +
+      `STRUCTURE: (1) a warm, genuine opening that greets the student and parents (a homeroom/coordinating writer can say they're writing as ${studentFirst}'s homeroom teacher on behalf of ${studentFirst}'s teachers; you may say you're glad to have the student at the school — a relational affirmation — but do NOT assert specific talents or traits as fact); (2) a concise, factual recap of the concerns and conversations ORGANISED BY TEACHER and correctly attributed (e.g. "In Mr. X's class…", "Miss Y noted…", or "In my own class…" / "I spoke with ${studentFirst} about…" only where marked THIS IS YOU), kept brief; (3) encouraging moments ONLY IF they are listed on record above; (4) a short note on what the school has ALREADY done, using the exact facts above (omit this if nothing is recorded); (5) a forward-looking close that invites a conversation and expresses confidence in the student. ` +
+      `HARD RULES — these override tone: (a) Use ONLY the information below. Do NOT invent, infer, round, or embellish ANY fact — not events, dates, consequences, quotes, meetings, calls, OR praise. (b) Do NOT attribute specific strengths/talents (e.g. "creativity", "leadership", "enthusiasm") unless such a positive is explicitly listed on record above; if none are listed, keep affirmation purely relational and general, and do not mention the absence of positives. (c) If no meetings/calls/notices/consequences are listed, do NOT say the school has met with, called, or contacted the family. (d) Never name, describe, or hint at any OTHER student (write "a classmate"). (e) Never quote slurs, profanity, or crude language — describe it sensitively (e.g. "used hurtful language toward a classmate"). (f) Do not reproduce private staff notes verbatim. (g) Do NOT claim the writer personally witnessed concerns that another teacher logged. (h) This is a pastoral note to RAISE A CONCERN and invite partnership — do NOT mention consequences, interventions, white slips, disciplinary steps, or the ABSENCE of any of them (never write "no interventions/consequences recorded yet" or similar); simply share the concern and the conversation, and invite the parents to partner. ` +
+      `A precise factual record (date · offence · teacher · consequence) will be appended beneath your letter automatically, so you do NOT need to reproduce a table of every date — write the narrative and let the record carry the details. ` +
+      `Address the parents and the student (e.g. "Dear ${studentFirst} and parents,"). Sign off as ${teacherSig}${schoolName ? `, ${schoolName}` : ""}. ` +
+      `LENGTH: about 200–280 words of flowing prose.\n\n${ctxText}`;
+
+    // Deterministic fallback (no AI key): a plain, kind, teacher-grouped note,
+    // framed from the writer's actual relationship to the student.
+    const fallbackOpen = isHomeroom
+      ? `As ${studentFirst}'s homeroom teacher, I wanted to bring together, in one place, what ${studentFirst}'s teachers have observed, so we can support ${studentFirst} together.`
+      : `I wanted to bring together, in one place, how things have been going for ${studentFirst} so we can support ${studentFirst} together.`;
+    let summary =
+      `Dear ${studentFirst} and parents,\n\n` +
+      `${fallbackOpen}\n\n` +
+      (concernGroups ? `${concernGroups}\n\n` : `There have been a few things we've been working through.\n\n`) +
+      (positives.length ? `We've also seen encouraging moments:\n${positives.map((p) => `  - ${p}`).join("\n")}\n\n` : "") +
+      (partnershipBits.length ? `The school has stayed engaged: ${partnershipBits.join("; ")}.\n\n` : "") +
+      `We'd welcome the chance to talk this through with you and partner on next steps. We believe in ${studentFirst} and are confident we can help ${studentFirst} thrive.\n\n` +
+      `Warm regards,\n${teacherSig}${schoolName ? `\n${schoolName}` : ""}`;
+    let aiUsed = false;
+    try {
+      const client = makeDefaultAiClient(config || {});
+      if (client) {
+        const out = await Promise.race([
+          client.complete(prompt, { maxTokens: 1200 }),
+          new Promise((_, r) => setTimeout(() => r(new Error("AI timeout")), 30000)),
+        ]);
+        if (out && String(out).trim()) { summary = stripMarkdown(String(out).trim()); aiUsed = true; }
+      }
+    } catch {
+      /* fall back to the deterministic note */
+    }
+
+    await audit(req.schoolId, "parent_summary.generated", req, { studentId: student._id, meta: { scope, aiUsed, concerns: concernCount } });
+    res.json({ ok: true, summary, history, historyText, aiUsed, scope, concernCount, teacherGroups: Object.keys(byTeacher).length });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Send the student's HOMEROOM teacher a ready-to-post "whole picture" parent
+// note (in their voice), CC the VP for awareness. The HR teacher reviews, edits,
+// and posts it to Edsby — nothing reaches parents automatically. No white slip
+// is implied and no consequence is stated (the VP's discretion). This is the
+// on-demand version of the threshold flow, for catching up or any student.
+router.post("/students/:id/hr-note", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const student = await BehaviorStudent.findOne({ _id: req.params.id, schoolId: req.schoolId }).lean();
+    if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    const first = student.preferredName || student.firstName || "the student";
+    const cls = (student.classGroup || "").trim();
+
+    // The student's homeroom teacher authors & receives it.
+    const hr = cls ? await BehaviorTeacher.findOne({ schoolId: req.schoolId, homeroom: cls }).lean() : null;
+    if (!hr?.email) {
+      return res.status(400).json({ ok: false, error: `No homeroom teacher with an email is set for ${cls || "this class"}. Set the homeroom on the Team page first.` });
+    }
+    const hrName = (hr.courtesyName || hr.name || "").trim() || "the homeroom teacher";
+
+    // Whole picture by default (parents may only know part of it); grouped by teacher.
+    const scope = req.body?.scope === "period" ? "period" : "all";
+    const cutoff = scope === "period" && student.thresholdResetAt ? new Date(student.thresholdResetAt).getTime() : 0;
+    let incidents = await BehaviorIncident.find({ studentId: student._id }).sort({ timestamp: 1 }).lean();
+    if (cutoff) incidents = incidents.filter((i) => new Date(i.timestamp).getTime() >= cutoff);
+    const tIds = [...new Set(incidents.map((i) => String(i.teacherId)))];
+    const tDocs = await BehaviorTeacher.find({ _id: { $in: tIds } }).select("name courtesyName").lean();
+    const tName = Object.fromEntries(tDocs.map((t) => [String(t._id), (t.courtesyName || t.name || "a teacher")]));
+
+    const byTeacher = {}; const history = [];
+    for (const i of incidents) {
+      const isPositive = i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0;
+      if (isPositive) continue;
+      const who = tName[String(i.teacherId)] || "a teacher";
+      const d = new Date(i.timestamp).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: SCHOOL_TZ });
+      if (i.behaviorSnapshot?.triggerMode === "INTERACTION") {
+        // Include a teacher↔student conversation (often the very concern to raise);
+        // skip parent-contact logs and internal support/meta records.
+        if (isConcernConversation(i)) {
+          (byTeacher[who] ||= []).push(`${d} — conversation: ${(i.detailText || "").trim() || i.behaviorSnapshot?.name || ""}`);
+          history.push({ date: d, kind: "conversation", offense: "Conversation", teacher: who });
+        }
+        continue;
+      }
+      (byTeacher[who] ||= []).push(`${d} — ${i.behaviorSnapshot?.name || ""}${i.detailText ? `: ${i.detailText}` : ""}`);
+      history.push({ date: d, kind: "offense", offense: i.behaviorSnapshot?.name || "—", teacher: who });
+    }
+    const concernCount = Object.values(byTeacher).reduce((a, l) => a + l.length, 0);
+    if (!concernCount) return res.status(400).json({ ok: false, error: "No concerns on record to write about." });
+    const groups = Object.entries(byTeacher).map(([w, l]) => `From ${w}:\n${l.map((x) => `  - ${x}`).join("\n")}`).join("\n\n");
+
+    const parentNames = (student.parents || []).map((p) => (p.name || "").trim()).filter(Boolean);
+    const greeting = parentNames.length ? `Dear ${first} and ${parentNames.join(" and ")},` : `Dear ${first} and parents,`;
+    const schoolName = config?.branding?.schoolName || "";
+
+    const prompt =
+      `You are ${first}'s HOMEROOM teacher (${hrName}) writing a warm, honest, up-building note to ${first}'s PARENTS to bring the whole picture together, since concerns have come from several teachers. ` +
+      `Write in the first person as the homeroom teacher COORDINATING what ${first}'s teachers have observed — attribute each concern to the teacher who noted it (e.g. "In Mr. X's class…"); do not imply you witnessed them all. ` +
+      `An item marked "conversation:" is a talk a teacher ALREADY had with ${first} about that concern — acknowledge it as the reason for reaching out (e.g. "Mr. X spoke with ${first} about…"); it is the concern itself, not an offence tally. ` +
+      `HARD RULES: use ONLY the facts below; do not invent events, praise, meetings, or consequences. Never name or hint at any OTHER student (write "a classmate"). Never quote slurs/profanity — describe sensitively. Do NOT mention consequences, interventions, white slips, disciplinary steps, or the ABSENCE of any of them (never "no interventions/consequences recorded yet"); do NOT mention the absence of positives. This is a pastoral note to raise the concern and invite partnership. ` +
+      `Open with the greeting exactly: "${greeting}". ~220-280 words of flowing prose, organised by teacher, ending with an invitation to partner and confidence in ${first}. Sign as ${hrName}${schoolName ? `, ${schoolName}` : ""}.\n\nCONCERNS BY TEACHER:\n${groups}`;
+
+    let note = `${greeting}\n\nI wanted to bring together what ${first}'s teachers have observed so we can support ${first} together.\n\n${groups}\n\nI'd welcome the chance to partner with you on next steps. Warm regards,\n${hrName}${schoolName ? `\n${schoolName}` : ""}`;
+    let aiUsed = false;
+    try {
+      const client = makeDefaultAiClient(config || {});
+      if (client) {
+        const out = await Promise.race([
+          client.complete(prompt, { maxTokens: 1100 }),
+          new Promise((_, r) => setTimeout(() => r(new Error("AI timeout")), 30000)),
+        ]);
+        if (out && String(out).trim()) { note = stripMarkdown(String(out).trim()); aiUsed = true; }
+      }
+    } catch { /* keep deterministic */ }
+
+    const historyText = history.map((h) => `• ${h.date} — ${h.offense} — ${h.teacher}`).join("\n");
+    const fullText = note + (historyText ? `\n\n— Behaviour record —\n${historyText}` : "");
+
+    const vpEmail = (config?.vp?.email || "").trim();
+    const hrFirst = (hr.name || hrName).trim().split(/\s+/)[0];
+    const intro = `${first} has reached the point where it helps to bring the whole picture together for the family. Here's a proposed note for you to review, edit, and post to Edsby${vpEmail ? " — John is copied for awareness" : ""}.`;
+    const note2 = `No white slip is implied, and no consequence is stated — that's left to the VP's discretion.`;
+    const recordHtml = history.length
+      ? `<p style="margin:14px 0 4px;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#64748b">Behaviour record</p><ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6;font-size:13px">${history.map((h) => `<li>${escapeHtml(h.date)} — ${escapeHtml(h.offense)} <span style="color:#94a3b8">· ${escapeHtml(h.teacher)}</span></li>`).join("")}</ul>`
+      : "";
+    const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+    await sendEmail({
+      from: fromAddr ? { name: "Compass", address: fromAddr } : undefined,
+      to: hr.email, cc: vpEmail || undefined, replyTo: (req.user?.email || "").trim() || undefined,
+      subject: `Proposed note for ${first} ${student.lastName} (${cls}) — review & post to Edsby`,
+      text: `Hi ${hrFirst},\n\n${intro} ${note2}\n\n----- PROPOSED NOTE -----\n${fullText}`,
+      html: emailShell({
+        title: `Proposed note for ${escapeHtml(first)} ${escapeHtml(student.lastName || "")} (${escapeHtml(cls)})`,
+        schoolName: schoolName || "Compass",
+        preheader: `A whole-picture note to review and post to Edsby${vpEmail ? " — John is copied" : ""}.`,
+        footnote: "Nothing reaches parents automatically — post it to Edsby when you're happy with it. No white slip is implied; any consequence is at the VP's discretion.",
+        contentHtml:
+          `<p style="margin:0 0 8px;color:#334155">Hi ${escapeHtml(hrFirst)},</p>` +
+          `<p style="margin:0 0 12px;color:#334155">${escapeHtml(intro)} ${escapeHtml(note2)}</p>` +
+          `<hr style="border:none;border-top:1px solid #e2e8f0;margin:12px 0">` +
+          pasteableNote(noteToHtml(note), { channel: "Edsby" }) +
+          recordHtml,
+      }),
+    });
+
+    // Log the send itself as a documented INTERVENTION on the student's record.
+    // Compass's responsibility ends here: this is the intervention. There is no
+    // nagging and no confirmation chase — acting on it is the HR teacher's / VP's.
+    try {
+      let beh = await Behavior.findOne({ schoolId: req.schoolId, name: "Whole-picture note recommended" });
+      if (!beh) beh = await Behavior.create({
+        schoolId: req.schoolId, name: "Whole-picture note recommended", keyword: "intervention", kind: "negative", triggerMode: "INTERACTION",
+        description: "A whole-picture parent note was prepared and sent to the homeroom teacher (VP copied) to review and post to Edsby. A documented intervention — not a strike, nothing auto-sent home.",
+        consequenceText: "", points: 0,
+      });
+      await BehaviorIncident.create({
+        schoolId: req.schoolId, studentId: student._id, teacherId: req.membership._id,
+        behaviorId: beh._id,
+        behaviorSnapshot: { name: beh.name, description: beh.description, triggerMode: "INTERACTION", kind: "negative", consequenceText: "", points: 0 },
+        detailText: `Whole-picture note sent to ${hrName} (homeroom)${vpEmail ? ", cc VP," : ""} to review and post to Edsby.`,
+        immediateFlag: false, timestamp: new Date(),
+      });
+    } catch (e) { console.warn("[behavior/hr-note] intervention log failed:", e?.message || e); }
+
+    await audit(req.schoolId, "hr_note.sent", req, { studentId: student._id, meta: { to: hr.email, cc: vpEmail, aiUsed, concerns: concernCount } });
+    res.json({ ok: true, sentTo: hr.email, hrName, cc: vpEmail || null, preview: fullText, aiUsed });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Division/teacher EXECUTIVE summary — an AI overview over a 6/12-month window,
 // scoped to me (this teacher) or all teachers. Behaviour trend, interaction
 // patterns, notices home, current strike load. Copied to clipboard by the UI.
@@ -4491,37 +5249,141 @@ router.post("/students/:id/homeroom-followup", authAny, loadMembership, canLog, 
     const student = await BehaviorStudent.findOne({ _id: req.params.id, schoolId: req.schoolId });
     if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
     const who = req.membership?.name || req.user?.name || "";
-    const note = String(req.body?.detailText || "").trim()
-      || `Homeroom follow-up flagged${who ? ` by ${who}` : ""} — homeroom teacher to discuss with the student and steer them in the right direction.`;
-
-    let beh = await Behavior.findOne({ schoolId: req.schoolId, name: "Homeroom follow-up" });
-    if (!beh) {
-      beh = await Behavior.create({
-        schoolId: req.schoolId,
-        name: "Homeroom follow-up",
-        keyword: "homeroom",
-        kind: "negative",
-        triggerMode: "INTERACTION",
-        description: "A relational check-in: the homeroom teacher discusses the situation with the student to steer them right. Supportive — does not count as a strike and sends nothing home.",
-        consequenceText: "",
-        points: 0,
-      });
-    }
-    const inc = await BehaviorIncident.create({
-      schoolId: req.schoolId,
-      studentId: student._id,
-      teacherId: req.membership._id,
-      behaviorId: beh._id,
-      behaviorSnapshot: { name: beh.name, description: beh.description, triggerMode: "INTERACTION", kind: "negative", consequenceText: "", points: 0 },
-      detailText: note,
-      immediateFlag: false,
-      timestamp: new Date(),
-    });
+    const inc = await logHomeroomFollowup({ schoolId: req.schoolId, student, teacherId: req.membership._id, byName: who });
     await audit(req.schoolId, "homeroom_followup.log", req, { studentId: String(student._id), incidentId: String(inc._id) });
     res.json({ ok: true, incident: inc.toObject() });
   } catch (err) {
     next(err);
   }
+});
+
+// Staff view of a student's merch wallet: balance + the catalog + recent
+// redemptions, for the Redeem control on the student page.
+router.get("/students/:id/merch", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const student = await BehaviorStudent.findOne({ _id: req.params.id, schoolId: req.schoolId }).select("_id").lean();
+    if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("merchStore").lean();
+    const enabled = !!config?.merchStore?.enabled;
+    const balance = (await merchBalances(req.schoolId, [student._id]))[String(student._id)] || 0;
+    const items = enabled ? (config.merchStore.items || []).slice().sort((a, b) => (a.points || 0) - (b.points || 0)) : [];
+    const history = await MerchRedemption.find({ schoolId: req.schoolId, studentId: student._id }).sort({ at: -1 }).limit(20).select("item points byName at").lean();
+    res.json({ ok: true, enabled, balance, items, history });
+  } catch (err) { next(err); }
+});
+
+// Redeem merch for a student — spends from their personal points wallet (a
+// separate ledger; never touches house standings). Staff-only. Rejects if the
+// balance is too low. Returns the new balance.
+router.post("/students/:id/redeem", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const student = await BehaviorStudent.findOne({ _id: req.params.id, schoolId: req.schoolId }).lean();
+    if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
+    const item = String(req.body?.item || "").trim();
+    const points = Math.max(0, Math.round(Number(req.body?.points) || 0));
+    if (!item || !points) return res.status(400).json({ ok: false, error: "Item and points are required." });
+    const bal = (await merchBalances(req.schoolId, [student._id]))[String(student._id)] || 0;
+    if (points > bal) return res.status(400).json({ ok: false, error: `Not enough points — balance is ${bal}.` });
+    const who = req.membership?.name || req.user?.name || "";
+    await MerchRedemption.create({ schoolId: req.schoolId, studentId: student._id, item, points, byTeacherId: req.membership._id, byName: who });
+    await audit(req.schoolId, "merch.redeemed", req, { studentId: String(student._id), meta: { item, points } });
+    const balance = (await merchBalances(req.schoolId, [student._id]))[String(student._id)] || 0;
+    res.json({ ok: true, balance });
+  } catch (err) { next(err); }
+});
+
+// Public one-tap "I've talked to them" from the homeroom check-in email. The
+// confirm page reads /info to show the student, then POSTs /log to record it.
+router.get("/hr-followup/info", async (req, res, next) => {
+  try {
+    const schoolId = String(req.query.school || "").trim();
+    const studentId = String(req.query.student || "").trim();
+    const token = String(req.query.token || "").trim();
+    const valid = !!schoolId && !!studentId && verifyHrFollowupToken(schoolId, studentId, token);
+    let studentName = "", schoolName = "";
+    if (valid) {
+      try {
+        const s = await BehaviorStudent.findOne({ _id: studentId, schoolId }).select("firstName preferredName lastName").lean();
+        studentName = s ? `${s.preferredName || s.firstName} ${s.lastName || ""}`.trim() : "";
+        const sc = await BehaviorSchool.findById(schoolId).select("name").lean();
+        schoolName = sc?.name || "";
+      } catch { /* ignore */ }
+    }
+    res.json({ ok: true, valid, studentName, schoolName });
+  } catch (err) { next(err); }
+});
+
+router.post("/hr-followup/log", async (req, res, next) => {
+  try {
+    const schoolId = String(req.body?.school || "").trim();
+    const studentId = String(req.body?.student || "").trim();
+    const token = String(req.body?.token || "").trim();
+    const byName = String(req.body?.by || "").trim().slice(0, 80);
+    if (!schoolId || !studentId || !verifyHrFollowupToken(schoolId, studentId, token)) {
+      return res.status(403).json({ ok: false, error: "This link is invalid or has expired. Please tap the blue button in the app instead." });
+    }
+    const student = await BehaviorStudent.findOne({ _id: studentId, schoolId });
+    if (!student) return res.status(404).json({ ok: false, error: "Student not found." });
+    const inc = await logHomeroomFollowup({ schoolId, student, teacherId: null, byName });
+    await audit(schoolId, "homeroom_followup.log_via_link", { userId: null, user: { email: "" } }, { studentId, incidentId: String(inc._id) });
+    res.json({ ok: true });
+  } catch (err) { next(err); }
+});
+
+// Public one-tap consequence action from the VP's email: confirm a white slip was
+// issued, or mark a consequence done — without logging in. Confirm page reads
+// /info then POSTs /log. action ∈ { "issue", "complete" }.
+router.get("/consequence-action/info", async (req, res, next) => {
+  try {
+    const schoolId = String(req.query.school || "").trim();
+    const id = String(req.query.id || "").trim();
+    const action = String(req.query.action || "").trim();
+    const token = String(req.query.token || "").trim();
+    const valid = !!schoolId && !!id && ["issue", "complete"].includes(action) && verifyConsequenceActionToken(schoolId, id, action, token);
+    let studentName = "", type = "", schoolName = "", status = "", completed = false;
+    if (valid) {
+      try {
+        const c = await BehaviorConsequence.findOne({ _id: id, schoolId }).lean();
+        if (c) {
+          type = c.type || ""; status = c.status || ""; completed = !!c.completed;
+          const s = await BehaviorStudent.findOne({ _id: c.studentId, schoolId }).select("firstName preferredName lastName").lean();
+          studentName = s ? `${s.preferredName || s.firstName} ${s.lastName || ""}`.trim() : "";
+        }
+        const sc = await BehaviorSchool.findById(schoolId).select("name").lean();
+        schoolName = sc?.name || "";
+      } catch { /* ignore */ }
+    }
+    res.json({ ok: true, valid, action, studentName, type, schoolName, status, completed });
+  } catch (err) { next(err); }
+});
+
+router.post("/consequence-action/log", async (req, res, next) => {
+  try {
+    const schoolId = String(req.body?.school || "").trim();
+    const id = String(req.body?.id || "").trim();
+    const action = String(req.body?.action || "").trim();
+    const token = String(req.body?.token || "").trim();
+    const byName = String(req.body?.by || "").trim().slice(0, 80);
+    if (!schoolId || !id || !["issue", "complete"].includes(action) || !verifyConsequenceActionToken(schoolId, id, action, token)) {
+      return res.status(403).json({ ok: false, error: "This link is invalid or has expired. Please action it in the app instead." });
+    }
+    const c = await BehaviorConsequence.findOne({ _id: id, schoolId });
+    if (!c) return res.status(404).json({ ok: false, error: "That item was not found." });
+    if (action === "issue") {
+      if (c.status === "recommended") {
+        c.status = "issued"; c.issuedByName = byName || "Confirmed via email"; c.issuedAt = new Date();
+        await c.save();
+        await audit(schoolId, "consequence.issued_via_link", { userId: null, user: { email: "" } }, { studentId: String(c.studentId), meta: { type: c.type } });
+      }
+    } else {
+      if (!c.completed) {
+        c.completed = true; c.completedByName = byName || "Confirmed via email"; c.completedAt = new Date();
+        await c.save();
+        await audit(schoolId, "consequence.completed_via_link", { userId: null, user: { email: "" } }, { studentId: String(c.studentId), meta: { type: c.type } });
+      }
+    }
+    res.json({ ok: true });
+  } catch (err) { next(err); }
 });
 
 // Document a consequence actually applied to a student (work detention, white
@@ -4621,6 +5483,42 @@ router.post("/consequences/:id/issue", authAny, loadMembership, canLog, async (r
   }
 });
 
+// A human day phrase for a date, school-local: "today" / "yesterday" / "on Oct 1".
+function relativeSchoolDay(d) {
+  const dt = new Date(d);
+  const startOf = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((startOf(new Date()) - startOf(dt)) / DAY_MS);
+  if (diff <= 0) return "today";
+  if (diff === 1) return "yesterday";
+  return `on ${dt.toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: SCHOOL_TZ })}`;
+}
+
+// Compose a student + parent directed message for a recorded consequence — explains
+// what happened and the action taken, ready to paste into Edsby. AI-polished with a
+// deterministic fallback; retains the school's Christian, firm-but-warm tone.
+router.post("/consequences/:id/message", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const c = await BehaviorConsequence.findOne({ _id: req.params.id, schoolId: req.schoolId }).lean();
+    if (!c) return res.status(404).json({ ok: false, error: "Not found" });
+    const student = await BehaviorStudent.findOne({ _id: c.studentId, schoolId: req.schoolId }).lean();
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    const studentName = student ? `${student.preferredName || student.firstName} ${student.lastName || ""}`.trim() : "the student";
+    const teacherName = (req.membership?.courtesyName || "").trim() || actorName(req);
+    let incident = null;
+    if (c.relatedIncidentId) incident = await BehaviorIncident.findOne({ _id: c.relatedIncidentId, schoolId: req.schoolId }).select("behaviorSnapshot detailText timestamp").lean();
+    const behaviourName = incident?.behaviorSnapshot?.name || c.detail || c.type;
+    const incidentDetail = incident?.detailText || "";
+
+    const message = await composeConsequenceMessageAI({
+      studentName, behaviorName: behaviourName, detailText: incidentDetail,
+      consequenceText: `${c.type}${c.detail ? ` — ${c.detail}` : ""}`,
+      when: incident?.timestamp || c.at, followUpType: incident ? "next_school_day" : "none",
+      teacherName, schoolName: config?.branding?.schoolName || "", config,
+    });
+    res.json({ ok: true, message, html: noteToHtml(message) });
+  } catch (err) { next(err); }
+});
+
 // Mark a consequence as completed (or not). Any teacher can confirm follow-
 // through; the threshold notice then shows the consequence as already done.
 router.post("/consequences/:id/complete", authAny, loadMembership, canLog, async (req, res, next) => {
@@ -4635,6 +5533,24 @@ router.post("/consequences/:id/complete", authAny, loadMembership, canLog, async
     c.completedAt = done ? new Date() : null;
     await c.save();
     await audit(req.schoolId, "consequence.completed", req, { studentId: String(c.studentId), meta: { type: c.type, completed: done } });
+    res.json({ ok: true, consequence: c.toObject() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Stage 1: mark that the family has been notified (the message was posted to
+// Edsby / sent). Distinct from "completed" (the student carried the consequence
+// out). The Copy-message action sets this, and it can be toggled manually.
+router.post("/consequences/:id/notified", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const c = await BehaviorConsequence.findOne({ _id: req.params.id, schoolId: req.schoolId });
+    if (!c) return res.status(404).json({ ok: false, error: "Not found" });
+    const sent = req.body?.sent === false ? false : true;
+    c.notifiedAt = sent ? new Date() : null;
+    c.notifiedByName = sent ? actorName(req) : "";
+    await c.save();
+    await audit(req.schoolId, "consequence.notified", req, { studentId: String(c.studentId), meta: { type: c.type, sent } });
     res.json({ ok: true, consequence: c.toObject() });
   } catch (err) {
     next(err);
@@ -4912,10 +5828,24 @@ router.get("/gudd/report", authAny, loadMembership, requireAdmin, async (req, re
 // in history but stop counting toward the GUDD.
 router.post("/gudd/reset", authAny, loadMembership, requireAdmin, async (req, res, next) => {
   try {
-    const at = new Date();
-    await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: { "gudd.resetAt": at } });
-    await audit(req.schoolId, "gudd.cleared", req, {});
-    res.json({ ok: true, resetAt: at });
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    const { resetAt, awarded } = await awardGuddAndReset(req.schoolId, config);
+    await audit(req.schoolId, "gudd.cleared", req, { awarded });
+    res.json({ ok: true, resetAt, awarded });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Run the month-end conduct award on demand (admin) — a manual fallback, and a
+// way to grant it whenever the school wants to announce it. Forces past the
+// per-month idempotency guard so a deliberate click always awards.
+router.post("/house/monthly-conduct-award", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    const result = await awardMonthlyConduct(req.schoolId, config, { force: true });
+    await audit(req.schoolId, "house.monthly_conduct_award", req, { awarded: result.awarded, monthKey: result.monthKey });
+    res.json({ ok: true, ...result });
   } catch (err) {
     next(err);
   }
@@ -4944,10 +5874,10 @@ router.post("/gudd/reset-link", async (req, res, next) => {
     if (!schoolId || !verifyGuddResetToken(schoolId, token)) {
       return res.status(403).json({ ok: false, error: "This reset link is invalid or has expired. Reset the list from Setup instead." });
     }
-    const at = new Date();
-    await BehaviorConfig.updateOne({ schoolId }, { $set: { "gudd.resetAt": at } });
-    await audit(schoolId, "gudd.cleared_via_link", { userId: null, user: { email: "" } }, {});
-    res.json({ ok: true, resetAt: at });
+    const config = await BehaviorConfig.findOne({ schoolId }).lean();
+    const { resetAt, awarded } = await awardGuddAndReset(schoolId, config);
+    await audit(schoolId, "gudd.cleared_via_link", { userId: null, user: { email: "" } }, { awarded });
+    res.json({ ok: true, resetAt, awarded });
   } catch (err) { next(err); }
 });
 
@@ -5115,7 +6045,8 @@ async function composeAdminDigest(schoolId, config) {
     section("Most-logged (60 days)", top(insights.topRepeat, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.count}`)) +
     section("Suggested support for staff", suggestions) +
     `<hr style="border:none;border-top:1px solid #e2e8f0;margin:18px 0">` +
-    `<p style="margin:0;font-size:13px;color:#64748b">Open the dashboard → <strong>School insights</strong> for trends, the full staff view, and to act on any of the above.</p>`;
+    `<p style="margin:0;font-size:13px;color:#64748b">Open the dashboard → <strong>School insights</strong> for trends, the full staff view, and to act on any of the above.</p>` +
+    `<p style="margin:12px 0 0;font-size:12px;color:#94a3b8"><strong>P.S.</strong> Compass is fully aligned with the most recent BCS Staff Handbook — white-slip offences, minor-infraction handling, and the GUDD dress-down policy all follow it.</p>`;
 
   const text =
     `Week in review for ${school?.name || "your school"}.\n` +
@@ -5127,7 +6058,8 @@ async function composeAdminDigest(schoolId, config) {
     `Rising lately: ${insights.proactive.slice(0, 6).map((r) => `${r.name} (${r.recent}/2wk)`).join(", ") || "none"}.\n` +
     (insights.gudd?.enabled ? `${gName}: ${gStuds.length ? `${gLost.length} lost, ${gRisk.length} at risk — reset the list from the emailed report.` : "no infractions this period."}\n` : "") +
     `Staff who may welcome support: ${flagged.map((t) => t.name).join(", ") || "none"}.\n\n` +
-    `Open the dashboard → School insights for the full picture.`;
+    `Open the dashboard → School insights for the full picture.\n\n` +
+    `P.S. Compass is fully aligned with the most recent BCS Staff Handbook — white-slip offences, minor-infraction handling, and the GUDD dress-down policy all follow it.`;
 
   return {
     subject: `Compass weekly digest — ${school?.name || "your school"}`,
@@ -5167,6 +6099,410 @@ export async function sendAdminDigestForSchool(schoolId, { force = false } = {})
   return { ok: true, to };
 }
 
+// Bi-weekly teacher nudges: a proactive "students in your homeroom to check in
+// with" email to homeroom teachers, and a gentle "how's it going?" note to
+// teachers who've been quiet. Composite per teacher; each flagged student gets a
+// one-tap "I've talked to them" button (signed link) plus what to discuss, so
+// the teacher never has to dig in the app — though the same blue button is there.
+// Daily VP accountability digest: consequences teachers were to carry out that
+// aren't done yet, grouped by the logging teacher, flagging ones past the fade
+// window as "missed" (a late consequence loses its effect). Builds follow-through
+// habits; VP always, each teacher optionally. Toggle in Setup.
+export async function sendConsequenceDigestForSchool(schoolId, { force = false } = {}) {
+  const config = await BehaviorConfig.findOne({ schoolId }).lean();
+  if (!config) return { ok: false, error: "no config" };
+  const cd = config.consequenceDigest || {};
+  if (!force && cd.enabled === false) return { ok: false, skipped: "disabled" };
+  if (!force && cd.lastSentAt && Date.now() - new Date(cd.lastSentAt).getTime() < 20 * 60 * 60 * 1000) {
+    return { ok: false, skipped: "already sent today" };
+  }
+  const fadeDays = cd.fadeDays ?? 2;
+  const now = Date.now();
+  const lookback = new Date(now - 10 * DAY_MS); // show recent outstanding only
+  const missedCutoff = now - fadeDays * DAY_MS;
+
+  const cons = await BehaviorConsequence.find({
+    schoolId, kind: "corrective", completed: false,
+    status: { $in: ["issued", "recommended", "other"] },
+    type: { $not: /^Parent message/i },
+    at: { $gte: lookback },
+  }).select("studentId type detail byTeacherId byName at").sort({ at: 1 }).lean();
+  if (!cons.length && !force) { await BehaviorConfig.updateOne({ schoolId }, { $set: { "consequenceDigest.lastSentAt": new Date() } }); return { ok: true, sent: 0, items: 0 }; }
+
+  const sIds = [...new Set(cons.map((c) => String(c.studentId)))];
+  const tIds = [...new Set(cons.map((c) => String(c.byTeacherId)).filter((x) => x && x !== "null"))];
+  const [students, teachers, school] = await Promise.all([
+    BehaviorStudent.find({ _id: { $in: sIds } }).select("firstName preferredName lastName classGroup").lean(),
+    BehaviorTeacher.find({ _id: { $in: tIds } }).select("name courtesyName email").lean(),
+    BehaviorSchool.findById(schoolId).select("name").lean(),
+  ]);
+  const sName = Object.fromEntries(students.map((s) => [String(s._id), `${s.preferredName || s.firstName} ${s.lastName || ""}`.trim() + (s.classGroup ? ` (${s.classGroup})` : "")]));
+  const tById = Object.fromEntries(teachers.map((t) => [String(t._id), t]));
+  const tLabel = (t) => (t?.name || "").trim() || emailLocalName(t?.email) || "A teacher";
+
+  // Group by teacher.
+  const byTeacher = {};
+  for (const c of cons) {
+    const k = String(c.byTeacherId || "none");
+    (byTeacher[k] ||= []).push({
+      student: sName[String(c.studentId)] || "a student",
+      type: c.type || "consequence", detail: c.detail || "",
+      at: c.at, missed: new Date(c.at).getTime() < missedCutoff,
+    });
+  }
+  const fmtItem = (it) => {
+    const d = new Date(it.at).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: SCHOOL_TZ });
+    return `${escapeHtml(it.student)} — ${escapeHtml(it.type)}${it.detail ? `: ${escapeHtml(it.detail)}` : ""} <span style="color:#94a3b8">(${d})</span>${it.missed ? ` <span style="color:#b91c1c;font-weight:600">· missed</span>` : ""}`;
+  };
+  const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+  const from = fromAddr ? { name: "Compass", address: fromAddr } : undefined;
+  const schoolName = config.branding?.schoolName || school?.name || "";
+  const followThrough = `<p style="margin:12px 0 0;font-size:12px;color:#64748b">A consequence works best when it follows the offence promptly — within a day or two. Items marked <b style="color:#b91c1c">missed</b> are past that window; they fade off the active to-do list, but please close the loop and keep the habit of timely follow-through.</p>`;
+
+  let sent = 0, totalItems = cons.length;
+
+  // VP (+ admins) digest — everything, grouped by teacher.
+  const vpEmail = (config.vp?.email || "").trim().toLowerCase();
+  const adminList = await BehaviorTeacher.find({ schoolId, role: { $in: ["originator", "admin"] } }).select("email").lean();
+  const to = [...new Set([vpEmail, ...adminList.map((a) => (a.email || "").toLowerCase())].filter(Boolean))];
+  if (to.length) {
+    const groupsHtml = Object.entries(byTeacher).map(([tid, items]) => {
+      const name = tid === "none" ? "Unassigned" : tLabel(tById[tid]);
+      return `<div style="margin:0 0 12px"><div style="font-weight:700;color:#0f172a">${escapeHtml(name)} <span style="font-weight:400;color:#94a3b8;font-size:12px">(${items.length})</span></div>` +
+        `<ul style="margin:4px 0 0;padding-left:18px;color:#334155;line-height:1.6">${items.map((it) => `<li>${fmtItem(it)}</li>`).join("")}</ul></div>`;
+    }).join("");
+    const missedCount = cons.filter((c) => new Date(c.at).getTime() < missedCutoff).length;
+    try {
+      await sendEmail({
+        from, to,
+        subject: `Consequences to follow up — ${schoolName || "today"} (${totalItems}${missedCount ? `, ${missedCount} missed` : ""})`,
+        text: `Consequences not yet carried out, by teacher:\n\n` + Object.entries(byTeacher).map(([tid, items]) => `${tid === "none" ? "Unassigned" : tLabel(tById[tid])}:\n` + items.map((it) => `  • ${it.student} — ${it.type}${it.detail ? `: ${it.detail}` : ""} (${new Date(it.at).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ })})${it.missed ? " · MISSED" : ""}`).join("\n")).join("\n\n"),
+        html: emailShell({ title: "Consequences to follow up", schoolName: schoolName || "Compass", preheader: `${totalItems} outstanding${missedCount ? `, ${missedCount} missed` : ""}`,
+          contentHtml: `<p style="margin:0 0 12px;color:#334155">These consequences were logged but aren't marked done yet, grouped by the teacher who logged them. A quick nudge helps them land while they still matter.</p>${groupsHtml}${followThrough}` }),
+      });
+      sent += 1;
+    } catch (e) { console.warn("[behavior/consq-digest] VP send failed:", e?.message || e); }
+  }
+
+  // Each teacher their own list (optional).
+  if (cd.emailTeachers !== false) {
+    for (const [tid, items] of Object.entries(byTeacher)) {
+      if (tid === "none") continue;
+      const t = tById[tid];
+      const email = (t?.email || "").trim();
+      if (!email) continue;
+      try {
+        await sendEmail({
+          from, to: email,
+          subject: `Your consequences to follow up (${items.length})`,
+          text: `Hi ${tLabel(t).split(" ")[0]},\n\nThese consequences you logged aren't marked done yet:\n\n` + items.map((it) => `  • ${it.student} — ${it.type}${it.detail ? `: ${it.detail}` : ""} (${new Date(it.at).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ })})${it.missed ? " · past the follow-up window" : ""}`).join("\n") + `\n\nA consequence works best right after the offence — please close these out. Mark them done on your Compass dashboard.`,
+          html: emailShell({ title: "Your consequences to follow up", schoolName: schoolName || "Compass", preheader: `${items.length} to close out`,
+            contentHtml: `<p style="margin:0 0 10px">Hi ${escapeHtml(tLabel(t).split(" ")[0])},</p><p style="margin:0 0 10px;color:#334155">These consequences you logged aren't marked done yet:</p>` +
+              `<ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6">${items.map((it) => `<li>${fmtItem(it)}</li>`).join("")}</ul>${followThrough}` +
+              emailButton("Open Compass", `${appBase()}/behavior`, "#0f172a") }),
+        });
+        sent += 1;
+      } catch (e) { console.warn("[behavior/consq-digest] teacher send failed:", e?.message || e); }
+    }
+  }
+
+  await BehaviorConfig.updateOne({ schoolId }, { $set: { "consequenceDigest.lastSentAt": new Date() } });
+  return { ok: true, sent, items: totalItems };
+}
+
+// Monthly "your month in Compass" encouragement email to each teacher — their
+// own This-school-year recap (positives, concerns, interactions, notices,
+// follow-through) with the red/green monthly chart. Positive reinforcement to
+// keep staff using Compass. Per-teacher opt-out: BehaviorTeacher.monthlySummary.
+export async function sendMonthlyTeacherSummaries(schoolId, { force = false } = {}) {
+  const config = await BehaviorConfig.findOne({ schoolId }).lean();
+  if (!config) return { ok: false, error: "no config" };
+  if (!force && config.monthlyTeacherSummary?.enabled === false) return { ok: false, skipped: "disabled" };
+  const monthKey = new Date().toISOString().slice(0, 7);
+  if (!force && config.monthlyTeacherSummary?.lastRunMonth === monthKey) return { ok: false, skipped: "already ran this month" };
+
+  const now = new Date();
+  const startYear = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1; // Sept = month 8
+  const cutoff = new Date(startYear, 8, 1);
+  const windowShort = "this school year";
+  const school = await BehaviorSchool.findById(schoolId).select("name").lean();
+  const schoolName = config.branding?.schoolName || school?.name || "";
+  const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+  const from = fromAddr ? { name: "Compass", address: fromAddr } : undefined;
+  const teachers = await BehaviorTeacher.find({ schoolId, status: "accepted" }).select("name courtesyName email monthlySummary").lean();
+
+  let sent = 0;
+  for (const t of teachers) {
+    if (t.monthlySummary === false) continue;
+    const email = (t.email || "").trim();
+    if (!email) continue;
+
+    const incs = await BehaviorIncident.find({ schoolId, teacherId: t._id, timestamp: { $gt: cutoff } })
+      .select("behaviorSnapshot timestamp studentId").lean();
+    let off = 0, pos = 0, intx = 0; const studs = new Set(); const byMonthKind = {}; const byType = {};
+    for (const i of incs) {
+      const isPos = i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0;
+      const isInt = !isPos && i.behaviorSnapshot?.triggerMode === "INTERACTION";
+      studs.add(String(i.studentId));
+      const k = new Date(i.timestamp).toISOString().slice(0, 7);
+      byMonthKind[k] = byMonthKind[k] || { neg: 0, pos: 0 };
+      if (isPos) { pos += 1; byMonthKind[k].pos += 1; }
+      else if (isInt) { intx += 1; }
+      else { off += 1; byMonthKind[k].neg += 1; const n = i.behaviorSnapshot?.name || "Other"; byType[n] = (byType[n] || 0) + 1; }
+    }
+    const notices = await BehaviorNotice.find({ schoolId, sentByTeacherId: t._id, createdAt: { $gt: cutoff } }).select("status").lean();
+    const noticesSent = notices.filter((n) => n.status === "sent").length;
+    const fus = await BehaviorFollowup.find({ schoolId, assignedByTeacherId: t._id, createdAt: { $gt: cutoff } }).select("status").lean();
+    const fuTotal = fus.length;
+    const fuResolved = fus.filter((f) => f.status === "done" || f.status === "waived").length;
+    const fuPct = fuTotal ? Math.round((fuResolved / fuTotal) * 100) : 0;
+
+    const totalActivity = off + pos + intx + notices.length;
+    if (!force && totalActivity === 0) continue; // nothing to celebrate yet (inactivity nudge covers that)
+
+    const first = (t.courtesyName || t.name || "there").trim().split(/\s+/)[0] || "there";
+    const topTypes = Object.entries(byType).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, v]) => `${k} ${v}`).join(", ");
+    const headline = `You've recognised ${pos} positive(s), logged ${off} concern(s) and had ${intx} documented interaction(s) across ${studs.size} student(s) ${windowShort}.`;
+    const li = (s) => `<li style="margin:2px 0">${s}</li>`;
+    const statsHtml = `<ul style="margin:6px 0 0;padding-left:18px;color:#334155;line-height:1.7">` +
+      li(`<strong>Positives recognised:</strong> ${pos}`) +
+      li(`<strong>Concerns logged:</strong> ${off}${topTypes ? ` <span style="color:#94a3b8">(${escapeHtml(topTypes)})</span>` : ""}`) +
+      li(`<strong>Documented interactions:</strong> ${intx}`) +
+      li(`<strong>Notices home:</strong> ${notices.length} (${noticesSent} sent)`) +
+      (fuTotal ? li(`<strong>Consequence follow-through:</strong> ${fuPct}% of ${fuTotal}`) : "") +
+      li(`<strong>Students supported:</strong> ${studs.size}`) + `</ul>`;
+    const contentHtml =
+      `<p style="margin:0 0 10px">Hi ${escapeHtml(first)},</p>` +
+      `<p style="margin:0 0 12px;color:#334155">Thank you for the care you've put into your students this year. Here's your month-by-month picture in Compass (${windowShort}):</p>` +
+      statsHtml +
+      `<h3 style="margin:16px 0 6px;font-size:14px;color:#0f172a">Monthly volume (red = concerns, green = positives)</h3>` +
+      monthlyKindChartHtml(byMonthKind) +
+      `<p style="margin:14px 0 0;color:#334155">Every note you add — a quick positive as much as a concern — builds the shared picture that helps each student and backs up your colleagues. Thank you for keeping it up.</p>` +
+      emailButton("Open Compass", `${appBase()}/behavior`, "#16a34a");
+    const text = `Hi ${first},\n\n${headline}\n\n` +
+      `Positives recognised: ${pos}\nConcerns logged: ${off}${topTypes ? ` (${topTypes})` : ""}\nDocumented interactions: ${intx}\nNotices home: ${notices.length} (${noticesSent} sent)\n` +
+      (fuTotal ? `Consequence follow-through: ${fuPct}% of ${fuTotal}\n` : "") +
+      `Students supported: ${studs.size}\n\nThank you for keeping the shared picture up to date.\n${appBase()}/behavior`;
+    try {
+      await sendEmail({ from, to: email, subject: `Your month in Compass${schoolName ? ` — ${schoolName}` : ""}`, text,
+        html: emailShell({ title: "Your month in Compass", schoolName: schoolName || "Compass", preheader: headline, accent: "#16a34a", contentHtml }) });
+      sent += 1;
+    } catch (e) { console.warn("[behavior/monthly-summary] send failed for", email, e?.message || e); }
+  }
+  await BehaviorConfig.updateOne({ schoolId }, { $set: { "monthlyTeacherSummary.lastRunMonth": monthKey } });
+  return { ok: true, sent };
+}
+
+// Event-driven homeroom check-in: email the student's homeroom teacher a
+// proactive "have an encouraging word" nudge for ONE student (dated incidents +
+// one-tap "I've talked to them"). Fired when a student crosses to 2 active
+// strikes — climbing from fewer, or again after a notice/white-slip reset.
+// Best-effort; never blocks logging. Returns true if an email was sent.
+export async function sendHomeroomCheckinForStudent({ schoolId, student, config }) {
+  if (config?.teacherNudge?.enabled === false) return false;
+  const cls = String(student.classGroup || "").trim();
+  if (!cls) return false;
+  const hr = await BehaviorTeacher.findOne({ schoolId, homeroom: cls, status: "accepted" }).lean();
+  if (!hr?.email) return false;
+
+  const fadeDays = config?.fadeWindowDays ?? 30;
+  const incs = await BehaviorIncident.find({ studentId: student._id, timestamp: { $gt: new Date(Date.now() - Math.max(fadeDays, 60) * DAY_MS) } })
+    .select("behaviorSnapshot timestamp immediateFlag whiteSlip countedInNoticeId teacherId detailText").lean();
+  const active = activeThresholdIncidents(incs, { fadeWindowDays: fadeDays, thresholdResetAt: student.thresholdResetAt });
+  if (active.length < 2) return false;
+
+  const tIds = [...new Set(active.map((i) => String(i.teacherId)).filter(Boolean))];
+  const tdocs = await BehaviorTeacher.find({ _id: { $in: tIds } }).select("name courtesyName").lean();
+  const tn = Object.fromEntries(tdocs.map((t) => [String(t._id), (t.courtesyName || t.name || "").trim()]));
+  const occ = active.slice().sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 8).map((i) => ({
+    date: new Date(i.timestamp).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: SCHOOL_TZ }),
+    name: i.behaviorSnapshot?.name || "Offence", detail: (i.detailText || "").trim(), teacher: tn[String(i.teacherId)] || "",
+  }));
+  const name = `${student.preferredName || student.firstName} ${student.lastName || ""}`.trim();
+  const hrFirst = (hr.courtesyName || hr.name || "there").split(" ")[0];
+  const schoolName = config?.branding?.schoolName || (await BehaviorSchool.findById(schoolId).select("name").lean())?.name || "";
+  const tok = hrFollowupToken(String(schoolId), String(student._id));
+  const link = `${appBase()}/behavior/hr-followup?school=${schoolId}&student=${student._id}&token=${encodeURIComponent(tok)}`;
+  const occHtml = `<ul style="margin:6px 0 2px;padding-left:18px;color:#475569;font-size:13px;line-height:1.6">` +
+    occ.map((o) => `<li><span style="color:#94a3b8">${escapeHtml(o.date)}</span> — ${escapeHtml(o.name)}${o.detail ? `: ${escapeHtml(o.detail)}` : ""}${o.teacher ? ` <span style="color:#94a3b8">(${escapeHtml(o.teacher)})</span>` : ""}</li>`).join("") + `</ul>`;
+  const subject = `A quick check-in idea — ${name}`;
+  const contentHtml =
+    `<p style="margin:0 0 10px">Hi ${escapeHtml(hrFirst)},</p>` +
+    `<p style="margin:0 0 12px;color:#334155">${escapeHtml(name)} has picked up a couple of notes lately. A quick, early check-in now is one of the best ways to steer ${escapeHtml((student.preferredName || student.firstName || "them"))} back on track before things escalate.</p>` +
+    `<div style="border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin:8px 0">` +
+    `<div style="font-weight:700">${escapeHtml(name)} <span style="font-weight:400;color:#64748b;font-size:13px">— ${active.length} recent offences</span></div>` +
+    `<div style="color:#64748b;font-size:12px;margin-top:4px">What to talk about:</div>` + occHtml +
+    emailButton("✓ I've talked to them", link, "#2563eb") + `</div>` +
+    `<p style="margin:14px 0 6px;color:#334155">Once you've had the conversation, just tap <strong>“I've talked to them”</strong> above — it's logged as a supportive check-in (never a strike, nothing goes home).</p>`;
+  const text = `Hi ${hrFirst},\n\n${name} could use a proactive check-in (${active.length} recent offences):\n` +
+    occ.map((o) => `  - ${o.date} — ${o.name}${o.detail ? `: ${o.detail}` : ""}${o.teacher ? ` (${o.teacher})` : ""}`).join("\n") +
+    `\n\nAfter you've talked with them, tap the link in the email version, or the blue homeroom follow-up button in Compass.\n\n${appBase()}/behavior`;
+  const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+  const from = fromAddr ? { name: "Compass", address: fromAddr } : undefined;
+  try {
+    await sendEmail({ from, to: hr.email, subject, text, html: emailShell({ title: subject, schoolName: schoolName || "Compass", preheader: subject, contentHtml }) });
+    return true;
+  } catch (e) { console.warn("[behavior/checkin] send failed:", e?.message || e); return false; }
+}
+
+export async function sendTeacherNudgesForSchool(schoolId, { force = false } = {}) {
+  const config = await BehaviorConfig.findOne({ schoolId }).lean();
+  if (!config) return { ok: false, error: "no config" };
+  if (!force && config.teacherNudge?.enabled === false) return { ok: false, skipped: "disabled" };
+  const intervalDays = config.teacherNudge?.intervalDays ?? 14;
+  if (!force && config.teacherNudge?.lastRunAt && Date.now() - new Date(config.teacherNudge.lastRunAt).getTime() < (intervalDays - 1) * DAY_MS) {
+    return { ok: false, skipped: "too soon" };
+  }
+  const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+  const from = fromAddr ? { name: "Compass", address: fromAddr } : undefined;
+  const schoolName = config.branding?.schoolName || (await BehaviorSchool.findById(schoolId).select("name").lean())?.name || "";
+  const fadeDays = config.fadeWindowDays ?? 30;
+  const triggerCount = config.triggerCount ?? 3;
+
+  const teachers = await BehaviorTeacher.find({ schoolId, status: "accepted", role: { $ne: "principal" } }).lean();
+  const students = await BehaviorStudent.find({ schoolId, active: true }).select("firstName preferredName lastName classGroup grade thresholdResetAt").lean();
+  const byId = Object.fromEntries(students.map((s) => [String(s._id), s]));
+
+  // Recent incidents for strike counting + "what to talk about".
+  const since = new Date(Date.now() - Math.max(fadeDays, 60) * DAY_MS);
+  const incs = await BehaviorIncident.find({ schoolId, timestamp: { $gt: since } })
+    .select("studentId behaviorSnapshot timestamp immediateFlag whiteSlip countedInNoticeId teacherId detailText").lean();
+  const incByStudent = {};
+  for (const i of incs) (incByStudent[String(i.studentId)] ||= []).push(i);
+  // Teacher names for attributing each occurrence in the "what to talk about" list.
+  const nudgeTeacherName = Object.fromEntries(teachers.map((t) => [String(t._id), (t.courtesyName || t.name || "").trim()]));
+
+  // Students already followed-up within this period drop off the list.
+  const fuSince = new Date(Date.now() - intervalDays * DAY_MS);
+  const recentFu = await BehaviorIncident.find({ schoolId, timestamp: { $gt: fuSince }, "behaviorSnapshot.name": "Homeroom follow-up" }).select("studentId").lean();
+  const fuSet = new Set(recentFu.map((f) => String(f.studentId)));
+
+  let sent = 0;
+  for (const t of teachers) {
+    const email = (t.email || "").trim();
+    if (!email) continue;
+
+    // Homeroom students who are accumulating offences and haven't been checked in with.
+    const rooms = String(t.homeroom || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+    const watch = [];
+    if (rooms.length) {
+      for (const s of students) {
+        if (!rooms.includes(String(s.classGroup || "").trim().toLowerCase())) continue;
+        if (fuSet.has(String(s._id))) continue;
+        const active = activeThresholdIncidents(incByStudent[String(s._id)] || [], { fadeWindowDays: fadeDays, thresholdResetAt: s.thresholdResetAt });
+        if (active.length < 2) continue; // only those genuinely racking up
+        const byType = {};
+        for (const i of active) { const n = i.behaviorSnapshot?.name || "Other"; byType[n] = (byType[n] || 0) + 1; }
+        const about = Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}${v > 1 ? ` ×${v}` : ""}`).slice(0, 4).join(", ");
+        // Dated occurrence list (most recent first) so the HR teacher walks into
+        // the chat with specifics, not just a summary.
+        const occurrences = active
+          .slice().sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 8)
+          .map((i) => ({
+            date: new Date(i.timestamp).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: SCHOOL_TZ }),
+            name: i.behaviorSnapshot?.name || "Offence",
+            detail: (i.detailText || "").trim(),
+            teacher: nudgeTeacherName[String(i.teacherId)] || "",
+          }));
+        watch.push({ id: String(s._id), name: `${s.preferredName || s.firstName} ${s.lastName || ""}`.trim(), strikes: active.length, about, occurrences });
+      }
+      watch.sort((a, b) => b.strikes - a.strikes);
+    }
+
+    // Inactivity: no incidents logged by this teacher in the interval.
+    const loggedRecently = await BehaviorIncident.exists({ schoolId, teacherId: t._id, timestamp: { $gt: fuSince } });
+    const inactive = !loggedRecently;
+
+    let subject = "", contentHtml = "", text = "";
+    const first = (t.name || "").split(" ")[0] || "there";
+
+    // Per-student check-ins are now EVENT-DRIVEN (fired on crossing 2 strikes —
+    // see sendHomeroomCheckinForStudent), so the automatic cron no longer sends
+    // them. A manual run (force) can still send the batch for a catch-up/preview.
+    if (force && watch.length) {
+      subject = `A quick check-in idea for ${watch.length} student${watch.length === 1 ? "" : "s"} in your homeroom`;
+      const rowsHtml = watch.map((w) => {
+        const tok = hrFollowupToken(String(schoolId), w.id);
+        const link = `${appBase()}/behavior/hr-followup?school=${schoolId}&student=${w.id}&token=${encodeURIComponent(tok)}`;
+        const occHtml = (w.occurrences || []).length
+          ? `<ul style="margin:6px 0 2px;padding-left:18px;color:#475569;font-size:13px;line-height:1.6">` +
+            w.occurrences.map((o) =>
+              `<li><span style="color:#94a3b8">${escapeHtml(o.date)}</span> — ${escapeHtml(o.name)}` +
+              `${o.detail ? `: ${escapeHtml(o.detail)}` : ""}` +
+              `${o.teacher ? ` <span style="color:#94a3b8">(${escapeHtml(o.teacher)})</span>` : ""}</li>`
+            ).join("") + `</ul>`
+          : (w.about ? `<div style="color:#475569;font-size:13px;margin-top:2px">What to talk about: ${escapeHtml(w.about)}</div>` : "");
+        return (
+          `<div style="border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin:8px 0">` +
+          `<div style="font-weight:700">${escapeHtml(w.name)} <span style="font-weight:400;color:#64748b;font-size:13px">— ${w.strikes} recent offences</span></div>` +
+          `<div style="color:#64748b;font-size:12px;margin-top:4px">What to talk about:</div>` +
+          occHtml +
+          emailButton("✓ I've talked to them", link, "#2563eb") +
+          `</div>`
+        );
+      }).join("");
+      contentHtml =
+        `<p style="margin:0 0 10px">Hi ${escapeHtml(first)},</p>` +
+        `<p style="margin:0 0 12px;color:#334155">A quick, proactive note — checking in early with students who are starting to rack up a few offences is one of the best ways to steer them back on track before things escalate. Here are a few of your homeroom students who might appreciate a chat:</p>` +
+        rowsHtml +
+        `<p style="margin:14px 0 6px;color:#334155">Once you've had a conversation, just tap <strong>“I've talked to them”</strong> above — or tap the blue homeroom-follow-up button beside their name on your Compass dashboard. Either way it's logged as a supportive check-in (never a strike, nothing goes home).</p>` +
+        emailButton("Open Compass", `${appBase()}/behavior`, "#0f172a");
+      text = `Hi ${first},\n\nA few of your homeroom students could use a proactive check-in:\n\n` +
+        watch.map((w) => `• ${w.name} — ${w.strikes} recent offences\n` +
+          (w.occurrences || []).map((o) => `    - ${o.date} — ${o.name}${o.detail ? `: ${o.detail}` : ""}${o.teacher ? ` (${o.teacher})` : ""}`).join("\n")
+        ).join("\n") +
+        `\n\nAfter you've talked with them, tap the blue homeroom follow-up button in Compass, or the link in the email version of this message.\n\n${appBase()}/behavior`;
+    } else if (inactive) {
+      subject = "How are things going in your class?";
+      contentHtml =
+        `<p style="margin:0 0 10px">Hi ${escapeHtml(first)},</p>` +
+        `<p style="margin:0 0 12px;color:#334155">We haven't seen any Compass entries from you lately — which may well mean things are running smoothly, and that's wonderful! 🎉</p>` +
+        `<p style="margin:0 0 12px;color:#334155">Just a friendly reminder that Compass is quickest when it's part of the daily rhythm: a few seconds to note something a student did well, or to flag a concern early, keeps everyone in the loop and helps kids before small things grow. Even the positives are worth logging — they build a student's record and their house points.</p>` +
+        emailButton("Open Compass", `${appBase()}/behavior`, "#0f172a");
+      text = `Hi ${first},\n\nWe haven't seen any Compass entries from you lately — hopefully that means all is well! Just a nudge that logging a quick positive or an early concern keeps everyone in the loop.\n\n${appBase()}/behavior`;
+    } else {
+      continue; // active teacher, nothing flagged → no email
+    }
+
+    try {
+      await sendEmail({ from, to: email, subject, text, html: emailShell({ title: subject, schoolName, contentHtml, preheader: subject }) });
+      sent += 1;
+    } catch (e) {
+      console.warn("[behavior/nudge] send failed for", email, e?.message || e);
+    }
+  }
+
+  await BehaviorConfig.updateOne({ schoolId }, { $set: { "teacherNudge.lastRunAt": new Date() } });
+  return { ok: true, sent };
+}
+
+// Send teacher nudges now (admin) — manual trigger / preview.
+router.post("/teacher-nudge/run", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const r = await sendTeacherNudgesForSchool(req.schoolId, { force: true });
+    await audit(req.schoolId, "teacher_nudge.run", req, { meta: { sent: r.sent, ok: r.ok } });
+    res.json(r);
+  } catch (err) { next(err); }
+});
+
+// Send the monthly per-teacher "your month in Compass" summaries now (admin).
+router.post("/monthly-summary/run", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const r = await sendMonthlyTeacherSummaries(req.schoolId, { force: true });
+    await audit(req.schoolId, "monthly_summary.run", req, { meta: { sent: r.sent, ok: r.ok } });
+    res.json(r);
+  } catch (err) { next(err); }
+});
+
+// Send the daily VP consequence digest now (admin) — preview/test.
+router.post("/consequence-digest/run", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const r = await sendConsequenceDigestForSchool(req.schoolId, { force: true });
+    await audit(req.schoolId, "consequence_digest.run", req, { meta: { sent: r.sent, items: r.items, ok: r.ok } });
+    res.json(r);
+  } catch (err) { next(err); }
+});
+
 // Send the weekly digest now (admin) — also used to preview/test.
 router.post("/admin-digest", authAny, loadMembership, requireAdmin, async (req, res, next) => {
   try {
@@ -5186,12 +6522,18 @@ router.post("/admin-digest", authAny, loadMembership, requireAdmin, async (req, 
 // House point totals, applying per-student caps (config.houseCaps). A single
 // student's positive and negative contributions are each capped (0 = unlimited);
 // house-level awards (no studentId — e.g. house events) are never capped.
-async function houseTotals(schoolId, cfg) {
+async function houseTotals(schoolId, cfg, { positivesOnly = false } = {}) {
   // Points earned by students no longer on the roster (graduated/withdrawn) drop
   // out of the standings; whole-house awards (no studentId) always count.
   const activeIds = (await BehaviorStudent.find({ schoolId, active: true }).select("_id").lean()).map((s) => s._id);
   const match = { schoolId, $or: [{ studentId: null }, { studentId: { $in: activeIds } }] };
   if (cfg?.housePointsResetAt) match.at = { $gt: new Date(cfg.housePointsResetAt) };
+  // "Reset negatives only": drop negative events on/before the negative-reset.
+  if (cfg?.houseNegativeResetAt) {
+    (match.$and ||= []).push({ $or: [{ points: { $gte: 0 } }, { at: { $gt: new Date(cfg.houseNegativeResetAt) } } ] });
+  }
+  // Public/positives-only view: ignore deductions entirely.
+  if (positivesOnly) match.points = { $gt: 0 };
   const posCap = Number(cfg?.houseCaps?.positive) || 0;
   const negCap = Number(cfg?.houseCaps?.negative) || 0;
   const rows = await HousePointEvent.aggregate([
@@ -5213,6 +6555,31 @@ async function houseTotals(schoolId, cfg) {
     byHouse[hid] = (byHouse[hid] || 0) + pos + neg;
   }
   return byHouse;
+}
+
+// A student's personal merch wallet: all-time positive individual points earned
+// minus all-time redemptions (never below 0). Kept separate from house standings
+// so spending on merch doesn't lower the house total. Returns a {id: balance} map.
+async function merchBalances(schoolId, studentIds) {
+  if (!studentIds.length) return {};
+  const [earned, spent] = await Promise.all([
+    HousePointEvent.aggregate([
+      { $match: { schoolId, studentId: { $in: studentIds }, points: { $gt: 0 } } },
+      { $group: { _id: "$studentId", v: { $sum: "$points" } } },
+    ]),
+    MerchRedemption.aggregate([
+      { $match: { schoolId, studentId: { $in: studentIds } } },
+      { $group: { _id: "$studentId", v: { $sum: "$points" } } },
+    ]),
+  ]);
+  const earnedBy = Object.fromEntries(earned.map((e) => [String(e._id), e.v]));
+  const spentBy = Object.fromEntries(spent.map((e) => [String(e._id), e.v]));
+  const out = {};
+  for (const id of studentIds) {
+    const k = String(id);
+    out[k] = Math.max(0, (earnedBy[k] || 0) - (spentBy[k] || 0));
+  }
+  return out;
 }
 
 // Daily Movers — students with the most behaviour movement TODAY: net house
@@ -5273,6 +6640,17 @@ router.put("/houses/config", authAny, loadMembership, canManageHouses, async (re
     if (Array.isArray(b.houseRewards)) $set.houseRewards = b.houseRewards.map((r) => ({ points: Number(r.points) || 0, reward: String(r.reward || "").trim() })).filter((r) => r.reward && r.points);
     if (b.houseReport) $set.houseReport = { enabled: !!b.houseReport.enabled, recipientEmail: String(b.houseReport.recipientEmail || "").trim().toLowerCase() };
     if ("encouragingMessagePoints" in b) $set.encouragingMessagePoints = Math.max(0, Number(b.encouragingMessagePoints) || 0);
+    if ("housesPublicShowPositives" in b) $set.housesPublicShowPositives = !!b.housesPublicShowPositives;
+    if ("housesPublicShowNegatives" in b) $set.housesPublicShowNegatives = !!b.housesPublicShowNegatives;
+    if ("houseNegativeResetAt" in b) $set.houseNegativeResetAt = b.houseNegativeResetAt ? new Date(b.houseNegativeResetAt) : null;
+    if (b.merchStore && typeof b.merchStore === "object") {
+      if ("enabled" in b.merchStore) $set["merchStore.enabled"] = !!b.merchStore.enabled;
+      if (Array.isArray(b.merchStore.items)) {
+        $set["merchStore.items"] = b.merchStore.items
+          .map((i) => ({ name: String(i.name || "").trim(), points: Math.max(0, Number(i.points) || 0), image: String(i.image || "") }))
+          .filter((i) => i.name && i.points);
+      }
+    }
     if (!Object.keys($set).length) return res.status(400).json({ ok: false, error: "Nothing to update" });
     const config = await BehaviorConfig.findOneAndUpdate({ schoolId: req.schoolId }, { $set }, { new: true, upsert: true }).lean();
     await audit(req.schoolId, "houses.config_updated", req, { meta: { keys: Object.keys($set) } });
@@ -5280,6 +6658,18 @@ router.put("/houses/config", authAny, loadMembership, canManageHouses, async (re
   } catch (err) {
     next(err);
   }
+});
+
+// "Reset negatives only": stamp the negative-reset marker at now, so conduct
+// deductions logged up to this moment stop dragging the standings while every
+// positive point earned is kept. Reversible by clearing the marker.
+router.post("/houses/reset-negatives", authAny, loadMembership, canManageHouses, async (req, res, next) => {
+  try {
+    const at = new Date();
+    await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: { houseNegativeResetAt: at } }, { upsert: true });
+    await audit(req.schoolId, "houses.reset_negatives", req, { meta: { at } });
+    res.json({ ok: true, houseNegativeResetAt: at });
+  } catch (err) { next(err); }
 });
 
 // Set/unset a house captain (committee or admin) — houses-scoped, so it doesn't
@@ -5302,7 +6692,7 @@ router.get("/houses", authAny, loadMembership, async (req, res, next) => {
   try {
     // Master switch: when Houses is off, the whole aspect is hidden — report no
     // houses so every consumer surface (leaderboard, assignment dropdown) hides.
-    const cfg = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("housesEnabled housePointsResetAt houseCaps").lean();
+    const cfg = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("housesEnabled housePointsResetAt houseNegativeResetAt houseCaps").lean();
     if (!cfg?.housesEnabled) return res.json({ ok: true, enabled: false, houses: [] });
 
     const houses = await BehaviorHouse.find({ schoolId: req.schoolId, active: true }).sort({ sortOrder: 1, name: 1 }).lean();
@@ -5401,6 +6791,130 @@ router.post("/house-points", authAny, loadMembership, canLog, async (req, res, n
     });
     await audit(req.schoolId, "house.points", req, { studentId, meta: { houseId: String(houseId), points } });
     res.json({ ok: true, event });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Food Drive import (AI handwriting read of class sheets) ───────────────────
+const normName = (s) => String(s || "").toLowerCase().replace(/[^a-z\s'-]/g, "").replace(/\s+/g, " ").trim();
+// Match a sheet name ("First Last" or "Last, First"/"Last First") to a student.
+function matchStudent(raw, index) {
+  const n = normName(raw);
+  if (!n) return null;
+  if (index.exact[n]) return index.exact[n];
+  // try swapping order (handles "Last First" vs "First Last")
+  const parts = n.split(" ");
+  if (parts.length >= 2) {
+    const swapped = [parts.slice(1).join(" "), parts[0]].join(" ");
+    if (index.exact[swapped]) return index.exact[swapped];
+    // last + first-initial fallback
+    const li = `${parts[parts.length - 1]} ${parts[0][0]}`;
+    if (index.liLast[li]) return index.liLast[li];
+  }
+  return null;
+}
+function buildStudentIndex(students) {
+  const exact = {}, liLast = {};
+  for (const s of students) {
+    const first = s.preferredName || s.firstName || "";
+    const names = new Set([`${first} ${s.lastName}`, `${s.firstName} ${s.lastName}`, `${s.lastName} ${first}`, `${s.lastName} ${s.firstName}`]);
+    for (const nm of names) { const k = normName(nm); if (k) exact[k] = s; }
+    const li = normName(`${s.lastName} ${(first || "")[0] || ""}`);
+    if (li) liLast[li] = s;
+  }
+  return { exact, liLast };
+}
+
+// 1) Read the sheets → return parsed rows matched to students (for review).
+router.post("/house/food-drive/parse", authAny, loadMembership, canLog, uploadSheets.array("files", 25), async (req, res, next) => {
+  try {
+    if (!req.files?.length) return res.status(400).json({ ok: false, error: "Upload at least one sheet (photo, scan, or PDF)." });
+    const { rows, images } = await readFoodDriveSheets(req.files);
+    const students = await BehaviorStudent.find({ schoolId: req.schoolId, active: true }).select("firstName preferredName lastName classGroup houseId").lean();
+    const houses = await BehaviorHouse.find({ schoolId: req.schoolId }).select("name color").lean();
+    const houseById = Object.fromEntries(houses.map((h) => [String(h._id), h]));
+    const index = buildStudentIndex(students);
+    const out = rows.map((r) => {
+      const s = matchStudent(r.name, index);
+      const h = s?.houseId ? houseById[String(s.houseId)] : null;
+      return {
+        name: r.name,
+        items: Number.isFinite(r.items) ? r.items : null,
+        studentId: s ? String(s._id) : null,
+        studentLabel: s ? `${s.preferredName || s.firstName} ${s.lastName}${s.classGroup ? ` (${s.classGroup})` : ""}` : null,
+        house: h?.name || null,
+        houseColor: h?.color || null,
+      };
+    });
+    const roster = students
+      .map((s) => ({ id: String(s._id), label: `${s.preferredName || s.firstName} ${s.lastName}${s.classGroup ? ` (${s.classGroup})` : ""}`, house: s.houseId ? (houseById[String(s.houseId)]?.name || "") : "" }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+    res.json({ ok: true, images, rows: out, roster, unmatched: out.filter((r) => !r.studentId).length });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// 2) Apply: award top donors + house placements from the confirmed rows.
+router.post("/house/food-drive/apply", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const rows = (req.body?.rows || []).filter((r) => r.studentId && Number(r.items) > 0).map((r) => ({ studentId: String(r.studentId), items: Math.round(Number(r.items)) }));
+    if (!rows.length) return res.status(400).json({ ok: false, error: "No rows with a matched student and a positive count." });
+    const indPts = Array.isArray(req.body?.individual) ? req.body.individual.map(Number) : [30, 20, 10];
+    const housePts = Array.isArray(req.body?.house) ? req.body.house.map(Number) : [100, 60, 30];
+    const label = String(req.body?.label || "Food Drive").trim() || "Food Drive";
+    const at = new Date();
+
+    const ids = rows.map((r) => new mongoose.Types.ObjectId(r.studentId));
+    const students = await BehaviorStudent.find({ _id: { $in: ids }, schoolId: req.schoolId }).select("firstName preferredName lastName houseId").lean();
+    const sById = Object.fromEntries(students.map((s) => [String(s._id), s]));
+
+    // House totals (sum of items by each student's house).
+    const houseTotalsMap = {};
+    for (const r of rows) { const s = sById[r.studentId]; if (!s?.houseId) continue; const k = String(s.houseId); houseTotalsMap[k] = (houseTotalsMap[k] || 0) + r.items; }
+    const houses = await BehaviorHouse.find({ schoolId: req.schoolId }).select("name").lean();
+    const houseName = Object.fromEntries(houses.map((h) => [String(h._id), h.name]));
+    const rankedHouses = Object.entries(houseTotalsMap).map(([id, total]) => ({ id, total })).sort((a, b) => b.total - a.total);
+
+    const awardedHouses = [];
+    for (let i = 0; i < rankedHouses.length && i < housePts.length; i++) {
+      const p = Math.round(housePts[i]) || 0;
+      if (!p) continue;
+      const hid = rankedHouses[i].id;
+      await HousePointEvent.create({ schoolId: req.schoolId, houseId: new mongoose.Types.ObjectId(hid), studentId: null, points: p, reason: `${label} — ${["1st","2nd","3rd","4th","5th"][i]||`#${i+1}`} most items (${rankedHouses[i].total})`, awardedByTeacherId: req.membership._id, at });
+      awardedHouses.push({ house: houseName[hid] || "—", place: i + 1, points: p, items: rankedHouses[i].total });
+    }
+
+    // Top individual donors (regardless of house) → bonus points to their house.
+    const rankedStudents = rows.slice().sort((a, b) => b.items - a.items);
+    const awardedStudents = [];
+    for (let i = 0; i < rankedStudents.length && i < indPts.length; i++) {
+      const p = Math.round(indPts[i]) || 0;
+      if (!p) continue;
+      const r = rankedStudents[i]; const s = sById[r.studentId];
+      if (!s?.houseId) continue;
+      await HousePointEvent.create({ schoolId: req.schoolId, houseId: s.houseId, studentId: new mongoose.Types.ObjectId(r.studentId), points: p, reason: `${label} — top donor ${["1st","2nd","3rd"][i]||`#${i+1}`} (${r.items} items)`, awardedByTeacherId: req.membership._id, at });
+      awardedStudents.push({ name: `${s.preferredName || s.firstName} ${s.lastName}`.trim(), place: i + 1, points: p, items: r.items });
+    }
+
+    // Save a celebratory banner for /houses (first name + last initial for the
+    // donors — minimal PII on a public wall board), shown for ~2 weeks.
+    const bannerStudents = [];
+    for (let i = 0; i < rankedStudents.length && i < Math.max(indPts.length, 3); i++) {
+      const r = rankedStudents[i]; const s = sById[r.studentId];
+      if (!s) continue;
+      bannerStudents.push({ name: `${s.preferredName || s.firstName} ${(s.lastName || "").charAt(0)}.`.trim(), place: i + 1, items: r.items });
+    }
+    const eventResult = {
+      label, at,
+      houses: awardedHouses.map((h) => ({ name: h.house, place: h.place, items: h.items, points: h.points })),
+      students: bannerStudents,
+    };
+    await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: { houseEventResult: eventResult } });
+
+    await audit(req.schoolId, "house.food_drive", req, { meta: { label, rows: rows.length, houses: awardedHouses.length, donors: awardedStudents.length } });
+    res.json({ ok: true, houses: awardedHouses, students: awardedStudents, totalItems: rows.reduce((a, b) => a + b.items, 0) });
   } catch (err) {
     next(err);
   }
@@ -5954,7 +7468,7 @@ router.get("/public/houses", async (req, res, next) => {
   try {
     const code = String(req.query.code || "").trim();
     if (!/^\d{3,6}$/.test(code)) return res.status(400).json({ ok: false, error: "Enter your school code." });
-    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true }).select("schoolId housePointsResetAt houseCaps houseRewards").lean();
+    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true }).select("schoolId housePointsResetAt houseNegativeResetAt housesPublicShowNegatives housesPublicShowPositives houseCaps houseRewards merchStore houseEventResult").lean();
     if (!config) return res.status(404).json({ ok: false, error: "No school matches that code." });
     const schoolId = config.schoolId;
     const sid = new mongoose.Types.ObjectId(schoolId);
@@ -5963,7 +7477,9 @@ router.get("/public/houses", async (req, res, next) => {
     const houses = await BehaviorHouse.find({ schoolId, active: true }).sort({ sortOrder: 1, name: 1 }).lean();
     const pointMatch = { schoolId: sid };
     if (config.housePointsResetAt) pointMatch.at = { $gt: new Date(config.housePointsResetAt) };
-    const totalById = await houseTotals(sid, config);
+    // Students see a positive standings board unless the school opts to show
+    // conduct deductions publicly.
+    const totalById = await houseTotals(sid, config, { positivesOnly: config.housesPublicShowNegatives !== true });
     // Only currently-enrolled students appear in the per-student displays —
     // graduated/withdrawn (deactivated) students keep their history but drop off
     // the leaderboards. Also track each active student's CURRENT house so points
@@ -6074,7 +7590,16 @@ router.get("/public/houses", async (req, res, next) => {
       }).filter(Boolean);
     }
 
-    res.json({ ok: true, enabled: true, schoolName: school?.name || "", houses: houseOut, competitions: compOut, activity, dailyTopStudent, dailyTopHouse, topStudents, rewards });
+    const merch = config.merchStore?.enabled
+      ? (config.merchStore.items || []).slice().sort((a, b) => (a.points || 0) - (b.points || 0)).map((i) => ({ name: i.name, points: i.points, image: i.image || "" }))
+      : [];
+    // Latest tally-event banner — shown for ~14 days after upload.
+    let eventResult = null;
+    const er = config.houseEventResult;
+    if (er?.at && Date.now() - new Date(er.at).getTime() < 14 * DAY_MS) {
+      eventResult = { label: er.label || "Results", at: er.at, houses: er.houses || [], students: er.students || [] };
+    }
+    res.json({ ok: true, enabled: true, schoolName: school?.name || "", houses: houseOut, competitions: compOut, activity, dailyTopStudent, dailyTopHouse, topStudents, rewards, merch, eventResult });
   } catch (err) {
     next(err);
   }
@@ -6089,7 +7614,7 @@ router.get("/public/houses/lookup", async (req, res, next) => {
     if (!/^\d{3,6}$/.test(code)) return res.status(400).json({ ok: false, error: "Enter your school code." });
     const lastName = String(req.query.lastName || "").trim();
     if (lastName.length < 2) return res.status(400).json({ ok: false, error: "Type at least two letters of your last name." });
-    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true }).select("schoolId").lean();
+    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true }).select("schoolId merchStore").lean();
     if (!config) return res.status(404).json({ ok: false, error: "No school matches that code." });
 
     const rx = new RegExp("^" + lastName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
@@ -6098,13 +7623,28 @@ router.get("/public/houses/lookup", async (req, res, next) => {
       .sort({ lastName: 1, firstName: 1 })
       .limit(40)
       .lean();
-    const houses = await BehaviorHouse.find({ schoolId: config.schoolId }).select("name color roomGroup1 roomGroup2").lean();
+    // Personal merch points balance (only surfaced when the store is enabled).
+    const merchOn = !!config.merchStore?.enabled;
+    const balances = merchOn ? await merchBalances(new mongoose.Types.ObjectId(config.schoolId), students.map((s) => s._id)) : {};
+    const houses = await BehaviorHouse.find({ schoolId: config.schoolId }).select("name color roomGroup1 roomGroup2 teacher1 teacher2").lean();
     const houseById = Object.fromEntries(houses.map((h) => [String(h._id), h]));
+
+    // House captains (first name + last initial only — minimal PII), keyed by house,
+    // so a student's look-up can show who leads their team.
+    const capStudents = await BehaviorStudent.find({ schoolId: config.schoolId, active: true, houseCaptain: true, houseId: { $ne: null } })
+      .select("firstName preferredName lastName houseId")
+      .lean();
+    const captainsByHouse = {};
+    for (const c of capStudents) {
+      const k = String(c.houseId);
+      (captainsByHouse[k] ||= []).push(`${c.preferredName || c.firstName} ${(c.lastName || "").charAt(0)}.`.trim());
+    }
 
     const matches = students.map((s) => {
       const h = houseById[String(s.houseId)] || {};
       const group = s.houseGroup === 1 || s.houseGroup === 2 ? s.houseGroup : null;
       const room = group === 1 ? (h.roomGroup1 || "") : group === 2 ? (h.roomGroup2 || "") : "";
+      const teachers = [h.teacher1, h.teacher2].filter((t) => t && String(t).trim());
       return {
         firstName: s.preferredName || s.firstName || "",
         grade: s.grade || "",
@@ -6112,9 +7652,180 @@ router.get("/public/houses/lookup", async (req, res, next) => {
         color: h.color || "#0f172a",
         group,
         room,
+        teachers,
+        captains: captainsByHouse[String(s.houseId)] || [],
+        ...(merchOn ? { points: balances[String(s._id)] || 0 } : {}),
       };
     });
-    res.json({ ok: true, matches });
+    res.json({ ok: true, merchEnabled: merchOn, matches });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Visit beacon for the House Standings portal. The public page fires this once
+// per browser tab session (not on its 30s auto-refresh), so one row per school
+// per local day tallies how many people opened the standings. Code-gated so it
+// only counts real portal opens; failures are swallowed (never block the page).
+router.post("/public/houses/visit", async (req, res) => {
+  try {
+    const code = String(req.query.code || req.body?.code || "").trim();
+    if (!/^\d{3,6}$/.test(code)) return res.json({ ok: true }); // ignore junk, never error the page
+    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true }).select("schoolId").lean();
+    if (!config) return res.json({ ok: true });
+    const day = new Date(); day.setHours(0, 0, 0, 0);
+    await HousesVisit.updateOne({ schoolId: config.schoolId, day }, { $inc: { views: 1 } }, { upsert: true });
+    res.json({ ok: true });
+  } catch {
+    res.json({ ok: true });
+  }
+});
+
+// Public per-house point breakdown — powers "tap a house to see where its
+// points came from". Strictly composite: points are grouped by reason and split
+// into individual Compass points (studentId set — good/bad behaviour) vs team &
+// house events (whole-house awards, studentId null). NEVER returns any student
+// name — only summed totals and per-reason lines, mirroring the leaderboard's
+// active-student + reset-date scope.
+// Composite breakdown of where a house's points came from (NEVER any names).
+// `includeNegatives`/`includePositives` gate what's returned: the public page
+// hides conduct (negatives) from students by default; a teacher sees it all.
+async function computeHouseDetail(sid, houseId, cfg, { includeNegatives = true, includePositives = true } = {}) {
+  const house = await BehaviorHouse.findOne({ _id: houseId, schoolId: sid }).select("name color").lean();
+  if (!house) return null;
+  const activeIds = (await BehaviorStudent.find({ schoolId: sid, active: true }).select("_id").lean()).map((s) => s._id);
+  const match = { schoolId: sid, houseId: new mongoose.Types.ObjectId(String(houseId)), $or: [{ studentId: null }, { studentId: { $in: activeIds } }] };
+  if (cfg?.housePointsResetAt) match.at = { $gt: new Date(cfg.housePointsResetAt) };
+  // Honour "reset negatives only": drop negative events on/before the cutoff.
+  if (cfg?.houseNegativeResetAt) {
+    (match.$and ||= []).push({ $or: [{ points: { $gte: 0 } }, { at: { $gt: new Date(cfg.houseNegativeResetAt) } } ] });
+  }
+
+  const rows = await HousePointEvent.aggregate([
+    { $match: match },
+    { $group: {
+      _id: { team: { $eq: ["$studentId", null] }, reason: { $ifNull: ["$reason", ""] } },
+      points: { $sum: "$points" },
+      count: { $sum: 1 },
+    } },
+  ]);
+
+  const indMap = {}, teamMap = {};
+  let indPos = 0, indNeg = 0, teamTotal = 0;
+  for (const r of rows) {
+    const reason = (r._id.reason || "").trim() || "Other";
+    if (r._id.team) {
+      teamMap[reason] = (teamMap[reason] || { reason, points: 0, count: 0 });
+      teamMap[reason].points += r.points; teamMap[reason].count += r.count;
+      teamTotal += r.points;
+    } else {
+      indMap[reason] = (indMap[reason] || { reason, points: 0, count: 0 });
+      indMap[reason].points += r.points; indMap[reason].count += r.count;
+      if (r.points >= 0) indPos += r.points; else indNeg += r.points;
+    }
+  }
+  const byImpact = (a, b) => Math.abs(b.points) - Math.abs(a.points);
+  // Filter the per-reason items by sign per the viewer's permissions.
+  let individualItems = Object.values(indMap)
+    .filter((it) => (it.points >= 0 ? includePositives : includeNegatives))
+    .sort(byImpact);
+  let teamItems = Object.values(teamMap)
+    .filter((it) => (it.points >= 0 ? includePositives : includeNegatives))
+    .sort(byImpact);
+  const shownPos = includePositives ? indPos : 0;
+  const shownNeg = includeNegatives ? indNeg : 0;
+  const individualTotal = shownPos + shownNeg;
+  const teamShown = teamItems.reduce((a, it) => a + it.points, 0);
+
+  return {
+    house: { id: String(house._id), name: house.name, color: house.color || "#0f172a" },
+    total: individualTotal + teamShown,
+    individual: { total: individualTotal, positive: shownPos, negative: shownNeg, items: individualItems },
+    team: { total: teamShown, items: teamItems },
+  };
+}
+
+router.get("/public/houses/detail", async (req, res, next) => {
+  try {
+    const code = String(req.query.code || "").trim();
+    if (!/^\d{3,6}$/.test(code)) return res.status(400).json({ ok: false, error: "Enter your school code." });
+    const houseId = String(req.query.houseId || "").trim();
+    if (!mongoose.Types.ObjectId.isValid(houseId)) return res.status(400).json({ ok: false, error: "Bad house." });
+    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true })
+      .select("schoolId housePointsResetAt houseNegativeResetAt housesPublicShowPositives housesPublicShowNegatives").lean();
+    if (!config) return res.status(404).json({ ok: false, error: "No school matches that code." });
+    const sid = new mongoose.Types.ObjectId(config.schoolId);
+    // Student-facing: conduct (negatives) hidden unless the school opts in.
+    const includeNegatives = config.housesPublicShowNegatives === true;
+    const includePositives = config.housesPublicShowPositives !== false;
+    const detail = await computeHouseDetail(sid, houseId, config, { includeNegatives, includePositives });
+    if (!detail) return res.status(404).json({ ok: false, error: "House not found." });
+    res.json({ ok: true, ...detail, teacherView: false });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Authenticated teacher view of the same breakdown — always full (positives AND
+// negatives), with a teacherView flag so the UI can note students don't see the
+// negative detail. Used by the /houses page when a teacher is logged in.
+router.get("/houses/detail", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const houseId = String(req.query.houseId || "").trim();
+    if (!mongoose.Types.ObjectId.isValid(houseId)) return res.status(400).json({ ok: false, error: "Bad house." });
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("housePointsResetAt houseNegativeResetAt").lean();
+    const detail = await computeHouseDetail(new mongoose.Types.ObjectId(String(req.schoolId)), houseId, config || {}, { includeNegatives: true, includePositives: true });
+    if (!detail) return res.status(404).json({ ok: false, error: "House not found." });
+    res.json({ ok: true, ...detail, teacherView: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Curriculate-internal: House Standings portal traffic, for the admin dashboard.
+// Guarded by the shared ADMIN_API_TOKEN (x-admin-token), same as other internal
+// admin stats. Returns totals + a 14-day daily series and a per-school split.
+router.get("/admin/houses-visits", requireAdminToken, async (req, res, next) => {
+  try {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const d7 = new Date(today); d7.setDate(d7.getDate() - 6);
+    const d30 = new Date(today); d30.setDate(d30.getDate() - 29);
+    const d14 = new Date(today); d14.setDate(d14.getDate() - 13);
+
+    const [all, schools] = await Promise.all([
+      HousesVisit.find({}).select("schoolId day views").lean(),
+      BehaviorSchool.find({}).select("name").lean(),
+    ]);
+    const nameById = Object.fromEntries(schools.map((s) => [String(s._id), s.name || ""]));
+
+    let total = 0, todayN = 0, last7 = 0, last30 = 0;
+    const seriesMap = {};       // dayKey -> views (last 14 days)
+    const bySchoolMap = {};     // schoolId -> total views
+    for (const r of all) {
+      const v = r.views || 0;
+      total += v;
+      bySchoolMap[String(r.schoolId)] = (bySchoolMap[String(r.schoolId)] || 0) + v;
+      const dt = new Date(r.day);
+      if (dt >= today) todayN += v;
+      if (dt >= d7) last7 += v;
+      if (dt >= d30) last30 += v;
+      if (dt >= d14) {
+        const key = dt.toISOString().slice(0, 10);
+        seriesMap[key] = (seriesMap[key] || 0) + v;
+      }
+    }
+    // Dense 14-day series (zero-filled) so the chart doesn't skip quiet days.
+    const series = [];
+    for (let i = 0; i < 14; i++) {
+      const dt = new Date(d14); dt.setDate(dt.getDate() + i);
+      const key = dt.toISOString().slice(0, 10);
+      series.push({ day: key, views: seriesMap[key] || 0 });
+    }
+    const bySchool = Object.entries(bySchoolMap)
+      .map(([id, views]) => ({ school: nameById[id] || "—", views }))
+      .sort((a, b) => b.views - a.views);
+
+    res.json({ ok: true, total, today: todayN, last7, last30, series, bySchool });
   } catch (err) {
     next(err);
   }

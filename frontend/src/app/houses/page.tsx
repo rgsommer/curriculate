@@ -1,13 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { API_BASE } from "../behavior/_lib/api";
+import { API_BASE, getToken } from "../behavior/_lib/api";
 
 type House = { id: string; name: string; color: string; image?: string; points: number; members: number; captains?: string[] };
 type Comp = { name: string; monthLabel: string; scored: boolean; results: { place: number; houseName: string; houseColor: string }[] };
 type Activity = { house: string; color: string; points: number; reason: string; at: string };
 type TopStudent = { rank: number; name: string; photoUrl?: string; house: string; color: string; points: number };
-type Board = { schoolName: string; houses: House[]; competitions: Comp[]; activity: Activity[]; topStudents: TopStudent[] };
+type MerchItem = { name: string; points: number; image?: string };
+type EventResult = { label: string; at: string; houses: { name: string; place: number; items: number; points: number }[]; students: { name: string; place: number; items: number }[] };
+type Board = { schoolName: string; houses: House[]; competitions: Comp[]; activity: Activity[]; topStudents: TopStudent[]; merch: MerchItem[]; eventResult?: EventResult | null };
+type DetailItem = { reason: string; points: number; count: number };
+type HouseDetail = {
+  house: { id: string; name: string; color: string };
+  total: number;
+  individual: { total: number; positive: number; negative: number; items: DetailItem[] };
+  team: { total: number; items: DetailItem[] };
+  teacherView?: boolean;
+};
 
 const KEY = "houses_portal_code";
 const MEDAL = ["🥇", "🥈", "🥉"];
@@ -17,13 +27,13 @@ async function fetchBoard(code: string): Promise<{ ok: boolean; error?: string; 
     const r = await fetch(`${API_BASE}/api/behavior/public/houses?code=${encodeURIComponent(code)}`);
     const d = await r.json();
     if (!d.ok) return { ok: false, error: d.error || "Could not load standings" };
-    return { ok: true, board: { schoolName: d.schoolName || "", houses: d.houses || [], competitions: d.competitions || [], activity: d.activity || [], topStudents: d.topStudents || [] } };
+    return { ok: true, board: { schoolName: d.schoolName || "", houses: d.houses || [], competitions: d.competitions || [], activity: d.activity || [], topStudents: d.topStudents || [], merch: d.merch || [], eventResult: d.eventResult || null } };
   } catch {
     return { ok: false, error: "Network error — try again" };
   }
 }
 
-type Match = { firstName: string; grade: string; house: string; color: string; group: number | null; room: string };
+type Match = { firstName: string; grade: string; house: string; color: string; group: number | null; room: string; teachers?: string[]; captains?: string[]; points?: number };
 
 export default function HousesPortal() {
   const [code, setCode] = useState<string>("");
@@ -37,6 +47,37 @@ export default function HousesPortal() {
   const [matches, setMatches] = useState<Match[] | null>(null);
   const [lookupBusy, setLookupBusy] = useState(false);
   const [lookupErr, setLookupErr] = useState("");
+
+  // Tap a house on the leaderboard → composite breakdown of where its points
+  // came from (individual Compass points vs team/house events). Never any names.
+  const [openHouseId, setOpenHouseId] = useState<string | null>(null);
+  const [detailById, setDetailById] = useState<Record<string, HouseDetail>>({});
+  const [detailBusy, setDetailBusy] = useState(false);
+  const [detailErr, setDetailErr] = useState("");
+
+  async function toggleHouse(id: string) {
+    setDetailErr("");
+    if (openHouseId === id) { setOpenHouseId(null); return; }
+    setOpenHouseId(id);
+    if (!detailById[id]) {
+      setDetailBusy(true);
+      try {
+        // A signed-in teacher sees the full breakdown (incl. conduct) via the
+        // authenticated endpoint; students/public get the gated public one.
+        const tok = getToken();
+        const rr = tok
+          ? await fetch(`${API_BASE}/api/behavior/houses/detail?houseId=${encodeURIComponent(id)}`, { headers: { Authorization: `Bearer ${tok}` } })
+          : await fetch(`${API_BASE}/api/behavior/public/houses/detail?code=${encodeURIComponent(code)}&houseId=${encodeURIComponent(id)}`);
+        const d = await rr.json();
+        if (!d.ok) setDetailErr(d.error || "Could not load details.");
+        else setDetailById((p) => ({ ...p, [id]: d as HouseDetail }));
+      } catch {
+        setDetailErr("Network error — try again.");
+      } finally {
+        setDetailBusy(false);
+      }
+    }
+  }
 
   async function doLookup(e?: React.FormEvent) {
     e?.preventDefault();
@@ -73,6 +114,18 @@ export default function HousesPortal() {
     if (!initial) initial = localStorage.getItem(KEY) || "";
     if (initial) { localStorage.setItem(KEY, initial); setCode(initial); }
   }, []);
+
+  // Count a visit once per browser tab session (not on every 30s refresh),
+  // so the admin dashboard can see how many people open the standings.
+  useEffect(() => {
+    if (!code) return;
+    try {
+      const flag = `houses_visit_${code}`;
+      if (sessionStorage.getItem(flag)) return;
+      sessionStorage.setItem(flag, "1");
+      fetch(`${API_BASE}/api/behavior/public/houses/visit?code=${encodeURIComponent(code)}`, { method: "POST" }).catch(() => {});
+    } catch { /* ignore */ }
+  }, [code]);
 
   // Load + auto-refresh standings while a code is active.
   useEffect(() => {
@@ -150,6 +203,15 @@ export default function HousesPortal() {
   const ptSpan = Math.max(1, hiPts - loPts);
   const barPct = (p: number) => Math.max(3, Math.round((((p || 0) - loPts) / ptSpan) * 100));
 
+  // Standings rank with ties sharing a place (competition ranking: 1,1,3,…),
+  // so equal totals all show as 1st rather than 1/2/3/4 by list order.
+  const houseList = board?.houses || [];
+  const rankOf = (p: number) => 1 + houseList.filter((x) => (x.points || 0) > (p || 0)).length;
+  // Only single out a house in the cheer when there's an outright leader.
+  const maxPts = houseList.length ? Math.max(...houseList.map((h) => h.points || 0)) : 0;
+  const leaders = houseList.filter((h) => (h.points || 0) === maxPts);
+  const cheer = leaders.length === 1 ? leaders[0].name : "teams";
+
   // ── Leaderboard ────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4">
@@ -183,18 +245,58 @@ export default function HousesPortal() {
               <li key={i} className="flex items-center gap-3 rounded-xl border border-slate-200 p-3">
                 <span className="inline-block h-8 w-8 shrink-0 rounded-full" style={{ background: m.color }} />
                 <div className="min-w-0 flex-1">
-                  <div className="font-semibold">{m.firstName}{m.grade ? <span className="ml-1 text-xs font-normal text-slate-400">Gr {m.grade}</span> : null}</div>
+                  <div className="flex items-baseline justify-between gap-2">
+                    <div className="font-semibold">{m.firstName}{m.grade ? <span className="ml-1 text-xs font-normal text-slate-400">Gr {m.grade}</span> : null}</div>
+                    {typeof m.points === "number" && (
+                      <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800" title="Your points to spend in the rewards store">⭐ {m.points} pts</span>
+                    )}
+                  </div>
                   <div className="text-sm text-slate-600">
                     {m.house || "—"}
                     {m.group ? <span className="font-medium"> · Group #{m.group}</span> : null}
                     {m.room ? <span className="text-slate-500"> → Room {m.room}</span> : null}
                   </div>
+                  {m.teachers && m.teachers.length > 0 && (
+                    <div className="mt-0.5 text-xs text-slate-500"><span className="text-slate-400">Teacher{m.teachers.length > 1 ? "s" : ""}:</span> {m.teachers.join(", ")}</div>
+                  )}
+                  {m.captains && m.captains.length > 0 && (
+                    <div className="mt-0.5 text-xs text-slate-500"><span className="text-slate-400">Captain{m.captains.length > 1 ? "s" : ""}:</span> {m.captains.join(", ")}</div>
+                  )}
                 </div>
               </li>
             ))}
           </ul>
         )}
       </section>
+
+      {board?.eventResult && (board.eventResult.houses.length > 0 || board.eventResult.students.length > 0) && (
+        <section className="rounded-2xl border border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 p-5">
+          <h2 className="text-lg font-bold text-amber-900">🏆 {board.eventResult.label} results</h2>
+          <div className="mt-3 grid gap-4 sm:grid-cols-2">
+            {board.eventResult.houses.length > 0 && (
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">Top houses</div>
+                <ul className="mt-1 space-y-0.5 text-sm text-slate-700">
+                  {board.eventResult.houses.map((h, i) => (
+                    <li key={i}>{["🥇","🥈","🥉"][h.place - 1] || `${h.place}.`} <span className="font-semibold">{h.name}</span> <span className="text-slate-400">— {h.items} items</span></li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {board.eventResult.students.length > 0 && (
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">Top contributors</div>
+                <ul className="mt-1 space-y-0.5 text-sm text-slate-700">
+                  {board.eventResult.students.map((s, i) => (
+                    <li key={i}>{["🥇","🥈","🥉"][s.place - 1] || `${s.place}.`} <span className="font-semibold">{s.name}</span> <span className="text-slate-400">— {s.items} items</span></li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+          <p className="mt-3 text-xs text-amber-700/80">Thanks to everyone who gave! Points have been added to the standings below.</p>
+        </section>
+      )}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5">
         <h2 className="font-semibold">Leaderboard</h2>
@@ -204,29 +306,114 @@ export default function HousesPortal() {
           <p className="mt-2 text-sm text-slate-400">No houses yet.</p>
         ) : (
           <ul className="mt-3 space-y-3">
-            {board.houses.map((h, i) => (
-              <li key={h.id} className="flex items-center gap-3">
-                <span className="w-6 text-center text-lg">{MEDAL[i] || <span className="text-sm text-slate-400">{i + 1}</span>}</span>
-                {h.image
-                  ? <img src={h.image} alt="" className="h-7 w-7 shrink-0 rounded-md object-cover" />
-                  : <span className="inline-block h-4 w-4 shrink-0 rounded-full" style={{ background: h.color }} />}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline justify-between">
-                    <span className="truncate font-semibold">{h.name}</span>
-                    <span className="ml-2 shrink-0 tabular-nums font-bold">{h.points.toLocaleString()}</span>
+            {board.houses.map((h) => {
+              const r = rankOf(h.points);
+              const open = openHouseId === h.id;
+              const d = detailById[h.id];
+              return (
+              <li key={h.id}>
+                <button onClick={() => toggleHouse(h.id)} className="flex w-full items-center gap-3 text-left" aria-expanded={open}>
+                  <span className="w-6 text-center text-lg">{MEDAL[r - 1] || <span className="text-sm text-slate-400">{r}</span>}</span>
+                  {h.image
+                    ? <img src={h.image} alt="" className="h-7 w-7 shrink-0 rounded-md object-cover" />
+                    : <span className="inline-block h-4 w-4 shrink-0 rounded-full" style={{ background: h.color }} />}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline justify-between">
+                      <span className="truncate font-semibold">{h.name}</span>
+                      <span className="ml-2 shrink-0 tabular-nums font-bold">{h.points.toLocaleString()}</span>
+                    </div>
+                    <div className="mt-1 h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-full rounded-full" style={{ width: `${barPct(h.points)}%`, background: h.color, opacity: (h.points || 0) < 0 ? 0.45 : 1 }} />
+                    </div>
+                    {h.captains && h.captains.length > 0 && (
+                      <div className="mt-1 text-xs text-slate-400">© {h.captains.join(", ")}</div>
+                    )}
                   </div>
-                  <div className="mt-1 h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
-                    <div className="h-full rounded-full" style={{ width: `${barPct(h.points)}%`, background: h.color, opacity: (h.points || 0) < 0 ? 0.45 : 1 }} />
+                  <span className="ml-1 shrink-0 text-slate-300">{open ? "▾" : "▸"}</span>
+                </button>
+
+                {open && (
+                  <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
+                    {detailBusy && !d ? (
+                      <p className="text-slate-400">Loading…</p>
+                    ) : detailErr && !d ? (
+                      <p className="text-red-600">{detailErr}</p>
+                    ) : d ? (
+                      <>
+                        {d.teacherView && d.individual.negative < 0 && (
+                          <p className="mb-2 rounded-md bg-amber-50 px-2 py-1 text-[11px] text-amber-700">
+                            👁 Staff view: students don&apos;t see the conduct (negative) details below.
+                          </p>
+                        )}
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="rounded-lg bg-white p-2">
+                            <div className="text-xs text-slate-400">Individual Compass points</div>
+                            <div className="font-bold tabular-nums">{d.individual.total > 0 ? `+${d.individual.total}` : d.individual.total}</div>
+                            <div className="text-[11px] text-slate-400">+{d.individual.positive} good{d.individual.negative ? ` · ${d.individual.negative} conduct` : ""}</div>
+                          </div>
+                          <div className="rounded-lg bg-white p-2">
+                            <div className="text-xs text-slate-400">Team &amp; house events</div>
+                            <div className="font-bold tabular-nums">{d.team.total > 0 ? `+${d.team.total}` : d.team.total}</div>
+                          </div>
+                        </div>
+
+                        {d.individual.items.length > 0 && (
+                          <div className="mt-3">
+                            <div className="text-xs font-semibold text-slate-600">Individual Compass points</div>
+                            <ul className="mt-1 divide-y divide-slate-100">
+                              {d.individual.items.map((it, i) => (
+                                <li key={i} className="flex items-center justify-between gap-2 py-1">
+                                  <span className="min-w-0 truncate text-slate-600">{it.reason} <span className="text-slate-300">×{it.count}</span></span>
+                                  <span className={`shrink-0 tabular-nums font-medium ${it.points < 0 ? "text-red-600" : "text-green-600"}`}>{it.points > 0 ? `+${it.points}` : it.points}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {d.team.items.length > 0 && (
+                          <div className="mt-3">
+                            <div className="text-xs font-semibold text-slate-600">Team &amp; house events</div>
+                            <ul className="mt-1 divide-y divide-slate-100">
+                              {d.team.items.map((it, i) => (
+                                <li key={i} className="flex items-center justify-between gap-2 py-1">
+                                  <span className="min-w-0 truncate text-slate-600">{it.reason} <span className="text-slate-300">×{it.count}</span></span>
+                                  <span className={`shrink-0 tabular-nums font-medium ${it.points < 0 ? "text-red-600" : "text-green-600"}`}>{it.points > 0 ? `+${it.points}` : it.points}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {d.individual.items.length === 0 && d.team.items.length === 0 && (
+                          <p className="text-slate-400">No points yet.</p>
+                        )}
+                      </>
+                    ) : null}
                   </div>
-                  {h.captains && h.captains.length > 0 && (
-                    <div className="mt-1 text-xs text-slate-400">© {h.captains.join(", ")}</div>
-                  )}
-                </div>
+                )}
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </section>
+
+      {board && board.merch && board.merch.length > 0 && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-5">
+          <h2 className="font-semibold">🎁 Rewards store</h2>
+          <p className="mt-1 text-sm text-slate-500">Spend the points you&apos;ve earned. Find your name above to see your balance, then see a teacher to redeem.</p>
+          <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {board.merch.map((m, i) => (
+              <li key={i} className="rounded-xl border border-slate-200 p-3 text-center">
+                {m.image ? <img src={m.image} alt="" className="mx-auto mb-2 h-16 w-16 rounded-lg object-cover" /> : <div className="mx-auto mb-2 flex h-16 w-16 items-center justify-center rounded-lg bg-slate-100 text-2xl">🎁</div>}
+                <div className="text-sm font-medium leading-tight">{m.name}</div>
+                <div className="mt-1 text-xs font-semibold text-amber-700">⭐ {m.points} pts</div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {board && board.topStudents.length > 0 && (
         <section className="rounded-2xl border border-slate-200 bg-white p-5">
@@ -301,7 +488,7 @@ export default function HousesPortal() {
         </section>
       )}
 
-      <p className="pb-6 text-center text-xs text-slate-400">Updates automatically · go {board && board.houses[0] ? board.houses[0].name : "team"}!</p>
+      <p className="pb-6 text-center text-xs text-slate-400">Updates automatically · go {cheer}!</p>
     </div>
   );
 }

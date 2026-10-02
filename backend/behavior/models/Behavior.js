@@ -39,6 +39,11 @@ const BehaviorSchema = new mongoose.Schema(
     // Consequence wording included in the note home automatically (§5a).
     consequenceText: { type: String, default: "" },
 
+    // When the consequence applies: "first" = on the first occasion (default);
+    // "after_first" = the first occasion is a warning only, the consequence kicks
+    // in from the second occurrence of THIS behaviour for the student onward.
+    consequenceTiming: { type: String, enum: ["first", "after_first"], default: "first" },
+
     // Offence categories (multi-select): "preparedness" (class preparedness),
     // "behaviour", "uniform". Teachers don't pick these when logging — admins set
     // them per behaviour. White-slip consequences require a "behaviour" category.

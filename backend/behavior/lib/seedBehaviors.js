@@ -24,18 +24,23 @@ export const SEED_BEHAVIORS = [
 /**
  * Build BehaviorSchema docs from the seed list for a given school.
  */
-// Suggested house-point value for a behaviour under the standard scheme:
-// positives add (+5, or +10 for notable ones), negatives deduct (−10 serious/
-// immediate, −5 behaviour/respect, −2 minor). Documented interactions get 0.
+// Suggested house-point value for a behaviour under the standard scheme, tuned
+// to the scale actually in use (minor −1 … serious −3 … immediate −5; everyday
+// positives +3, notable character/leadership/service +5). Documented
+// interactions get 0. Admins can override any value in Setup.
 export function recommendedHousePoints(beh) {
   const text = `${beh?.name || ""} ${beh?.keyword || ""}`.toLowerCase();
   if ((beh?.kind || "negative") === "positive") {
-    return /award|kindness|above|beyond|outstanding|excellen|leadership|service/.test(text) ? 10 : 5;
+    // Notable character/leadership/service → +5; everyday positives → +3.
+    return /award|kindness|honest|integrity|leadership|mentor|served|service|welcom|student council|above|beyond|outstanding|excellen/.test(text) ? 5 : 3;
   }
   if (beh?.triggerMode === "INTERACTION") return 0; // documented only — no points
-  if (beh?.triggerMode === "IMMEDIATE") return -10;
-  if (/respect|honest|faith|insolen|inappropriate|disrespect|cheat|defian|\brude\b|vain|god'?s name|chapel|prayer|devotion/.test(text)) return -5;
-  return -2; // minor (class time, preparedness, tidiness, uniform, …)
+  if (beh?.triggerMode === "IMMEDIATE") return -5;  // serious, on-the-spot
+  // Values-based / serious offences deduct more.
+  if (/respect|honest|faith|insolen|cheat|defian|vain|god'?s name|chapel|prayer|devotion|bully|property|steal|theft/.test(text)) return -3;
+  // Minor uniform / preparedness / tidiness.
+  if (/uniform|shoe|shoelace|untuck|tuck|coat|charger|charg|computer|device|food|drink|prepared|\bitem|material|seated|\blate\b|tardy/.test(text)) return -1;
+  return -2; // moderate default (talking, disruptive, off-task, …)
 }
 
 export function seedBehaviorDocs(schoolId) {

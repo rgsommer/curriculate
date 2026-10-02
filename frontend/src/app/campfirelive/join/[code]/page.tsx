@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/campfire/AuthProvider";
@@ -19,6 +19,10 @@ export default function JoinGroupPage() {
   const [guestName, setGuestName] = useState("");
   const [guestBusy, setGuestBusy] = useState(false);
   const [guestErr, setGuestErr] = useState("");
+  // Optional result-email (only offered for result-returning engagements — ?r=1).
+  // Held in a ref too so the post-join effect can read it without re-running.
+  const [guestEmail, setGuestEmail] = useState("");
+  const guestEmailRef = useRef("");
 
   // The invited address (?inv=…) and an optional target engagement (?e=…) so we
   // can drop the joiner straight into the engagement they were invited to.
@@ -26,6 +30,9 @@ export default function JoinGroupPage() {
     typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
   const invEmail = params2?.get("inv") ?? null;
   const engId = params2?.get("e") ?? null;
+  // r=1 → this engagement reveals results to participants (a contest), so offer an
+  // optional "email me my results". Cards/RSVPs omit it (one-way, no results).
+  const wantsResults = params2?.get("r") === "1";
 
   // Once we have a signed-in user (guest or email), do the actual join.
   useEffect(() => {
@@ -45,6 +52,21 @@ export default function JoinGroupPage() {
           setError(result.error);
         } else {
           setStatus("success");
+          // Save their optional result-email on the guest row (for contests).
+          if (guestEmailRef.current && session && result.groupId) {
+            fetch("/api/campfire/guest/notify-email", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${session.access_token}`,
+              },
+              body: JSON.stringify({
+                engId,
+                groupId: result.groupId,
+                email: guestEmailRef.current,
+              }),
+            }).catch(() => {});
+          }
           // Also mark any WHOLE-GROUP invitation for this email as joined — so if
           // they were invited to the group at this address but reached it via a
           // card link (and/or already joined under another email), it flips too.
@@ -191,6 +213,25 @@ export default function JoinGroupPage() {
                 maxLength={40}
                 className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 outline-none"
               />
+              {wantsResults && (
+                <>
+                  <input
+                    type="email"
+                    value={guestEmail}
+                    onChange={(e) => {
+                      setGuestEmail(e.target.value);
+                      guestEmailRef.current = e.target.value.trim();
+                    }}
+                    placeholder="Email (optional) — to get your results"
+                    maxLength={120}
+                    className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 outline-none"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    Add your email and we&apos;ll send you the results when they&apos;re in.
+                    Skip it to stay anonymous.
+                  </p>
+                </>
+              )}
               {guestErr && <p className="mt-1.5 text-xs text-red-600">{guestErr}</p>}
               <button
                 onClick={handleGuest}

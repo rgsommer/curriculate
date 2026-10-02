@@ -321,6 +321,19 @@ export function useGroup(groupId: string) {
     return { error: error?.message ?? null };
   };
 
+  // Host/admin removes another member. RLS ("Admins can remove members") enforces that
+  // only an admin can delete someone else's row; the creator can't be removed (guarded
+  // in the UI). Their past responses stay; they just lose access to the group.
+  const removeMember = async (userId: string) => {
+    const { error } = await supabase
+      .from("group_members")
+      .delete()
+      .eq("group_id", groupId)
+      .eq("user_id", userId);
+    if (!error) await fetchGroup();
+    return { error: error?.message ?? null };
+  };
+
   // Host toggles whether members (not just the host) may invite others.
   const setAllowMemberInvites = async (allow: boolean) => {
     setGroup((g) => (g ? { ...g, allow_member_invites: allow } : g)); // optimistic
@@ -383,6 +396,7 @@ export function useGroup(groupId: string) {
     setNotifyOnResponse,
     setNotifyHost,
     leaveGroup,
+    removeMember,
     deleteGroup,
     setMemberRole,
     setMemberName,

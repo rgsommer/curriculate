@@ -96,6 +96,8 @@ export default function NewEngagementPage() {
   const { user } = useAuth();
 
   const [step, setStep] = useState<"type" | "details" | "options">("type");
+  // Template picker: collapsed to category headers; one open at a time (accordion).
+  const [openPack, setOpenPack] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<EngagementType | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -112,10 +114,42 @@ export default function NewEngagementPage() {
   const [excludedIds, setExcludedIds] = useState<string[]>([]);
   const [pendingInvitees, setPendingInvitees] = useState<{ email: string; name: string | null }[]>([]);
   const [excludedEmails, setExcludedEmails] = useState<string[]>([]);
+  // Inline "add the recipient by email" in the hide-from picker (when they're not
+  // already a member/invitee). They get the card at the reveal, nothing before.
+  const [hideFromPaste, setHideFromPaste] = useState("");
   // Cover images (a pool — Campfire shows a random one)
   const [coverUrls, setCoverUrls] = useState<string[]>([]);
   const [coverPaste, setCoverPaste] = useState("");
   const [coverUploading, setCoverUploading] = useState(false);
+  // Which cover is featured (non-recurring only; recurring rotates at random).
+  const [coverChosen, setCoverChosen] = useState<string | null>(null);
+  // Picture bank: the host's previously uploaded covers, reusable across engagements.
+  const [coverBank, setCoverBank] = useState<string[]>([]);
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.storage
+        .from("campfire-media")
+        .list(`${user.id}/covers`, {
+          limit: 100,
+          sortBy: { column: "created_at", order: "desc" },
+        });
+      if (cancelled || !data) return;
+      const urls = data
+        .filter((f) => f.name && !f.name.startsWith("."))
+        .map(
+          (f) =>
+            supabase.storage
+              .from("campfire-media")
+              .getPublicUrl(`${user.id}/covers/${f.name}`).data.publicUrl
+        );
+      setCoverBank(urls);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
   const [pendingForTarget, setPendingForTarget] = useState(0);
   const waitTouched = useRef(false); // don't override a manual toggle
   const [recurrence, setRecurrence] = useState<
@@ -216,6 +250,8 @@ export default function NewEngagementPage() {
   >([{ prompts: [""], kind: "text", ask: 1 }]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
+  // A card must be addressed to someone — highlight the recipient picker if it's empty.
+  const [recipientErr, setRecipientErr] = useState(false);
 
   // Where to post: the current group by default, another group, or a new one.
   const [targetGroupId, setTargetGroupId] = useState<string>(groupId);
@@ -552,6 +588,7 @@ export default function NewEngagementPage() {
     if (!selectedType || !title.trim()) return;
     setCreating(true);
     setError("");
+    setRecipientErr(false);
 
     const config: Record<string, unknown> = {};
 
@@ -593,6 +630,27 @@ export default function NewEngagementPage() {
     }
 
     const isBirthday = selectedType === "birthday";
+    // A card must be addressed to someone — that's who receives it at the reveal.
+    if (
+      isBirthday &&
+      !makingNewGroup &&
+      excludedIds.length === 0 &&
+      excludedEmails.length === 0
+    ) {
+      setRecipientErr(true);
+      setError(
+        "Who's this card for? Add the recipient below — by name or email — so they get the card at the reveal."
+      );
+      setCreating(false);
+      setTimeout(
+        () =>
+          document
+            .getElementById("hide-from-section")
+            ?.scrollIntoView({ behavior: "smooth", block: "center" }),
+        60
+      );
+      return;
+    }
     // Floating-date holiday cards (Mother's/Father's Day, custom) compute their date
     // from an Nth-weekday pattern. Birthday / anniversary / one-time use a fixed date.
     const isNthCard =
@@ -1031,11 +1089,16 @@ export default function NewEngagementPage() {
       excluded_user_ids: makingNewGroup ? [] : excludedIds,
       excluded_emails: makingNewGroup ? [] : excludedEmails,
       cover_image_urls: coverUrls,
-      // Show a random one from the pool (a fresh pick each year for a birthday).
+      // Recurring: show a random one (fresh pick each cycle). Non-recurring: the one the
+      // host featured (falls back to the first if they didn't pick).
       cover_image_url:
-        coverUrls.length > 0
+        coverUrls.length === 0
+          ? undefined
+          : recurrence !== "none"
           ? coverUrls[Math.floor(Math.random() * coverUrls.length)]
-          : undefined,
+          : coverChosen && coverUrls.includes(coverChosen)
+          ? coverChosen
+          : coverUrls[0],
     });
 
     if (result.error) {
@@ -1227,12 +1290,22 @@ export default function NewEngagementPage() {
     <div>
       <Link
         href={`/campfirelive/group/${groupId}`}
-        className="text-sm text-slate-500 hover:text-slate-700 mb-4 inline-block"
+        className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-600 hover:bg-slate-200"
       >
-        ← Back to group
+        <span aria-hidden>←</span>
+        <span>{groups.find((g) => g.id === groupId)?.avatar_emoji ?? "🔥"}</span>
+        <span>{groups.find((g) => g.id === groupId)?.name ?? "Back to group"}</span>
       </Link>
 
-      <h1 className="text-2xl font-extrabold text-slate-900 mb-6">New Engagement</h1>
+      <h1 className="text-2xl font-extrabold text-slate-900 mb-1">New Engagement</h1>
+      {groups.find((g) => g.id === groupId) && (
+        <p className="text-sm text-slate-500 mb-6">
+          in {groups.find((g) => g.id === groupId)?.avatar_emoji}{" "}
+          <span className="font-semibold text-slate-700">
+            {groups.find((g) => g.id === groupId)?.name}
+          </span>
+        </p>
+      )}
 
       {/* Step 1: Choose Type */}
       {step === "type" && (
@@ -1242,26 +1315,42 @@ export default function NewEngagementPage() {
             <p className="text-sm font-semibold text-slate-700 mb-3">
               ⚡ Start from a template
             </p>
-            <div className="space-y-4">
-              {TEMPLATE_PACKS.map((pack) => (
-                <div key={pack.id}>
-                  <div className="text-xs font-semibold text-slate-500 mb-1.5">
-                    {pack.emoji} {pack.name}
+            <div className="space-y-2">
+              {TEMPLATE_PACKS.map((pack) => {
+                const open = openPack === pack.id;
+                return (
+                  <div key={pack.id} className="rounded-xl border border-orange-100 bg-white/70">
+                    <button
+                      type="button"
+                      onClick={() => setOpenPack(open ? null : pack.id)}
+                      aria-expanded={open}
+                      className="flex w-full items-center justify-between px-3 py-2.5 text-left"
+                    >
+                      <span className="text-sm font-semibold text-slate-700">
+                        {pack.emoji} {pack.name}
+                      </span>
+                      <span className="flex items-center gap-2 text-xs text-slate-400">
+                        {pack.templates.length}
+                        <span className={`transition-transform ${open ? "rotate-180" : ""}`}>⌄</span>
+                      </span>
+                    </button>
+                    {open && (
+                      <div className="flex flex-wrap gap-2 border-t border-orange-100 p-3">
+                        {pack.templates.map((t) => (
+                          <button
+                            key={t.id}
+                            onClick={() => applyTemplate(t)}
+                            title={t.title}
+                            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:border-orange-300 hover:bg-orange-50"
+                          >
+                            {ENGAGEMENT_TYPES[t.type].icon} {t.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {pack.templates.map((t) => (
-                      <button
-                        key={t.id}
-                        onClick={() => applyTemplate(t)}
-                        title={t.title}
-                        className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:border-orange-300 hover:bg-orange-50"
-                      >
-                        {ENGAGEMENT_TYPES[t.type].icon} {t.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -1405,13 +1494,17 @@ export default function NewEngagementPage() {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Title</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                {selectedType === "birthday" ? "Card title / message (shown at the top)" : "Title"}
+              </label>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder={
-                  selectedType === "poll"
+                  selectedType === "birthday"
+                    ? "e.g. Happy Teacher Appreciation Day, Miss McKenzie! 💌"
+                    : selectedType === "poll"
                     ? "e.g. What should we eat on Saturday?"
                     : selectedType === "challenge"
                     ? "e.g. Best sunset photo this week"
@@ -1423,12 +1516,17 @@ export default function NewEngagementPage() {
 
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
-                Description <span className="text-slate-400">(optional)</span>
+                {selectedType === "birthday" ? "Note to signers" : "Description"}{" "}
+                <span className="text-slate-400">(optional)</span>
               </label>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Add more context or rules..."
+                placeholder={
+                  selectedType === "birthday"
+                    ? "A line for the people signing — e.g. Add your note; they'll all show when it opens."
+                    : "Add more context or rules..."
+                }
                 rows={3}
                 className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none resize-none"
               />
@@ -2607,15 +2705,41 @@ export default function NewEngagementPage() {
             )}
 
             {/* Surprise: hide from selected members / invitees until the reveal */}
-            {(groupMembers.length > 0 || pendingInvitees.length > 0) && (
-              <div className="rounded-xl border border-slate-200 bg-white p-3">
+            {(groupMembers.length > 0 ||
+              pendingInvitees.length > 0 ||
+              excludedEmails.length > 0 ||
+              selectedType === "birthday") && (
+              <div
+                id="hide-from-section"
+                className={`rounded-xl bg-white p-3 ${
+                  recipientErr ? "border-2 border-rose-400" : "border border-slate-200"
+                }`}
+              >
                 <div className="text-sm font-medium text-slate-700">
-                  🎁 Surprise — hide from… <span className="text-slate-400">(optional)</span>
+                  🎁{" "}
+                  {selectedType === "birthday"
+                    ? "Who's this card for?"
+                    : "Surprise — hide from…"}{" "}
+                  <span
+                    className={
+                      selectedType === "birthday"
+                        ? "font-semibold text-rose-500"
+                        : "text-slate-400"
+                    }
+                  >
+                    {selectedType === "birthday" ? "(required)" : "(optional)"}
+                  </span>
                 </div>
                 <p className="text-xs text-slate-500 mb-2">
-                  Anyone you pick won&apos;t see it (or get emailed) until the reveal —
-                  then everyone gets it, including them. Great for a birthday card.
+                  {selectedType === "birthday"
+                    ? "Pick who the card is for — they won't see it until it opens, then they get it. Not in the group? Add them by email below."
+                    : "Anyone you pick won't see it (or get emailed) until the reveal — then everyone gets it, including them. Great for a birthday card."}
                 </p>
+                {recipientErr && (
+                  <p className="mb-2 text-xs font-semibold text-rose-600">
+                    Choose a recipient (or add one by email) to continue.
+                  </p>
+                )}
                 <div className="flex flex-wrap gap-1.5">
                   {groupMembers.map((m) => {
                     const on = excludedIds.includes(m.user_id);
@@ -2664,6 +2788,37 @@ export default function NewEngagementPage() {
                     );
                   })}
                 </div>
+                <div className="mt-2">
+                  <input
+                    type="email"
+                    value={hideFromPaste}
+                    onChange={(e) => setHideFromPaste(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter") return;
+                      e.preventDefault();
+                      // Accept "Name <email@x>" or a bare address — pull out the email.
+                      const em = (
+                        hideFromPaste.match(/[^\s<>,;"']+@[^\s<>,;"']+\.[^\s<>,;"']+/)?.[0] || ""
+                      )
+                        .trim()
+                        .toLowerCase();
+                      if (!em) return;
+                      setPendingInvitees((prev) =>
+                        prev.some((p) => p.email.toLowerCase() === em)
+                          ? prev
+                          : [...prev, { email: em, name: null }]
+                      );
+                      setExcludedEmails((prev) => (prev.includes(em) ? prev : [...prev, em]));
+                      setHideFromPaste("");
+                    }}
+                    placeholder="➕ Not in the list? Add the recipient's email + Enter"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs focus:border-rose-400 outline-none"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    They get nothing until the reveal — then their card arrives by email. No
+                    account needed.
+                  </p>
+                </div>
               </div>
             )}
 
@@ -2673,9 +2828,9 @@ export default function NewEngagementPage() {
                 🖼️ Cover image(s) <span className="text-slate-400">(optional)</span>
               </div>
               <p className="text-xs text-slate-500 mb-2">
-                A banner at the top. Add as many as you like — Campfire shows a{" "}
-                <span className="font-semibold">random one</span> (a fresh pick each year
-                for a birthday).
+                A banner at the top. Add as many as you like. For a recurring card a{" "}
+                <span className="font-semibold">fresh one shows each time</span>; otherwise{" "}
+                <span className="font-semibold">tap the one to feature</span>.
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 <label className="cursor-pointer rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
@@ -2703,6 +2858,9 @@ export default function NewEngagementPage() {
                         }
                         const { data } = supabase.storage.from("campfire-media").getPublicUrl(path);
                         setCoverUrls((prev) => [...prev, data.publicUrl]);
+                        setCoverBank((prev) =>
+                          prev.includes(data.publicUrl) ? prev : [data.publicUrl, ...prev]
+                        );
                       }
                       setCoverUploading(false);
                     }}
@@ -2725,29 +2883,72 @@ export default function NewEngagementPage() {
               </div>
               {coverUrls.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {coverUrls.map((u, i) => (
-                    <div key={i} className="relative">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={u}
-                        alt=""
-                        className="h-20 w-28 rounded-lg object-cover border border-slate-200"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setCoverUrls((prev) => prev.filter((_, j) => j !== i))}
-                        className="absolute -top-1.5 -right-1.5 rounded-full bg-white border border-slate-300 w-5 h-5 text-xs text-slate-500 hover:text-red-600 shadow"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
+                  {coverUrls.map((u, i) => {
+                    // Non-recurring: the host picks the one to feature. Recurring rotates.
+                    const pickable = recurrence === "none" && coverUrls.length > 1;
+                    const chosen = pickable && (coverChosen ? coverChosen === u : i === 0);
+                    return (
+                      <div key={i} className="relative">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={u}
+                          alt=""
+                          onClick={pickable ? () => setCoverChosen(u) : undefined}
+                          className={`h-20 w-28 rounded-lg object-cover border ${
+                            chosen ? "border-orange-500 ring-2 ring-orange-400" : "border-slate-200"
+                          } ${pickable ? "cursor-pointer" : ""}`}
+                        />
+                        {chosen && (
+                          <span className="absolute bottom-1 left-1 rounded-full bg-orange-500 px-1.5 py-0.5 text-[10px] font-bold text-white shadow">
+                            Shown
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCoverUrls((prev) => prev.filter((_, j) => j !== i));
+                            if (coverChosen === u) setCoverChosen(null);
+                          }}
+                          className="absolute -top-1.5 -right-1.5 rounded-full bg-white border border-slate-300 w-5 h-5 text-xs text-slate-500 hover:text-red-600 shadow"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
               {coverUrls.length > 1 && (
                 <p className="mt-1 text-[11px] text-slate-400">
-                  {coverUrls.length} images — one is shown at random.
+                  {recurrence === "none"
+                    ? "Tap an image to feature it — that one shows on the card."
+                    : `${coverUrls.length} images — a fresh one shows each time.`}
                 </p>
+              )}
+              {/* Picture bank — reuse the host's previously uploaded covers. */}
+              {coverBank.filter((u) => !coverUrls.includes(u)).length > 0 && (
+                <div className="mt-3 border-t border-slate-100 pt-2">
+                  <div className="mb-1.5 text-[11px] font-semibold text-slate-500">
+                    🗂️ From your uploads — tap to add
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {coverBank
+                      .filter((u) => !coverUrls.includes(u))
+                      .slice(0, 12)
+                      .map((u) => (
+                        <button
+                          key={u}
+                          type="button"
+                          onClick={() => setCoverUrls((prev) => [...prev, u])}
+                          title="Add to this card"
+                          className="h-16 w-24 overflow-hidden rounded-lg border border-slate-200 hover:border-orange-400"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={u} alt="" className="h-full w-full object-cover" />
+                        </button>
+                      ))}
+                  </div>
+                </div>
               )}
             </div>
 

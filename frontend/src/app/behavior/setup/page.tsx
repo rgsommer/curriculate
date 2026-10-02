@@ -22,15 +22,53 @@ const RECOMMENDED_CONSEQUENCES = [
 // Starter whole-house activities with suggested point values. Admins load these
 // as a base and edit/add their own as new events come up through the year.
 const PRESET_HOUSE_EVENTS = [
+  // Whole-house games (award the winner; use "— participation" for taking part)
+  { name: "Scooter soccer — win", points: 100 },
+  { name: "Capture the flag — win", points: 100 },
+  { name: "Ultimate frisbee — win", points: 100 },
+  { name: "Dodgeball — win", points: 80 },
+  { name: "Tug-of-war — win", points: 80 },
+  { name: "Relay race — win", points: 80 },
+  { name: "House game / sports day — win", points: 100 },
+  { name: "House game — participation", points: 25 },
+  // Academic / knowledge
   { name: "Trivia — 1st", points: 50 },
   { name: "Trivia — 2nd", points: 30 },
   { name: "Trivia — 3rd", points: 20 },
-  { name: "House game / sports day — win", points: 100 },
-  { name: "House game — participation", points: 25 },
+  { name: "Scripture memory challenge", points: 50 },
+  { name: "Reading-minutes drive — winning house", points: 60 },
+  { name: "Class competition — win", points: 40 },
+  // Character / spirit / service
   { name: "Spirit day participation", points: 30 },
   { name: "Charity / service drive", points: 50 },
   { name: "Chapel / assembly excellence", points: 25 },
-  { name: "Class competition — win", points: 40 },
+  { name: "Kindness / caught being good", points: 15 },
+  { name: "Talent show / lip-sync — win", points: 80 },
+  { name: "House banner / crest design — win", points: 60 },
+  { name: "Cleanest classroom (weekly)", points: 30 },
+  { name: "Attendance / punctuality streak", points: 40 },
+];
+
+// Suggested reward ladder (reach N points → unlock). Escalating whole-house
+// treats; admins load these to start, then edit the points/wording to taste.
+const PRESET_HOUSE_REWARDS = [
+  { points: 250, reward: "Freezies / ice-cream treat for the house" },
+  { points: 500, reward: "Extra 20 min recess or free time" },
+  { points: 750, reward: "Dress-down / free-dress day" },
+  { points: 1000, reward: "Movie & popcorn afternoon" },
+  { points: 1500, reward: "Pizza party" },
+  { points: 2000, reward: "Games / board-game afternoon" },
+  { points: 3000, reward: "House trophy + celebration outing" },
+];
+
+// Suggested merch-store items (students spend personal points). Editable after loading.
+const PRESET_MERCH = [
+  { name: "Sticker / button pin", points: 25 },
+  { name: "Mug", points: 120 },
+  { name: "Drawstring bag / tote", points: 150 },
+  { name: "Cap or visor", points: 200 },
+  { name: "T-shirt", points: 250 },
+  { name: "Hoodie / sweatshirt", points: 500 },
 ];
 
 export default function SetupPage() {
@@ -79,6 +117,7 @@ export default function SetupPage() {
       <TeacherHomeworkPrefs config={me.config} prefs={me.membership?.homeworkPrefs} />
       <RecommendedActionsSettings config={me.config} />
       <GuddSettings config={me.config} />
+      <ConsequenceDigestSettings config={me.config} />
       <AdminDigestSettings config={me.config} myEmail={me.membership?.email || ""} />
       <EdsbySection edsby={me.config?.edsby} />
       <InviteSection domain={me.school?.emailDomain || ""} isOriginator={me.membership.role === "originator"} />
@@ -679,6 +718,57 @@ function AdminDigestSettings({ config, myEmail }: { config: any; myEmail: string
   );
 }
 
+function ConsequenceDigestSettings({ config }: { config: any }) {
+  const d = config?.consequenceDigest || {};
+  const [enabled, setEnabled] = useState<boolean>(d.enabled !== false);
+  const [emailTeachers, setEmailTeachers] = useState<boolean>(d.emailTeachers !== false);
+  const [fadeDays, setFadeDays] = useState<number | string>(d.fadeDays ?? 2);
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function saveCfg(next: { enabled?: boolean; emailTeachers?: boolean; fadeDays?: number }) {
+    const body = { enabled, emailTeachers, fadeDays: Math.max(1, Number(fadeDays) || 2), ...next };
+    setEnabled(body.enabled); setEmailTeachers(body.emailTeachers); setFadeDays(body.fadeDays);
+    try { await api("/config", { method: "PUT", body: { consequenceDigest: body } }); } catch (e: any) { setMsg(`✗ ${e.message}`); }
+  }
+  async function sendNow() {
+    setBusy(true); setMsg("");
+    try {
+      const r = await api<{ ok: boolean; sent?: number; items?: number; error?: string; skipped?: string }>("/consequence-digest/run", { body: {} });
+      setMsg(r.ok ? `✓ Sent ${r.sent ?? 0} email(s) · ${r.items ?? 0} outstanding consequence(s).` : `✗ ${r.error || r.skipped || "Failed"}`);
+    } catch (e: any) { setMsg(`✗ ${e.message}`); } finally { setBusy(false); }
+  }
+
+  return (
+    <Card>
+      <div className="flex items-center justify-between">
+        <h2 className="font-semibold">Daily consequence follow-up (VP digest)</h2>
+        <label className="flex items-center gap-2 text-sm text-slate-600">
+          <input type="checkbox" checked={enabled} onChange={(e) => saveCfg({ enabled: e.target.checked })} />
+          {enabled ? "On" : "Off"}
+        </label>
+      </div>
+      <p className="mt-1 text-sm text-slate-500">A short weekday email to the VP: consequences that were logged but aren&apos;t marked done yet, grouped by the teacher who logged them. A consequence works best right after the offence, so items older than the fade window are flagged <b>missed</b> — they drop off the active to-do list, but are still reported so follow-through becomes a habit.</p>
+      <div className="mt-3 flex flex-wrap items-center gap-4">
+        <label className="flex items-center gap-2 text-sm text-slate-600">
+          <input type="checkbox" checked={emailTeachers} onChange={(e) => saveCfg({ emailTeachers: e.target.checked })} />
+          Also email each teacher their own list
+        </label>
+        <label className="flex items-center gap-2 text-sm text-slate-600">
+          Fade after
+          <input type="number" min={1} max={14} value={fadeDays} onChange={(e) => setFadeDays(e.target.value)} onBlur={(e) => saveCfg({ fadeDays: Math.max(1, Number(e.target.value) || 2) })}
+            className="w-16 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+          day(s)
+        </label>
+        <button onClick={sendNow} disabled={busy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">
+          {busy ? "Sending…" : "Send now"}
+        </button>
+      </div>
+      {msg && <p className={`mt-2 text-sm ${msg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{msg}</p>}
+    </Card>
+  );
+}
+
 function RecommendedActionsSettings({ config }: { config: any }) {
   const [ladder, setLadder] = useState<{ noticeNumber: number; action: string }[]>(
     (config?.consequenceLadder || []).map((l: any) => ({ noticeNumber: l.noticeNumber, action: l.action }))
@@ -688,6 +778,13 @@ function RecommendedActionsSettings({ config }: { config: any }) {
   const [whitelistText, setWhitelistText] = useState<string>(
     (config?.consequenceWhitelist && config.consequenceWhitelist.length ? config.consequenceWhitelist : RECOMMENDED_CONSEQUENCES).join("\n")
   );
+  // Handbook white-slip escalation ladder.
+  const wl0 = config?.whiteSlipLadder || {};
+  const [wsOn, setWsOn] = useState<boolean>(!!wl0.enabled);
+  const [wsEmails, setWsEmails] = useState<number | string>(wl0.emailsPerTermToWhiteSlip ?? 5);
+  const [wsDet, setWsDet] = useState<number | string>(wl0.detentionFromCount ?? 3);
+  const [wsSus, setWsSus] = useState<number | string>(wl0.suspensionAtCount ?? 6);
+  const [wsSusDays, setWsSusDays] = useState<number | string>(wl0.suspensionDays ?? 2);
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -699,7 +796,7 @@ function RecommendedActionsSettings({ config }: { config: any }) {
     if (!mounted.current) { mounted.current = true; return; }
     setDirty(true);
     setSaved(false);
-  }, [ladder, whitelistText]);
+  }, [ladder, whitelistText, wsOn, wsEmails, wsDet, wsSus, wsSusDays]);
 
   async function save() {
     setErr(null);
@@ -707,7 +804,14 @@ function RecommendedActionsSettings({ config }: { config: any }) {
     try {
       const clean = ladder.filter((l) => l.noticeNumber && l.action.trim()).map((l) => ({ noticeNumber: Number(l.noticeNumber), action: l.action.trim() }));
       const whitelist = whitelistText.split("\n").map((s) => s.trim()).filter(Boolean);
-      await api("/config", { method: "PUT", body: { consequenceLadder: clean, consequenceWhitelist: whitelist } });
+      const whiteSlipLadder = {
+        enabled: wsOn,
+        emailsPerTermToWhiteSlip: Math.max(0, Number(wsEmails) || 0),
+        detentionFromCount: Math.max(0, Number(wsDet) || 0),
+        suspensionAtCount: Math.max(0, Number(wsSus) || 0),
+        suspensionDays: Math.max(0, Number(wsSusDays) || 0),
+      };
+      await api("/config", { method: "PUT", body: { consequenceLadder: clean, consequenceWhitelist: whitelist, whiteSlipLadder } });
       setDirty(false);
       setSaved(true);
       setTimeout(() => setSaved(false), 1800);
@@ -751,6 +855,35 @@ function RecommendedActionsSettings({ config }: { config: any }) {
         className={`${inputCls} mt-1 font-sans`}
         placeholder={"Lines (10×/20×/30×) — specify the line…\nEssay (150/200/350 words) on a relevant topic…\nApology letter…\nDetention\nWhite slip"}
       />
+
+      <div className="mt-4 border-t border-slate-100 pt-3">
+        <label className="flex items-start gap-2">
+          <input type="checkbox" checked={wsOn} onChange={(e) => setWsOn(e.target.checked)} className="mt-0.5" />
+          <span className="text-sm">
+            <span className="font-medium text-slate-700">Handbook white-slip escalation</span>
+            <span className="block text-xs text-slate-400">When on, the recommended consequence follows the handbook&apos;s numeric rules: enough notices home in a term → a white slip; and repeat white slips → detention, then suspension.</span>
+          </span>
+        </label>
+        <div className="mt-2 space-y-1.5 text-sm text-slate-600" style={{ opacity: wsOn ? 1 : 0.4 }}>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <input type="number" min={0} value={wsEmails} onChange={(e) => setWsEmails(e.target.value)} disabled={!wsOn} className="w-16 rounded border border-slate-300 px-2 py-1" />
+            <span>notices home in a term → recommend a <strong>white slip</strong> (0 = off)</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span>White slip #</span>
+            <input type="number" min={0} value={wsDet} onChange={(e) => setWsDet(e.target.value)} disabled={!wsOn} className="w-16 rounded border border-slate-300 px-2 py-1" />
+            <span>and up → <strong>after-school detention</strong></span>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span>White slip #</span>
+            <input type="number" min={0} value={wsSus} onChange={(e) => setWsSus(e.target.value)} disabled={!wsOn} className="w-16 rounded border border-slate-300 px-2 py-1" />
+            <span>→</span>
+            <input type="number" min={0} value={wsSusDays} onChange={(e) => setWsSusDays(e.target.value)} disabled={!wsOn} className="w-14 rounded border border-slate-300 px-2 py-1" />
+            <span>-day <strong>suspension</strong></span>
+          </div>
+          <p className="text-xs text-slate-400">Handbook defaults: 5 notices → white slip; 3rd–5th white slip → detention; 6th → 2-day suspension.</p>
+        </div>
+      </div>
 
       <button
         onClick={save}
@@ -1295,6 +1428,48 @@ function HousesSection({ config }: { config?: any }) {
   function saveEncPts() {
     encSave.run(async () => { await api("/houses/config", { method: "PUT", body: { encouragingMessagePoints: Math.max(0, Number(encPts) || 0) } }); });
   }
+
+  // ── How houses earn points ───────────────────────────────────────────────────
+  // 1) individual points, now split: add for positives, deduct for negatives, and
+  //    an optional one-off white-slip deduction (only when negatives aren't deducted).
+  const legacyIndiv = config?.houseIndividualPoints !== false;
+  const [posPts, setPosPts] = useState<boolean>(config?.housePositivePoints !== undefined ? !!config.housePositivePoints : legacyIndiv);
+  const [negPts, setNegPts] = useState<boolean>(config?.houseNegativePoints !== undefined ? !!config.houseNegativePoints : legacyIndiv);
+  const [wsDeduct, setWsDeduct] = useState<boolean>(!!config?.houseWhiteSlipDeduct);
+  const [wsPts, setWsPts] = useState<number | string>(config?.houseWhiteSlipPoints ?? 10);
+  const indivSave = useSaveState([posPts, negPts, wsDeduct, wsPts]);
+  function saveIndiv() {
+    indivSave.run(async () => {
+      await api("/config", { method: "PUT", body: {
+        housePositivePoints: posPts,
+        houseNegativePoints: negPts,
+        // White-slip deduction only makes sense when not already deducting negatives.
+        houseWhiteSlipDeduct: negPts ? false : wsDeduct,
+        houseWhiteSlipPoints: Math.max(0, Number(wsPts) || 0),
+      } });
+    });
+  }
+  // 2) month-end conduct award (fewest infractions OR most positive points)
+  const mc0 = config?.monthlyConductAward || {};
+  const [mcOn, setMcOn] = useState<boolean>(mc0.enabled !== false);
+  const [mcBasis, setMcBasis] = useState<string>(mc0.basis || "fewest_infractions");
+  const [mc1, setMc1] = useState<number | string>(mc0.first ?? 100);
+  const [mc2, setMc2] = useState<number | string>(mc0.second ?? 60);
+  const [mc3, setMc3] = useState<number | string>(mc0.third ?? 30);
+  const mcSave = useSaveState([mcOn, mcBasis, mc1, mc2, mc3]);
+  function saveMc() {
+    mcSave.run(async () => { await api("/config", { method: "PUT", body: { monthlyConductAward: { enabled: mcOn, basis: mcBasis, first: Math.max(0, Number(mc1) || 0), second: Math.max(0, Number(mc2) || 0), third: Math.max(0, Number(mc3) || 0) } } }); });
+  }
+  // 3) GUDD dress-down award when the list is recycled
+  const ga0 = (config?.gudd && config.gudd.award) || {};
+  const [gaOn, setGaOn] = useState<boolean>(ga0.enabled !== false);
+  const [ga1, setGa1] = useState<number | string>(ga0.first ?? 100);
+  const [ga2, setGa2] = useState<number | string>(ga0.second ?? 60);
+  const [ga3, setGa3] = useState<number | string>(ga0.third ?? 30);
+  const gaSave = useSaveState([gaOn, ga1, ga2, ga3]);
+  function saveGa() {
+    gaSave.run(async () => { await api("/config", { method: "PUT", body: { gudd: { award: { enabled: gaOn, first: Math.max(0, Number(ga1) || 0), second: Math.max(0, Number(ga2) || 0), third: Math.max(0, Number(ga3) || 0) } } } }); });
+  }
   // Apply the standard house-point scheme across all behaviours.
   const [applyPtsBusy, setApplyPtsBusy] = useState(false);
   const [applyPtsMsg, setApplyPtsMsg] = useState("");
@@ -1320,6 +1495,19 @@ function HousesSection({ config }: { config?: any }) {
     rewardsSave.run(async () => {
       const clean = rewards.filter((r) => r.reward.trim() && r.points).map((r) => ({ points: Number(r.points) || 0, reward: r.reward.trim() }));
       await api("/houses/config", { method: "PUT", body: { houseRewards: clean } });
+    });
+  }
+
+  // Merch store: students spend personal points on items (separate wallet).
+  const [merchOn, setMerchOn] = useState<boolean>(!!config?.merchStore?.enabled);
+  const [merch, setMerch] = useState<{ name: string; points: number }[]>(
+    Array.isArray(config?.merchStore?.items) ? config.merchStore.items.map((i: any) => ({ name: i.name || "", points: Number(i.points) || 0 })) : []
+  );
+  const merchSave = useSaveState([merchOn, merch]);
+  function saveMerch() {
+    merchSave.run(async () => {
+      const items = merch.filter((m) => m.name.trim() && m.points).map((m) => ({ name: m.name.trim(), points: Number(m.points) || 0 }));
+      await api("/houses/config", { method: "PUT", body: { merchStore: { enabled: merchOn, items } } });
     });
   }
 
@@ -1458,9 +1646,96 @@ function HousesSection({ config }: { config?: any }) {
     }
   }
 
+  // Copy a ready-to-paste, richly-formatted invite for Edsby. We put BOTH an
+  // HTML flavour (so Edsby keeps the formatting) and a plain-text fallback on
+  // the clipboard, with the portal code baked into a one-click link.
+  const [inviteCopied, setInviteCopied] = useState(false);
+  async function copyInvite() {
+    const code = portalCode || "";
+    if (!code) { setPortalMsg("Generate or set a code first."); return; }
+    const url = `https://www.curriculate.net/houses?code=${encodeURIComponent(code)}`;
+    const html =
+      '<div style="font-family:Arial,Helvetica,sans-serif;color:#1e293b;line-height:1.5;">' +
+        '<h2 style="margin:0 0 4px;font-size:20px;">👀 Your House Standings are LIVE!</h2>' +
+        '<p style="margin:0 0 14px;color:#64748b;font-size:14px;">See where your house stands — and look up your own house anytime.</p>' +
+        '<p style="margin:0 0 14px;">Hi everyone,</p>' +
+        '<p style="margin:0 0 14px;">The house competition is heating up, and you can now follow it live! Every point your house earns for kindness, effort, honesty, and team events shows up on the board within seconds. Check where <strong>your</strong> house sits and cheer your teammates on. 🎉</p>' +
+        '<p style="margin:0 0 14px;padding:12px 16px;background:#eff6ff;border-left:4px solid #2563eb;border-radius:6px;"><strong>Not sure which house you’re in?</strong> Forgot your group or room, or missed the day it was announced? No problem — just type your last name and the site will tell you your house, group #, room, teachers, and captains.</p>' +
+        '<p style="margin:0 0 14px;text-align:center;"><a href="' + url + '" style="display:inline-block;background:#0f172a;color:#ffffff;text-decoration:none;padding:12px 26px;border-radius:10px;font-weight:bold;font-size:16px;">🏆 See the Standings &amp; Find Your House</a></p>' +
+        '<p style="margin:0 0 8px;font-weight:bold;">How to use it:</p>' +
+        '<ol style="margin:0 0 14px;padding-left:20px;">' +
+          '<li style="margin-bottom:6px;">Open <a href="' + url + '" style="color:#2563eb;">curriculate.net/houses</a> (the link above fills in the code for you).</li>' +
+          '<li style="margin-bottom:6px;">If asked, enter the House code <strong style="background:#fef9c3;padding:2px 8px;border-radius:6px;letter-spacing:2px;">' + code + '</strong> — you only do this once.</li>' +
+          '<li style="margin-bottom:6px;">Tap <strong>&ldquo;Find your house&rdquo;</strong> and type your last name to see your house, group #, room, teachers, and captains.</li>' +
+          '<li style="margin-bottom:6px;">Watch the <strong>leaderboard</strong>, <strong>top students</strong>, <strong>competitions</strong>, and <strong>latest points</strong> roll in.</li>' +
+        '</ol>' +
+        '<p style="margin:0 0 14px;padding:12px 16px;background:#f8fafc;border-left:4px solid #0f172a;border-radius:6px;font-style:italic;color:#334155;">&ldquo;Whatever you do, work at it with all your heart.&rdquo; — Colossians 3:23</p>' +
+        '<p style="margin:0;">Let’s make it a great season. Go teams! 💪</p>' +
+      '</div>';
+    const plain =
+      '👀 Your House Standings are LIVE!\n\n' +
+      'Hi everyone,\n\n' +
+      'The house competition is heating up, and you can now follow it live! Check where your house sits and cheer your teammates on.\n\n' +
+      'Not sure which house you’re in? Forgot your group or room, or missed the day it was announced? Just type your last name and the site will tell you your house, group #, room, teachers, and captains.\n\n' +
+      'See the standings & find your house: ' + url + '\n\n' +
+      'How to use it:\n' +
+      '1. Open curriculate.net/houses (the link above fills in the code for you).\n' +
+      '2. If asked, enter the House code ' + code + ' — you only do this once.\n' +
+      '3. Tap "Find your house" and type your last name to see your house, group #, room, teachers, and captains.\n' +
+      '4. Watch the leaderboard, top students, competitions, and latest points roll in.\n\n' +
+      '"Whatever you do, work at it with all your heart." — Colossians 3:23\n\n' +
+      'Let’s make it a great season. Go teams!';
+    try {
+      const w = window as any;
+      if (navigator.clipboard && w.ClipboardItem) {
+        await navigator.clipboard.write([new w.ClipboardItem({
+          "text/html": new Blob([html], { type: "text/html" }),
+          "text/plain": new Blob([plain], { type: "text/plain" }),
+        })]);
+      } else {
+        await navigator.clipboard.writeText(plain);
+      }
+      setPortalMsg("");
+      setInviteCopied(true);
+      setTimeout(() => setInviteCopied(false), 2500);
+    } catch {
+      setPortalMsg("Couldn’t copy automatically — use “open the portal” and copy the page instead.");
+    }
+  }
+
   // Term reset (only points after this date count toward standings).
   const [resetAt, setResetAt] = useState<string | null>(config?.housePointsResetAt || null);
   const [resetBusy, setResetBusy] = useState(false);
+
+  // What the public /houses page shows students.
+  const [showPos, setShowPos] = useState<boolean>(config?.housesPublicShowPositives !== false);
+  const [showNeg, setShowNeg] = useState<boolean>(config?.housesPublicShowNegatives === true);
+  async function saveViewing(next: { showPos?: boolean; showNeg?: boolean }) {
+    const sp = next.showPos ?? showPos;
+    const sn = next.showNeg ?? showNeg;
+    setShowPos(sp); setShowNeg(sn);
+    try { await api("/houses/config", { method: "PUT", body: { housesPublicShowPositives: sp, housesPublicShowNegatives: sn } }); }
+    catch (e: any) { setErr(e.message); }
+  }
+
+  // "Reset negatives only" — wipe the conduct drag, keep every positive.
+  const [negResetAt, setNegResetAt] = useState<string | null>(config?.houseNegativeResetAt || null);
+  async function resetNegatives() {
+    if (!window.confirm("Reset NEGATIVE points only? Conduct deductions up to now stop counting toward the standings — every positive point earned is kept. (Reversible.)")) return;
+    setResetBusy(true);
+    try {
+      const r = await api<{ houseNegativeResetAt: string }>("/houses/reset-negatives", { body: {} });
+      setNegResetAt(r.houseNegativeResetAt);
+      load();
+    } catch (e: any) { setErr(e.message); }
+    finally { setResetBusy(false); }
+  }
+  async function clearNegReset() {
+    setResetBusy(true);
+    try { await api("/houses/config", { method: "PUT", body: { houseNegativeResetAt: null } }); setNegResetAt(null); load(); }
+    catch (e: any) { setErr(e.message); }
+    finally { setResetBusy(false); }
+  }
 
   // Captains: full roster so we can pick per-house leaders.
   const [roster, setRoster] = useState<any[] | null>(null);
@@ -1696,6 +1971,85 @@ function HousesSection({ config }: { config?: any }) {
           </button>
         </div>
 
+        {/* How houses earn points — three switches */}
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <p className="text-sm font-medium text-slate-700">How houses earn points</p>
+          <p className="text-xs text-slate-400">Choose which point systems are active. You can run individual points, the monthly award, and the GUDD award in any combination.</p>
+
+          {/* 1) Individual points — split by positive / negative / white slip */}
+          <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
+            <p className="text-sm font-medium text-slate-700">Individual behaviour points</p>
+            <p className="text-xs text-slate-400">Behaviours are always recorded and still drive strikes/notices — these only control whether they move house points.</p>
+            <div className="mt-2 space-y-2">
+              <label className="flex items-start gap-2">
+                <input type="checkbox" checked={posPts} onChange={(e) => setPosPts(e.target.checked)} className="mt-0.5" />
+                <span className="text-sm"><span className="font-medium text-green-700">Add points for positive behaviour</span>
+                  <span className="block text-xs text-slate-400">Logging a positive adds its points to the student&apos;s house.</span></span>
+              </label>
+              <label className="flex items-start gap-2">
+                <input type="checkbox" checked={negPts} onChange={(e) => setNegPts(e.target.checked)} className="mt-0.5" />
+                <span className="text-sm"><span className="font-medium text-red-600">Deduct points for negative behaviour (infractions)</span>
+                  <span className="block text-xs text-slate-400">Logging an infraction subtracts its points. Leave off to keep the house board all-positive.</span></span>
+              </label>
+              <label className={`flex items-start gap-2 ${negPts ? "opacity-40" : ""}`}>
+                <input type="checkbox" checked={wsDeduct && !negPts} disabled={negPts} onChange={(e) => setWsDeduct(e.target.checked)} className="mt-0.5" />
+                <span className="text-sm"><span className="font-medium text-red-700">Deduct for a white slip</span>
+                  <span className="inline-flex items-center gap-1"> —
+                    <input type="number" min={0} value={wsPts} disabled={negPts || !wsDeduct} onChange={(e) => setWsPts(e.target.value)} className="w-16 rounded border border-slate-300 px-1.5 py-0.5 text-sm disabled:opacity-50" />
+                    <span className="text-xs text-slate-500">points per white slip</span>
+                  </span>
+                  <span className="block text-xs text-slate-400">{negPts ? "Turn off per-infraction deductions to use this (avoids double-counting)." : "A single, larger penalty for a white slip while everyday infractions don't cost points."}</span>
+                </span>
+              </label>
+            </div>
+            <div className="mt-2"><SaveButton state={indivSave} onClick={saveIndiv} label="Save" /></div>
+          </div>
+
+          {/* 2) Monthly conduct award */}
+          <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
+            <label className="flex items-start gap-2">
+              <input type="checkbox" checked={mcOn} onChange={(e) => setMcOn(e.target.checked)} className="mt-0.5" />
+              <span className="text-sm">
+                <span className="font-medium text-slate-700">Monthly award: 1st / 2nd / 3rd each month</span>
+                <span className="block text-xs text-slate-400">On the last school day of each month, award house points to the top houses.</span>
+              </span>
+            </label>
+            <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
+              <label className="flex items-center gap-1.5">Winner is the house with
+                <select value={mcBasis} onChange={(e) => setMcBasis(e.target.value)} disabled={!mcOn} className="rounded-lg border border-slate-300 px-2 py-1 disabled:opacity-40">
+                  <option value="fewest_infractions">fewest infractions</option>
+                  <option value="most_positive">most positive points</option>
+                </select>
+              </label>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-slate-500">Points:</span>
+              <label className="flex items-center gap-1">1st <input type="number" min={0} value={mc1} onChange={(e) => setMc1(e.target.value)} disabled={!mcOn} className="w-16 rounded-lg border border-slate-300 px-2 py-1 disabled:opacity-40" /></label>
+              <label className="flex items-center gap-1">2nd <input type="number" min={0} value={mc2} onChange={(e) => setMc2(e.target.value)} disabled={!mcOn} className="w-16 rounded-lg border border-slate-300 px-2 py-1 disabled:opacity-40" /></label>
+              <label className="flex items-center gap-1">3rd <input type="number" min={0} value={mc3} onChange={(e) => setMc3(e.target.value)} disabled={!mcOn} className="w-16 rounded-lg border border-slate-300 px-2 py-1 disabled:opacity-40" /></label>
+              <SaveButton state={mcSave} onClick={saveMc} label="Save" />
+            </div>
+          </div>
+
+          {/* 3) GUDD dress-down award */}
+          <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
+            <label className="flex items-start gap-2">
+              <input type="checkbox" checked={gaOn} onChange={(e) => setGaOn(e.target.checked)} className="mt-0.5" />
+              <span className="text-sm">
+                <span className="font-medium text-slate-700">GUDD dress-down award: 1st / 2nd / 3rd when the list is recycled</span>
+                <span className="block text-xs text-slate-400">When you clear the GUDD list for a new period, the houses with the fewest excluded members are awarded these points.</span>
+              </span>
+            </label>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-slate-500">Points:</span>
+              <label className="flex items-center gap-1">1st <input type="number" min={0} value={ga1} onChange={(e) => setGa1(e.target.value)} disabled={!gaOn} className="w-16 rounded-lg border border-slate-300 px-2 py-1 disabled:opacity-40" /></label>
+              <label className="flex items-center gap-1">2nd <input type="number" min={0} value={ga2} onChange={(e) => setGa2(e.target.value)} disabled={!gaOn} className="w-16 rounded-lg border border-slate-300 px-2 py-1 disabled:opacity-40" /></label>
+              <label className="flex items-center gap-1">3rd <input type="number" min={0} value={ga3} onChange={(e) => setGa3(e.target.value)} disabled={!gaOn} className="w-16 rounded-lg border border-slate-300 px-2 py-1 disabled:opacity-40" /></label>
+              <SaveButton state={gaSave} onClick={saveGa} label="Save" />
+            </div>
+          </div>
+        </div>
+
         {/* Per-student point caps */}
         <div className="mt-4 border-t border-slate-100 pt-3">
           <p className="text-sm font-medium text-slate-700">Per-student point caps</p>
@@ -1723,7 +2077,7 @@ function HousesSection({ config }: { config?: any }) {
         {/* Standard add/deduct scheme for infractions & positives */}
         <div className="mt-4 border-t border-slate-100 pt-3">
           <p className="text-sm font-medium text-slate-700">Standard house points on behaviours</p>
-          <p className="text-xs text-slate-400">Give every behaviour a recommended house-point value so logging it auto-adds (positives) or deducts (infractions): −2 minor, −5 behaviour/respect, −10 serious/immediate; +5 positive, +10 notable. Only fills behaviours still at 0 — your custom values are kept. Tune any of them in the Behaviours list.</p>
+          <p className="text-xs text-slate-400">Give every behaviour a recommended house-point value: −1 minor, −2 moderate, −3 serious/values-based, −5 immediate; +3 positive, +5 notable. Only fills behaviours still at 0 — your custom values are kept. You usually don&apos;t need this: positives are already set, and infractions only move house points if you&apos;ve turned on &ldquo;Deduct for negatives.&rdquo; Tune any value in the Behaviours list.</p>
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <button type="button" disabled={applyPtsBusy}
               onClick={async () => {
@@ -1769,7 +2123,18 @@ function HousesSection({ config }: { config?: any }) {
         {/* Reward tiers */}
         <div className="mt-4 border-t border-slate-100 pt-3">
           <p className="text-sm font-medium text-slate-700">Rewards (reach X points → reward)</p>
-          <p className="text-xs text-slate-400">When a house&apos;s total reaches the points, it unlocks the reward — shown on the portal &amp; display board (e.g. 50 → “Ice cream sundae”).</p>
+          <p className="text-xs text-slate-400">When a house&apos;s total reaches the points, it unlocks the reward — shown on the portal &amp; display board (e.g. 50 → “Ice cream sundae”). Load a suggested ladder to start, then tune the points and wording to your school.</p>
+          <div className="mt-1">
+            <button type="button"
+              onClick={() => setRewards((p) => {
+                const have = new Set(p.map((r) => r.reward.trim().toLowerCase()).filter(Boolean));
+                const add = PRESET_HOUSE_REWARDS.filter((r) => !have.has(r.reward.toLowerCase()));
+                // Drop a single blank starter row if present, then append presets.
+                const base = p.filter((r) => r.reward.trim() || r.points);
+                return [...base, ...add];
+              })}
+              className="text-xs text-slate-500 underline">Load suggested rewards</button>
+          </div>
           <div className="mt-2 space-y-1.5">
             {rewards.map((r, i) => (
               <div key={i} className="flex items-center gap-2">
@@ -1782,6 +2147,39 @@ function HousesSection({ config }: { config?: any }) {
             <button onClick={() => setRewards((p) => [...p, { points: 50, reward: "" }])} className="rounded-lg border border-slate-300 px-2 py-1 text-xs">+ add reward</button>
           </div>
           <div className="mt-2"><SaveButton state={rewardsSave} onClick={saveRewards} label="Save rewards" /></div>
+        </div>
+
+        {/* Merch store — students spend personal points */}
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <label className="flex items-start gap-2">
+            <input type="checkbox" checked={merchOn} onChange={(e) => setMerchOn(e.target.checked)} className="mt-0.5" />
+            <span className="text-sm">
+              <span className="font-medium text-slate-700">Merch store (students spend their points)</span>
+              <span className="block text-xs text-slate-400">Students see their personal points balance and this catalog on the /houses portal, then see a teacher to redeem. Spending here is a separate wallet — it never lowers a house&apos;s standing.</span>
+            </span>
+          </label>
+          <div className="mt-2">
+            <button type="button"
+              onClick={() => setMerch((p) => {
+                const have = new Set(p.map((m) => m.name.trim().toLowerCase()).filter(Boolean));
+                const add = PRESET_MERCH.filter((m) => !have.has(m.name.toLowerCase()));
+                const base = p.filter((m) => m.name.trim() || m.points);
+                return [...base, ...add];
+              })}
+              className="text-xs text-slate-500 underline">Load suggested items</button>
+          </div>
+          <div className="mt-2 space-y-1.5">
+            {merch.map((m, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input value={m.name} onChange={(e) => setMerch((p) => p.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} placeholder="Item (e.g. Hoodie)" className="flex-1 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+                <input type="number" min={1} value={m.points} onChange={(e) => setMerch((p) => p.map((x, j) => (j === i ? { ...x, points: Number(e.target.value) || 0 } : x)))} className="w-20 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+                <span className="text-sm text-slate-400">pts</span>
+                <button onClick={() => setMerch((p) => p.filter((_, j) => j !== i))} className="text-xs text-red-600">remove</button>
+              </div>
+            ))}
+            <button onClick={() => setMerch((p) => [...p, { name: "", points: 100 }])} className="rounded-lg border border-slate-300 px-2 py-1 text-xs">+ add item</button>
+          </div>
+          <div className="mt-2"><SaveButton state={merchSave} onClick={saveMerch} label="Save merch store" /></div>
         </div>
       </div>
 
@@ -1800,6 +2198,15 @@ function HousesSection({ config }: { config?: any }) {
           {portalCode && <a href={`/houses?code=${encodeURIComponent(portalCode)}`} target="_blank" rel="noreferrer" className="text-xs text-slate-500 underline">open the portal ↗</a>}
           {portalCode && <a href={`/houses/display?code=${encodeURIComponent(portalCode)}`} target="_blank" rel="noreferrer" className="text-xs text-slate-500 underline">open the wall display ↗</a>}
         </div>
+        {portalCode && (
+          <div className="mt-2">
+            <button onClick={copyInvite}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-100">
+              {inviteCopied ? "✓ Copied — paste into Edsby" : "📋 Copy invite message (for Edsby)"}
+            </button>
+            <p className="mt-1 text-xs text-slate-400">Rich, ready-to-paste message inviting students to the portal — with your code built into a one-click link.</p>
+          </div>
+        )}
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <input
             value={portalInput}
@@ -1914,6 +2321,45 @@ function HousesSection({ config }: { config?: any }) {
             className="rounded-lg border border-slate-300 px-2 py-1" />
           <button onClick={setResetToDate} disabled={resetBusy || !resetDate}
             className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:opacity-40">Set date</button>
+        </div>
+
+        {/* Reset negatives only — keep positives, clear the conduct drag. */}
+        <div className="mt-3 border-t border-slate-200 pt-3">
+          <p className="text-xs text-slate-500">
+            {negResetAt
+              ? <>Conduct deductions before <span className="font-medium">{new Date(negResetAt).toLocaleDateString()}</span> are set aside; positives are all kept.</>
+              : "You can also clear only the conduct (negative) points and keep every positive."}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button onClick={resetNegatives} disabled={resetBusy}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:opacity-40">
+              {resetBusy ? "…" : "Reset negative points only"}
+            </button>
+            {negResetAt && (
+              <button onClick={clearNegReset} disabled={resetBusy}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:opacity-40">
+                Count negatives again
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* What students see on the public /houses page */}
+      <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <p className="text-sm font-medium text-slate-700">/houses viewing — what students see</p>
+        <p className="mt-0.5 text-xs text-slate-500">
+          Controls the public standings page. Signed-in staff always see the full breakdown (with a reminder that students don&apos;t).
+        </p>
+        <div className="mt-2 space-y-1.5">
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" checked={showPos} onChange={(e) => saveViewing({ showPos: e.target.checked })} />
+            Show <span className="font-medium">positive</span> point details to students
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" checked={showNeg} onChange={(e) => saveViewing({ showNeg: e.target.checked })} />
+            Show <span className="font-medium">negative</span> (conduct) details to students
+          </label>
         </div>
       </div>
 

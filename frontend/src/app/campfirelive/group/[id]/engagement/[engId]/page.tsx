@@ -626,24 +626,25 @@ export default function EngagementDetailPage() {
 
   // Guests on THIS card (host-only) + the ability to bring one into the group.
   const [engagementGuests, setEngagementGuests] = useState<
-    { user_id: string; name: string }[]
+    { user_id: string; name: string; email: string | null }[]
   >([]);
   const loadGuests = useCallback(async () => {
     if (!user) return;
     const { data } = await supabase
       .from("engagement_guests")
-      .select("user_id, profile:profiles(display_name)")
+      .select("user_id, email, profile:profiles(display_name)")
       .eq("engagement_id", engagementId);
     if (!data) return;
     setEngagementGuests(
       (
         data as {
           user_id: string;
+          email: string | null;
           profile: { display_name: string } | { display_name: string }[] | null;
         }[]
       ).map((g) => {
         const p = Array.isArray(g.profile) ? g.profile[0] : g.profile;
-        return { user_id: g.user_id, name: p?.display_name || "Guest" };
+        return { user_id: g.user_id, name: p?.display_name || "Guest", email: g.email ?? null };
       })
     );
   }, [user, engagementId]);
@@ -801,6 +802,11 @@ export default function EngagementDetailPage() {
   // A draft that's already scheduled to auto-open — the host is DONE; opening early
   // is optional, so this state reads as "all set" rather than "action needed".
   const isScheduledDraft = isDraft && !!engagement.scheduled_open_at;
+  // A scheduled open date that has already passed should read as "open it now", not
+  // "scheduled" for a date in the past.
+  const schedOpenPast =
+    !!engagement.scheduled_open_at &&
+    new Date(engagement.scheduled_open_at as string).getTime() <= Date.now();
   // ── Prize contests: pot goes to the voted winner (raffle/hunt) or the best score
   // (tournament). `tourn` flips the copy to "best total wins" instead of "votes". ──
   const raffle = raffleOf(engagement.config);
@@ -1364,7 +1370,14 @@ export default function EngagementDetailPage() {
   };
 
   const saveEdit = async () => {
-    if (!editTitle.trim()) return;
+    if (!editTitle.trim()) {
+      alert(
+        engagement.type === "birthday"
+          ? "Add a card title / message at the top before saving."
+          : "Add a prompt before saving."
+      );
+      return;
+    }
     setSavingEdit(true);
     const isBirthday = engagement.type === "birthday";
     // Birthday: let the host fix the date / birth year. The deadline is the
@@ -1520,7 +1533,14 @@ export default function EngagementDetailPage() {
           : editRecurrence,
         allow_member_invites: editAllowMemberInvites,
         excluded_user_ids: editExcludedIds,
-        excluded_emails: editExcludedEmails,
+        excluded_emails: editExcludedEmails
+          .map(
+            (e) =>
+              (e.match(/[^\s<>,;"']+@[^\s<>,;"']+\.[^\s<>,;"']+/)?.[0] || "")
+                .trim()
+                .toLowerCase()
+          )
+          .filter(Boolean),
         gift_enabled: isRaffleEng ? true : editGiftEnabled,
         gift_recipient_email: editGiftEnabled
           ? editGiftRecipientEmail.trim() || null
@@ -5971,12 +5991,15 @@ export default function EngagementDetailPage() {
                 <>
                   <div className="flex items-center gap-2 text-sm font-bold text-emerald-900">
                     <span className="rounded-full bg-emerald-200 px-2 py-0.5 text-[11px] uppercase tracking-wide">
-                      Scheduled
+                      {schedOpenPast ? "Open it" : "Scheduled"}
                     </span>
-                    ✓ You&apos;re all set — nothing more to do
+                    {schedOpenPast
+                      ? "The open date has passed — open it now"
+                      : "✓ You're all set — nothing more to do"}
                   </div>
                   <p className="mt-1 text-xs text-emerald-800/90">
-                    📅 This opens on its own{" "}
+                    📅 This{" "}
+                    {schedOpenPast ? "was set to open" : "opens on its own"}{" "}
                     <strong>
                       {new Date(engagement.scheduled_open_at as string).toLocaleDateString(
                         "en-US",
@@ -5987,13 +6010,23 @@ export default function EngagementDetailPage() {
                           year: "numeric",
                         }
                       )}
-                    </strong>{" "}
-                    and emails the whole group then. Only you can see it until then.
-                    {engagement.type === "birthday"
-                      ? " It reveals on the birthday and repeats every year."
-                      : ""}{" "}
-                    Nothing else is needed — the options are only if you want to change
-                    it.
+                    </strong>
+                    {schedOpenPast ? (
+                      <>
+                        , which has passed. Tap <strong>Open &amp; notify now</strong> to go
+                        live and email the group.
+                      </>
+                    ) : (
+                      <>
+                        {" "}
+                        and emails the whole group then. Only you can see it until then.
+                        {engagement.type === "birthday"
+                          ? " It reveals on the birthday and repeats every year."
+                          : ""}{" "}
+                        Nothing else is needed — the options are only if you want to change
+                        it.
+                      </>
+                    )}
                   </p>
                 </>
               ) : (
@@ -6030,7 +6063,7 @@ export default function EngagementDetailPage() {
                   disabled={launching}
                   className="rounded-full border border-orange-300 bg-white px-4 py-2 text-sm font-semibold text-orange-700 hover:bg-orange-50 disabled:opacity-50"
                 >
-                  {launching ? "Opening…" : "🚀 Open early & notify now"}
+                  {launching ? "Opening…" : schedOpenPast ? "🚀 Open & notify now" : "🚀 Open early & notify now"}
                 </button>
               ) : (
                 <button
@@ -6145,18 +6178,65 @@ export default function EngagementDetailPage() {
           />
         )}
         <div className="p-4 sm:p-6">
+        {isBirthdayCard && canEdit && (() => {
+          const hasRecipient =
+            ((engagement.excluded_user_ids as string[] | undefined)?.length ?? 0) > 0 ||
+            ((engagement.excluded_emails as string[] | undefined)?.length ?? 0) > 0;
+          const jump = () => {
+            setEditing(true);
+            setTimeout(
+              () =>
+                document
+                  .getElementById("card-recipient")
+                  ?.scrollIntoView({ behavior: "smooth", block: "center" }),
+              120
+            );
+          };
+          return hasRecipient ? (
+            <div className="mb-4 flex items-center justify-between gap-2 rounded-xl border border-rose-100 bg-rose-50/60 px-3 py-2 text-xs text-rose-800">
+              <span>
+                🎁 For <span className="font-semibold">{recipientLabel}</span> — they get the
+                card at the reveal.
+              </span>
+              <button
+                onClick={jump}
+                className="flex-shrink-0 font-semibold text-rose-600 hover:underline"
+              >
+                Change
+              </button>
+            </div>
+          ) : (
+            <div className="mb-4 flex items-center justify-between gap-2 rounded-xl border-2 border-amber-400 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <span>
+                🎁 <span className="font-semibold">No recipient set yet.</span> Choose who this
+                card is for — add them by email if they&apos;re not in the group — so they
+                receive it at the reveal.
+              </span>
+              <button
+                onClick={jump}
+                className="flex-shrink-0 rounded-full bg-amber-500 px-3 py-1 font-bold text-white hover:opacity-90"
+              >
+                Set recipient
+              </button>
+            </div>
+          );
+        })()}
         {editing ? (
           <div className="flex items-start gap-3 mb-3">
             <span className="text-2xl sm:text-3xl flex-shrink-0">{engagementIcon(engagement)}</span>
             <div className="flex-1 min-w-0 space-y-3">
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">
-                  Prompt / question
+                  {isBirthdayCard ? "Card title / message (shown at the top)" : "Prompt / question"}
                 </label>
                 <textarea
                   value={editTitle}
                   onChange={(e) => setEditTitle(e.target.value)}
-                  placeholder="Prompt / question"
+                  placeholder={
+                    isBirthdayCard
+                      ? "e.g. Happy Teacher Appreciation Day, Miss McKenzie! 💌"
+                      : "Prompt / question"
+                  }
                   rows={2}
                   className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-lg font-semibold leading-snug text-slate-900 focus:border-orange-500 outline-none resize-y"
                   autoFocus
@@ -6164,12 +6244,17 @@ export default function EngagementDetailPage() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">
-                  Details <span className="text-slate-400">(optional)</span>
+                  {isBirthdayCard ? "Note to signers" : "Details"}{" "}
+                  <span className="text-slate-400">(optional)</span>
                 </label>
                 <textarea
                   value={editDesc}
                   onChange={(e) => setEditDesc(e.target.value)}
-                  placeholder="Add more detail (optional)"
+                  placeholder={
+                    isBirthdayCard
+                      ? "A line for the people signing — e.g. Add your note; they'll all show when it opens."
+                      : "Add more detail (optional)"
+                  }
                   rows={5}
                   className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-base leading-relaxed text-slate-700 focus:border-orange-500 outline-none resize-y"
                 />
@@ -6777,12 +6862,13 @@ export default function EngagementDetailPage() {
 
               {/* Surprise: hide from (members + everyone on the invited-email list) */}
               {(roster.filter((m) => m.user_id !== user?.id).length > 0 ||
-                allInvitees.length > 0) && (
-                <div>
+                allInvitees.length > 0 ||
+                engagement.type === "birthday") && (
+                <div id="card-recipient">
                   <label className="block text-xs font-medium text-slate-500 mb-1">
                     {isRevealed
                       ? "🎁 Who the card is for — the reveal email addresses them (re-send after editing)"
-                      : "🎁 Hide from (surprise) — they don't see it until the reveal"}
+                      : "🎁 Who the card is for (surprise) — they don't see it until the reveal. Not in the list? Add them by email below."}
                   </label>
                   <div className="flex flex-wrap gap-1.5">
                     {roster
@@ -6861,17 +6947,36 @@ export default function EngagementDetailPage() {
                       type="email"
                       value={addRecipEmail}
                       onChange={(e) => setAddRecipEmail(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key !== "Enter") return;
+                        e.preventDefault(); // don't submit/reload — just add
+                        const em = (
+                          addRecipEmail.match(
+                            /[^\s<>,;"']+@[^\s<>,;"']+\.[^\s<>,;"']+/
+                          )?.[0] || ""
+                        )
+                          .trim()
+                          .toLowerCase();
+                        if (em && !editExcludedEmails.includes(em)) {
+                          setEditExcludedEmails((prev) => [...prev, em]);
+                          setAddRecipEmail("");
+                        }
+                      }}
                       placeholder="Add a recipient by email…"
                       className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-rose-400"
                     />
                     <button
                       type="button"
                       onClick={() => {
-                        const em = addRecipEmail.trim().toLowerCase();
-                        if (
-                          /\S+@\S+\.\S+/.test(em) &&
-                          !editExcludedEmails.includes(em)
-                        ) {
+                        // Accept "Name <email@x>" or a bare address — pull out the email.
+                        const em = (
+                          addRecipEmail.match(
+                            /[^\s<>,;"']+@[^\s<>,;"']+\.[^\s<>,;"']+/
+                          )?.[0] || ""
+                        )
+                          .trim()
+                          .toLowerCase();
+                        if (em && !editExcludedEmails.includes(em)) {
                           setEditExcludedEmails((prev) => [...prev, em]);
                           setAddRecipEmail("");
                         }
@@ -6897,7 +7002,7 @@ export default function EngagementDetailPage() {
               <div className="flex gap-2">
                 <button
                   onClick={saveEdit}
-                  disabled={!editTitle.trim() || savingEdit}
+                  disabled={savingEdit}
                   className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
                 >
                   {savingEdit ? "Saving..." : "Save"}
@@ -7314,6 +7419,13 @@ export default function EngagementDetailPage() {
               >
                 <span className="min-w-0 truncate font-medium text-slate-800">
                   {g.name}
+                  {g.email ? (
+                    <span className="ml-1.5 font-normal text-emerald-600" title={g.email}>
+                      📧 {g.email}
+                    </span>
+                  ) : (
+                    <span className="ml-1.5 font-normal text-slate-400">· no email</span>
+                  )}
                 </span>
                 <div className="flex flex-shrink-0 items-center gap-1.5">
                   <button

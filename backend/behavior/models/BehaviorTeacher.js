@@ -44,6 +44,21 @@ const BehaviorTeacherSchema = new mongoose.Schema(
     // in parent message templates (e.g. "Grade 7 Math").
     subject: { type: String, default: "" },
 
+    // This teacher's homeroom class group(s), e.g. "7A" (comma-separate for more).
+    // Used to scope the proactive bi-weekly "students to check in with" nudge to
+    // the students in their homeroom.
+    homeroom: { type: String, default: "" },
+
+    // How this teacher is named in PARENT-FACING notices — the school's proper
+    // form, e.g. "Mr. Sommer" / "Miss Lau". Used for the sign-off and for
+    // "logged by / reported by" attribution. Falls back to the display name.
+    courtesyName: { type: String, default: "" },
+
+    // Monthly "your month in Compass" encouragement email to this teacher (their
+    // own This-school-year / my-interactions recap). On by default; admins can
+    // toggle it per member on the Team tab.
+    monthlySummary: { type: Boolean, default: true },
+
     // Per-teacher parent-message templates (encouraging / proactive notes home the
     // teacher copies and sends themselves). Each has a name and a body with
     // placeholders like {student}, {parents}, {he}, {subject}. Seeded with a

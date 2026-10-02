@@ -62,6 +62,11 @@ export default function AdminUsageDashboard() {
   const [fdStatsLoading, setFdStatsLoading] = useState(false);
   const [fdStatsErr, setFdStatsErr] = useState("");
 
+  // House Standings portal traffic
+  const [hvStats, setHvStats] = useState(null);
+  const [hvLoading, setHvLoading] = useState(false);
+  const [hvErr, setHvErr] = useState("");
+
   // Campfire stats (Supabase-backed; loaded on demand)
   const [cfStats, setCfStats] = useState(null);
   const [cfLoading, setCfLoading] = useState(false);
@@ -1234,6 +1239,95 @@ export default function AdminUsageDashboard() {
                       </div>
                     </div>
                   )}
+                </>
+              )}
+            </div>
+          </Card>
+
+          {/* House Standings portal traffic */}
+          <Card title="👀 House Standings visits">
+            <div className="space-y-3">
+              <button
+                onClick={async () => {
+                  setHvLoading(true);
+                  setHvErr("");
+                  try {
+                    const r = await fetch(`${API}/api/behavior/admin/houses-visits`, {
+                      headers: { "x-admin-token": adminToken }
+                    });
+                    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                    setHvStats(await r.json());
+                  } catch (e) {
+                    setHvErr(e.message || String(e));
+                  }
+                  setHvLoading(false);
+                }}
+                className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/60 hover:bg-white/10 hover:text-white/80"
+              >
+                {hvLoading ? "Loading…" : hvStats ? "Refresh" : "Load House Standings visits"}
+              </button>
+              {hvErr && (
+                <div className="text-xs text-red-400">Couldn't load: {hvErr}</div>
+              )}
+              {hvStats && (
+                <>
+                  <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                    <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                      <div className="text-2xl font-bold text-blue-300">{hvStats.today ?? 0}</div>
+                      <div className="text-xs text-white/60">Today</div>
+                    </div>
+                    <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                      <div className="text-2xl font-bold text-blue-300">{hvStats.last7 ?? 0}</div>
+                      <div className="text-xs text-white/60">Last 7 days</div>
+                    </div>
+                    <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                      <div className="text-2xl font-bold text-blue-300">{hvStats.last30 ?? 0}</div>
+                      <div className="text-xs text-white/60">Last 30 days</div>
+                    </div>
+                    <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                      <div className="text-2xl font-bold text-blue-300">{hvStats.total ?? 0}</div>
+                      <div className="text-xs text-white/60">All time</div>
+                    </div>
+                  </div>
+
+                  {hvStats.series?.length > 0 && (
+                    <div>
+                      <div className="text-xs font-bold text-white/70 mb-1">Visits — last 14 days</div>
+                      <div style={{ width: "100%", height: 160 }}>
+                        <ResponsiveContainer>
+                          <BarChart data={hvStats.series}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
+                            <XAxis dataKey="day" tick={{ fill: "rgba(255,255,255,0.5)", fontSize: 10 }} tickFormatter={(d) => (d || "").slice(5)} />
+                            <YAxis allowDecimals={false} tick={{ fill: "rgba(255,255,255,0.5)", fontSize: 10 }} />
+                            <Tooltip contentStyle={{ background: "#0f172a", border: "1px solid rgba(255,255,255,0.1)", fontSize: 12 }} />
+                            <Bar dataKey="views" fill="#60a5fa" radius={[3, 3, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  )}
+
+                  {hvStats.bySchool?.length > 1 && (
+                    <div>
+                      <div className="text-xs font-bold text-white/70 mb-1">By school</div>
+                      <div className="overflow-x-auto rounded border border-white/10">
+                        <table className="w-full text-xs">
+                          <thead className="bg-white/5 text-white/50">
+                            <tr><th className="p-2 text-left">School</th><th className="p-2 text-right">Visits (all time)</th></tr>
+                          </thead>
+                          <tbody>
+                            {hvStats.bySchool.map((s, i) => (
+                              <tr key={i} className="border-t border-white/5">
+                                <td className="p-2">{s.school}</td>
+                                <td className="p-2 text-right font-semibold">{s.views}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                  <div className="text-[10px] text-white/40">Counted once per browser tab session when the /houses portal is opened.</div>
                 </>
               )}
             </div>

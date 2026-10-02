@@ -77,6 +77,20 @@ const BehaviorConfigSchema = new mongoose.Schema(
     // Email the logging teacher a suggested parent note to review/edit/send.
     teacherDraft: { type: Boolean, default: true },
 
+    // How a THRESHOLD (pattern) notice is handled — the accumulation case, NOT a
+    // handbook white-slip offence. Lets a school route the proposed parent note to
+    // the student's homeroom teacher (their voice, their send) and copy the VP the
+    // recommendation, without prescribing a consequence (VP's discretion).
+    //   sender:  "logging" (default) = the teacher who logged it; "homeroom" = the
+    //            student's homeroom teacher authors/sends it.
+    //   notifyVp: email the VP the proposed note as a recommendation for awareness.
+    //   omitConsequence: don't state a consequence in the note (leave it unsaid).
+    thresholdNotice: {
+      sender: { type: String, enum: ["logging", "homeroom"], default: "logging" },
+      notifyVp: { type: Boolean, default: false },
+      omitConsequence: { type: Boolean, default: false },
+    },
+
     // Weekly admin digest (opt-in): a Monday email to leadership summarising the
     // week — students/teachers/behaviours/notices + supportive suggestions.
     adminDigest: {
@@ -92,6 +106,26 @@ const BehaviorConfigSchema = new mongoose.Schema(
       type: [{ noticeNumber: { type: Number }, action: { type: String, default: "" }, _id: false }],
       default: [],
     },
+    // Whether reaching the behaviour threshold auto-RECOMMENDS a white slip.
+    // Off by default: per admin policy, white slips are reserved for handbook-
+    // defined offences (behaviours flagged immediateWhiteSlip, which fire a slip
+    // on their own). At the threshold we still surface a recommended CONSEQUENCE
+    // (the ladder / AI coach) to the teacher and VP — just not a white slip.
+    autoRecommendWhiteSlipAtThreshold: { type: Boolean, default: false },
+
+    // Handbook white-slip escalation (Part C/D), configurable + off by default:
+    //  • emailsPerTermToWhiteSlip: N notices home in a term → recommend a white slip (0 = off)
+    //  • detentionFromCount: the white-slip number (this term) that starts after-school detention
+    //  • suspensionAtCount: the white-slip number that triggers a suspension
+    //  • suspensionDays: length of that suspension
+    whiteSlipLadder: {
+      enabled: { type: Boolean, default: false },
+      emailsPerTermToWhiteSlip: { type: Number, default: 5 },
+      detentionFromCount: { type: Number, default: 3 },
+      suspensionAtCount: { type: Number, default: 6 },
+      suspensionDays: { type: Number, default: 2 },
+    },
+
     // The ONLY consequences the AI coach may suggest — keeps suggestions
     // school-approved, age-appropriate and defensible (no freeform invention).
     consequenceWhitelist: {
@@ -102,6 +136,7 @@ const BehaviorConfigSchema = new mongoose.Schema(
         "Apology letter — clearly state what happened, what you wish you'd done differently, and what you'll do to prevent it.",
         "Reflection on what happened in class today, using 3 relevant Bible verses.",
         "Detention",
+        "Loss of extracurricular participation for a set period (e.g. one week to one month) — clubs, teams, or events.",
         "In-school suspension",
         "At-home suspension",
         "Meeting with the parents and the Principal (or VP)",
@@ -146,9 +181,24 @@ const BehaviorConfigSchema = new mongoose.Schema(
     // (so the public portal isn't openly browseable). Blank = portal disabled.
     housePortalCode: { type: String, default: "" },
 
+    // Latest tally-event result (food drive, cleanup, …), shown as a celebratory
+    // banner on /houses for ~2 weeks after upload. { label, at, houses[], students[] }.
+    houseEventResult: { type: mongoose.Schema.Types.Mixed, default: null },
+
     // Start-of-term marker: only house points earned AFTER this date count toward
     // the standings (earlier events are kept for history). Null = count all.
     housePointsResetAt: { type: Date, default: null },
+
+    // "Reset negatives only": negative house-point events on/before this date stop
+    // counting toward the standings, while positives are kept. Null = count all
+    // negatives. (A separate marker from housePointsResetAt, which clears both.)
+    houseNegativeResetAt: { type: Date, default: null },
+
+    // What the PUBLIC /houses page shows students. Negatives (conduct) are hidden
+    // from students by default; positives are shown. A logged-in teacher viewing
+    // the page always sees the full breakdown (with a note that students don't).
+    housesPublicShowPositives: { type: Boolean, default: true },
+    housesPublicShowNegatives: { type: Boolean, default: false },
 
     // ── House points report (opt-in) ───────────────────────────────────────
     // A standings email with each house's total + its top-3 contributing
@@ -198,6 +248,90 @@ const BehaviorConfigSchema = new mongoose.Schema(
       // Auto-clear the GUDD list every Friday (end of school day, school timezone)
       // so staff don't have to reset it manually.
       autoResetFriday: { type: Boolean, default: false },
+      // Recycling the list awards house points to the houses with the FEWEST
+      // excluded members (1st/2nd/3rd). Points are configurable; enabled by
+      // default. lastAwardAt records the most recent award for reference.
+      award: {
+        enabled: { type: Boolean, default: true },
+        first: { type: Number, default: 100 },
+        second: { type: Number, default: 60 },
+        third: { type: Number, default: 30 },
+      },
+      lastAwardAt: { type: Date, default: null },
+    },
+
+    // Month-end conduct competition: on the last school day of each month, the
+    // houses with the fewest infractions win 1st/2nd/3rd and are awarded house
+    // points (positive, on top of the per-infraction deductions). Ranked by
+    // infraction count; uniform excluded by default (GUDD has its own award).
+    monthlyConductAward: {
+      enabled: { type: Boolean, default: true },
+      // What decides the winners: fewest infractions, or most positive points.
+      basis: { type: String, enum: ["fewest_infractions", "most_positive"], default: "fewest_infractions" },
+      first: { type: Number, default: 100 },
+      second: { type: Number, default: 60 },
+      third: { type: Number, default: 30 },
+      includeUniform: { type: Boolean, default: false },
+      lastAwardMonth: { type: String, default: null }, // "YYYY-MM" already awarded
+      lastAwardAt: { type: Date, default: null },
+    },
+
+    // Master switch for applying house points from individual Compass behaviour
+    // logging (good adds, bad subtracts). Off = behaviours are still recorded and
+    // still drive strikes/notices, but they don't move house totals.
+    // (Legacy — superseded by the granular switches below; kept for migration.)
+    houseIndividualPoints: { type: Boolean, default: true },
+
+    // Granular house-point switches:
+    //  • housePositivePoints — positive behaviours ADD to the student's house.
+    //  • houseNegativePoints — negative behaviours DEDUCT from the house.
+    //  • houseWhiteSlipDeduct — a white slip deducts houseWhiteSlipPoints (a single,
+    //    larger penalty). Meant for schools that DON'T deduct per-infraction but
+    //    still want a real cost for a white slip, so only applied when negative
+    //    deductions are off (avoids double-counting a white-slip offence).
+    housePositivePoints: { type: Boolean, default: true },
+    houseNegativePoints: { type: Boolean, default: false },
+    houseWhiteSlipDeduct: { type: Boolean, default: false },
+    houseWhiteSlipPoints: { type: Number, default: 10 },
+
+    // Daily VP accountability digest: a list of consequences teachers were to
+    // carry out that aren't done yet — grouped by teacher, flagging ones now past
+    // the effectiveness window (a late consequence loses its effect) as "missed".
+    // Helps build follow-through habits. Toggle off once habits are formed.
+    consequenceDigest: {
+      enabled: { type: Boolean, default: true },
+      fadeDays: { type: Number, default: 2 }, // after this, a consequence is "missed"
+      emailTeachers: { type: Boolean, default: true }, // also nudge each teacher their own
+      lastSentAt: { type: Date, default: null },
+    },
+
+    // Bi-weekly teacher nudges: (a) a proactive "students in your homeroom to
+    // check in with" email to homeroom teachers, and (b) a gentle "how's it
+    // going?" note to teachers who've been quiet on Compass. intervalDays sets
+    // the cadence; lastRunAt guards against sending twice in a period.
+    // Monthly per-teacher encouragement email ("your month in Compass"). The
+    // per-teacher opt-out lives on BehaviorTeacher.monthlySummary; this just marks
+    // the last month it ran (YYYY-MM) so the cron fires once a month per school.
+    monthlyTeacherSummary: {
+      enabled: { type: Boolean, default: true },
+      lastRunMonth: { type: String, default: "" },
+    },
+
+    teacherNudge: {
+      enabled: { type: Boolean, default: true },
+      intervalDays: { type: Number, default: 14 },
+      lastRunAt: { type: Date, default: null },
+    },
+
+    // Merch store: students spend their personal (positive) points on items with
+    // a house logo/slogan. This is a SEPARATE wallet — redeeming never lowers the
+    // house's standing. Items are { name, points, image? }.
+    merchStore: {
+      enabled: { type: Boolean, default: false },
+      items: {
+        type: [{ name: { type: String, default: "" }, points: { type: Number, default: 0 }, image: { type: String, default: "" }, _id: false }],
+        default: [],
+      },
     },
 
     // House points awarded to a student's house when a teacher sends them an

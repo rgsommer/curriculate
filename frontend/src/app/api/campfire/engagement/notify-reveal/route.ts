@@ -88,8 +88,18 @@ export async function POST(req: Request) {
     const recipientByEmail = ((eng.excluded_emails as string[] | null) ?? []).map(
       (e) => e.toLowerCase()
     );
+    // Engagement guests who left a result-email (students who joined a contest via an
+    // Edsby link). Cards never collect one, so this is empty for them.
+    const { data: guestRows } = await admin
+      .from("engagement_guests")
+      .select("email")
+      .eq("engagement_id", engagementId)
+      .not("email", "is", null);
+    const guestEmails = (guestRows ?? [])
+      .map((g) => (g.email as string | null)?.toLowerCase())
+      .filter((e): e is string => !!e);
     const emails = Array.from(
-      new Set([...memberEmails, ...pendingEmails, ...recipientByEmail])
+      new Set([...memberEmails, ...pendingEmails, ...recipientByEmail, ...guestEmails])
     );
     if (emails.length === 0) {
       return NextResponse.json({ ok: true, sent: 0 });

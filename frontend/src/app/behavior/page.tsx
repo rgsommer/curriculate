@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import { api, getToken, loginHref, issueWhiteSlip, completeConsequence, homeroomFollowup, type Me, type StudentSummary } from "./_lib/api";
 import { Markdown } from "./_lib/Markdown";
@@ -77,8 +77,12 @@ export default function BehaviorDashboard() {
         <p className="mt-1 text-sm text-slate-500 capitalize">Role: {membership.role}</p>
       </Card>
 
-      {!membership.name?.trim() && (
-        <SetMyName onSaved={(n) => setMe((m) => (m && m.membership ? { ...m, membership: { ...m.membership, name: n } } : m))} />
+      {(!membership.name?.trim() || !membership.courtesyName?.trim()) && (
+        <SetMyName
+          name={membership.name || ""}
+          courtesyName={membership.courtesyName || ""}
+          onSaved={(n, c) => setMe((m) => (m && m.membership ? { ...m, membership: { ...m.membership, name: n, courtesyName: c } } : m))}
+        />
       )}
 
       {canLog && (
@@ -89,6 +93,8 @@ export default function BehaviorDashboard() {
           Quick Action — Log an incident
         </Link>
       )}
+
+      {canLog && <PositiveNudge />}
 
       <Link
         href="/behavior/students"
@@ -102,11 +108,11 @@ export default function BehaviorDashboard() {
         channelLabel={me.config?.edsby?.enabled ? "Edsby" : me.config?.channels?.emailToParents ? "email" : ""}
       />}
 
-      {canLog && <ReminderToday />}
+      {canLog && <ReminderToday firstName={(membership.name || "").trim().split(" ")[0]} />}
 
-      {canLog && <ProbationWatch ladder={me.config?.consequenceLadder || []} />}
+      {canLog && <ProbationWatch ladder={me.config?.consequenceLadder || []} myHomeroom={membership.homeroom || ""} />}
 
-      {canLog && <StudentsToWatch fadeDays={me.config?.fadeWindowDays} />}
+      {canLog && <StudentsToWatch fadeDays={me.config?.fadeWindowDays} myHomeroom={membership.homeroom || ""} />}
 
       {canLog && <DailyMovers housesOn={housesOn} />}
 
@@ -138,6 +144,11 @@ export default function BehaviorDashboard() {
                 House competitions
               </Link>
             )}
+            {housesOn && (
+              <Link href="/behavior/food-drive" className="rounded-lg border border-slate-300 px-3 py-1.5">
+                Tally import
+              </Link>
+            )}
           </div>
           <ReferColleague canInviteAdmin />
         </Card>
@@ -155,29 +166,154 @@ export default function BehaviorDashboard() {
   );
 }
 
-// Prompt an invited teacher (who joined by email with no name) to choose the
-// name they want shown in Compass. Appears until a name is set.
-function SetMyName({ onSaved }: { onSaved: (name: string) => void }) {
-  const [name, setName] = useState("");
+// Periodic, one-tap "recognize a student for good behaviour" nudge. Shows a
+// green box on the dashboard (throttled via localStorage so it doesn't nag):
+// type a name → tap a positive → it logs immediately. Snoozes after use.
+function PositiveNudge() {
+  const SNOOZE_KEY = "compass_posnudge_snooze";
+  const [show, setShow] = useState(false);
+  const [students, setStudents] = useState<StudentSummary[] | null>(null);
+  const [positives, setPositives] = useState<{ _id: string; name: string }[]>([]);
+  const [q, setQ] = useState("");
+  const [picked, setPicked] = useState<StudentSummary | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [doneMsg, setDoneMsg] = useState("");
+
+  useEffect(() => {
+    try { if (Date.now() < Number(localStorage.getItem(SNOOZE_KEY) || 0)) return; } catch { /* ignore */ }
+    setShow(true);
+  }, []);
+
+  useEffect(() => {
+    if (!show) return;
+    api<{ students: StudentSummary[] }>("/students").then((d) => setStudents(d.students || [])).catch(() => setStudents([]));
+    api<{ behaviors: any[] }>("/behaviors")
+      .then((d) => setPositives((d.behaviors || []).filter((b) => b.kind === "positive" && b.active !== false).map((b) => ({ _id: b._id, name: b.name }))))
+      .catch(() => { /* ignore */ });
+  }, [show]);
+
+  function snooze(hours: number) {
+    try { localStorage.setItem(SNOOZE_KEY, String(Date.now() + hours * 3600 * 1000)); } catch { /* ignore */ }
+    setShow(false);
+  }
+
+  const matches = q.trim().length >= 1 && !picked
+    ? (students || []).filter((s) => `${s.preferredName || s.firstName} ${s.lastName || ""}`.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 6)
+    : [];
+
+  async function logPositive(behaviorId: string) {
+    if (!picked) return;
+    setBusyId(behaviorId);
+    try {
+      await api("/incidents", { body: { studentId: picked._id, behaviorIds: [behaviorId] } });
+      setDoneMsg(`✓ Nice! Recognized ${picked.preferredName || picked.firstName}.`);
+      try { localStorage.setItem(SNOOZE_KEY, String(Date.now() + 20 * 3600 * 1000)); } catch { /* ignore */ }
+      setTimeout(() => setShow(false), 1600);
+    } catch (e: any) {
+      setDoneMsg(`✗ ${e.message}`);
+      setBusyId(null);
+    }
+  }
+
+  if (!show) return null;
+  return (
+    <div className="rounded-xl border border-green-300 bg-green-50 p-4">
+      {doneMsg ? (
+        <p className="text-sm font-medium text-green-800">{doneMsg}</p>
+      ) : (
+        <>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p className="text-sm font-semibold text-green-900">🌟 Catch someone being good?</p>
+              <p className="text-xs text-green-700">Recognizing effort and character takes a few seconds — and it goes a long way.</p>
+            </div>
+            <button onClick={() => snooze(6)} className="shrink-0 text-green-700/70 hover:text-green-900" aria-label="Dismiss">✕</button>
+          </div>
+
+          {!picked ? (
+            <div className="relative mt-2">
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Start typing a student's name…"
+                className="w-full rounded-lg border border-green-300 bg-white px-3 py-2 text-sm"
+              />
+              {matches.length > 0 && (
+                <ul className="mt-1 divide-y divide-green-100 overflow-hidden rounded-lg border border-green-200 bg-white">
+                  {matches.map((s) => (
+                    <li key={s._id}>
+                      <button onClick={() => { setPicked(s); setQ(""); }} className="block w-full px-3 py-2 text-left text-sm hover:bg-green-50">
+                        {s.preferredName || s.firstName} {s.lastName}
+                        {s.grade ? <span className="ml-1 text-xs text-slate-400">Gr {s.grade}</span> : null}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ) : (
+            <div className="mt-2">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-green-900">{picked.preferredName || picked.firstName} {picked.lastName}</p>
+                <button onClick={() => setPicked(null)} className="text-xs text-green-700 underline">change</button>
+              </div>
+              <p className="mt-1 text-xs text-green-700">Tap what they did well — it logs right away:</p>
+              <div className="mt-1.5 flex max-h-40 flex-wrap gap-1.5 overflow-y-auto">
+                {positives.map((b) => (
+                  <button key={b._id} onClick={() => logPositive(b._id)} disabled={!!busyId}
+                    className="rounded-full border border-green-300 bg-white px-2.5 py-1 text-xs text-green-800 hover:bg-green-100 disabled:opacity-40">
+                    {busyId === b._id ? "…" : b.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-2">
+            <button onClick={() => snooze(20)} className="text-xs text-green-700/80 underline">Not now</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// First sign-in prompt: capture the teacher's full name (friendly/internal) AND
+// their official parent-facing name. Appears until both are set.
+function SetMyName({ name: name0, courtesyName: courtesy0, onSaved }: { name?: string; courtesyName?: string; onSaved: (name: string, courtesyName: string) => void }) {
+  const [name, setName] = useState(name0 || "");
+  const [courtesyName, setCourtesyName] = useState(courtesy0 || "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   async function save() {
-    if (!name.trim()) return;
+    if (!name.trim()) { setErr("Please enter your first and last name."); return; }
     setBusy(true); setErr("");
-    try { await api("/my-name", { method: "PUT", body: { name: name.trim() } }); onSaved(name.trim()); }
-    catch (e: any) { setErr(e.message); setBusy(false); }
+    try {
+      await api("/my-name", { method: "PUT", body: { name: name.trim(), courtesyName: courtesyName.trim() } });
+      onSaved(name.trim(), courtesyName.trim());
+    } catch (e: any) { setErr(e.message); setBusy(false); }
   }
   return (
     <Card>
-      <h2 className="font-semibold">What name should appear in Compass?</h2>
-      <p className="mt-0.5 text-sm text-slate-500">This is how you&apos;ll be shown (e.g. &ldquo;logged by …&rdquo;). You can change it later, or an admin can.</p>
-      <div className="mt-2 flex flex-wrap gap-2">
-        <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save()}
-          placeholder="e.g. Mr. Lee / Ms. Grewal" className="min-w-[14rem] flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" autoFocus />
-        <button onClick={save} disabled={busy || !name.trim()} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">
-          {busy ? "Saving…" : "Save name"}
-        </button>
+      <h2 className="font-semibold">Welcome — let&apos;s set your name</h2>
+      <p className="mt-0.5 text-sm text-slate-500">Two quick things, so notices and logs read correctly. You can change these later, or an admin can.</p>
+      <div className="mt-3 space-y-3">
+        <label className="block text-sm">
+          <span className="font-medium text-slate-700">Your name</span>
+          <span className="block text-xs text-slate-400">How you&apos;re shown to staff in Compass (e.g. &ldquo;logged by …&rdquo;).</span>
+          <input value={name} onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Richard Sommer" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" autoFocus />
+        </label>
+        <label className="block text-sm">
+          <span className="font-medium text-slate-700">Your official (parent-facing) name</span>
+          <span className="block text-xs text-slate-400">Used in messages home and on notices (e.g. &ldquo;Mr. Sommer&rdquo;, &ldquo;Miss Lau&rdquo;).</span>
+          <input value={courtesyName} onChange={(e) => setCourtesyName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save()}
+            placeholder="e.g. Mr. Sommer" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        </label>
       </div>
+      <button onClick={save} disabled={busy || !name.trim()} className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">
+        {busy ? "Saving…" : "Save"}
+      </button>
       {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
     </Card>
   );
@@ -293,11 +429,26 @@ function HousesCard({ canLog, isAdmin, portalCode, events = [] }: { canLog: bool
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  // Tap a house → composite breakdown (staff view: full, incl. conduct), same as /houses.
+  const [openHouse, setOpenHouse] = useState<string | null>(null);
+  const [detailById, setDetailById] = useState<Record<string, any>>({});
+  const [detailBusy, setDetailBusy] = useState(false);
 
   function load() {
     api<{ houses: any[] }>("/houses").then((d) => setHouses(d.houses || [])).catch(() => setHouses([]));
   }
   useEffect(load, []);
+
+  async function toggleHouse(id: string) {
+    if (openHouse === id) { setOpenHouse(null); return; }
+    setOpenHouse(id);
+    if (!detailById[id]) {
+      setDetailBusy(true);
+      try { const d = await api<any>(`/houses/detail?houseId=${encodeURIComponent(id)}`); setDetailById((p) => ({ ...p, [id]: d })); }
+      catch { /* leave undefined → shows nothing */ }
+      finally { setDetailBusy(false); }
+    }
+  }
 
   async function award() {
     if (!houseId || !Number(points)) return;
@@ -382,16 +533,76 @@ function HousesCard({ canLog, isAdmin, portalCode, events = [] }: { canLog: bool
       {msg && <p className="mt-2 text-sm text-green-700">{msg}</p>}
 
       <ul className="mt-3 space-y-2">
-        {houses.map((h) => (
-          <li key={h._id} className="flex items-center gap-3">
-            <span className="inline-block h-3 w-3 shrink-0 rounded-full" style={{ background: h.color || "#0f172a" }} />
-            <span className="w-28 shrink-0 text-sm font-medium">{h.name}</span>
-            <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
-              <div className="h-full rounded-full" style={{ width: `${barPct(h.points)}%`, background: h.color || "#0f172a", opacity: (h.points || 0) < 0 ? 0.45 : 1 }} />
-            </div>
-            <span className="w-12 shrink-0 text-right text-sm tabular-nums font-semibold">{h.points || 0}</span>
+        {houses.map((h) => {
+          const d = detailById[h._id];
+          const isOpen = openHouse === h._id;
+          return (
+          <li key={h._id}>
+            <button type="button" onClick={() => toggleHouse(h._id)} className="flex w-full items-center gap-3 rounded-lg px-1 py-1 text-left hover:bg-slate-50">
+              <span className="inline-block h-3 w-3 shrink-0 rounded-full" style={{ background: h.color || "#0f172a" }} />
+              <span className="w-28 shrink-0 text-sm font-medium">{h.name}</span>
+              <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+                <div className="h-full rounded-full" style={{ width: `${barPct(h.points)}%`, background: h.color || "#0f172a", opacity: (h.points || 0) < 0 ? 0.45 : 1 }} />
+              </div>
+              <span className="w-12 shrink-0 text-right text-sm tabular-nums font-semibold">{h.points || 0}</span>
+              <span className="w-3 shrink-0 text-xs text-slate-400">{isOpen ? "▾" : "▸"}</span>
+            </button>
+            {isOpen && (
+              <div className="mt-1 ml-6 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
+                {!d ? (
+                  <p className="text-slate-400">{detailBusy ? "Loading…" : "No details."}</p>
+                ) : (
+                  <>
+                    {d.individual?.negative < 0 && (
+                      <p className="mb-2 rounded-md bg-amber-50 px-2 py-1 text-[11px] text-amber-700">👁 Staff view: students don&apos;t see the conduct (negative) details below.</p>
+                    )}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="rounded-lg bg-white p-2">
+                        <div className="text-xs text-slate-400">Individual Compass points</div>
+                        <div className="font-bold tabular-nums">{d.individual?.total > 0 ? `+${d.individual.total}` : d.individual?.total ?? 0}</div>
+                        <div className="text-[11px] text-slate-400">+{d.individual?.positive ?? 0} good{d.individual?.negative ? ` · ${d.individual.negative} conduct` : ""}</div>
+                      </div>
+                      <div className="rounded-lg bg-white p-2">
+                        <div className="text-xs text-slate-400">Team &amp; house events</div>
+                        <div className="font-bold tabular-nums">{d.team?.total > 0 ? `+${d.team.total}` : d.team?.total ?? 0}</div>
+                      </div>
+                    </div>
+                    {(d.individual?.items || []).length > 0 && (
+                      <div className="mt-3">
+                        <div className="text-xs font-semibold text-slate-600">Individual Compass points</div>
+                        <ul className="mt-1 divide-y divide-slate-100">
+                          {d.individual.items.map((it: any, i: number) => (
+                            <li key={i} className="flex items-center justify-between gap-2 py-1">
+                              <span className="min-w-0 truncate text-slate-600">{it.reason} <span className="text-slate-300">×{it.count}</span></span>
+                              <span className={`shrink-0 tabular-nums font-medium ${it.points < 0 ? "text-red-600" : "text-green-600"}`}>{it.points > 0 ? `+${it.points}` : it.points}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {(d.team?.items || []).length > 0 && (
+                      <div className="mt-3">
+                        <div className="text-xs font-semibold text-slate-600">Team &amp; house events</div>
+                        <ul className="mt-1 divide-y divide-slate-100">
+                          {d.team.items.map((it: any, i: number) => (
+                            <li key={i} className="flex items-center justify-between gap-2 py-1">
+                              <span className="min-w-0 truncate text-slate-600">{it.reason} <span className="text-slate-300">×{it.count}</span></span>
+                              <span className={`shrink-0 tabular-nums font-medium ${it.points < 0 ? "text-red-600" : "text-green-600"}`}>{it.points > 0 ? `+${it.points}` : it.points}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {(d.individual?.items || []).length === 0 && (d.team?.items || []).length === 0 && (
+                      <p className="text-slate-400">No points yet.</p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
           </li>
-        ))}
+          );
+        })}
       </ul>
       <p className="mt-2 text-xs text-slate-400">
         {houses.reduce((n, h) => n + (h.members || 0), 0)} students assigned · positive = awards, negative = incident deductions ·{" "}
@@ -430,9 +641,10 @@ function HrButton({ studentId, done }: { studentId: string; done?: boolean }) {
   );
 }
 
-function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: string }[] }) {
+function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number; action: string }[]; myHomeroom?: string }) {
   const [rows, setRows] = useState<StudentSummary[] | null>(null);
   const [trigger, setTrigger] = useState(3);
+  const [othersOpen, setOthersOpen] = useState(false);
 
   useEffect(() => {
     api<{ students: StudentSummary[]; triggerCount: number }>("/students")
@@ -444,7 +656,8 @@ function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: st
         // even if they're not otherwise on probation-watch).
         const watch = (d.students || [])
           .filter((s) => s.pendingWhiteSlipId || (s.pendingConsequences && s.pendingConsequences.length > 0) || ((s.noticesHomeCount || 0) >= 1 && (s.activeCount || 0) >= t - 1))
-          .sort((a, b) => (b.pendingWhiteSlipId ? 1 : 0) - (a.pendingWhiteSlipId ? 1 : 0) || (b.noticesHomeCount || 0) - (a.noticesHomeCount || 0) || (b.activeCount || 0) - (a.activeCount || 0));
+          // Grouped by homeroom (classGroup), then most-urgent first within a homeroom.
+          .sort((a, b) => (a.classGroup || "").localeCompare(b.classGroup || "") || (b.pendingWhiteSlipId ? 1 : 0) - (a.pendingWhiteSlipId ? 1 : 0) || (b.noticesHomeCount || 0) - (a.noticesHomeCount || 0) || (b.activeCount || 0) - (a.activeCount || 0));
         setRows(watch);
       })
       .catch(() => setRows([]));
@@ -476,6 +689,63 @@ function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: st
   // The consequence the next notice would carry = ladder step for (notices + 1).
   const nextAction = (notices: number) => ladder.find((l) => l.noticeNumber === notices + 1)?.action || null;
 
+  // "Your homeroom first": a homeroom teacher sees their own students up top;
+  // the rest stay here (not hidden, just collapsed) so nothing slips through the
+  // cracks while adoption is still growing.
+  const mine = myHomeroom ? rows.filter((s) => (s.classGroup || "") === myHomeroom) : [];
+  const others = myHomeroom ? rows.filter((s) => (s.classGroup || "") !== myHomeroom) : rows;
+  const showOthers = !myHomeroom || mine.length === 0 || othersOpen;
+
+  const renderRow = (s: StudentSummary, showHeader: boolean) => {
+    // Prefer the handbook-ladder recommendation (white-slip count / notices
+    // this term) when the backend provides it; else the admin ladder step.
+    const action = s.recommendedConsequence || nextAction(s.noticesHomeCount || 0);
+    return (
+      <Fragment key={s._id}>
+        {showHeader && (
+          <li className="!border-t-0 pt-2 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-400">{s.classGroup || "No homeroom"}</li>
+        )}
+        <li className="py-2">
+          <div className="flex items-center justify-between gap-2 text-sm">
+            <span className="flex min-w-0 items-center gap-2">
+              <Link href={`/behavior/student/${s._id}`} className="min-w-0 hover:text-slate-600">
+                <span className="font-medium">{s.lastName}, {s.firstName}</span> <span className="text-slate-400">{s.classGroup}</span>
+                {s.pendingWhiteSlipId
+                  ? <span className="mt-0.5 block text-xs text-red-700">Next: White slip recommended</span>
+                  : action && <span className="mt-0.5 block text-xs text-red-700">Next: {action}</span>}
+              </Link>
+              <HrButton studentId={s._id} done={s.hrFollowedUpThisWeek} />
+            </span>
+            <span className="flex shrink-0 items-center gap-3">
+              <span className="text-xs text-slate-400">{s.noticesHomeCount} notice{(s.noticesHomeCount || 0) === 1 ? "" : "s"}</span>
+              <span className={`font-semibold tabular-nums ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
+                {s.activeCount}/{trigger} →
+              </span>
+            </span>
+          </div>
+          {s.pendingWhiteSlipId && (
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-slate-500">Confirm the consequence given:</span>
+              <button type="button" onClick={() => resolveSlip(s)}
+                className="rounded-md bg-amber-600 px-2 py-0.5 font-semibold text-white hover:bg-amber-700">Issued</button>
+              <button type="button"
+                onClick={() => { const t = window.prompt("What consequence was given instead of the white slip? (e.g. Work detention, Call home)"); if (t && t.trim()) resolveSlip(s, t.trim()); }}
+                className="rounded-md border border-slate-300 px-2 py-0.5 font-semibold text-slate-700 hover:bg-slate-50">Other…</button>
+            </div>
+          )}
+          {(s.pendingConsequences || []).map((c) => (
+            <div key={c.id} className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-slate-500">Consequence: <span className="font-medium text-slate-700">{c.type}</span></span>
+              <button type="button" onClick={() => markDone(s, c.id)}
+                title="The student has carried this out (e.g. handed in the lines)"
+                className="rounded-md border border-green-300 px-2 py-0.5 font-semibold text-green-700 hover:bg-green-50">✓ Mark completed</button>
+            </div>
+          ))}
+        </li>
+      </Fragment>
+    );
+  };
+
   return (
     <Card>
       <h2 className="font-semibold text-red-800">Recommended actions</h2>
@@ -483,55 +753,57 @@ function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: st
         Already had a notice home and back at or near the {trigger}-strike trigger. The next notice carries the rule-based consequence below; open a student for AI coaching suggestions too.
       </p>
       <ul className="mt-2 divide-y divide-slate-100">
-        {rows.map((s) => {
-          const action = nextAction(s.noticesHomeCount || 0);
-          return (
-            <li key={s._id} className="py-2">
-              <div className="flex items-center justify-between gap-2 text-sm">
-                <span className="flex min-w-0 items-center gap-2">
-                  <Link href={`/behavior/student/${s._id}`} className="min-w-0 hover:text-slate-600">
-                    <span className="font-medium">{s.lastName}, {s.firstName}</span> <span className="text-slate-400">{s.classGroup}</span>
-                    {s.pendingWhiteSlipId
-                      ? <span className="mt-0.5 block text-xs text-red-700">Next: White slip recommended</span>
-                      : action && <span className="mt-0.5 block text-xs text-red-700">Next: {action}</span>}
-                  </Link>
-                  <HrButton studentId={s._id} done={s.hrFollowedUpThisWeek} />
-                </span>
-                <span className="flex shrink-0 items-center gap-3">
-                  <span className="text-xs text-slate-400">{s.noticesHomeCount} notice{(s.noticesHomeCount || 0) === 1 ? "" : "s"}</span>
-                  <span className={`font-semibold tabular-nums ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
-                    {s.activeCount}/{trigger} →
-                  </span>
-                </span>
-              </div>
-              {s.pendingWhiteSlipId && (
-                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-                  <span className="text-slate-500">Confirm the consequence given:</span>
-                  <button type="button" onClick={() => resolveSlip(s)}
-                    className="rounded-md bg-amber-600 px-2 py-0.5 font-semibold text-white hover:bg-amber-700">Issued</button>
-                  <button type="button"
-                    onClick={() => { const t = window.prompt("What consequence was given instead of the white slip? (e.g. Work detention, Call home)"); if (t && t.trim()) resolveSlip(s, t.trim()); }}
-                    className="rounded-md border border-slate-300 px-2 py-0.5 font-semibold text-slate-700 hover:bg-slate-50">Other…</button>
-                </div>
+        {myHomeroom && mine.length > 0 && (
+          <>
+            <li className="!border-t-0 pt-2 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Your homeroom · {myHomeroom}</li>
+            {mine.map((s) => renderRow(s, false))}
+          </>
+        )}
+        {others.length > 0 && (
+          showOthers ? (
+            <>
+              {myHomeroom && mine.length > 0 && (
+                <li className="!border-t-0 pt-3 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Other homerooms</li>
               )}
-              {(s.pendingConsequences || []).map((c) => (
-                <div key={c.id} className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-                  <span className="text-slate-500">Consequence: <span className="font-medium text-slate-700">{c.type}</span></span>
-                  <button type="button" onClick={() => markDone(s, c.id)}
-                    className="rounded-md border border-green-300 px-2 py-0.5 font-semibold text-green-700 hover:bg-green-50">Mark done</button>
-                </div>
-              ))}
+              {others.map((s, i) => renderRow(s, i === 0 || (others[i - 1].classGroup || "") !== (s.classGroup || "")))}
+            </>
+          ) : (
+            <li className="!border-t-0 pt-2">
+              <button type="button" onClick={() => setOthersOpen(true)}
+                className="text-xs font-medium text-slate-500 underline underline-offset-2 hover:text-slate-800">
+                Show other homerooms ({others.length})
+              </button>
             </li>
-          );
-        })}
+          )
+        )}
       </ul>
     </Card>
   );
 }
 
-function StudentsToWatch({ fadeDays }: { fadeDays?: number }) {
+type Occ = { date: string; name: string; detail?: string; teacher?: string };
+function StudentsToWatch({ fadeDays, myHomeroom }: { fadeDays?: number; myHomeroom?: string }) {
   const [rows, setRows] = useState<StudentSummary[] | null>(null);
   const [trigger, setTrigger] = useState(3);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [occById, setOccById] = useState<Record<string, Occ[] | "loading">>({});
+  const [othersOpen, setOthersOpen] = useState(false);
+
+  async function toggleOcc(id: string) {
+    if (openId === id) { setOpenId(null); return; }
+    setOpenId(id);
+    if (occById[id] && occById[id] !== "loading") return;
+    setOccById((m) => ({ ...m, [id]: "loading" }));
+    try {
+      const d = await api<{ incidents: Array<{ behaviorSnapshot: { name: string; kind?: string }; detailText?: string; teacherName?: string; timestamp: string }> }>(`/students/${id}`);
+      const occ: Occ[] = (d.incidents || [])
+        .filter((inc) => inc.behaviorSnapshot?.kind !== "positive")
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        .slice(0, 12)
+        .map((inc) => ({ date: inc.timestamp, name: inc.behaviorSnapshot?.name || "Offence", detail: inc.detailText || "", teacher: inc.teacherName || "" }));
+      setOccById((m) => ({ ...m, [id]: occ }));
+    } catch { setOccById((m) => ({ ...m, [id]: [] })); }
+  }
 
   useEffect(() => {
     api<{ students: StudentSummary[]; triggerCount: number }>("/students")
@@ -540,13 +812,59 @@ function StudentsToWatch({ fadeDays }: { fadeDays?: number }) {
         setTrigger(t);
         const watch = (d.students || [])
           .filter((s) => (s.activeCount || 0) >= t - 1)
-          .sort((a, b) => (b.activeCount || 0) - (a.activeCount || 0));
+          // Grouped by homeroom (classGroup), then most strikes first within a homeroom.
+          .sort((a, b) => (a.classGroup || "").localeCompare(b.classGroup || "") || (b.activeCount || 0) - (a.activeCount || 0));
         setRows(watch);
       })
       .catch(() => setRows([]));
   }, []);
 
   if (!rows || rows.length === 0) return null;
+
+  // "Your homeroom first": own students up top; the rest collapsed but reachable.
+  const mine = myHomeroom ? rows.filter((s) => (s.classGroup || "") === myHomeroom) : [];
+  const others = myHomeroom ? rows.filter((s) => (s.classGroup || "") !== myHomeroom) : rows;
+  const showOthers = !myHomeroom || mine.length === 0 || othersOpen;
+
+  const renderRow = (s: StudentSummary, showHeader: boolean) => (
+    <Fragment key={s._id}>
+      {showHeader && (
+        <li className="!border-t-0 pt-2 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-400">{s.classGroup || "No homeroom"}</li>
+      )}
+      <li className="flex items-center justify-between gap-2 py-2 text-sm">
+        <span className="flex min-w-0 items-center gap-2">
+          <button onClick={() => toggleOcc(s._id)} title="Show the occurrences" className="shrink-0 text-slate-400 hover:text-slate-700">{openId === s._id ? "▾" : "▸"}</button>
+          <Link href={`/behavior/student/${s._id}`} className="min-w-0 truncate font-medium hover:text-slate-600">
+            {s.lastName}, {s.firstName} <span className="text-slate-400">{s.classGroup}</span>
+          </Link>
+          <HrButton studentId={s._id} done={s.hrFollowedUpThisWeek} />
+        </span>
+        <span className={`shrink-0 font-semibold tabular-nums ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
+          {s.activeCount}/{trigger} →
+        </span>
+      </li>
+      {openId === s._id && (
+        <li className="!border-t-0 pb-2 pl-6 text-xs text-slate-600">
+          {occById[s._id] === "loading" ? (
+            <span className="text-slate-400">Loading…</span>
+          ) : (occById[s._id] as Occ[])?.length ? (
+            <ul className="space-y-0.5">
+              {(occById[s._id] as Occ[]).map((o, k) => (
+                <li key={k}>
+                  <span className="text-slate-400">{new Date(o.date).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}</span>
+                  {" · "}<span className="font-medium">{o.name}</span>
+                  {o.detail ? <span className="text-slate-500"> — {o.detail}</span> : null}
+                  {o.teacher ? <span className="text-slate-400"> ({o.teacher})</span> : null}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <span className="text-slate-400">No recent occurrences.</span>
+          )}
+        </li>
+      )}
+    </Fragment>
+  );
 
   return (
     <Card>
@@ -556,19 +874,29 @@ function StudentsToWatch({ fadeDays }: { fadeDays?: number }) {
         {fadeDays ? ` Strikes fade after ${fadeDays} days, so the trend can still turn around.` : ""}
       </p>
       <ul className="mt-2 divide-y divide-slate-100">
-        {rows.map((s) => (
-          <li key={s._id} className="flex items-center justify-between gap-2 py-2 text-sm">
-            <span className="flex min-w-0 items-center gap-2">
-              <Link href={`/behavior/student/${s._id}`} className="min-w-0 truncate font-medium hover:text-slate-600">
-                {s.lastName}, {s.firstName} <span className="text-slate-400">{s.classGroup}</span>
-              </Link>
-              <HrButton studentId={s._id} done={s.hrFollowedUpThisWeek} />
-            </span>
-            <span className={`shrink-0 font-semibold tabular-nums ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
-              {s.activeCount}/{trigger} →
-            </span>
-          </li>
-        ))}
+        {myHomeroom && mine.length > 0 && (
+          <>
+            <li className="!border-t-0 pt-2 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Your homeroom · {myHomeroom}</li>
+            {mine.map((s) => renderRow(s, false))}
+          </>
+        )}
+        {others.length > 0 && (
+          showOthers ? (
+            <>
+              {myHomeroom && mine.length > 0 && (
+                <li className="!border-t-0 pt-3 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Other homerooms</li>
+              )}
+              {others.map((s, i) => renderRow(s, i === 0 || (others[i - 1].classGroup || "") !== (s.classGroup || "")))}
+            </>
+          ) : (
+            <li className="!border-t-0 pt-2">
+              <button type="button" onClick={() => setOthersOpen(true)}
+                className="text-xs font-medium text-slate-500 underline underline-offset-2 hover:text-slate-800">
+                Show other homerooms ({others.length})
+              </button>
+            </li>
+          )
+        )}
       </ul>
     </Card>
   );
@@ -770,7 +1098,7 @@ function PendingDecisions({ autoSend, channelLabel }: { autoSend: boolean; chann
   );
 }
 
-function ReminderToday() {
+function ReminderToday({ firstName }: { firstName?: string }) {
   const [items, setItems] = useState<any[] | null>(null);
   const [msg, setMsg] = useState("");
 
@@ -796,7 +1124,8 @@ function ReminderToday() {
 
   return (
     <Card>
-      <h2 className="font-semibold">Reminder for today</h2>
+      <h2 className="font-semibold">{firstName ? `Reminders for ${firstName} today` : "Reminder for today"}</h2>
+      <p className="mt-0.5 text-xs text-slate-400">Consequences from offences you logged — for you to follow up on.</p>
       {msg && <p className="mt-1 text-sm text-amber-700">{msg}</p>}
       {items === null && <p className="mt-1 text-sm text-slate-400">Loading…</p>}
       {items && items.length === 0 && <p className="mt-1 text-sm text-slate-500">Nothing due today 🎉</p>}
@@ -809,18 +1138,24 @@ function ReminderToday() {
               <p className="text-sm font-medium">
                 {name} <span className="text-slate-400">{s?.classGroup}</span>
                 {f.multiplier > 1 && <span className="ml-2 text-xs text-red-600">×{f.multiplier}</span>}
+                {(f.incidentAt || f.createdAt) && (
+                  <span className="ml-2 text-xs font-normal text-slate-400">
+                    · incident {new Date(f.incidentAt || f.createdAt).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}
+                  </span>
+                )}
               </p>
               <p className="text-sm text-slate-600">
                 {f.behaviorName}: {f.consequenceText}
               </p>
+              <p className="mt-1 text-xs text-slate-400">Did the student complete this? (About the task itself — not the parent message.)</p>
               <div className="mt-2 flex gap-2">
-                <button onClick={() => resolve(f._id, "done")} className="rounded-lg bg-green-600 px-3 py-1 text-xs font-medium text-white">
-                  Done
+                <button onClick={() => resolve(f._id, "done")} title="The student completed the task (e.g. handed in the lines)" className="rounded-lg bg-green-600 px-3 py-1 text-xs font-medium text-white">
+                  Completed
                 </button>
-                <button onClick={() => resolve(f._id, "not_done")} className="rounded-lg bg-red-600 px-3 py-1 text-xs font-medium text-white">
+                <button onClick={() => resolve(f._id, "not_done")} title="Not completed — re-issues/escalates" className="rounded-lg bg-red-600 px-3 py-1 text-xs font-medium text-white">
                   Not done
                 </button>
-                <button onClick={() => resolve(f._id, "waived")} className="rounded-lg border border-slate-300 px-3 py-1 text-xs">
+                <button onClick={() => resolve(f._id, "waived")} title="Cancel this task — no penalty" className="rounded-lg border border-slate-300 px-3 py-1 text-xs">
                   Waive
                 </button>
               </div>

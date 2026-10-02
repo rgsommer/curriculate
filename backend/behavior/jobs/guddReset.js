@@ -7,17 +7,25 @@
 
 import cron from "node-cron";
 import BehaviorConfig from "../models/BehaviorConfig.js";
+import { awardGuddAndReset } from "../lib/guddAward.js";
 
 const SCHOOL_TZ = process.env.SCHOOL_TZ || "America/Toronto";
 
 export async function runGuddFridayReset() {
-  const at = new Date();
-  const r = await BehaviorConfig.updateMany(
-    { "gudd.autoResetFriday": true, "gudd.enabled": { $ne: false } },
-    { $set: { "gudd.resetAt": at } }
-  );
-  const n = r.modifiedCount ?? r.nModified ?? 0;
-  if (n) console.log(`[behavior/gudd] Friday auto-clear: reset GUDD for ${n} school(s)`);
+  // Per-school so recycling the list also awards the dress-down house points
+  // (fewest excluded members → 1st/2nd/3rd) before the period is stamped fresh.
+  const configs = await BehaviorConfig.find({ "gudd.autoResetFriday": true, "gudd.enabled": { $ne: false } }).lean();
+  let n = 0, awardedSchools = 0;
+  for (const cfg of configs) {
+    try {
+      const { awarded } = await awardGuddAndReset(cfg.schoolId, cfg);
+      n += 1;
+      if (awarded && awarded.length) awardedSchools += 1;
+    } catch (err) {
+      console.error(`[behavior/gudd] Friday reset failed for school ${cfg.schoolId}:`, err?.message || err);
+    }
+  }
+  if (n) console.log(`[behavior/gudd] Friday auto-clear: reset GUDD for ${n} school(s); awarded dress-down points at ${awardedSchools}`);
   return n;
 }
 

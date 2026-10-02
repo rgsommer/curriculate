@@ -3467,9 +3467,14 @@ export default function GradingPage() {
         let pdfBase64 = null;
         let stripsBase64 = null;
         try {
+          // These attachments go to whoever the teacher addresses the email
+          // to — parents included, which is what the field's own placeholder
+          // suggests. They follow the setting like every other copy; batch
+          // grading's email already did, and this one was printing the marks.
+          const pdfOpts = { hideGrades: !!hideGrades };
           [pdfBase64, stripsBase64] = await Promise.all([
-            buildResultsPdf(results),
-            buildStripsPdf(results),
+            buildResultsPdf(results, pdfOpts),
+            buildStripsPdf(results, pdfOpts),
           ]);
         } catch (pdfErr) {
           console.error("[session] PDF generation failed:", pdfErr?.message || pdfErr, pdfErr?.stack);

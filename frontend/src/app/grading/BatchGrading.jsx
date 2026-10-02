@@ -23,6 +23,20 @@ import { completeQuest } from "../../components/QuestWidget";
 // NOTE: QR code loader, jsPDF loader, buildResultsPdf, and buildStripsPdf
 // have been moved to ./pdfReports.js (shared with page.jsx session reports).
 
+// Reports go to more than one person: the teacher's own copy, a department
+// head, a parent, the office. The backend has always accepted a list — this
+// is the parse the field needs so the button can say how many it is sending
+// to, and so a comma-separated entry is not mistaken for one bad address.
+const VALID_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function parseRecipients(raw) {
+  return Array.from(new Set(
+    String(raw || "")
+      .split(/[,;\n]+/)
+      .map((s) => s.trim().toLowerCase())
+      .filter((s) => s && VALID_EMAIL.test(s))
+  ));
+}
+
 // ---------- PDF.js loader (self-hosted proxy → CDN fallback) ----------
 // Uses the legacy UMD build (3.x) which sets window.pdfjsLib via <script>
 const PDFJS_CDN = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174";
@@ -1083,24 +1097,35 @@ export default function BatchGrading({
     };
   }
 
-  // What goes in an Edsby gradebook cell: the same material the printed
-  // report carries — what they did well, what to do next, then the comment —
-  // rather than the comment alone, which is all the strips have room for. A
-  // gradebook cell is read by the student and by a parent, so it should give
-  // direction as well as encouragement.
+  // What goes in an Edsby gradebook cell: the sentence the student's printed
+  // strip carries, and nothing bolted on in front of it.
   //
-  // Assembled in that order and trimmed by dropping whole items off the end,
-  // so a long one stops cleanly instead of mid-sentence.
+  // It used to lead with "Well done: " and the first two strengths. Every
+  // comment in the gradebook then opened the same way — including a 1.6 out
+  // of 10 — which makes the praise worth nothing and the column unreadable at
+  // a glance. The written comment already does both jobs, and does them about
+  // this piece of work: it opens with what the student actually managed,
+  // names the thing to fix, and closes warmly. A canned label in front of it
+  // only buries the specifics.
   function buildEdsbyComment(r, max = 700) {
     const clean = (v) => String(v || "").replace(/\s+/g, " ").trim();
-    const parts = [];
+    const cut = (s) => (s.length <= max ? s : s.slice(0, max - 1).replace(/\s+\S*$/, "") + "…");
+
+    const comment = clean(r.raw?.teacher_comment || r.comment);
+    if (comment) {
+      // Room permitting, point at the full report — the strip has a QR code
+      // for this and a gradebook cell has nothing.
+      const link = r.refCode ? ` Full feedback: www.curriculate.net/results/${r.refCode}` : "";
+      return link && comment.length + link.length <= max ? comment + link : cut(comment);
+    }
+
+    // No comment was written for this one. Fall back to the lists, labelled
+    // plainly — "Strengths", not praise the mark may not support.
     const strengths = (Array.isArray(r.strengths) ? r.strengths : []).map(clean).filter(Boolean);
     const next = (Array.isArray(r.improvements) ? r.improvements : []).map(clean).filter(Boolean);
-
-    if (strengths.length) parts.push(`Well done: ${strengths.slice(0, 2).join(" ")}`);
+    const parts = [];
+    if (strengths.length) parts.push(`Strengths: ${strengths.slice(0, 2).join(" ")}`);
     if (next.length) parts.push(`Next: ${next.slice(0, 2).join(" ")}`);
-    const c = clean(r.comment);
-    if (c) parts.push(c);
 
     let out = "";
     for (const part of parts) {
@@ -1108,8 +1133,7 @@ export default function BatchGrading({
       if (joined.length > max) break;
       out = joined;
     }
-    // A single oversized piece still has to be cut somewhere.
-    if (!out && parts.length) out = parts[0].slice(0, max - 1).replace(/\s+\S*$/, "") + "…";
+    if (!out && parts.length) out = cut(parts[0]);
     return out;
   }
 
@@ -2089,6 +2113,13 @@ export default function BatchGrading({
                     title: r.detectedTitle || effectiveTitle || "",
                     pdfName: pdfName || "",
                     className: r.rosterClassName || "",
+                    // Carried through the roster pass too. These are what the
+                    // Edsby poster reads, and this update used to drop them.
+                    teacherEmail: currentTeacherEmail(),
+                    edsbyComment: buildEdsbyComment(r),
+                    score: r.score ?? null,
+                    outOf: r.outOf ?? null,
+                    pct: r.pct ?? null,
                   },
                 }),
               });
@@ -2456,6 +2487,20 @@ export default function BatchGrading({
       };
 
       // Update ref code via PUT (or create if missing)
+      // A re-grade used to write the payload and nothing else. The payload is
+      // what the public results page and the printed strip are built from;
+      // meta.score is what Edsby, the CSV and /progress read. So a student
+      // re-graded from 1.5 to 7.5 had a strip reading 7.5 and a gradebook
+      // still reading 1.5 — and no sign anywhere that the two disagreed.
+      // PUT merges meta, so sending these fields leaves studentId,
+      // teacherEmail and the rest alone.
+      const regradedMeta = {
+        score: updatedEntry.score ?? null,
+        outOf: updatedEntry.outOf ?? null,
+        pct: updatedEntry.pct ?? null,
+        edsbyComment: buildEdsbyComment(updatedEntry),
+      };
+
       if (resultsUrl) {
         try {
           if (updatedEntry.refCode) {
@@ -2465,6 +2510,7 @@ export default function BatchGrading({
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 payload: buildBatchPayloadText(updatedEntry, updatedEntry.refCode, gradeBand),
+                meta: regradedMeta,
               }),
             });
           } else {
@@ -2495,6 +2541,7 @@ export default function BatchGrading({
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   payload: buildBatchPayloadText(updatedEntry, updatedEntry.refCode, gradeBand),
+                  meta: regradedMeta,
                 }),
               }).catch(() => {});
             }
@@ -2871,7 +2918,19 @@ export default function BatchGrading({
   const buildEdsbyCsv = useCallback(() => {
     if (!results.length) return null;
 
-    const assessmentName = effectiveTitle || "Curriculate Grade";
+    // What the work actually says it is, where the students agree.
+    // effectiveTitle is whatever was typed or taken from the filename —
+    // "Math — Quiz" — while the pages themselves read "Math Snap Quiz:
+    // Equations & Expressions". The detected title is the specific one, and
+    // a gradebook column named vaguely is hard to find again in December.
+    const titleVotes = {};
+    for (const r of results) {
+      const t = String(r?.detectedTitle || "").trim();
+      if (t) titleVotes[t] = (titleVotes[t] || 0) + 1;
+    }
+    const topTitle = Object.entries(titleVotes).sort((a, b) => b[1] - a[1])[0];
+    const assessmentName = (topTitle && topTitle[1] >= 2 ? topTitle[0] : "")
+      || effectiveTitle || "Curriculate Grade";
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
     const headers = ["Student ID", "First Name", "Last Name", "Assessment Name", "Date", "Grade", "Out Of", "Comment"];
     const escCsv = (v) => {
@@ -2949,8 +3008,10 @@ export default function BatchGrading({
   }, [buildEdsbyCsv, effectiveTitle]);
 
   const sendEmail = useCallback(async () => {
-    const to = emailTo.trim();
-    if (!to || !to.includes("@")) return;
+    // An array, so the backend does not have to re-split it and a trailing
+    // comma or a stray space cannot cost a recipient.
+    const to = parseRecipients(emailTo);
+    if (!to.length) return;
 
     // Final pass: normalize all matched student names to exact roster spelling
     for (const r of results) {
@@ -3092,7 +3153,7 @@ export default function BatchGrading({
             const retryController = new AbortController();
             const retryTimeout = setTimeout(() => retryController.abort(), 30000);
             try {
-              const retryPayload = { to: emailTo.trim(), subject, html, pdfAttachments: [], csvAttachments: payload.csvAttachments || [] };
+              const retryPayload = { to, subject, html, pdfAttachments: [], csvAttachments: payload.csvAttachments || [] };
               const retryRes = await fetch(sendUrl, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -4561,14 +4622,22 @@ export default function BatchGrading({
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", minWidth: 60 }}>Send to:</span>
                 <input
-                  type="email"
+                  /* Deliberately text, not email: a browser's email input
+                     calls a comma-separated list invalid, and reports go to
+                     several people at once. */
+                  type="text"
                   value={emailTo}
                   onChange={(e) => {
                     setEmailTo(e.target.value);
-                    // Sync to parent so rosters auto-load for this email
-                    if (parentSetTeacherEmail) parentSetTeacherEmail(e.target.value);
+                    // Rosters load for one teacher, so the parent gets the
+                    // first address only — handing it the whole list matched
+                    // no teacher and quietly emptied the class pickers.
+                    if (parentSetTeacherEmail) {
+                      const first = parseRecipients(e.target.value)[0];
+                      if (first) parentSetTeacherEmail(first);
+                    }
                   }}
-                  placeholder="recipient@school.ca"
+                  placeholder="you@school.ca, head@school.ca"
                   onKeyDown={(e) => { if (e.key === "Enter") sendEmail(); }}
                   style={{
                     flex: 1,
@@ -4580,6 +4649,9 @@ export default function BatchGrading({
                   }}
                   autoFocus
                 />
+              </div>
+              <div style={{ fontSize: 11, color: "#64748b", marginLeft: 68, marginTop: -4 }}>
+                Separate several addresses with commas.
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", minWidth: 60 }}>Title:</span>
@@ -4607,19 +4679,31 @@ export default function BatchGrading({
                 >
                   Cancel
                 </button>
-                <button
-                  onClick={sendEmail}
-                  disabled={emailSending || !emailTo.includes("@")}
-                  style={{
-                    ...batchStyles.smallBtn,
-                    background: "#2563eb",
-                    color: "#fff",
-                    opacity: emailSending || !emailTo.includes("@") ? 0.5 : 1,
-                  }}
-                  type="button"
-                >
-                  {emailSending ? "Sending..." : "Send"}
-                </button>
+                {(() => {
+                  // Counted live, so a typo in the third address is visible
+                  // before the send rather than after it.
+                  const count = parseRecipients(emailTo).length;
+                  const disabled = emailSending || count === 0;
+                  return (
+                    <button
+                      onClick={sendEmail}
+                      disabled={disabled}
+                      style={{
+                        ...batchStyles.smallBtn,
+                        background: "#2563eb",
+                        color: "#fff",
+                        opacity: disabled ? 0.5 : 1,
+                      }}
+                      type="button"
+                    >
+                      {emailSending
+                        ? "Sending..."
+                        : count > 1
+                          ? `Send to ${count} recipients`
+                          : "Send"}
+                    </button>
+                  );
+                })()}
               </div>
             </div>
           )}

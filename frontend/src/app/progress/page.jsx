@@ -206,6 +206,13 @@ export default function ProgressPage() {
   const [editingDenomCode, setEditingDenomCode] = useState(null); // result code being edited
   const [denomInput, setDenomInput] = useState("");
 
+  // Marks are hidden from students, not from the teacher who awarded them.
+  // previewAsStudent drops the teacher token from the request, which is what
+  // produces the student's own view — the same path the student takes.
+  const [previewAsStudent, setPreviewAsStudent] = useState(false);
+  const [viewingAsTeacher, setViewingAsTeacher] = useState(false);
+  const [anyGradesHidden, setAnyGradesHidden] = useState(false);
+
   // Recommendation badge
   const [recommendCount, setRecommendCount] = useState(0);
 
@@ -250,13 +257,21 @@ export default function ProgressPage() {
   const apiCall = useCallback(async (path, opts = {}) => {
     const headers = { "Content-Type": "application/json" };
     if (opts.auth && token) headers.Authorization = `Bearer ${token}`;
+    // A teacher looks at a student through a student token, so the teacher's
+    // own token rides alongside to lift the mark redaction on their classes.
+    // Withholding it is how "view as student" works.
+    if (opts.auth && !previewAsStudent) {
+      let tt = teacherToken;
+      if (!tt) { try { tt = localStorage.getItem(TEACHER_TOKEN_KEY); } catch {} }
+      if (tt) headers["X-Teacher-Token"] = tt;
+    }
     const res = await fetch(`${API}/student-progress${path}`, {
       method: opts.method || "GET",
       headers,
       body: opts.body ? JSON.stringify(opts.body) : undefined,
     });
     return res.json();
-  }, [token]);
+  }, [token, teacherToken, previewAsStudent]);
 
   // Load teacher students when teacher view is shown
   useEffect(() => {
@@ -302,6 +317,8 @@ export default function ProgressPage() {
           setStudent(data.student);
           setResults(data.results || []);
           setOverallAvg(data.overallAvg);
+          setViewingAsTeacher(!!data.viewingAsTeacher);
+          setAnyGradesHidden(!!data.anyGradesHidden);
         }
         setLoading(false);
       })
@@ -1061,6 +1078,40 @@ export default function ProgressPage() {
                 {student ? `${student.firstName} ${student.lastName}` : "My Progress"}
               </h1>
             </div>
+            {/* Whose view this is. Only shown where it could be either: a
+                teacher looking at a student, with marks turned off. Without
+                it a teacher cannot tell a hidden mark from a missing one. */}
+            {teacherToken && (viewingAsTeacher || anyGradesHidden) && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                <span style={{
+                  fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
+                  background: previewAsStudent ? "#f1f5f9" : "rgba(37,99,235,0.1)",
+                  color: previewAsStudent ? "#64748b" : "#2563eb",
+                  border: `1px solid ${previewAsStudent ? "#e2e8f0" : "rgba(37,99,235,0.25)"}`,
+                }}>
+                  {previewAsStudent
+                    ? "Student's view"
+                    : anyGradesHidden
+                      // A teacher token that does not own these classes is
+                      // honoured but reveals nothing, so do not claim it did.
+                      ? "Marks hidden"
+                      : "Teacher view — marks shown"}
+                </span>
+                <button
+                  onClick={() => setPreviewAsStudent((v) => !v)}
+                  style={{
+                    background: "none", border: "none", cursor: "pointer",
+                    color: "#2563eb", fontSize: 12, fontWeight: 600,
+                    textDecoration: "underline", padding: 0,
+                  }}
+                  title={previewAsStudent
+                    ? "Show the marks again"
+                    : "See exactly what this student and their family see"}
+                >
+                  {previewAsStudent || anyGradesHidden ? "Show marks" : "View as student"}
+                </button>
+              </div>
+            )}
             {student?.className && (
               <div style={{ fontSize: 13, color: "#64748b", marginTop: 2, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 {student.className}
@@ -1676,16 +1727,25 @@ export default function ProgressPage() {
                                     try {
                                       const getRes = await fetch(`${API}/results/${r.code}`);
                                       const getData = await getRes.json();
+                                      // Only write back when the Grade line was
+                                      // actually found and changed. This read is
+                                      // the public one, and for a teacher who
+                                      // hides marks it comes back with the Grade
+                                      // line already stripped out — writing that
+                                      // version back would have stored the
+                                      // student's redacted copy as the real one.
                                       if (getData.payload) {
                                         const updatedPayload = getData.payload.replace(
                                           /Grade:\s*(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/,
                                           `Grade: ${newScore} / ${newDenom}`
                                         );
-                                        await fetch(`${API}/results/${r.code}`, {
-                                          method: "PUT",
-                                          headers: { "Content-Type": "application/json" },
-                                          body: JSON.stringify({ payload: updatedPayload }),
-                                        });
+                                        if (updatedPayload !== getData.payload) {
+                                          await fetch(`${API}/results/${r.code}`, {
+                                            method: "PUT",
+                                            headers: { "Content-Type": "application/json" },
+                                            body: JSON.stringify({ payload: updatedPayload }),
+                                          });
+                                        }
                                       }
                                     } catch (err) {
                                       console.warn("[progress] denom update failed:", err);

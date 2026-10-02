@@ -100,7 +100,7 @@ function WeightPill({ value, onChange, kind }: { value: number; onChange: (n: nu
 function categoryChipClass(cat: string, selected: boolean) {
   if (selected) return "bg-slate-900 text-white";
   switch (cat) {
-    case "report": return "border border-emerald-400 bg-emerald-200 text-emerald-900"; // report-only (no strike)
+    case "report": return "border border-orange-400 bg-orange-200 text-orange-900"; // interaction / documentation-only (no strike)
     case "uniform": return "border border-indigo-400 bg-indigo-200 text-indigo-900";
     case "behaviour": return "border border-rose-400 bg-rose-200 text-rose-900";
     case "preparedness": return "border border-sky-400 bg-sky-200 text-sky-900";
@@ -636,7 +636,7 @@ export default function LogIncidentPage() {
               <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-sky-400" /> Class preparedness</span>
               <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-rose-400" /> Behaviour</span>
               <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-indigo-400" /> Uniform (GUDD)</span>
-              <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-emerald-400" /> Report only</span>
+              <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-orange-400" /> Interaction</span>
             </div>
           )}
           <select
@@ -649,7 +649,7 @@ export default function LogIncidentPage() {
             {offenseOptions.map((b) => (
               <option key={b._id} value={b._id}>
                 {b.name}
-                {kindFilter === "negative" && (b.triggerMode === "IMMEDIATE" ? " — immediate" : b.triggerMode === "INTERACTION" ? " — interaction (no note)" : "")}
+                {kindFilter === "negative" && (b.triggerMode === "IMMEDIATE" ? " — immediate" : b.triggerMode === "INTERACTION" ? " — documentation only, not a consequence" : "")}
               </option>
             ))}
           </select>
@@ -1004,6 +1004,7 @@ function BatchLog({
             <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-sky-400" /> Class preparedness</span>
             <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-rose-400" /> Behaviour</span>
             <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-indigo-400" /> Uniform (GUDD)</span>
+            <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-orange-400" /> Interaction</span>
           </div>
         )}
         <select value={behaviorId} onChange={(e) => setBehaviorId(e.target.value)} className="w-full rounded-xl border border-slate-300 px-4 py-3 text-lg">
@@ -1011,7 +1012,7 @@ function BatchLog({
           {offenseOptions.map((b) => (
             <option key={b._id} value={b._id}>
               {b.name}
-              {b.triggerMode === "IMMEDIATE" ? " — immediate" : b.triggerMode === "INTERACTION" ? " — interaction (no note)" : ""}
+              {b.triggerMode === "IMMEDIATE" ? " — immediate" : b.triggerMode === "INTERACTION" ? " — documentation only, not a consequence" : ""}
             </option>
           ))}
         </select>

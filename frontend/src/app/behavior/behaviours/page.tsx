@@ -5,9 +5,9 @@ import Link from "next/link";
 import { api, getToken, loginHref, type Me } from "../_lib/api";
 
 const FOLLOWUPS = [
-  { v: "none", label: "No follow-up" },
   { v: "next_school_day", label: "Due next school day" },
   { v: "custom_deadline", label: "Custom deadline" },
+  { v: "none", label: "No follow-up (rare)" },
 ];
 const MODES = [
   { v: "THRESHOLD", label: "Counts toward strikes" },
@@ -33,6 +33,7 @@ export default function BehavioursPage() {
   const [me, setMe] = useState<Me | null>(null);
   const [items, setItems] = useState<any[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [view, setView] = useState<"negative" | "positive">("negative");
 
   function load() {
     api<{ behaviors: any[] }>("/behaviors").then((d) => setItems(d.behaviors || [])).catch((e) => setErr(e.message));
@@ -61,17 +62,36 @@ export default function BehavioursPage() {
         <h1 className="mt-1 text-xl font-semibold">Behaviours</h1>
         <p className="text-sm text-slate-400">
           Each behaviour is <span className="text-red-600 font-medium">✕ negative</span> (an offence) or{" "}
-          <span className="text-green-600 font-medium">✓ positive</span> (a reward — never counts as a strike). Negatives are listed first, then positives.
+          <span className="text-green-600 font-medium">✓ positive</span> (a reward — never counts as a strike).
           {housesOn && " Set "}{housesOn && <span className="font-medium">house points</span>}{housesOn && " on any behaviour."}
         </p>
         {isAdmin && <SeedStandard onSeeded={load} />}
       </div>
 
-      <div className="space-y-2">
-        {sortBehaviors(items).map((b) => (
-          <BehaviorRow key={b._id} b={b} editable={canManage(b)} housesOn={housesOn} onChanged={load} />
-        ))}
-      </div>
+      {(() => {
+        const neg = sortBehaviors(items.filter((b) => !(b.kind === "positive" || (b.points ?? 0) > 0)));
+        const pos = sortBehaviors(items.filter((b) => (b.kind === "positive" || (b.points ?? 0) > 0)));
+        const shown = view === "positive" ? pos : neg;
+        return (
+          <>
+            <div className="flex gap-2">
+              <button onClick={() => setView("negative")}
+                className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${view === "negative" ? "border-red-600 bg-red-600 text-white" : "border-red-200 bg-white text-red-600"}`}>
+                ✕ Negatives ({neg.length})
+              </button>
+              <button onClick={() => setView("positive")}
+                className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${view === "positive" ? "border-green-600 bg-green-600 text-white" : "border-green-200 bg-white text-green-700"}`}>
+                ✓ Positives ({pos.length})
+              </button>
+            </div>
+            <div className="space-y-2">
+              {shown.map((b) => (
+                <BehaviorRow key={b._id} b={b} editable={canManage(b)} housesOn={housesOn} onChanged={load} />
+              ))}
+            </div>
+          </>
+        );
+      })()}
 
       <section className="rounded-xl border border-slate-200 bg-white p-4">
         <h2 className="text-sm font-semibold">Add a behaviour</h2>
@@ -88,7 +108,8 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
   const [kind, setKind] = useState<"negative" | "positive">(b?.kind || ((b?.points ?? 0) > 0 ? "positive" : "negative"));
   const [triggerMode, setTriggerMode] = useState(b?.triggerMode || (add ? "THRESHOLD" : "THRESHOLD"));
   const [consequenceText, setConsequenceText] = useState(b?.consequenceText || "");
-  const [followUpType, setFollowUpType] = useState(b?.followUpType || "none");
+  const [consequenceTiming, setConsequenceTiming] = useState(b?.consequenceTiming || "first");
+  const [followUpType, setFollowUpType] = useState(b?.followUpType || (add ? "next_school_day" : "none"));
   const [points, setPoints] = useState<number | string>(b?.points ?? 0);
   const [categories, setCategories] = useState<string[]>(
     Array.isArray(b?.categories) ? b.categories : (b?.uniform ? ["uniform"] : [])
@@ -106,16 +127,19 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
     setName(b?.name || ""); setKeyword(b?.keyword || "");
     setKind(b?.kind || ((b?.points ?? 0) > 0 ? "positive" : "negative"));
     setTriggerMode(b?.triggerMode || "THRESHOLD"); setConsequenceText(b?.consequenceText || "");
+    setConsequenceTiming(b?.consequenceTiming || "first");
     setFollowUpType(b?.followUpType || "none"); setPoints(b?.points ?? 0);
     setCategories(Array.isArray(b?.categories) ? b.categories : (b?.uniform ? ["uniform"] : []));
     setImmediateWhiteSlip(!!b?.immediateWhiteSlip); setErr(null);
   }
 
+  // Tint by kind so the list reads at a glance: positives green, negatives red.
+  const rowKind = b && (b.kind === "positive" || (b.points ?? 0) > 0) ? "positive" : "negative";
   const tint = add
     ? "border-dashed border-slate-300"
-    : b?.scope === "standard"
+    : rowKind === "positive"
     ? "border-green-200 bg-green-50/40"
-    : "border-blue-200 bg-blue-50/40";
+    : "border-red-200 bg-red-50/40";
 
   // Read-only display for behaviours this teacher can't manage.
   if (!add && !editable) {
@@ -177,10 +201,10 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
     setErr(null);
     try {
       if (add) {
-        await api("/behaviors", { body: { name, keyword, kind, triggerMode, consequenceText, followUpType, points: Number(points) || 0, categories, immediateWhiteSlip, scope: scopeStandard ? "standard" : "custom" } });
-        setName(""); setKeyword(""); setKind("negative"); setConsequenceText(""); setTriggerMode("THRESHOLD"); setFollowUpType("none"); setPoints(0); setCategories([]); setImmediateWhiteSlip(false);
+        await api("/behaviors", { body: { name, keyword, kind, triggerMode, consequenceText, consequenceTiming, followUpType, points: Number(points) || 0, categories, immediateWhiteSlip, scope: scopeStandard ? "standard" : "custom" } });
+        setName(""); setKeyword(""); setKind("negative"); setConsequenceText(""); setConsequenceTiming("first"); setTriggerMode("THRESHOLD"); setFollowUpType("none"); setPoints(0); setCategories([]); setImmediateWhiteSlip(false);
       } else {
-        await api(`/behaviors/${b._id}`, { method: "PUT", body: { name, keyword, kind, triggerMode, consequenceText, followUpType, points: Number(points) || 0, categories, immediateWhiteSlip } });
+        await api(`/behaviors/${b._id}`, { method: "PUT", body: { name, keyword, kind, triggerMode, consequenceText, consequenceTiming, followUpType, points: Number(points) || 0, categories, immediateWhiteSlip } });
         setExpanded(false); // collapse back to the compact summary after saving
       }
       onChanged();
@@ -212,6 +236,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
     kind !== (b?.kind || ((b?.points ?? 0) > 0 ? "positive" : "negative")) ||
     triggerMode !== (b?.triggerMode || "THRESHOLD") ||
     consequenceText !== (b?.consequenceText || "") ||
+    consequenceTiming !== (b?.consequenceTiming || "first") ||
     followUpType !== (b?.followUpType || "none") ||
     Number(points) !== Number(b?.points ?? 0) ||
     JSON.stringify([...categories].sort()) !== JSON.stringify([...origCats].sort()) ||
@@ -237,7 +262,11 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
         )}
         {!positive && !interaction && (
           <>
-            <input value={consequenceText} onChange={(e) => setConsequenceText(e.target.value)} placeholder="Consequence (in the note home)" className={`${inputCls} col-span-2`} />
+            <input value={consequenceText} onChange={(e) => { const v = e.target.value; setConsequenceText(v); if (v.trim() && followUpType === "none") setFollowUpType("next_school_day"); }} placeholder="Consequence (in the note home)" className={`${inputCls} col-span-2`} />
+            <select value={consequenceTiming} onChange={(e) => setConsequenceTiming(e.target.value)} className={inputCls} title="When the consequence applies">
+              <option value="first">Consequence on first occasion</option>
+              <option value="after_first">Consequence after first occasion (1st = warning)</option>
+            </select>
             <select value={followUpType} onChange={(e) => setFollowUpType(e.target.value)} className={inputCls}>
               {FOLLOWUPS.map((f) => <option key={f.v} value={f.v}>{f.label}</option>)}
             </select>

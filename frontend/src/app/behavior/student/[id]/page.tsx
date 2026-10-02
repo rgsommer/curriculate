@@ -50,7 +50,7 @@ type StudentDetail = {
     deliveries?: Array<{ channel: string; ok: boolean; error?: string }>;
     fromTeachers: Array<{ name: string; behaviorName: string }>;
   }>;
-  consequences?: Array<{ _id: string; type: string; detail?: string; byName?: string; at: string; kind?: "encouraging" | "corrective"; completed?: boolean; completedByName?: string; completedAt?: string }>;
+  consequences?: Array<{ _id: string; type: string; detail?: string; byName?: string; at: string; kind?: "encouraging" | "corrective"; completed?: boolean; completedByName?: string; completedAt?: string; notifiedAt?: string | null; notifiedByName?: string }>;
 };
 
 const fmtDT = (d: string) =>
@@ -86,6 +86,17 @@ export default function StudentPage() {
   const [emailTo, setEmailTo] = useState("");
   const [emailBusy, setEmailBusy] = useState(false);
 
+  // Parent-facing "whole picture" summary (warm narrative + factual record)
+  const [parentSummary, setParentSummary] = useState<string>("");
+  const [parentHistory, setParentHistory] = useState<{ date: string; offense: string; teacher: string; consequence: string; kind?: string }[]>([]);
+  const [parentHistoryText, setParentHistoryText] = useState<string>("");
+  const [parentMsg, setParentMsg] = useState<string>("");
+  const [parentBusy, setParentBusy] = useState<"" | "period" | "all">("");
+
+  // Send a whole-picture note to the student's HR teacher (cc VP) — server-side.
+  const [hrNoteBusy, setHrNoteBusy] = useState(false);
+  const [hrNoteMsg, setHrNoteMsg] = useState<string>("");
+
   // Notice editing
   const [editId, setEditId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
@@ -119,6 +130,7 @@ export default function StudentPage() {
   const [consDetail, setConsDetail] = useState("");
   const [consBusy, setConsBusy] = useState(false);
   const [consMsg, setConsMsg] = useState("");
+  const [cmBusy, setCmBusy] = useState<string | null>(null);
 
   // White-slip recommendation (eligible students)
   const [wsBusy, setWsBusy] = useState(false);
@@ -151,11 +163,22 @@ export default function StudentPage() {
   if (!data) return <p className="text-slate-500">Loading…</p>;
 
   const s = data.student;
+  // Whether a notice goes out on an automatic channel, or comes back to the
+  // teacher to send themselves (BCS: no auto channel → record-only).
+  const autoSend = !!(me?.config?.edsby?.enabled || me?.config?.channels?.emailToParents);
+  const sendChannelLabel = me?.config?.edsby?.enabled ? "Edsby" : me?.config?.channels?.emailToParents ? "email" : "";
   const pct = Math.min(100, Math.round((data.activeCount / Math.max(1, data.triggerCount)) * 100));
   const myId = me?.membership?._id;
   const isAdmin = me?.membership?.role === "originator" || me?.membership?.role === "admin";
   const canEditInc = (inc: { teacherId?: string }) => isAdmin || (!!myId && String(inc.teacherId) === String(myId));
   const byMonth = buildByMonth(data.incidents as any, data.notices as any);
+  // Most recent "whole-picture note to HR teacher" send (logged as an intervention),
+  // so the button can show it's already been done.
+  const hrNoteSentAt = data.incidents
+    .filter((i) => i.behaviorSnapshot?.name === "Whole-picture note recommended")
+    .map((i) => i.timestamp)
+    .sort()
+    .pop() || null;
 
   async function adminSummary(scope: "all" | "current") {
     setSummaryBusy(scope);
@@ -175,6 +198,47 @@ export default function StudentPage() {
     } finally {
       setSummaryBusy("");
     }
+  }
+
+  function parentFullText(summaryText: string, historyText: string) {
+    return summaryText + (historyText ? `\n\n— Behaviour record —\n${historyText}` : "");
+  }
+  async function parentSummaryGen(scope: "period" | "all") {
+    setParentBusy(scope);
+    setParentMsg("");
+    setParentSummary("");
+    setParentHistory([]);
+    setParentHistoryText("");
+    try {
+      const r = await api<{ summary: string; history: { date: string; offense: string; teacher: string; consequence: string; kind?: string }[]; historyText: string; aiUsed: boolean; concernCount: number; teacherGroups: number }>(
+        `/students/${params.id}/parent-summary`, { body: { scope }, timeoutMs: 45000 });
+      setParentSummary(r.summary);
+      setParentHistory(r.history || []);
+      setParentHistoryText(r.historyText || "");
+      navigator.clipboard?.writeText(parentFullText(r.summary, r.historyText || "")).then(
+        () => setParentMsg(`Copied note + record — review it, then paste into Edsby.${r.aiUsed ? "" : " (template — no AI key set)"}`),
+        () => setParentMsg("Generated below (clipboard blocked — copy manually)."),
+      );
+    } catch (e: any) {
+      setParentMsg(e.message);
+    } finally {
+      setParentBusy("");
+    }
+  }
+  async function copyParentSummary() {
+    try { await navigator.clipboard.writeText(parentFullText(parentSummary, parentHistoryText)); setParentMsg("Copied note + record to clipboard."); }
+    catch { setParentMsg("Clipboard blocked — select and copy manually."); }
+  }
+
+  async function sendHrNote() {
+    if (!window.confirm("Send a whole-picture note to this student's homeroom teacher (cc the VP) to review and post to Edsby? It's logged as an intervention — nothing is sent to parents automatically.")) return;
+    setHrNoteBusy(true); setHrNoteMsg("");
+    try {
+      const r = await api<{ sentTo: string; hrName: string; cc: string | null }>(`/students/${params.id}/hr-note`, { body: {}, timeoutMs: 45000 });
+      setHrNoteMsg(`Sent to ${r.hrName}${r.cc ? ` (cc ${r.cc})` : ""} on ${new Date().toLocaleString()} — logged as an intervention.`);
+      load();
+    } catch (e: any) { setHrNoteMsg(e.message); }
+    finally { setHrNoteBusy(false); }
   }
 
   async function copySummary() {
@@ -216,7 +280,7 @@ export default function StudentPage() {
   async function sendNoticeEdited(id: string) {
     try {
       await api(`/notices/${id}`, { method: "PUT", body: { renderedText: editText } });
-      await api(`/notices/${id}/send`, { body: { requestMeeting: !!meetingFor[id], includeEvidence } });
+      await api(`/notices/${id}/send`, { body: { requestMeeting: !!meetingFor[id], includeEvidence, recordOnly: !autoSend } });
       setEditId(null);
       load();
     } catch (e: any) {
@@ -226,7 +290,7 @@ export default function StudentPage() {
 
   async function sendNotice(id: string) {
     try {
-      await api(`/notices/${id}/send`, { body: { requestMeeting: !!meetingFor[id], includeEvidence } });
+      await api(`/notices/${id}/send`, { body: { requestMeeting: !!meetingFor[id], includeEvidence, recordOnly: !autoSend } });
       load();
     } catch (e: any) {
       setError(e.message);
@@ -374,6 +438,43 @@ export default function StudentPage() {
   async function markConsequenceDone(id: string, completed: boolean) {
     try { await api(`/consequences/${id}/complete`, { body: { completed } }); load(); } catch (e: any) { setConsMsg(`✗ ${e.message}`); }
   }
+  // Stage 1: parents notified (message posted/sent). Separate from completed.
+  async function markConsequenceNotified(id: string, sent: boolean) {
+    try { await api(`/consequences/${id}/notified`, { body: { sent } }); load(); } catch (e: any) { setConsMsg(`✗ ${e.message}`); }
+  }
+
+  // Compose an AI student/parent-directed message for a consequence and copy it
+  // (rich text, ready to paste into Edsby). Never sent automatically.
+  async function copyConsequenceMessage(id: string) {
+    setCmBusy(id); setConsMsg("");
+    try {
+      const r = await api<{ message: string; html: string }>(`/consequences/${id}/message`, { method: "POST", body: {} });
+      try {
+        const w = window as any;
+        if (navigator.clipboard && w.ClipboardItem) {
+          await navigator.clipboard.write([new w.ClipboardItem({
+            "text/html": new Blob([r.html], { type: "text/html" }),
+            "text/plain": new Blob([r.message], { type: "text/plain" }),
+          })]);
+        } else {
+          await navigator.clipboard.writeText(r.message);
+        }
+        // Copying it is the act of taking it to post → mark stage 1 (sent).
+        // Non-fatal: swallow errors so a success isn't overwritten by, e.g., a
+        // not-yet-deployed endpoint; the chip updates on reload when it works.
+        let marked = false;
+        try { await api(`/consequences/${id}/notified`, { body: { sent: true } }); marked = true; } catch { /* ignore */ }
+        setConsMsg(marked ? "✓ Message copied — paste it into Edsby. Marked as sent to parents." : "✓ Message copied — paste it into Edsby.");
+        load();
+      } catch {
+        setConsMsg("Composed, but couldn't copy automatically — try again.");
+      }
+    } catch (e: any) {
+      setConsMsg(`✗ ${e.message}`);
+    } finally {
+      setCmBusy(null);
+    }
+  }
 
   async function logMeeting() {
     const text = meetingNote.trim();
@@ -503,6 +604,63 @@ export default function StudentPage() {
             </>
           )}
         </div>
+
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <p className="text-sm font-medium text-slate-700">Parent summary (AI) → clipboard</p>
+          <p className="text-xs text-slate-400">A warm, honest note for parents that pulls the whole picture together, grouped by teacher. Review it, then paste into Edsby — nothing is sent automatically. No other student is named.</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button onClick={() => parentSummaryGen("period")} disabled={!!parentBusy}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+              {parentBusy === "period" ? "Writing…" : "Since last reset"}
+            </button>
+            <button onClick={() => parentSummaryGen("all")} disabled={!!parentBusy}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+              {parentBusy === "all" ? "Writing…" : "Full history"}
+            </button>
+          </div>
+          {parentMsg && <p className="mt-2 text-sm text-green-700">{parentMsg}</p>}
+
+          <div className="mt-3 border-t border-slate-100 pt-3">
+            <p className="text-xs text-slate-400">Or send it straight to the student&apos;s <span className="font-medium text-slate-600">homeroom teacher</span> to post — the VP is copied, and it&apos;s logged as an intervention. Nothing reaches parents automatically.</p>
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <button onClick={sendHrNote} disabled={hrNoteBusy}
+                className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40">
+                {hrNoteBusy ? "Sending…" : hrNoteSentAt ? "✉ Re-send to homeroom teacher (cc VP)" : "✉ Send to homeroom teacher (cc VP)"}
+              </button>
+              {hrNoteSentAt && <span className="text-xs text-slate-400">Last sent {new Date(hrNoteSentAt).toLocaleString()}</span>}
+            </div>
+            {hrNoteMsg && <p className={`mt-2 text-sm ${hrNoteMsg.startsWith("Sent") ? "text-green-700" : "text-red-600"}`}>{hrNoteMsg}</p>}
+          </div>
+          {parentSummary && (
+            <button
+              onClick={copyParentSummary}
+              title="Click to copy the note and the record"
+              className="mt-2 block w-full cursor-pointer rounded-lg border border-slate-200 bg-slate-50 p-4 text-left text-sm text-slate-700 hover:bg-slate-100"
+            >
+              <Markdown text={parentSummary} />
+              {parentHistory.length > 0 && (
+                <span className="mt-3 block border-t border-slate-200 pt-3">
+                  <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Record</span>
+                  <span className="mt-1 block divide-y divide-slate-100">
+                    {parentHistory.map((h, i) => (
+                      <span key={i} className="flex flex-wrap items-baseline gap-x-2 py-1">
+                        <span className="w-14 shrink-0 text-xs text-slate-400">{h.date}</span>
+                        <span className="font-medium text-slate-700">{h.offense}</span>
+                        <span className="text-xs text-slate-500">· {h.teacher}</span>
+                        {h.kind === "conversation"
+                          ? null
+                          : h.consequence
+                          ? <span className="text-xs text-slate-600">· consequence: {h.consequence}</span>
+                          : <span className="text-xs text-slate-400">· no consequence recorded</span>}
+                      </span>
+                    ))}
+                  </span>
+                </span>
+              )}
+              <span className="mt-3 block text-xs text-slate-400">The note is AI-written; the record below it is pulled straight from the log. Review before posting — remove anything you wouldn&apos;t want shared. Tap to copy ⧉</span>
+            </button>
+          )}
+        </div>
       </section>
 
       {/* Recommended actions: objective ladder + AI coaching (whitelisted) */}
@@ -580,6 +738,8 @@ export default function StudentPage() {
         </section>
       )}
 
+      <MerchCard studentId={params.id} studentName={s.preferredName || s.firstName} />
+
       {/* Log a parent meeting / contact (interaction — no strike, nothing home) */}
       <section className="no-print rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="font-semibold">Log a parent meeting / contact</h2>
@@ -602,9 +762,10 @@ export default function StudentPage() {
 
       {/* Document a consequence actually applied */}
       <section className="no-print rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="font-semibold">Consequences applied</h2>
-        <p className="text-xs text-slate-400">Record a consequence you or an admin gave (e.g. work detention, white slip, call home). Kept in the record and included in summaries.</p>
-        <div className="mt-2 flex flex-wrap gap-2">
+        <h2 className="font-semibold">Consequences given</h2>
+        <p className="text-xs text-slate-400">These are consequences that have <strong>already been given</strong> (by you or an admin) — not suggestions. Record one here, then tick <strong>Mark done</strong> once the student has completed it.</p>
+        <p className="mt-2 text-xs font-medium text-slate-600">Record a consequence you gave:</p>
+        <div className="mt-1 flex flex-wrap gap-2">
           <input list="consequence-types" value={consType} onChange={(e) => setConsType(e.target.value)}
             placeholder="Consequence (e.g. Work detention)"
             className="min-w-[12rem] flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
@@ -622,28 +783,61 @@ export default function StudentPage() {
         </div>
         {consMsg && <p className={`mt-2 text-sm ${consMsg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{consMsg}</p>}
         {(data.consequences || []).filter((c) => c.kind !== "encouraging").length > 0 && (
-          <ul className="mt-3 divide-y divide-slate-100">
-            {data.consequences!.filter((c) => c.kind !== "encouraging").map((c) => (
-              <li key={c._id} className="flex items-center justify-between gap-2 py-1.5 text-sm">
-                <span>
-                  <span className="font-medium text-slate-900">{c.type}</span>
-                  {c.detail ? <span className="text-slate-600"> — {c.detail}</span> : null}
-                  <span className="ml-2 text-xs text-slate-400">{fmtDT(c.at)}{c.byName ? ` · ${c.byName}` : ""}</span>
-                  {c.completed && (
-                    <span className="ml-2 rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-700">
-                      ✓ Completed{c.completedByName ? ` · ${c.completedByName}` : ""}
+          <>
+            <p className="mt-4 text-xs font-medium text-slate-600">Already given — track each through to completion:</p>
+            <ul className="mt-1 divide-y divide-slate-100">
+              {data.consequences!.filter((c) => c.kind !== "encouraging").map((c) => {
+                const notified = !!c.notifiedAt;
+                const done = !!c.completed;
+                const resolved = notified && done;
+                return (
+                <li key={c._id} className="py-2 text-sm">
+                  <div className="flex items-start justify-between gap-2">
+                    <span>
+                      <span className="font-medium text-slate-900">{c.type}</span>
+                      {c.detail ? <span className="text-slate-600"> — {c.detail}</span> : null}
+                      <span className="ml-2 text-xs text-slate-400">{fmtDT(c.at)}{c.byName ? ` · ${c.byName}` : ""}</span>
                     </span>
-                  )}
-                </span>
-                <span className="no-print flex shrink-0 items-center gap-2">
-                  {c.completed
-                    ? <button onClick={() => markConsequenceDone(c._id, false)} className="text-xs text-slate-500 hover:underline">undo</button>
-                    : <button onClick={() => markConsequenceDone(c._id, true)} className="rounded-lg border border-green-300 px-2 py-0.5 text-xs font-medium text-green-700 hover:bg-green-50">Mark done</button>}
-                  <button onClick={() => removeConsequence(c._id)} className="text-xs text-red-600">remove</button>
-                </span>
-              </li>
-            ))}
-          </ul>
+                    <button onClick={() => removeConsequence(c._id)} className="no-print shrink-0 text-xs text-red-600">remove</button>
+                  </div>
+                  {/* Lifecycle: ① parents notified  ②  student completed it */}
+                  <div className="no-print mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                    {/* Stage 1 — notify parents (post to Edsby) */}
+                    {notified ? (
+                      <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                        <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">✉ Sent to parents{c.notifiedByName ? ` · ${c.notifiedByName}` : ""}</span>
+                        <button onClick={() => markConsequenceNotified(c._id, false)} className="text-slate-400 hover:underline">undo</button>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-2">
+                        <button onClick={() => copyConsequenceMessage(c._id)} disabled={cmBusy === c._id}
+                          title="Compose a message to the student/parents and copy it for Edsby — also marks it sent"
+                          className="rounded-lg border border-slate-300 px-2 py-0.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40">
+                          {cmBusy === c._id ? "…" : "📋 Copy message & mark sent"}
+                        </button>
+                        <button onClick={() => markConsequenceNotified(c._id, true)} className="text-xs text-slate-500 hover:underline">mark sent only</button>
+                      </span>
+                    )}
+                    {/* Stage 2 — student completed the consequence */}
+                    {done ? (
+                      <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                        <span className="rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-700">✓ Completed{c.completedByName ? ` · ${c.completedByName}` : ""}</span>
+                        <button onClick={() => markConsequenceDone(c._id, false)} className="text-slate-400 hover:underline">undo</button>
+                      </span>
+                    ) : (
+                      <button onClick={() => markConsequenceDone(c._id, true)}
+                        title="The student has carried this out (e.g. handed in the lines / served the detention)"
+                        className="rounded-lg border border-green-300 px-2 py-0.5 text-xs font-medium text-green-700 hover:bg-green-50">
+                        ✓ Mark completed
+                      </button>
+                    )}
+                    {resolved && <span className="text-[10px] font-semibold text-green-700">— resolved</span>}
+                  </div>
+                </li>
+                );
+              })}
+            </ul>
+          </>
         )}
       </section>
 
@@ -706,7 +900,7 @@ export default function StudentPage() {
                     <p className="mt-1 text-xs text-amber-700">
                       {n.autoDispatch
                         ? `Sends automatically${n.cancelUntil ? ` around ${fmtDT(n.cancelUntil)}` : " shortly"} (within a minute after the review window).`
-                        : "Awaiting manual send."}
+                        : autoSend ? "Awaiting manual send." : "Awaiting your send — Compass won't email the parent; you post it yourself (e.g. in Edsby)."}
                     </p>
                   )}
                   {editId === n._id ? (
@@ -722,7 +916,7 @@ export default function StudentPage() {
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         {(n.status === "queued" || n.status === "failed") && (
                           <button onClick={() => openSend({ id: n._id, text: editText, edited: true, evidenceCount: evidenceCountForNotice(n) })} className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white">
-                            {n.status === "failed" ? "Save & retry send" : "Send now"}
+                            {n.status === "failed" ? "Save & retry send" : autoSend ? "Send now" : "Review & mark as sent"}
                           </button>
                         )}
                         <button onClick={() => saveNoticeEdit(n._id)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">{n.status === "sent" ? "Save changes" : "Save (keep queued)"}</button>
@@ -741,7 +935,7 @@ export default function StudentPage() {
                           </label>
                           <div className="mt-2 flex flex-wrap gap-2">
                             <button onClick={() => openSend({ id: n._id, text: n.renderedText, edited: false, evidenceCount: evidenceCountForNotice(n) })} className="rounded-lg bg-slate-900 px-3 py-1 text-xs text-white">
-                              {n.status === "failed" ? "Retry send" : "Send now"}
+                              {n.status === "failed" ? "Retry send" : autoSend ? "Send now" : "Review & mark as sent"}
                             </button>
                             <button onClick={() => dontSend(n._id)} className="rounded-lg border border-slate-300 px-3 py-1 text-xs">Don’t send</button>
                             <button onClick={() => { setEditId(n._id); setEditText(n.renderedText); }} className="rounded-lg border border-slate-300 px-3 py-1 text-xs">Edit note</button>
@@ -855,7 +1049,8 @@ export default function StudentPage() {
       <SendNoticeModal
         open={!!sendModal}
         studentName={s.preferredName || s.firstName}
-        channelLabel="Edsby"
+        channelLabel={sendChannelLabel || undefined}
+        recordOnly={!autoSend}
         noteText={sendModal?.text || ""}
         requestMeeting={!!(sendModal && meetingFor[sendModal.id])}
         onToggleMeeting={(v) => sendModal && setMeetingFor((m) => ({ ...m, [sendModal.id]: v }))}
@@ -887,5 +1082,71 @@ export default function StudentPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// Merch store card: shows the student's personal points balance and lets staff
+// redeem an item (spends from the wallet — never affects house standings).
+type MerchState = { enabled: boolean; balance: number; items: { name: string; points: number }[]; history: { item: string; points: number; byName: string; at: string }[] };
+function MerchCard({ studentId, studentName }: { studentId: string; studentName: string }) {
+  const [state, setState] = useState<MerchState | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [msg, setMsg] = useState("");
+
+  const load = useCallback(() => {
+    api<MerchState>(`/students/${studentId}/merch`).then(setState).catch(() => setState(null));
+  }, [studentId]);
+  useEffect(() => { load(); }, [load]);
+
+  async function redeem(item: string, points: number) {
+    if (!window.confirm(`Redeem “${item}” for ${points} points from ${studentName}'s balance?`)) return;
+    setBusy(item); setMsg("");
+    try {
+      const r = await api<{ balance: number }>(`/students/${studentId}/redeem`, { method: "POST", body: { item, points } });
+      setMsg(`✓ Redeemed ${item}. New balance: ${r.balance} pts.`);
+      load();
+    } catch (e: any) { setMsg(`✗ ${e.message}`); }
+    finally { setBusy(null); }
+  }
+
+  if (!state || !state.enabled) return null;
+  return (
+    <section className="no-print rounded-xl border border-slate-200 bg-white p-5">
+      <div className="flex items-center justify-between">
+        <h2 className="font-semibold">🎁 Rewards store</h2>
+        <span className="rounded-full bg-amber-100 px-2.5 py-1 text-sm font-semibold text-amber-800">⭐ {state.balance} pts</span>
+      </div>
+      <p className="text-xs text-slate-400">Spends from {studentName}&apos;s personal points. This does not change any house total.</p>
+      {state.items.length === 0 ? (
+        <p className="mt-2 text-sm text-slate-400">No items in the store yet — add some in Setup.</p>
+      ) : (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {state.items.map((it, i) => {
+            const affordable = state.balance >= it.points;
+            return (
+              <button key={i} onClick={() => redeem(it.name, it.points)} disabled={!affordable || busy === it.name}
+                className={`rounded-lg border px-3 py-1.5 text-sm ${affordable ? "border-slate-300 hover:bg-slate-100" : "border-slate-200 text-slate-300"}`}
+                title={affordable ? "Redeem" : "Not enough points"}>
+                {busy === it.name ? "…" : `${it.name} · ${it.points}`}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {msg && <p className="mt-2 text-sm text-slate-700">{msg}</p>}
+      {state.history.length > 0 && (
+        <div className="mt-3">
+          <p className="text-xs font-semibold text-slate-600">Recent redemptions</p>
+          <ul className="mt-1 divide-y divide-slate-100 text-xs text-slate-500">
+            {state.history.slice(0, 6).map((h, i) => (
+              <li key={i} className="flex items-center justify-between py-1">
+                <span>{h.item} <span className="text-slate-300">· {new Date(h.at).toLocaleDateString()}</span></span>
+                <span className="tabular-nums">−{h.points}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
   );
 }
