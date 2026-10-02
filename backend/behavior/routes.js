@@ -562,6 +562,20 @@ function escapeHtml(s) {
   return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// INTERACTION-mode incidents come in a few flavours. For parent-facing notes we
+// distinguish a real parent contact from a teacher↔student conversation (which
+// often IS the concern the teacher wants to raise), and from internal support/
+// meta records that should never be surfaced to parents.
+const PARENT_CONTACT_NAME = "Parent meeting / contact";
+const SUPPORT_INTERACTION_NAMES = new Set(["Homeroom follow-up", "Whole-picture note recommended"]);
+// A teacher↔student conversation worth telling parents about: INTERACTION mode,
+// not a parent-contact log, and not an internal support/meta record.
+function isConcernConversation(inc) {
+  if (inc?.behaviorSnapshot?.triggerMode !== "INTERACTION") return false;
+  const n = inc?.behaviorSnapshot?.name || "";
+  return n !== PARENT_CONTACT_NAME && !SUPPORT_INTERACTION_NAMES.has(n);
+}
+
 // The Monday (UTC, YYYY-MM-DD) of the week containing `d` — a stable weekly key
 // for the lightweight app-usage counter.
 function mondayKey(d = new Date()) {
@@ -4356,7 +4370,15 @@ router.post("/students/:id/parent-summary", authAny, loadMembership, async (req,
       const detail = (i.detailText || "").trim();
       const line = `${d} — ${what}${detail ? `: ${detail}` : ""}`;
       if (isPositive) { positives.push(`${d} — ${what}${detail ? `: ${detail}` : ""} (noted by ${who})`); continue; }
-      if (isInteraction) continue; // parent meetings handled separately below
+      if (isInteraction) {
+        // A teacher↔student conversation is often the very concern to convey —
+        // include it (marked "conversation") so the note acknowledges it. Parent
+        // contacts and internal support/meta records stay out.
+        if (isConcernConversation(i)) {
+          (byTeacher[tid] ||= { name: who, isWriter: tid === writerId, lines: [] }).lines.push(`${d} — conversation: ${detail || what}`);
+        }
+        continue;
+      }
       (byTeacher[tid] ||= { name: who, isWriter: tid === writerId, lines: [] }).lines.push(line);
     }
     const writerLoggedCount = (byTeacher[writerId]?.lines || []).length;
@@ -4368,7 +4390,9 @@ router.post("/students/:id/parent-summary", authAny, loadMembership, async (req,
     // engaged (keeps the tone collaborative, not accusatory).
     const notices = await BehaviorNotice.find({ studentId: student._id }).sort({ createdAt: 1 }).lean();
     const noticesInWindow = notices.filter((n) => !cutoff || new Date(n.sentAt || n.createdAt).getTime() >= cutoff);
-    const meetings = await BehaviorIncident.find({ studentId: student._id, "behaviorSnapshot.triggerMode": "INTERACTION" })
+    // Real parent contacts only (not teacher↔student conversations) for the
+    // "the school has been in touch" partnership line.
+    const meetings = await BehaviorIncident.find({ studentId: student._id, "behaviorSnapshot.name": PARENT_CONTACT_NAME })
       .sort({ timestamp: 1 }).select("timestamp detailText teacherId").lean();
     const meetingsInWindow = meetings.filter((m) => !cutoff || new Date(m.timestamp).getTime() >= cutoff);
     const consequences = await BehaviorConsequence.find({ studentId: student._id, kind: "corrective" }).sort({ at: 1 }).lean();
@@ -4384,13 +4408,15 @@ router.post("/students/:id/parent-summary", authAny, loadMembership, async (req,
     const history = [];
     for (const i of incidents) {
       const isPositive = i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0;
-      if (isPositive || i.behaviorSnapshot?.triggerMode === "INTERACTION") continue;
+      if (isPositive) continue;
+      const isConvo = isConcernConversation(i);
+      if (i.behaviorSnapshot?.triggerMode === "INTERACTION" && !isConvo) continue; // skip parent-contact/support logs
       const c = consByIncident.get(String(i._id));
       history.push({
         date: new Date(i.timestamp).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: SCHOOL_TZ }),
-        offense: i.behaviorSnapshot?.name || "—",
+        offense: isConvo ? "Conversation" : (i.behaviorSnapshot?.name || "—"),
         teacher: tName[String(i.teacherId)] || "a teacher",
-        consequence: c ? (c.detail && c.detail.length <= 70 ? `${c.type} — ${c.detail}` : c.type) : "",
+        consequence: isConvo ? "" : (c ? (c.detail && c.detail.length <= 70 ? `${c.type} — ${c.detail}` : c.type) : ""),
       });
     }
     const historyText = history
@@ -4442,7 +4468,8 @@ router.post("/students/:id/parent-summary", authAny, loadMembership, async (req,
       `This is pastoral and partnership-minded — the goal is to help the parents understand the pattern and to invite them to work WITH the school, never to shame the child. ` +
       `TONE: caring, respectful, hopeful, specific, and truthful. Do not exaggerate, but do not downplay genuine safety concerns either. Assume the best about the student and the family. ` +
       `PERSPECTIVE: Write in the first person AS the writer described under "WRITER / PERSPECTIVE" below, and follow that framing exactly — if the writer is the homeroom teacher pulling colleagues' observations together, do NOT write as though everything happened in the writer's own class; attribute each concern to the teacher who observed it. ` +
-      `STRUCTURE: (1) a warm, genuine opening that greets the student and parents (a homeroom/coordinating writer can say they're writing as ${studentFirst}'s homeroom teacher on behalf of ${studentFirst}'s teachers; you may say you're glad to have the student at the school — a relational affirmation — but do NOT assert specific talents or traits as fact); (2) a concise, factual recap of the concerns ORGANISED BY TEACHER and correctly attributed (e.g. "In Mr. X's class…", "Miss Y noted…", or "In my own class…" only where marked THIS IS YOU), kept brief; (3) encouraging moments ONLY IF they are listed on record above; (4) a short note on what the school has ALREADY done, using the exact facts above (omit this if nothing is recorded); (5) a forward-looking close that invites a conversation and expresses confidence in the student. ` +
+      `An item marked "conversation:" is a talk the teacher ALREADY had directly with the student about that concern — acknowledge it naturally and in the first person where the writer had it (e.g. "I spoke with ${studentFirst} about…"), as the reason for reaching out; it is the concern itself, not an offence tally. ` +
+      `STRUCTURE: (1) a warm, genuine opening that greets the student and parents (a homeroom/coordinating writer can say they're writing as ${studentFirst}'s homeroom teacher on behalf of ${studentFirst}'s teachers; you may say you're glad to have the student at the school — a relational affirmation — but do NOT assert specific talents or traits as fact); (2) a concise, factual recap of the concerns and conversations ORGANISED BY TEACHER and correctly attributed (e.g. "In Mr. X's class…", "Miss Y noted…", or "In my own class…" / "I spoke with ${studentFirst} about…" only where marked THIS IS YOU), kept brief; (3) encouraging moments ONLY IF they are listed on record above; (4) a short note on what the school has ALREADY done, using the exact facts above (omit this if nothing is recorded); (5) a forward-looking close that invites a conversation and expresses confidence in the student. ` +
       `HARD RULES — these override tone: (a) Use ONLY the information below. Do NOT invent, infer, round, or embellish ANY fact — not events, dates, consequences, quotes, meetings, calls, OR praise. (b) Do NOT attribute specific strengths/talents (e.g. "creativity", "leadership", "enthusiasm") unless such a positive is explicitly listed on record above; if none are listed, keep affirmation purely relational and general. (c) If no meetings/calls/notices/consequences are listed, do NOT say the school has met with, called, or contacted the family. (d) Never name, describe, or hint at any OTHER student (write "a classmate"). (e) Never quote slurs, profanity, or crude language — describe it sensitively (e.g. "used hurtful language toward a classmate"). (f) Do not reproduce private staff notes verbatim. (g) Do NOT claim the writer personally witnessed concerns that another teacher logged. ` +
       `A precise factual record (date · offence · teacher · consequence) will be appended beneath your letter automatically, so you do NOT need to reproduce a table of every date — write the narrative and let the record carry the details. ` +
       `Address the parents and the student (e.g. "Dear ${studentFirst} and parents,"). Sign off as ${teacherSig}${schoolName ? `, ${schoolName}` : ""}. ` +
@@ -4514,9 +4541,18 @@ router.post("/students/:id/hr-note", authAny, loadMembership, async (req, res, n
     const byTeacher = {}; const history = [];
     for (const i of incidents) {
       const isPositive = i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0;
-      if (isPositive || i.behaviorSnapshot?.triggerMode === "INTERACTION") continue;
+      if (isPositive) continue;
       const who = tName[String(i.teacherId)] || "a teacher";
       const d = new Date(i.timestamp).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: SCHOOL_TZ });
+      if (i.behaviorSnapshot?.triggerMode === "INTERACTION") {
+        // Include a teacher↔student conversation (often the very concern to raise);
+        // skip parent-contact logs and internal support/meta records.
+        if (isConcernConversation(i)) {
+          (byTeacher[who] ||= []).push(`${d} — conversation: ${(i.detailText || "").trim() || i.behaviorSnapshot?.name || ""}`);
+          history.push({ date: d, offense: "Conversation", teacher: who });
+        }
+        continue;
+      }
       (byTeacher[who] ||= []).push(`${d} — ${i.behaviorSnapshot?.name || ""}${i.detailText ? `: ${i.detailText}` : ""}`);
       history.push({ date: d, offense: i.behaviorSnapshot?.name || "—", teacher: who });
     }
@@ -4531,6 +4567,7 @@ router.post("/students/:id/hr-note", authAny, loadMembership, async (req, res, n
     const prompt =
       `You are ${first}'s HOMEROOM teacher (${hrName}) writing a warm, honest, up-building note to ${first}'s PARENTS to bring the whole picture together, since concerns have come from several teachers. ` +
       `Write in the first person as the homeroom teacher COORDINATING what ${first}'s teachers have observed — attribute each concern to the teacher who noted it (e.g. "In Mr. X's class…"); do not imply you witnessed them all. ` +
+      `An item marked "conversation:" is a talk a teacher ALREADY had with ${first} about that concern — acknowledge it as the reason for reaching out (e.g. "Mr. X spoke with ${first} about…"); it is the concern itself, not an offence tally. ` +
       `HARD RULES: use ONLY the facts below; do not invent events, praise, meetings, or consequences. Never name or hint at any OTHER student (write "a classmate"). Never quote slurs/profanity — describe sensitively. Do NOT state or recommend any consequence (handled separately). ` +
       `Open with the greeting exactly: "${greeting}". ~220-280 words of flowing prose, organised by teacher, ending with an invitation to partner and confidence in ${first}. Sign as ${hrName}${schoolName ? `, ${schoolName}` : ""}.\n\nCONCERNS BY TEACHER:\n${groups}`;
 
