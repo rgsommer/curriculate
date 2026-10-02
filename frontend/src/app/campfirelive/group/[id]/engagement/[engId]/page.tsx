@@ -626,24 +626,25 @@ export default function EngagementDetailPage() {
 
   // Guests on THIS card (host-only) + the ability to bring one into the group.
   const [engagementGuests, setEngagementGuests] = useState<
-    { user_id: string; name: string }[]
+    { user_id: string; name: string; email: string | null }[]
   >([]);
   const loadGuests = useCallback(async () => {
     if (!user) return;
     const { data } = await supabase
       .from("engagement_guests")
-      .select("user_id, profile:profiles(display_name)")
+      .select("user_id, email, profile:profiles(display_name)")
       .eq("engagement_id", engagementId);
     if (!data) return;
     setEngagementGuests(
       (
         data as {
           user_id: string;
+          email: string | null;
           profile: { display_name: string } | { display_name: string }[] | null;
         }[]
       ).map((g) => {
         const p = Array.isArray(g.profile) ? g.profile[0] : g.profile;
-        return { user_id: g.user_id, name: p?.display_name || "Guest" };
+        return { user_id: g.user_id, name: p?.display_name || "Guest", email: g.email ?? null };
       })
     );
   }, [user, engagementId]);
@@ -7376,6 +7377,13 @@ export default function EngagementDetailPage() {
               >
                 <span className="min-w-0 truncate font-medium text-slate-800">
                   {g.name}
+                  {g.email ? (
+                    <span className="ml-1.5 font-normal text-emerald-600" title={g.email}>
+                      📧 {g.email}
+                    </span>
+                  ) : (
+                    <span className="ml-1.5 font-normal text-slate-400">· no email</span>
+                  )}
                 </span>
                 <div className="flex flex-shrink-0 items-center gap-1.5">
                   <button

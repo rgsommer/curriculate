@@ -1121,6 +1121,17 @@ See you around the campfire! 🏕️`
                       <span className="text-sm font-medium text-slate-900">
                         {nameOf(m.user_id)}
                         {m.user_id === user?.id && " (you)"}
+                        {isAdmin &&
+                          (m as { notify_email?: string | null }).notify_email && (
+                            <span
+                              className="ml-1 text-emerald-600"
+                              title={`Gets emails at ${
+                                (m as { notify_email?: string | null }).notify_email
+                              }`}
+                            >
+                              📧
+                            </span>
+                          )}
                         {isAdmin && (
                           <button
                             onClick={() => {

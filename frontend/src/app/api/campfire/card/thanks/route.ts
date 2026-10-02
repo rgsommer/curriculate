@@ -85,8 +85,19 @@ export async function POST(req: Request) {
       "Your group member"
     );
     const all = await getGroupMemberEmails(admin, e.group_id as string);
-    // Everyone who signed, minus the recipient themselves.
-    const to = all.filter((em) => !recipientEmails.has(em.toLowerCase()));
+    // Engagement guests (joined via a link) who left an email get the thanks too.
+    const { data: guestRows } = await admin
+      .from("engagement_guests")
+      .select("email")
+      .eq("engagement_id", engagementId)
+      .not("email", "is", null);
+    const guestEmails = (guestRows ?? [])
+      .map((g) => (g.email as string | null)?.toLowerCase())
+      .filter((x): x is string => !!x);
+    // Everyone who signed, minus the recipient themselves (members + guests, deduped).
+    const to = Array.from(new Set([...all, ...guestEmails])).filter(
+      (em) => !recipientEmails.has(em.toLowerCase())
+    );
     if (to.length === 0) {
       return NextResponse.json({ ok: true, sent: 0 });
     }
