@@ -88,7 +88,7 @@ export default function StudentPage() {
 
   // Parent-facing "whole picture" summary (warm narrative + factual record)
   const [parentSummary, setParentSummary] = useState<string>("");
-  const [parentHistory, setParentHistory] = useState<{ date: string; offense: string; teacher: string; consequence: string }[]>([]);
+  const [parentHistory, setParentHistory] = useState<{ date: string; offense: string; teacher: string; consequence: string; kind?: string }[]>([]);
   const [parentHistoryText, setParentHistoryText] = useState<string>("");
   const [parentMsg, setParentMsg] = useState<string>("");
   const [parentBusy, setParentBusy] = useState<"" | "period" | "all">("");
@@ -210,7 +210,7 @@ export default function StudentPage() {
     setParentHistory([]);
     setParentHistoryText("");
     try {
-      const r = await api<{ summary: string; history: { date: string; offense: string; teacher: string; consequence: string }[]; historyText: string; aiUsed: boolean; concernCount: number; teacherGroups: number }>(
+      const r = await api<{ summary: string; history: { date: string; offense: string; teacher: string; consequence: string; kind?: string }[]; historyText: string; aiUsed: boolean; concernCount: number; teacherGroups: number }>(
         `/students/${params.id}/parent-summary`, { body: { scope }, timeoutMs: 45000 });
       setParentSummary(r.summary);
       setParentHistory(r.history || []);
@@ -640,14 +640,16 @@ export default function StudentPage() {
               <Markdown text={parentSummary} />
               {parentHistory.length > 0 && (
                 <span className="mt-3 block border-t border-slate-200 pt-3">
-                  <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Behaviour record</span>
+                  <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Record</span>
                   <span className="mt-1 block divide-y divide-slate-100">
                     {parentHistory.map((h, i) => (
                       <span key={i} className="flex flex-wrap items-baseline gap-x-2 py-1">
                         <span className="w-14 shrink-0 text-xs text-slate-400">{h.date}</span>
                         <span className="font-medium text-slate-700">{h.offense}</span>
                         <span className="text-xs text-slate-500">· {h.teacher}</span>
-                        {h.consequence
+                        {h.kind === "conversation"
+                          ? null
+                          : h.consequence
                           ? <span className="text-xs text-slate-600">· consequence: {h.consequence}</span>
                           : <span className="text-xs text-slate-400">· no consequence recorded</span>}
                       </span>

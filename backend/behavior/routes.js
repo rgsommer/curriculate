@@ -4414,13 +4414,16 @@ router.post("/students/:id/parent-summary", authAny, loadMembership, async (req,
       const c = consByIncident.get(String(i._id));
       history.push({
         date: new Date(i.timestamp).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: SCHOOL_TZ }),
+        kind: isConvo ? "conversation" : "offense",
         offense: isConvo ? "Conversation" : (i.behaviorSnapshot?.name || "—"),
         teacher: tName[String(i.teacherId)] || "a teacher",
         consequence: isConvo ? "" : (c ? (c.detail && c.detail.length <= 70 ? `${c.type} — ${c.detail}` : c.type) : ""),
       });
     }
     const historyText = history
-      .map((h) => `• ${h.date} — ${h.offense} — ${h.teacher}${h.consequence ? ` — consequence: ${h.consequence}` : " — (no consequence recorded)"}`)
+      .map((h) => h.kind === "conversation"
+        ? `• ${h.date} — Conversation with ${studentFirst} — ${h.teacher}`
+        : `• ${h.date} — ${h.offense} — ${h.teacher}${h.consequence ? ` — consequence: ${h.consequence}` : " — (no consequence recorded)"}`)
       .join("\n");
 
     // Partnership facts — ONLY what's actually on record, stated with exact
@@ -4457,7 +4460,7 @@ router.post("/students/:id/parent-summary", authAny, loadMembership, async (req,
       `CONCERNS GROUPED BY TEACHER:\n${concernGroups || "(none in this window)"}\n\n` +
       (positives.length
         ? `POSITIVE / ENCOURAGING moments actually on record in this window (you MAY reference these honestly):\n${positives.map((p) => `  - ${p}`).join("\n")}\n\n`
-        : `POSITIVE / ENCOURAGING moments on record in this window: NONE. Do not invent any; see the hard rule on this.\n\n`) +
+        : `POSITIVE / ENCOURAGING moments on record in this window: NONE. Do NOT invent any, and do NOT mention their absence — simply omit any positives section entirely (never write "I have not noted any positive moments" or similar).\n\n`) +
       (partnershipBits.length
         ? `WHAT THE SCHOOL HAS ACTUALLY DONE (these exact facts only — do not round up, add, or embellish): ${partnershipBits.join("; ")}.\n\n`
         : `WHAT THE SCHOOL HAS ACTUALLY DONE: nothing is recorded yet in this window — do NOT claim any meetings, calls, notices, or consequences happened.\n\n`) +
@@ -4470,7 +4473,7 @@ router.post("/students/:id/parent-summary", authAny, loadMembership, async (req,
       `PERSPECTIVE: Write in the first person AS the writer described under "WRITER / PERSPECTIVE" below, and follow that framing exactly — if the writer is the homeroom teacher pulling colleagues' observations together, do NOT write as though everything happened in the writer's own class; attribute each concern to the teacher who observed it. ` +
       `An item marked "conversation:" is a talk the teacher ALREADY had directly with the student about that concern — acknowledge it naturally and in the first person where the writer had it (e.g. "I spoke with ${studentFirst} about…"), as the reason for reaching out; it is the concern itself, not an offence tally. ` +
       `STRUCTURE: (1) a warm, genuine opening that greets the student and parents (a homeroom/coordinating writer can say they're writing as ${studentFirst}'s homeroom teacher on behalf of ${studentFirst}'s teachers; you may say you're glad to have the student at the school — a relational affirmation — but do NOT assert specific talents or traits as fact); (2) a concise, factual recap of the concerns and conversations ORGANISED BY TEACHER and correctly attributed (e.g. "In Mr. X's class…", "Miss Y noted…", or "In my own class…" / "I spoke with ${studentFirst} about…" only where marked THIS IS YOU), kept brief; (3) encouraging moments ONLY IF they are listed on record above; (4) a short note on what the school has ALREADY done, using the exact facts above (omit this if nothing is recorded); (5) a forward-looking close that invites a conversation and expresses confidence in the student. ` +
-      `HARD RULES — these override tone: (a) Use ONLY the information below. Do NOT invent, infer, round, or embellish ANY fact — not events, dates, consequences, quotes, meetings, calls, OR praise. (b) Do NOT attribute specific strengths/talents (e.g. "creativity", "leadership", "enthusiasm") unless such a positive is explicitly listed on record above; if none are listed, keep affirmation purely relational and general. (c) If no meetings/calls/notices/consequences are listed, do NOT say the school has met with, called, or contacted the family. (d) Never name, describe, or hint at any OTHER student (write "a classmate"). (e) Never quote slurs, profanity, or crude language — describe it sensitively (e.g. "used hurtful language toward a classmate"). (f) Do not reproduce private staff notes verbatim. (g) Do NOT claim the writer personally witnessed concerns that another teacher logged. ` +
+      `HARD RULES — these override tone: (a) Use ONLY the information below. Do NOT invent, infer, round, or embellish ANY fact — not events, dates, consequences, quotes, meetings, calls, OR praise. (b) Do NOT attribute specific strengths/talents (e.g. "creativity", "leadership", "enthusiasm") unless such a positive is explicitly listed on record above; if none are listed, keep affirmation purely relational and general, and do not mention the absence of positives. (c) If no meetings/calls/notices/consequences are listed, do NOT say the school has met with, called, or contacted the family. (d) Never name, describe, or hint at any OTHER student (write "a classmate"). (e) Never quote slurs, profanity, or crude language — describe it sensitively (e.g. "used hurtful language toward a classmate"). (f) Do not reproduce private staff notes verbatim. (g) Do NOT claim the writer personally witnessed concerns that another teacher logged. (h) This is a pastoral note to RAISE A CONCERN and invite partnership — do NOT mention consequences, interventions, white slips, disciplinary steps, or the ABSENCE of any of them (never write "no interventions/consequences recorded yet" or similar); simply share the concern and the conversation, and invite the parents to partner. ` +
       `A precise factual record (date · offence · teacher · consequence) will be appended beneath your letter automatically, so you do NOT need to reproduce a table of every date — write the narrative and let the record carry the details. ` +
       `Address the parents and the student (e.g. "Dear ${studentFirst} and parents,"). Sign off as ${teacherSig}${schoolName ? `, ${schoolName}` : ""}. ` +
       `LENGTH: about 200–280 words of flowing prose.\n\n${ctxText}`;
@@ -4549,12 +4552,12 @@ router.post("/students/:id/hr-note", authAny, loadMembership, async (req, res, n
         // skip parent-contact logs and internal support/meta records.
         if (isConcernConversation(i)) {
           (byTeacher[who] ||= []).push(`${d} — conversation: ${(i.detailText || "").trim() || i.behaviorSnapshot?.name || ""}`);
-          history.push({ date: d, offense: "Conversation", teacher: who });
+          history.push({ date: d, kind: "conversation", offense: "Conversation", teacher: who });
         }
         continue;
       }
       (byTeacher[who] ||= []).push(`${d} — ${i.behaviorSnapshot?.name || ""}${i.detailText ? `: ${i.detailText}` : ""}`);
-      history.push({ date: d, offense: i.behaviorSnapshot?.name || "—", teacher: who });
+      history.push({ date: d, kind: "offense", offense: i.behaviorSnapshot?.name || "—", teacher: who });
     }
     const concernCount = Object.values(byTeacher).reduce((a, l) => a + l.length, 0);
     if (!concernCount) return res.status(400).json({ ok: false, error: "No concerns on record to write about." });
@@ -4568,7 +4571,7 @@ router.post("/students/:id/hr-note", authAny, loadMembership, async (req, res, n
       `You are ${first}'s HOMEROOM teacher (${hrName}) writing a warm, honest, up-building note to ${first}'s PARENTS to bring the whole picture together, since concerns have come from several teachers. ` +
       `Write in the first person as the homeroom teacher COORDINATING what ${first}'s teachers have observed — attribute each concern to the teacher who noted it (e.g. "In Mr. X's class…"); do not imply you witnessed them all. ` +
       `An item marked "conversation:" is a talk a teacher ALREADY had with ${first} about that concern — acknowledge it as the reason for reaching out (e.g. "Mr. X spoke with ${first} about…"); it is the concern itself, not an offence tally. ` +
-      `HARD RULES: use ONLY the facts below; do not invent events, praise, meetings, or consequences. Never name or hint at any OTHER student (write "a classmate"). Never quote slurs/profanity — describe sensitively. Do NOT state or recommend any consequence (handled separately). ` +
+      `HARD RULES: use ONLY the facts below; do not invent events, praise, meetings, or consequences. Never name or hint at any OTHER student (write "a classmate"). Never quote slurs/profanity — describe sensitively. Do NOT mention consequences, interventions, white slips, disciplinary steps, or the ABSENCE of any of them (never "no interventions/consequences recorded yet"); do NOT mention the absence of positives. This is a pastoral note to raise the concern and invite partnership. ` +
       `Open with the greeting exactly: "${greeting}". ~220-280 words of flowing prose, organised by teacher, ending with an invitation to partner and confidence in ${first}. Sign as ${hrName}${schoolName ? `, ${schoolName}` : ""}.\n\nCONCERNS BY TEACHER:\n${groups}`;
 
     let note = `${greeting}\n\nI wanted to bring together what ${first}'s teachers have observed so we can support ${first} together.\n\n${groups}\n\nI'd welcome the chance to partner with you on next steps. Warm regards,\n${hrName}${schoolName ? `\n${schoolName}` : ""}`;
