@@ -118,6 +118,7 @@ export type Membership = {
   name: string;
   courtesyName?: string;
   email: string;
+  homeroom?: string;
   housesCommittee?: boolean;
   homeworkPrefs?: { lateWeeks?: number | null; outstandingBelow?: number | null };
 };

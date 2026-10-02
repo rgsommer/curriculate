@@ -110,9 +110,9 @@ export default function BehaviorDashboard() {
 
       {canLog && <ReminderToday firstName={(membership.name || "").trim().split(" ")[0]} />}
 
-      {canLog && <ProbationWatch ladder={me.config?.consequenceLadder || []} />}
+      {canLog && <ProbationWatch ladder={me.config?.consequenceLadder || []} myHomeroom={membership.homeroom || ""} />}
 
-      {canLog && <StudentsToWatch fadeDays={me.config?.fadeWindowDays} />}
+      {canLog && <StudentsToWatch fadeDays={me.config?.fadeWindowDays} myHomeroom={membership.homeroom || ""} />}
 
       {canLog && <DailyMovers housesOn={housesOn} />}
 
@@ -566,9 +566,10 @@ function HrButton({ studentId, done }: { studentId: string; done?: boolean }) {
   );
 }
 
-function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: string }[] }) {
+function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number; action: string }[]; myHomeroom?: string }) {
   const [rows, setRows] = useState<StudentSummary[] | null>(null);
   const [trigger, setTrigger] = useState(3);
+  const [othersOpen, setOthersOpen] = useState(false);
 
   useEffect(() => {
     api<{ students: StudentSummary[]; triggerCount: number }>("/students")
@@ -613,6 +614,63 @@ function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: st
   // The consequence the next notice would carry = ladder step for (notices + 1).
   const nextAction = (notices: number) => ladder.find((l) => l.noticeNumber === notices + 1)?.action || null;
 
+  // "Your homeroom first": a homeroom teacher sees their own students up top;
+  // the rest stay here (not hidden, just collapsed) so nothing slips through the
+  // cracks while adoption is still growing.
+  const mine = myHomeroom ? rows.filter((s) => (s.classGroup || "") === myHomeroom) : [];
+  const others = myHomeroom ? rows.filter((s) => (s.classGroup || "") !== myHomeroom) : rows;
+  const showOthers = !myHomeroom || mine.length === 0 || othersOpen;
+
+  const renderRow = (s: StudentSummary, showHeader: boolean) => {
+    // Prefer the handbook-ladder recommendation (white-slip count / notices
+    // this term) when the backend provides it; else the admin ladder step.
+    const action = s.recommendedConsequence || nextAction(s.noticesHomeCount || 0);
+    return (
+      <Fragment key={s._id}>
+        {showHeader && (
+          <li className="!border-t-0 pt-2 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-400">{s.classGroup || "No homeroom"}</li>
+        )}
+        <li className="py-2">
+          <div className="flex items-center justify-between gap-2 text-sm">
+            <span className="flex min-w-0 items-center gap-2">
+              <Link href={`/behavior/student/${s._id}`} className="min-w-0 hover:text-slate-600">
+                <span className="font-medium">{s.lastName}, {s.firstName}</span> <span className="text-slate-400">{s.classGroup}</span>
+                {s.pendingWhiteSlipId
+                  ? <span className="mt-0.5 block text-xs text-red-700">Next: White slip recommended</span>
+                  : action && <span className="mt-0.5 block text-xs text-red-700">Next: {action}</span>}
+              </Link>
+              <HrButton studentId={s._id} done={s.hrFollowedUpThisWeek} />
+            </span>
+            <span className="flex shrink-0 items-center gap-3">
+              <span className="text-xs text-slate-400">{s.noticesHomeCount} notice{(s.noticesHomeCount || 0) === 1 ? "" : "s"}</span>
+              <span className={`font-semibold tabular-nums ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
+                {s.activeCount}/{trigger} →
+              </span>
+            </span>
+          </div>
+          {s.pendingWhiteSlipId && (
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-slate-500">Confirm the consequence given:</span>
+              <button type="button" onClick={() => resolveSlip(s)}
+                className="rounded-md bg-amber-600 px-2 py-0.5 font-semibold text-white hover:bg-amber-700">Issued</button>
+              <button type="button"
+                onClick={() => { const t = window.prompt("What consequence was given instead of the white slip? (e.g. Work detention, Call home)"); if (t && t.trim()) resolveSlip(s, t.trim()); }}
+                className="rounded-md border border-slate-300 px-2 py-0.5 font-semibold text-slate-700 hover:bg-slate-50">Other…</button>
+            </div>
+          )}
+          {(s.pendingConsequences || []).map((c) => (
+            <div key={c.id} className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-slate-500">Consequence: <span className="font-medium text-slate-700">{c.type}</span></span>
+              <button type="button" onClick={() => markDone(s, c.id)}
+                title="The student has carried this out (e.g. handed in the lines)"
+                className="rounded-md border border-green-300 px-2 py-0.5 font-semibold text-green-700 hover:bg-green-50">✓ Mark completed</button>
+            </div>
+          ))}
+        </li>
+      </Fragment>
+    );
+  };
+
   return (
     <Card>
       <h2 className="font-semibold text-red-800">Recommended actions</h2>
@@ -620,67 +678,41 @@ function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: st
         Already had a notice home and back at or near the {trigger}-strike trigger. The next notice carries the rule-based consequence below; open a student for AI coaching suggestions too.
       </p>
       <ul className="mt-2 divide-y divide-slate-100">
-        {rows.map((s, i) => {
-          // Prefer the handbook-ladder recommendation (white-slip count / notices
-          // this term) when the backend provides it; else the admin ladder step.
-          const action = s.recommendedConsequence || nextAction(s.noticesHomeCount || 0);
-          const newHr = i === 0 || (rows[i - 1].classGroup || "") !== (s.classGroup || "");
-          return (
-            <Fragment key={s._id}>
-            {newHr && (
-              <li className="!border-t-0 pt-2 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-400">{s.classGroup || "No homeroom"}</li>
-            )}
-            <li className="py-2">
-              <div className="flex items-center justify-between gap-2 text-sm">
-                <span className="flex min-w-0 items-center gap-2">
-                  <Link href={`/behavior/student/${s._id}`} className="min-w-0 hover:text-slate-600">
-                    <span className="font-medium">{s.lastName}, {s.firstName}</span> <span className="text-slate-400">{s.classGroup}</span>
-                    {s.pendingWhiteSlipId
-                      ? <span className="mt-0.5 block text-xs text-red-700">Next: White slip recommended</span>
-                      : action && <span className="mt-0.5 block text-xs text-red-700">Next: {action}</span>}
-                  </Link>
-                  <HrButton studentId={s._id} done={s.hrFollowedUpThisWeek} />
-                </span>
-                <span className="flex shrink-0 items-center gap-3">
-                  <span className="text-xs text-slate-400">{s.noticesHomeCount} notice{(s.noticesHomeCount || 0) === 1 ? "" : "s"}</span>
-                  <span className={`font-semibold tabular-nums ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
-                    {s.activeCount}/{trigger} →
-                  </span>
-                </span>
-              </div>
-              {s.pendingWhiteSlipId && (
-                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-                  <span className="text-slate-500">Confirm the consequence given:</span>
-                  <button type="button" onClick={() => resolveSlip(s)}
-                    className="rounded-md bg-amber-600 px-2 py-0.5 font-semibold text-white hover:bg-amber-700">Issued</button>
-                  <button type="button"
-                    onClick={() => { const t = window.prompt("What consequence was given instead of the white slip? (e.g. Work detention, Call home)"); if (t && t.trim()) resolveSlip(s, t.trim()); }}
-                    className="rounded-md border border-slate-300 px-2 py-0.5 font-semibold text-slate-700 hover:bg-slate-50">Other…</button>
-                </div>
+        {myHomeroom && mine.length > 0 && (
+          <>
+            <li className="!border-t-0 pt-2 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Your homeroom · {myHomeroom}</li>
+            {mine.map((s) => renderRow(s, false))}
+          </>
+        )}
+        {others.length > 0 && (
+          showOthers ? (
+            <>
+              {myHomeroom && mine.length > 0 && (
+                <li className="!border-t-0 pt-3 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Other homerooms</li>
               )}
-              {(s.pendingConsequences || []).map((c) => (
-                <div key={c.id} className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-                  <span className="text-slate-500">Consequence: <span className="font-medium text-slate-700">{c.type}</span></span>
-                  <button type="button" onClick={() => markDone(s, c.id)}
-                    title="The student has carried this out (e.g. handed in the lines)"
-                    className="rounded-md border border-green-300 px-2 py-0.5 font-semibold text-green-700 hover:bg-green-50">✓ Mark completed</button>
-                </div>
-              ))}
+              {others.map((s, i) => renderRow(s, i === 0 || (others[i - 1].classGroup || "") !== (s.classGroup || "")))}
+            </>
+          ) : (
+            <li className="!border-t-0 pt-2">
+              <button type="button" onClick={() => setOthersOpen(true)}
+                className="text-xs font-medium text-slate-500 underline underline-offset-2 hover:text-slate-800">
+                Show other homerooms ({others.length})
+              </button>
             </li>
-            </Fragment>
-          );
-        })}
+          )
+        )}
       </ul>
     </Card>
   );
 }
 
 type Occ = { date: string; name: string; detail?: string; teacher?: string };
-function StudentsToWatch({ fadeDays }: { fadeDays?: number }) {
+function StudentsToWatch({ fadeDays, myHomeroom }: { fadeDays?: number; myHomeroom?: string }) {
   const [rows, setRows] = useState<StudentSummary[] | null>(null);
   const [trigger, setTrigger] = useState(3);
   const [openId, setOpenId] = useState<string | null>(null);
   const [occById, setOccById] = useState<Record<string, Occ[] | "loading">>({});
+  const [othersOpen, setOthersOpen] = useState(false);
 
   async function toggleOcc(id: string) {
     if (openId === id) { setOpenId(null); return; }
@@ -714,6 +746,51 @@ function StudentsToWatch({ fadeDays }: { fadeDays?: number }) {
 
   if (!rows || rows.length === 0) return null;
 
+  // "Your homeroom first": own students up top; the rest collapsed but reachable.
+  const mine = myHomeroom ? rows.filter((s) => (s.classGroup || "") === myHomeroom) : [];
+  const others = myHomeroom ? rows.filter((s) => (s.classGroup || "") !== myHomeroom) : rows;
+  const showOthers = !myHomeroom || mine.length === 0 || othersOpen;
+
+  const renderRow = (s: StudentSummary, showHeader: boolean) => (
+    <Fragment key={s._id}>
+      {showHeader && (
+        <li className="!border-t-0 pt-2 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-400">{s.classGroup || "No homeroom"}</li>
+      )}
+      <li className="flex items-center justify-between gap-2 py-2 text-sm">
+        <span className="flex min-w-0 items-center gap-2">
+          <button onClick={() => toggleOcc(s._id)} title="Show the occurrences" className="shrink-0 text-slate-400 hover:text-slate-700">{openId === s._id ? "▾" : "▸"}</button>
+          <Link href={`/behavior/student/${s._id}`} className="min-w-0 truncate font-medium hover:text-slate-600">
+            {s.lastName}, {s.firstName} <span className="text-slate-400">{s.classGroup}</span>
+          </Link>
+          <HrButton studentId={s._id} done={s.hrFollowedUpThisWeek} />
+        </span>
+        <span className={`shrink-0 font-semibold tabular-nums ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
+          {s.activeCount}/{trigger} →
+        </span>
+      </li>
+      {openId === s._id && (
+        <li className="!border-t-0 pb-2 pl-6 text-xs text-slate-600">
+          {occById[s._id] === "loading" ? (
+            <span className="text-slate-400">Loading…</span>
+          ) : (occById[s._id] as Occ[])?.length ? (
+            <ul className="space-y-0.5">
+              {(occById[s._id] as Occ[]).map((o, k) => (
+                <li key={k}>
+                  <span className="text-slate-400">{new Date(o.date).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}</span>
+                  {" · "}<span className="font-medium">{o.name}</span>
+                  {o.detail ? <span className="text-slate-500"> — {o.detail}</span> : null}
+                  {o.teacher ? <span className="text-slate-400"> ({o.teacher})</span> : null}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <span className="text-slate-400">No recent occurrences.</span>
+          )}
+        </li>
+      )}
+    </Fragment>
+  );
+
   return (
     <Card>
       <h2 className="font-semibold">Students to encourage</h2>
@@ -722,48 +799,29 @@ function StudentsToWatch({ fadeDays }: { fadeDays?: number }) {
         {fadeDays ? ` Strikes fade after ${fadeDays} days, so the trend can still turn around.` : ""}
       </p>
       <ul className="mt-2 divide-y divide-slate-100">
-        {rows.map((s, i) => {
-          const newHr = i === 0 || (rows[i - 1].classGroup || "") !== (s.classGroup || "");
-          return (
-          <Fragment key={s._id}>
-            {newHr && (
-              <li className="!border-t-0 pt-2 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-400">{s.classGroup || "No homeroom"}</li>
-            )}
-            <li className="flex items-center justify-between gap-2 py-2 text-sm">
-              <span className="flex min-w-0 items-center gap-2">
-                <button onClick={() => toggleOcc(s._id)} title="Show the occurrences" className="shrink-0 text-slate-400 hover:text-slate-700">{openId === s._id ? "▾" : "▸"}</button>
-                <Link href={`/behavior/student/${s._id}`} className="min-w-0 truncate font-medium hover:text-slate-600">
-                  {s.lastName}, {s.firstName} <span className="text-slate-400">{s.classGroup}</span>
-                </Link>
-                <HrButton studentId={s._id} done={s.hrFollowedUpThisWeek} />
-              </span>
-              <span className={`shrink-0 font-semibold tabular-nums ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
-                {s.activeCount}/{trigger} →
-              </span>
+        {myHomeroom && mine.length > 0 && (
+          <>
+            <li className="!border-t-0 pt-2 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Your homeroom · {myHomeroom}</li>
+            {mine.map((s) => renderRow(s, false))}
+          </>
+        )}
+        {others.length > 0 && (
+          showOthers ? (
+            <>
+              {myHomeroom && mine.length > 0 && (
+                <li className="!border-t-0 pt-3 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Other homerooms</li>
+              )}
+              {others.map((s, i) => renderRow(s, i === 0 || (others[i - 1].classGroup || "") !== (s.classGroup || "")))}
+            </>
+          ) : (
+            <li className="!border-t-0 pt-2">
+              <button type="button" onClick={() => setOthersOpen(true)}
+                className="text-xs font-medium text-slate-500 underline underline-offset-2 hover:text-slate-800">
+                Show other homerooms ({others.length})
+              </button>
             </li>
-            {openId === s._id && (
-              <li className="!border-t-0 pb-2 pl-6 text-xs text-slate-600">
-                {occById[s._id] === "loading" ? (
-                  <span className="text-slate-400">Loading…</span>
-                ) : (occById[s._id] as Occ[])?.length ? (
-                  <ul className="space-y-0.5">
-                    {(occById[s._id] as Occ[]).map((o, k) => (
-                      <li key={k}>
-                        <span className="text-slate-400">{new Date(o.date).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}</span>
-                        {" · "}<span className="font-medium">{o.name}</span>
-                        {o.detail ? <span className="text-slate-500"> — {o.detail}</span> : null}
-                        {o.teacher ? <span className="text-slate-400"> ({o.teacher})</span> : null}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <span className="text-slate-400">No recent occurrences.</span>
-                )}
-              </li>
-            )}
-          </Fragment>
-          );
-        })}
+          )
+        )}
       </ul>
     </Card>
   );
