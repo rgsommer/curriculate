@@ -172,6 +172,13 @@ export default function StudentPage() {
   const isAdmin = me?.membership?.role === "originator" || me?.membership?.role === "admin";
   const canEditInc = (inc: { teacherId?: string }) => isAdmin || (!!myId && String(inc.teacherId) === String(myId));
   const byMonth = buildByMonth(data.incidents as any, data.notices as any);
+  // Most recent "whole-picture note to HR teacher" send (logged as an intervention),
+  // so the button can show it's already been done.
+  const hrNoteSentAt = data.incidents
+    .filter((i) => i.behaviorSnapshot?.name === "Whole-picture note recommended")
+    .map((i) => i.timestamp)
+    .sort()
+    .pop() || null;
 
   async function adminSummary(scope: "all" | "current") {
     setSummaryBusy(scope);
@@ -615,10 +622,13 @@ export default function StudentPage() {
 
           <div className="mt-3 border-t border-slate-100 pt-3">
             <p className="text-xs text-slate-400">Or send it straight to the student&apos;s <span className="font-medium text-slate-600">homeroom teacher</span> to post — the VP is copied, and it&apos;s logged as an intervention. Nothing reaches parents automatically.</p>
-            <button onClick={sendHrNote} disabled={hrNoteBusy}
-              className="mt-2 rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40">
-              {hrNoteBusy ? "Sending…" : "✉ Send to homeroom teacher (cc VP)"}
-            </button>
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <button onClick={sendHrNote} disabled={hrNoteBusy}
+                className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40">
+                {hrNoteBusy ? "Sending…" : hrNoteSentAt ? "✉ Re-send to homeroom teacher (cc VP)" : "✉ Send to homeroom teacher (cc VP)"}
+              </button>
+              {hrNoteSentAt && <span className="text-xs text-slate-400">Last sent {new Date(hrNoteSentAt).toLocaleDateString()}</span>}
+            </div>
             {hrNoteMsg && <p className={`mt-2 text-sm ${hrNoteMsg.startsWith("Sent") ? "text-green-700" : "text-red-600"}`}>{hrNoteMsg}</p>}
           </div>
           {parentSummary && (
