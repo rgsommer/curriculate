@@ -45,7 +45,7 @@ Paste the whole JSON file as the value of `DAILY_SHEETS_SERVICE_ACCOUNT`.
 | `Poems!F1:J3`, `VerticalAi!D1:J200`, `Riddles!D1:E400`, `Master!B1:B2` | Ingredients for the display rules the board evaluates itself. Riddles is read two columns wide: D the riddle for the week, E its answer, which the bottom bar reveals in red at the end of the line's sweep. |
 | `Verses!A1:A400`, `Vertical!B4` | What A5 picks the day's verse from, so the board can cut it at a word boundary rather than mid-word. |
 | `Points!A1:BV46` | Row 3 the class names, row 46 the four privilege flags each, and the days in between — the status bubble, the points strip labels and the writing penalty all come from this one read. |
-| `Lessons!B1:K400` (values, formulas, and the links inside B to K) | The teacher's own material, keyed by lesson code in column C ("~H001" or "H001"): E the starting page reference, F the homework, I the lesson picture, J the video. The student-facing tabs leave this out on purpose, so it is looked up by code and folded into whichever class carries that code. Columns I and J are the picture and video columns, so any URL there is taken — a Drive link written `open?id=…`, or a link attached to the cell's own text — rather than only one that looks like a picture. Column B, a row above each course's first lesson, holds that course's deck for the year; the class heading links to it. |
+| `Lessons!B1:K400` (values, formulas, and the links inside B to K) | The teacher's own material, keyed by lesson code in column C ("~H001", "H001", or "~G007 📷" — the code is taken from the front of the cell, and the camera the sheet marks a picture with used to make the whole row unreadable): E the starting page reference, F the homework, I the lesson picture, J the video. The student-facing tabs leave this out on purpose, so it is looked up by code and folded into whichever class carries that code. Columns I and J are the picture and video columns, so any URL there is taken — a Drive link written `open?id=…`, or a link attached to the cell's own text — rather than only one that looks like a picture. Column B, a row above each course's first lesson, holds that course's deck for the year; the class heading links to it. |
 | `Vertical!A1:J200` | Column A the period times, F to J Monday to Friday — the day's plan with a row per period. B4 (the week the verse is indexed by) is inside this block, so it costs no extra range. |
 | `VerticalAi!D1:J200` | Also the day's plan: columns F to J are Monday to Friday, and each holds the day's classes run together in one cell. Used when DisplayAI's lesson column has not been filled in yet. |
 | The SchoolCalendar tab (`A1:G220`) | The school's own calendar, a row per event: A the date in words, B the same date as `"<serial> n"` (the key the sheet's own lookups match, `n` telling two events on one day apart), C the event, D `TRUE` when school is closed, F a longer description. The banner across the top of the board says what is on today and what is on the next day the room is in — the next school day, so a Friday board talks about Monday — with a day off announced by name in the alert colour. The teacher's own diary (marks due, rosters, a colleague out — `STAFF_ONLY` in `parse.ts`) is left out, because the banner is read by the class; `?debug=1` lists what was left out. |
@@ -108,6 +108,7 @@ remembered and left out of later batches (`readRangesSafe`).
 | Prayercast for (C) | The day's "Pray for …" video holds the right-hand half for N minutes from the end of O Canada — 5 if the row is missing, which it is in the sheet today |
 | Lesson picture for (C) | The lesson's own picture and video hold the right-hand half for N minutes after the verse — 15 if the row is missing, which it is in the sheet today |
 | Run over (C) | A message window — the grace before lunch, the highlighted "Pray for …" line — stays up N minutes past its own time, because a class that runs over by a minute or two is the normal case. 5 if the row is missing, which it is in the sheet today |
+| Prayer before class for (C) | The prayer from `Poems` column Q leads the lesson column for N minutes at the start of a class — 5 if the row is missing, which it is in the sheet today |
 
 The opening window (question and warm-up instead of the bullet list) is fixed at
 5 minutes in `parse.ts` (`DEFAULT_SETUP.openMin`); there is no Setup row for it yet.
@@ -178,6 +179,39 @@ The bubble says **what the benefit is**, not the sheet's shorthand
 | FD | Extra FD | the same window as the pass | Benefit 3 — a week's average at that level: an extra Formal Discussion |
 | all three | All 3 | the whole class, from the first minute — it is the class's own reward | the "both" column, orange |
 | trailing ` 4` | `+2` | with whatever else shows | the bonus of two for being perfect the whole class |
+
+### The prayer before class
+
+`Poems` column Q, one prayer to a row from **Q2** (row 1 is the heading). For the
+first `classPrayerMin` minutes of a class it leads the **lesson column** — the
+room settles, says it together, and the lesson is underneath when they look up —
+in a light blue panel of its own, the title over a rule and the prayer in the
+serif.
+
+A cell is **title, then the prayer**, separated by a line break where the cell
+has one or by a **pipe**, which is what lets the whole column be pasted in at
+once:
+
+```
+Before study — Thomas Aquinas | Creator of all things, true source of light and wisdom…
+Before a test [test] | Lord, you know what I have studied and what I have not…
+O come, O come, Emmanuel [advent] | …
+```
+
+The title may end with a **tag in square brackets** naming the days that prayer
+belongs to, and the tag never shows on the board. `[test]` (also `quiz`, `exam`)
+is kept for a class whose *own lesson* names one — not its reminders, which
+point at the next class — and `[advent]`, `[christmas]`, `[lent]`, `[easter]`
+for the season the day falls in (`churchSeason`, off `easterSunday`, the
+Gregorian computus). Where a tag matches, the pick is made from the tagged ones
+alone; otherwise from the untagged, so a Christmas prayer does not turn up in
+February.
+
+The pick is random but **not re-rolled every ten seconds**: a projector
+re-renders constantly, and a prayer that changes while the room is saying it is
+worse than none. It is seeded by the day and by the period's own start,
+scrambled first — every period begins on a multiple of five minutes, and a plain
+remainder put two classes an hour apart on the same prayer all day.
 
 ### What is due, and what is coming up
 

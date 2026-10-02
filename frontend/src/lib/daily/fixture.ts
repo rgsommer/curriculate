@@ -190,7 +190,20 @@ export const FIXTURE: RawInputs = {
       "Great is Thy faithfulness,\nO God my Father;\nthere is no shadow of turning with Thee.\n\nThou changest not,\nThy compassions they fail not;\nas Thou hast been Thou forever wilt be.",
     ],
     ["Week two's poem.", "Week two's hymn."],
-  ],
+  ].map((row, i) => {
+    // Column Q (index 16) carries the prayers before class, one to a row from
+    // Q2 — row 1 is the heading, as it is in the sheet.
+    const col: string[] = [];
+    col[16] = [
+      "Prayers before class",
+      "Before study — Thomas Aquinas | Creator of all things, true source of light and wisdom: "
+        + "pour into my understanding a ray of your brightness.",
+      "Before a test [test] | Lord, you know what I have studied and what I have not. "
+        + "Quiet my nerves and bring back what I have learned.",
+      "Open my eyes — Psalm 119 | Open my eyes, that I may behold wondrous things out of your law.",
+    ][i] || "";
+    return Object.assign(col, row) as string[];
+  }),
   feature: "Q: A horse is on a 24 foot chain and wants an apple that is 26 feet away. How can the horse get to the apple?",
   // Setup!M1:Q8 — column M who the greeting addresses, Monday to Friday; N to Q
   // when the end-of-day package comes up and how far ahead.

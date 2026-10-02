@@ -67,6 +67,7 @@ export type Setup = {
   prayerMin: number; // how long the Prayercast video holds the half after O Canada
   mediaMin: number; // how long the lesson's own picture and video hold the half, after the verse
   runOverMin: number; // how long a message window stays up past its time, for a class that runs over
+  classPrayerMin: number; // how long the prayer before class leads the lesson column
   picSeconds: number;
 };
 
@@ -139,6 +140,7 @@ export const DEFAULT_SETUP: Setup = {
   prayerMin: 5,
   mediaMin: 15,
   runOverMin: 5,
+  classPrayerMin: 5,
   picSeconds: 600,
 };
 
@@ -242,11 +244,23 @@ export type Lesson = {
 };
 
 /** "~H001", " h001 " and "H001" are the same lesson. */
-export function normalizeCode(raw: string): string {
-  return String(raw || "").trim().replace(/^~+/, "").toUpperCase();
-}
+/**
+ * The lesson code a cell names, however the cell is written.
+ *
+ * The code cell is not always only the code. The sheet marks a lesson that has
+ * a picture by writing "~G007 📷" in it, and the DisplayAI header writes the
+ * same thing — "(G007 📷)" — so the cell had to be the code and nothing else or
+ * the whole Lessons row was skipped: no page reference, no homework, no
+ * picture, no video, for every lesson so marked. The code is taken from the
+ * front of the cell instead, and whatever the teacher writes after it is theirs.
+ */
+const LESSON_CODE = /^~?\s*([A-Za-z]\d{3})(?![0-9A-Za-z])/;
 
-const LESSON_CODE = /^~?[A-Za-z]\d{3}$/;
+export function normalizeCode(raw: string): string {
+  const text = String(raw || "").trim();
+  const m = LESSON_CODE.exec(text);
+  return m ? m[1].toUpperCase() : text.replace(/^~+/, "").toUpperCase();
+}
 
 export function parseLessons(
   values: string[][],
@@ -1154,6 +1168,9 @@ export function parseSetup(rows: string[][]): Setup {
     // No such row in the sheet yet; add one labelled "Run over" with the
     // minutes in column C to change it from five.
     else if (/^(run over|runs over|message grace|grace after)/.test(label)) out.runOverMin = num(c, out.runOverMin);
+    // No such row in the sheet yet; add one labelled "Prayer before class for"
+    // with the minutes in column C to change it from five.
+    else if (/^(prayer before class|class prayer|opening prayer)/.test(label)) out.classPrayerMin = num(c, out.classPrayerMin);
   }
   return out;
 }
@@ -1514,6 +1531,7 @@ export type Sources = {
   rewards: Record<string, RewardRule>; // Setup!D52:AE56 — the thresholds, by label
   impromptu: string[][]; // Impromptu!L1:M30 — the Formal Discussion topics
   memoryVerse: string; // the week's memory verse, from MemoryCards column H
+  prayers: ClassPrayer[]; // the prayers before class, Poems column Q
   poem: string; // the week's poem or hymn, from Poems A (or B when Setup C19 is on)
   poemWords: string; // Poems C — the hymn's words, when the hymn is what shows
 };
@@ -1522,7 +1540,7 @@ export const EMPTY_SOURCES: Sources = {
   windowStart: null, windowEnd: null, offsetHours: 0, b7: false, d7: false, a9: null, a11: null,
   poemRow: [], poemF3: "", poemF3Formula: "", poemGrid: [], poemGridFormulas: [],
   verticalRow: [], slots: [], riddle: "", riddleAnswer: "", poemIsHymn: false,
-  verses: [], verseWeek: null, pointsClasses: [], pointsLabels: [], book: {}, cellImages: {}, plansCells: [], pointsCells: [], rewards: {}, impromptu: [], memoryVerse: "", poem: "", poemWords: "", notice: "", noticeFormula: "",
+  verses: [], verseWeek: null, pointsClasses: [], pointsLabels: [], book: {}, cellImages: {}, plansCells: [], pointsCells: [], rewards: {}, impromptu: [], memoryVerse: "", prayers: [], poem: "", poemWords: "", notice: "", noticeFormula: "",
 };
 
 const truthy = (s: string) => /^(TRUE|1|YES)$/i.test(String(s || "").trim());
@@ -1826,6 +1844,7 @@ export function buildSources(inp: RawInputs): Sources {
     rewards: parseRewardRules(inp.rewardRules || []),
     impromptu: inp.impromptu || [],
     memoryVerse: memoryVerse(inp.memoryCards || []),
+    prayers: classPrayers(inp.poemsAB || []),
     poem: poemOfWeek(inp.poemsAB || [], week, truthy(String(((inp.setup || [])[18] || [])[2] ?? ""))),
     poemIsHymn: truthy(String(((inp.setup || [])[18] || [])[2] ?? "")),
     // Only when the hymn is what is showing: a poem carries its own words.
@@ -2218,6 +2237,144 @@ export function evaluateNotice(src: Sources, at?: Date): string {
  * out of Poems by the week number — column B rather than A when Setup C19 says
  * so.
  */
+/**
+ * The prayers before class, from Poems column Q.
+ *
+ * One to a row from Q2 — row 1 is the heading. A cell is its title, then the
+ * prayer: separated by a line break where the cell has one, or by a pipe, which
+ * is what lets the whole column be pasted in at once. The title may end with a
+ * tag in square brackets naming the days the prayer belongs to —
+ *
+ *   Before a test [test] | Lord, you know what I have studied and what I have not…
+ *   O Come, O Come, Emmanuel [advent] | …
+ *
+ * — and the tag does not show on the board.
+ */
+const PRAYER_COL = 16; // Q
+
+export type ClassPrayer = { title: string; tag: string; text: string };
+
+export function parsePrayerCell(cell: string): ClassPrayer | null {
+  const whole = String(cell || "").replace(/\r/g, "").trim();
+  if (!whole) return null;
+  // Whichever comes first: the cell's own line break or a pipe.
+  const nl = whole.indexOf("\n");
+  const bar = whole.indexOf("|");
+  const at = nl >= 0 && (bar < 0 || nl < bar) ? nl : bar;
+  // No separator at all: it is a prayer with no title rather than a title with
+  // no prayer, which is the way round that still puts words on the screen.
+  if (at < 0) return { title: "", tag: "", text: whole };
+  const head = whole.slice(0, at).trim();
+  const text = whole.slice(at + 1).trim();
+  if (!text) return { title: "", tag: "", text: head };
+  const tagged = /\[([^\]]+)\]\s*$/.exec(head);
+  return {
+    title: (tagged ? head.slice(0, tagged.index) : head).trim(),
+    tag: tagged ? tagged[1].trim().toLowerCase() : "",
+    text,
+  };
+}
+
+export function classPrayers(rows: string[][]): ClassPrayer[] {
+  return (rows || [])
+    .slice(1)
+    .map((r) => parsePrayerCell(String((r || [])[PRAYER_COL] ?? "")))
+    .filter((x): x is ClassPrayer => !!x);
+}
+
+/** A cheap integer scramble, so neighbouring seeds land far apart. */
+function scramble(seed: number): number {
+  let x = Math.floor(seed) | 0;
+  x ^= x << 13;
+  x ^= x >>> 17;
+  x ^= x << 5;
+  return Math.abs(x | 0);
+}
+
+/** Easter Sunday, by the Gregorian computus, which the seasons hang off. */
+export function easterSunday(year: number): Date {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31); // 3 March, 4 April
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(year, month - 1, day);
+}
+
+const DAY_MS = 86400000;
+const addDays = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+const between = (d: Date, from: Date, to: Date) => d >= from && d <= to;
+
+/**
+ * Which season of the church year a day falls in, for a prayer tagged with one.
+ *
+ * Advent from its first Sunday (the fourth before Christmas) to Christmas Eve;
+ * Christmas to Epiphany; Lent from Ash Wednesday to Holy Saturday; Easter from
+ * Easter Sunday to Pentecost. Anything else is ordinary time and has no tag.
+ */
+export function churchSeason(at: Date): string {
+  const d = new Date(at.getFullYear(), at.getMonth(), at.getDate());
+  const year = d.getFullYear();
+
+  const christmas = new Date(year, 11, 25);
+  // The first Sunday of Advent: four Sundays back from Christmas Day.
+  const adventStart = addDays(christmas, -(christmas.getDay() === 0 ? 7 : christmas.getDay()) - 21);
+  if (between(d, adventStart, addDays(christmas, -1))) return "advent";
+  if (between(d, christmas, new Date(year, 11, 31))) return "christmas";
+  if (between(d, new Date(year, 0, 1), new Date(year, 0, 6))) return "christmas";
+
+  const easter = easterSunday(year);
+  if (between(d, addDays(easter, -46), addDays(easter, -1))) return "lent";
+  if (between(d, easter, addDays(easter, 49))) return "easter";
+  return "";
+}
+
+/**
+ * Which prayer this class gets.
+ *
+ * Random, but not re-rolled every ten seconds: a projector re-renders
+ * constantly, and a prayer that changes while the room is saying it is worse
+ * than no prayer at all. So the pick is seeded by the day and by the period's
+ * own start — a different one in each class, the same one all the way through
+ * it, and a different set tomorrow.
+ *
+ * A tagged prayer is kept for its own day: where any prayer is tagged for a
+ * test and this class has one, or for the season the day falls in, the pick is
+ * made from those alone. Otherwise the untagged ones are the pool, so a
+ * Christmas prayer does not turn up in February.
+ */
+export function prayerForClass(
+  prayers: ClassPrayer[],
+  at: Date,
+  startMin: number,
+  opts: { test?: boolean } = {}
+): ClassPrayer | null {
+  const all = (prayers || []).filter((p) => p && p.text);
+  if (!all.length) return null;
+  const season = churchSeason(at);
+  const forToday = (tag: string) =>
+    (opts.test && /^(test|quiz|exam|exams)$/.test(tag)) || (!!season && tag === season);
+  const pool = all.filter((p) => p.tag && forToday(p.tag));
+  const list = pool.length ? pool : all.filter((p) => !p.tag);
+  const from = list.length ? list : all;
+  const day = Math.floor(toSerial(new Date(at.getFullYear(), at.getMonth(), at.getDate())));
+  // Multiplying and taking the remainder spreads badly over a short column —
+  // every period starts on a multiple of five minutes, so two classes an hour
+  // apart kept landing on the same prayer. A scramble first, then the
+  // remainder.
+  const n = scramble(day * 131 + Math.floor(startMin)) % from.length;
+  return from[n];
+}
+
 export function memoryVerse(cards: string[][]): string {
   return (cards || [])
     .map((r) => String((r || [])[0] ?? "").trim())

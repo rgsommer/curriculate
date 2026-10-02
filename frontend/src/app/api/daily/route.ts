@@ -152,7 +152,11 @@ async function refresh(quick: boolean): Promise<Payload> {
       // them every one of those formulas throws and falls back to whatever the
       // sheet computed at the moment of the read, which the scrubber cannot move.
       "Display!A1:F20",     // 14 A7 the hour offset, A9/A11/A13 the times, B7/D7 the switches, C7/C9/C11 the rows
-      "Poems!A1:C60",       // 15 A the poem of the week, B the hymn's name (Setup C19), C its words
+      // 15 A the poem of the week, B the hymn's name (Setup C19), C its words,
+      // and **Q the prayers before class**, one to a row from Q2. Widening the
+      // range costs nothing — it is the same request — and saves shifting every
+      // index after this one, which is where the optional ranges go wrong.
+      "Poems!A1:Q60",
       "MemoryCards!H1:H40", // 16 the memory verse, joined
       "Vocab!A1:B60",       // 17 the week's vocabulary
       "Master!A1:K2",       // 18 B2 the week, K2 the anthem time
