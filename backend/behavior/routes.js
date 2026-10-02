@@ -3028,6 +3028,21 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
       }
     }
 
+    // Event-driven homeroom check-in: the moment a student crosses to 2 active
+    // strikes (climbing from fewer — including again after a notice/white-slip
+    // reset), nudge the homeroom teacher for an encouraging talk. Not the notice
+    // threshold itself (that's handled above). Fire-and-forget.
+    try {
+      const trig = config?.triggerCount ?? 3;
+      const fw = config?.fadeWindowDays ?? 30;
+      const createdSet = new Set(createdIncidents.map((i) => String(i._id)));
+      const afterN = activeThresholdIncidents(priorIncidents, { fadeWindowDays: fw, thresholdResetAt: student.thresholdResetAt }).length;
+      const beforeN = activeThresholdIncidents(priorIncidents.filter((i) => !createdSet.has(String(i._id))), { fadeWindowDays: fw, thresholdResetAt: student.thresholdResetAt }).length;
+      if (beforeN < 2 && afterN >= 2 && afterN < trig) {
+        sendHomeroomCheckinForStudent({ schoolId: req.schoolId, student, config }).catch(() => {});
+      }
+    } catch { /* never block logging on the check-in */ }
+
     // Independent POSITIVE trigger: when a positive was just logged, check whether
     // the student has accumulated enough positives for a good-news note home.
     let positiveNotice = null;
@@ -6123,6 +6138,58 @@ export async function sendConsequenceDigestForSchool(schoolId, { force = false }
   return { ok: true, sent, items: totalItems };
 }
 
+// Event-driven homeroom check-in: email the student's homeroom teacher a
+// proactive "have an encouraging word" nudge for ONE student (dated incidents +
+// one-tap "I've talked to them"). Fired when a student crosses to 2 active
+// strikes — climbing from fewer, or again after a notice/white-slip reset.
+// Best-effort; never blocks logging. Returns true if an email was sent.
+export async function sendHomeroomCheckinForStudent({ schoolId, student, config }) {
+  if (config?.teacherNudge?.enabled === false) return false;
+  const cls = String(student.classGroup || "").trim();
+  if (!cls) return false;
+  const hr = await BehaviorTeacher.findOne({ schoolId, homeroom: cls, status: "accepted" }).lean();
+  if (!hr?.email) return false;
+
+  const fadeDays = config?.fadeWindowDays ?? 30;
+  const incs = await BehaviorIncident.find({ studentId: student._id, timestamp: { $gt: new Date(Date.now() - Math.max(fadeDays, 60) * DAY_MS) } })
+    .select("behaviorSnapshot timestamp immediateFlag whiteSlip countedInNoticeId teacherId detailText").lean();
+  const active = activeThresholdIncidents(incs, { fadeWindowDays: fadeDays, thresholdResetAt: student.thresholdResetAt });
+  if (active.length < 2) return false;
+
+  const tIds = [...new Set(active.map((i) => String(i.teacherId)).filter(Boolean))];
+  const tdocs = await BehaviorTeacher.find({ _id: { $in: tIds } }).select("name courtesyName").lean();
+  const tn = Object.fromEntries(tdocs.map((t) => [String(t._id), (t.courtesyName || t.name || "").trim()]));
+  const occ = active.slice().sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 8).map((i) => ({
+    date: new Date(i.timestamp).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: SCHOOL_TZ }),
+    name: i.behaviorSnapshot?.name || "Offence", detail: (i.detailText || "").trim(), teacher: tn[String(i.teacherId)] || "",
+  }));
+  const name = `${student.preferredName || student.firstName} ${student.lastName || ""}`.trim();
+  const hrFirst = (hr.courtesyName || hr.name || "there").split(" ")[0];
+  const schoolName = config?.branding?.schoolName || (await BehaviorSchool.findById(schoolId).select("name").lean())?.name || "";
+  const tok = hrFollowupToken(String(schoolId), String(student._id));
+  const link = `${appBase()}/behavior/hr-followup?school=${schoolId}&student=${student._id}&token=${encodeURIComponent(tok)}`;
+  const occHtml = `<ul style="margin:6px 0 2px;padding-left:18px;color:#475569;font-size:13px;line-height:1.6">` +
+    occ.map((o) => `<li><span style="color:#94a3b8">${escapeHtml(o.date)}</span> — ${escapeHtml(o.name)}${o.detail ? `: ${escapeHtml(o.detail)}` : ""}${o.teacher ? ` <span style="color:#94a3b8">(${escapeHtml(o.teacher)})</span>` : ""}</li>`).join("") + `</ul>`;
+  const subject = `A quick check-in idea — ${name}`;
+  const contentHtml =
+    `<p style="margin:0 0 10px">Hi ${escapeHtml(hrFirst)},</p>` +
+    `<p style="margin:0 0 12px;color:#334155">${escapeHtml(name)} has picked up a couple of notes lately. A quick, early check-in now is one of the best ways to steer ${escapeHtml((student.preferredName || student.firstName || "them"))} back on track before things escalate.</p>` +
+    `<div style="border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin:8px 0">` +
+    `<div style="font-weight:700">${escapeHtml(name)} <span style="font-weight:400;color:#64748b;font-size:13px">— ${active.length} recent offences</span></div>` +
+    `<div style="color:#64748b;font-size:12px;margin-top:4px">What to talk about:</div>` + occHtml +
+    emailButton("✓ I've talked to them", link, "#2563eb") + `</div>` +
+    `<p style="margin:14px 0 6px;color:#334155">Once you've had the conversation, just tap <strong>“I've talked to them”</strong> above — it's logged as a supportive check-in (never a strike, nothing goes home).</p>`;
+  const text = `Hi ${hrFirst},\n\n${name} could use a proactive check-in (${active.length} recent offences):\n` +
+    occ.map((o) => `  - ${o.date} — ${o.name}${o.detail ? `: ${o.detail}` : ""}${o.teacher ? ` (${o.teacher})` : ""}`).join("\n") +
+    `\n\nAfter you've talked with them, tap the link in the email version, or the blue homeroom follow-up button in Compass.\n\n${appBase()}/behavior`;
+  const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+  const from = fromAddr ? { name: "Compass", address: fromAddr } : undefined;
+  try {
+    await sendEmail({ from, to: hr.email, subject, text, html: emailShell({ title: subject, schoolName: schoolName || "Compass", preheader: subject, contentHtml }) });
+    return true;
+  } catch (e) { console.warn("[behavior/checkin] send failed:", e?.message || e); return false; }
+}
+
 export async function sendTeacherNudgesForSchool(schoolId, { force = false } = {}) {
   const config = await BehaviorConfig.findOne({ schoolId }).lean();
   if (!config) return { ok: false, error: "no config" };
@@ -6194,7 +6261,10 @@ export async function sendTeacherNudgesForSchool(schoolId, { force = false } = {
     let subject = "", contentHtml = "", text = "";
     const first = (t.name || "").split(" ")[0] || "there";
 
-    if (watch.length) {
+    // Per-student check-ins are now EVENT-DRIVEN (fired on crossing 2 strikes —
+    // see sendHomeroomCheckinForStudent), so the automatic cron no longer sends
+    // them. A manual run (force) can still send the batch for a catch-up/preview.
+    if (force && watch.length) {
       subject = `A quick check-in idea for ${watch.length} student${watch.length === 1 ? "" : "s"} in your homeroom`;
       const rowsHtml = watch.map((w) => {
         const tok = hrFollowupToken(String(schoolId), w.id);
