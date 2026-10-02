@@ -6163,6 +6163,49 @@ export default function EngagementDetailPage() {
           />
         )}
         <div className="p-4 sm:p-6">
+        {isBirthdayCard && canEdit && (() => {
+          const hasRecipient =
+            ((engagement.excluded_user_ids as string[] | undefined)?.length ?? 0) > 0 ||
+            ((engagement.excluded_emails as string[] | undefined)?.length ?? 0) > 0;
+          const jump = () => {
+            setEditing(true);
+            setTimeout(
+              () =>
+                document
+                  .getElementById("card-recipient")
+                  ?.scrollIntoView({ behavior: "smooth", block: "center" }),
+              120
+            );
+          };
+          return hasRecipient ? (
+            <div className="mb-4 flex items-center justify-between gap-2 rounded-xl border border-rose-100 bg-rose-50/60 px-3 py-2 text-xs text-rose-800">
+              <span>
+                🎁 For <span className="font-semibold">{recipientLabel}</span> — they get the
+                card at the reveal.
+              </span>
+              <button
+                onClick={jump}
+                className="flex-shrink-0 font-semibold text-rose-600 hover:underline"
+              >
+                Change
+              </button>
+            </div>
+          ) : (
+            <div className="mb-4 flex items-center justify-between gap-2 rounded-xl border-2 border-amber-400 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <span>
+                🎁 <span className="font-semibold">No recipient set yet.</span> Choose who this
+                card is for — add them by email if they&apos;re not in the group — so they
+                receive it at the reveal.
+              </span>
+              <button
+                onClick={jump}
+                className="flex-shrink-0 rounded-full bg-amber-500 px-3 py-1 font-bold text-white hover:opacity-90"
+              >
+                Set recipient
+              </button>
+            </div>
+          );
+        })()}
         {editing ? (
           <div className="flex items-start gap-3 mb-3">
             <span className="text-2xl sm:text-3xl flex-shrink-0">{engagementIcon(engagement)}</span>
@@ -6795,12 +6838,13 @@ export default function EngagementDetailPage() {
 
               {/* Surprise: hide from (members + everyone on the invited-email list) */}
               {(roster.filter((m) => m.user_id !== user?.id).length > 0 ||
-                allInvitees.length > 0) && (
-                <div>
+                allInvitees.length > 0 ||
+                engagement.type === "birthday") && (
+                <div id="card-recipient">
                   <label className="block text-xs font-medium text-slate-500 mb-1">
                     {isRevealed
                       ? "🎁 Who the card is for — the reveal email addresses them (re-send after editing)"
-                      : "🎁 Hide from (surprise) — they don't see it until the reveal"}
+                      : "🎁 Who the card is for (surprise) — they don't see it until the reveal. Not in the list? Add them by email below."}
                   </label>
                   <div className="flex flex-wrap gap-1.5">
                     {roster

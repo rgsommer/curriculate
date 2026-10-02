@@ -250,6 +250,8 @@ export default function NewEngagementPage() {
   >([{ prompts: [""], kind: "text", ask: 1 }]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
+  // A card must be addressed to someone — highlight the recipient picker if it's empty.
+  const [recipientErr, setRecipientErr] = useState(false);
 
   // Where to post: the current group by default, another group, or a new one.
   const [targetGroupId, setTargetGroupId] = useState<string>(groupId);
@@ -586,6 +588,7 @@ export default function NewEngagementPage() {
     if (!selectedType || !title.trim()) return;
     setCreating(true);
     setError("");
+    setRecipientErr(false);
 
     const config: Record<string, unknown> = {};
 
@@ -627,6 +630,27 @@ export default function NewEngagementPage() {
     }
 
     const isBirthday = selectedType === "birthday";
+    // A card must be addressed to someone — that's who receives it at the reveal.
+    if (
+      isBirthday &&
+      !makingNewGroup &&
+      excludedIds.length === 0 &&
+      excludedEmails.length === 0
+    ) {
+      setRecipientErr(true);
+      setError(
+        "Who's this card for? Add the recipient below — by name or email — so they get the card at the reveal."
+      );
+      setCreating(false);
+      setTimeout(
+        () =>
+          document
+            .getElementById("hide-from-section")
+            ?.scrollIntoView({ behavior: "smooth", block: "center" }),
+        60
+      );
+      return;
+    }
     // Floating-date holiday cards (Mother's/Father's Day, custom) compute their date
     // from an Nth-weekday pattern. Birthday / anniversary / one-time use a fixed date.
     const isNthCard =
@@ -2672,15 +2696,41 @@ export default function NewEngagementPage() {
             )}
 
             {/* Surprise: hide from selected members / invitees until the reveal */}
-            {(groupMembers.length > 0 || pendingInvitees.length > 0 || excludedEmails.length > 0) && (
-              <div className="rounded-xl border border-slate-200 bg-white p-3">
+            {(groupMembers.length > 0 ||
+              pendingInvitees.length > 0 ||
+              excludedEmails.length > 0 ||
+              selectedType === "birthday") && (
+              <div
+                id="hide-from-section"
+                className={`rounded-xl bg-white p-3 ${
+                  recipientErr ? "border-2 border-rose-400" : "border border-slate-200"
+                }`}
+              >
                 <div className="text-sm font-medium text-slate-700">
-                  🎁 Surprise — hide from… <span className="text-slate-400">(optional)</span>
+                  🎁{" "}
+                  {selectedType === "birthday"
+                    ? "Who's this card for?"
+                    : "Surprise — hide from…"}{" "}
+                  <span
+                    className={
+                      selectedType === "birthday"
+                        ? "font-semibold text-rose-500"
+                        : "text-slate-400"
+                    }
+                  >
+                    {selectedType === "birthday" ? "(required)" : "(optional)"}
+                  </span>
                 </div>
                 <p className="text-xs text-slate-500 mb-2">
-                  Anyone you pick won&apos;t see it (or get emailed) until the reveal —
-                  then everyone gets it, including them. Great for a birthday card.
+                  {selectedType === "birthday"
+                    ? "Pick who the card is for — they won't see it until it opens, then they get it. Not in the group? Add them by email below."
+                    : "Anyone you pick won't see it (or get emailed) until the reveal — then everyone gets it, including them. Great for a birthday card."}
                 </p>
+                {recipientErr && (
+                  <p className="mb-2 text-xs font-semibold text-rose-600">
+                    Choose a recipient (or add one by email) to continue.
+                  </p>
+                )}
                 <div className="flex flex-wrap gap-1.5">
                   {groupMembers.map((m) => {
                     const on = excludedIds.includes(m.user_id);
