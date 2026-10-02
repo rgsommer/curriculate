@@ -1097,24 +1097,35 @@ export default function BatchGrading({
     };
   }
 
-  // What goes in an Edsby gradebook cell: the same material the printed
-  // report carries — what they did well, what to do next, then the comment —
-  // rather than the comment alone, which is all the strips have room for. A
-  // gradebook cell is read by the student and by a parent, so it should give
-  // direction as well as encouragement.
+  // What goes in an Edsby gradebook cell: the sentence the student's printed
+  // strip carries, and nothing bolted on in front of it.
   //
-  // Assembled in that order and trimmed by dropping whole items off the end,
-  // so a long one stops cleanly instead of mid-sentence.
+  // It used to lead with "Well done: " and the first two strengths. Every
+  // comment in the gradebook then opened the same way — including a 1.6 out
+  // of 10 — which makes the praise worth nothing and the column unreadable at
+  // a glance. The written comment already does both jobs, and does them about
+  // this piece of work: it opens with what the student actually managed,
+  // names the thing to fix, and closes warmly. A canned label in front of it
+  // only buries the specifics.
   function buildEdsbyComment(r, max = 700) {
     const clean = (v) => String(v || "").replace(/\s+/g, " ").trim();
-    const parts = [];
+    const cut = (s) => (s.length <= max ? s : s.slice(0, max - 1).replace(/\s+\S*$/, "") + "…");
+
+    const comment = clean(r.raw?.teacher_comment || r.comment);
+    if (comment) {
+      // Room permitting, point at the full report — the strip has a QR code
+      // for this and a gradebook cell has nothing.
+      const link = r.refCode ? ` Full feedback: www.curriculate.net/results/${r.refCode}` : "";
+      return link && comment.length + link.length <= max ? comment + link : cut(comment);
+    }
+
+    // No comment was written for this one. Fall back to the lists, labelled
+    // plainly — "Strengths", not praise the mark may not support.
     const strengths = (Array.isArray(r.strengths) ? r.strengths : []).map(clean).filter(Boolean);
     const next = (Array.isArray(r.improvements) ? r.improvements : []).map(clean).filter(Boolean);
-
-    if (strengths.length) parts.push(`Well done: ${strengths.slice(0, 2).join(" ")}`);
+    const parts = [];
+    if (strengths.length) parts.push(`Strengths: ${strengths.slice(0, 2).join(" ")}`);
     if (next.length) parts.push(`Next: ${next.slice(0, 2).join(" ")}`);
-    const c = clean(r.comment);
-    if (c) parts.push(c);
 
     let out = "";
     for (const part of parts) {
@@ -1122,8 +1133,7 @@ export default function BatchGrading({
       if (joined.length > max) break;
       out = joined;
     }
-    // A single oversized piece still has to be cut somewhere.
-    if (!out && parts.length) out = parts[0].slice(0, max - 1).replace(/\s+\S*$/, "") + "…";
+    if (!out && parts.length) out = cut(parts[0]);
     return out;
   }
 

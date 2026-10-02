@@ -16,6 +16,12 @@ const FALLBACK_CLASS_NAME = "Imported Class";
 
 const escapeRegex = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+// Matches a teacherEmail field that names this address, whether it holds the
+// one address or several separated by commas. A token match, so
+// "a@x.org" does not match "other-a@x.org".
+const ownedBy = (email) =>
+  new RegExp(`(^|[,;\\s])${escapeRegex(email)}([,;\\s]|$)`, "i");
+
 /**
  * Look up a teacher's tier by email. Returns "FREE" if not found.
  * Used by the upload route to gate class-linking behind PLUS.
@@ -209,7 +215,14 @@ router.post("/upload", async (req, res) => {
     let replacedCount = 0;
     if (replaceMatch.length) {
       const del = await ClassRoster.deleteMany({
-        teacherEmail: email,
+        // The uploader must be AN owner, not THE owner. Some rosters carry
+        // two addresses in this one field ("a@x.org, b@y.org"), typed in when
+        // a class is taught jointly, and an exact match never equalled either
+        // of them — so a whole year's worth of last year's rosters survived
+        // every re-upload and sat beside the new ones in the class pickers.
+        // Matched as a delimited token so the address is not found inside a
+        // longer one.
+        teacherEmail: ownedBy(email),
         _id: { $ne: roster._id }, // never the one just created
         $or: replaceMatch,
       });
@@ -250,7 +263,11 @@ router.get("/list", async (req, res) => {
     const email = String(req.query.teacherEmail || "").trim().toLowerCase();
     if (!email) return res.status(400).json({ error: "teacherEmail required" });
 
-    const rosters = await ClassRoster.find({ teacherEmail: email })
+    // ownedBy, not an exact match: a roster co-owned with a colleague names
+    // both addresses in this one field, and an exact match hid those rosters
+    // from the teacher's own list — so they could neither see nor delete them
+    // while grading went on matching against them.
+    const rosters = await ClassRoster.find({ teacherEmail: ownedBy(email) })
       .sort({ createdAt: -1 })
       .lean();
 
@@ -299,7 +316,7 @@ router.get("/lookup", async (req, res) => {
       return res.status(400).json({ error: "teacherEmail and last4 required" });
     }
 
-    const rosters = await ClassRoster.find({ teacherEmail: email }).lean();
+    const rosters = await ClassRoster.find({ teacherEmail: ownedBy(email) }).lean();
     const matches = [];
     for (const r of rosters) {
       for (const s of r.students || []) {
@@ -349,7 +366,7 @@ router.get("/:id/contacts", async (req, res) => {
 
     const roster = await ClassRoster.findById(id).lean();
     if (!roster) return res.status(404).json({ error: "Roster not found." });
-    if (String(roster.teacherEmail || "").toLowerCase() !== email) {
+    if (!ownedBy(email).test(String(roster.teacherEmail || ""))) {
       return res.status(403).json({ error: "Roster not yours." });
     }
 
