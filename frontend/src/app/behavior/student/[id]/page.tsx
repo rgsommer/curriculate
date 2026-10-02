@@ -86,6 +86,11 @@ export default function StudentPage() {
   const [emailTo, setEmailTo] = useState("");
   const [emailBusy, setEmailBusy] = useState(false);
 
+  // Parent-facing "whole picture" summary (warm, grouped by teacher, clipboard)
+  const [parentSummary, setParentSummary] = useState<string>("");
+  const [parentMsg, setParentMsg] = useState<string>("");
+  const [parentBusy, setParentBusy] = useState<"" | "period" | "all">("");
+
   // Notice editing
   const [editId, setEditId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
@@ -180,6 +185,29 @@ export default function StudentPage() {
     } finally {
       setSummaryBusy("");
     }
+  }
+
+  async function parentSummaryGen(scope: "period" | "all") {
+    setParentBusy(scope);
+    setParentMsg("");
+    setParentSummary("");
+    try {
+      const r = await api<{ summary: string; aiUsed: boolean; concernCount: number; teacherGroups: number }>(
+        `/students/${params.id}/parent-summary`, { body: { scope }, timeoutMs: 45000 });
+      setParentSummary(r.summary);
+      navigator.clipboard?.writeText(r.summary).then(
+        () => setParentMsg(`Copied — review it, then paste into Edsby.${r.aiUsed ? "" : " (template — no AI key set)"}`),
+        () => setParentMsg("Generated below (clipboard blocked — copy manually)."),
+      );
+    } catch (e: any) {
+      setParentMsg(e.message);
+    } finally {
+      setParentBusy("");
+    }
+  }
+  async function copyParentSummary() {
+    try { await navigator.clipboard.writeText(parentSummary); setParentMsg("Copied to clipboard."); }
+    catch { setParentMsg("Clipboard blocked — select and copy manually."); }
   }
 
   async function copySummary() {
@@ -543,6 +571,32 @@ export default function StudentPage() {
                 </button>
               </div>
             </>
+          )}
+        </div>
+
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <p className="text-sm font-medium text-slate-700">Parent summary (AI) → clipboard</p>
+          <p className="text-xs text-slate-400">A warm, honest note for parents that pulls the whole picture together, grouped by teacher. Review it, then paste into Edsby — nothing is sent automatically. No other student is named.</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button onClick={() => parentSummaryGen("period")} disabled={!!parentBusy}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+              {parentBusy === "period" ? "Writing…" : "Since last reset"}
+            </button>
+            <button onClick={() => parentSummaryGen("all")} disabled={!!parentBusy}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+              {parentBusy === "all" ? "Writing…" : "Full history"}
+            </button>
+          </div>
+          {parentMsg && <p className="mt-2 text-sm text-green-700">{parentMsg}</p>}
+          {parentSummary && (
+            <button
+              onClick={copyParentSummary}
+              title="Click to copy"
+              className="mt-2 block w-full cursor-pointer rounded-lg border border-slate-200 bg-slate-50 p-4 text-left text-sm text-slate-700 hover:bg-slate-100"
+            >
+              <Markdown text={parentSummary} />
+              <span className="mt-2 block text-xs text-slate-400">Review before posting — remove anything you wouldn&apos;t want shared. Tap to copy ⧉</span>
+            </button>
           )}
         </div>
       </section>

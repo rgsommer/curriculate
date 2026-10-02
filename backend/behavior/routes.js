@@ -4210,6 +4210,136 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
   }
 });
 
+// PARENT-FACING "whole picture" summary. When a student has accumulated a
+// pattern across several teachers, this pulls it together into one warm,
+// honest, upbuilding note the teacher can review and post to Edsby — grouped
+// by teacher, solution-focused, inviting partnership. Record-only / clipboard:
+// never sent automatically (BCS has no auto parent channel).
+//
+// Window (scope):
+//   "period" (default) — back to when the slate was last wiped
+//      (student.thresholdResetAt, e.g. after a prior VP meeting/behaviour plan
+//      that cleared the strikes); full record if there's been no such reset.
+//   "all" — the entire record.
+//
+// SAFETY: this is parent-facing, so the prompt forbids naming any OTHER student
+// and forbids quoting slurs/profanity (describe sensitively instead). Private
+// teacher notes are NOT fed in verbatim. The teacher reviews before posting.
+router.post("/students/:id/parent-summary", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const scope = req.body?.scope === "all" ? "all" : "period";
+    const student = await BehaviorStudent.findOne({ _id: req.params.id, schoolId: req.schoolId }).lean();
+    if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+
+    const name = `${student.preferredName || student.firstName} ${student.lastName}`.trim();
+    const studentFirst = student.preferredName || student.firstName || name;
+
+    // Window cutoff: the current behaviour period (since strikes were last
+    // cleared) by default; the whole record for "all".
+    const resetAt = student.thresholdResetAt ? new Date(student.thresholdResetAt).getTime() : 0;
+    const cutoff = scope === "period" ? resetAt : 0;
+    const resetDateLabel = resetAt && scope === "period"
+      ? new Date(resetAt).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ }) : "";
+
+    let incidents = await BehaviorIncident.find({ studentId: student._id }).sort({ timestamp: 1 }).lean();
+    if (cutoff) incidents = incidents.filter((i) => new Date(i.timestamp).getTime() >= cutoff);
+
+    const tIds = [...new Set(incidents.map((i) => String(i.teacherId)))];
+    const tDocs = await BehaviorTeacher.find({ _id: { $in: tIds } }).select("name courtesyName").lean();
+    // Parent-facing → prefer the official/courtesy name.
+    const tName = Object.fromEntries(tDocs.map((t) => [String(t._id), (t.courtesyName || t.name || "a teacher")]));
+
+    // Split positives (to keep the note balanced & upbuilding) from concerns,
+    // and group the concerns BY TEACHER, as requested.
+    const positives = [];
+    const byTeacher = {}; // teacherName -> [lines]
+    for (const i of incidents) {
+      const isPositive = i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0;
+      const isInteraction = i.behaviorSnapshot?.triggerMode === "INTERACTION";
+      const d = new Date(i.timestamp).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: SCHOOL_TZ });
+      const who = tName[String(i.teacherId)] || "a teacher";
+      const what = i.behaviorSnapshot?.name || "";
+      const detail = (i.detailText || "").trim();
+      const line = `${d} — ${what}${detail ? `: ${detail}` : ""}`;
+      if (isPositive) { positives.push(`${d} — ${what}${detail ? `: ${detail}` : ""} (noted by ${who})`); continue; }
+      if (isInteraction) continue; // parent meetings handled separately below
+      (byTeacher[who] ||= []).push(line);
+    }
+    const concernGroups = Object.entries(byTeacher)
+      .map(([who, lines]) => `From ${who}:\n${lines.map((l) => `  - ${l}`).join("\n")}`)
+      .join("\n\n");
+
+    // Partnership / staff-response context — shows parents the school has been
+    // engaged (keeps the tone collaborative, not accusatory).
+    const notices = await BehaviorNotice.find({ studentId: student._id }).sort({ createdAt: 1 }).lean();
+    const noticesInWindow = notices.filter((n) => !cutoff || new Date(n.sentAt || n.createdAt).getTime() >= cutoff);
+    const meetings = await BehaviorIncident.find({ studentId: student._id, "behaviorSnapshot.triggerMode": "INTERACTION" })
+      .sort({ timestamp: 1 }).select("timestamp detailText teacherId").lean();
+    const meetingsInWindow = meetings.filter((m) => !cutoff || new Date(m.timestamp).getTime() >= cutoff);
+    const consequences = await BehaviorConsequence.find({ studentId: student._id, kind: "corrective" }).sort({ at: 1 }).lean();
+    const consInWindow = consequences.filter((c) => !cutoff || new Date(c.at).getTime() >= cutoff);
+
+    const partnershipBits = [];
+    if (meetingsInWindow.length) partnershipBits.push(`${meetingsInWindow.length} parent contact(s)/meeting(s) already logged with the family`);
+    if (noticesInWindow.length) partnershipBits.push(`${noticesInWindow.length} notice(s) sent home over this period`);
+    if (consInWindow.length) partnershipBits.push(`${consInWindow.length} consequence(s) applied at school (e.g. ${[...new Set(consInWindow.map((c) => c.type))].slice(0, 3).join(", ")})`);
+
+    const teacherSig = (req.membership?.courtesyName || "").trim() || actorName(req);
+    const schoolName = config?.branding?.schoolName || "";
+    const concernCount = Object.values(byTeacher).reduce((a, l) => a + l.length, 0);
+    const spanTs = incidents.map((i) => new Date(i.timestamp).getTime()).filter(Boolean).sort((a, b) => a - b);
+    const span = spanTs.length
+      ? `${new Date(spanTs[0]).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ })} to ${new Date(spanTs[spanTs.length - 1]).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ })}`
+      : "recently";
+
+    const ctxText =
+      `Student first name: ${studentFirst}.\n` +
+      `Window: ${scope === "period" ? `current behaviour period${resetDateLabel ? ` (since ${resetDateLabel})` : ""}` : "full record"} — ${span}.\n` +
+      `Number of concerns in this window: ${concernCount}, observed by ${tIds.length} teacher(s).\n\n` +
+      `CONCERNS GROUPED BY TEACHER:\n${concernGroups || "(none in this window)"}\n\n` +
+      (positives.length ? `POSITIVE / ENCOURAGING moments in the same window (weave in to keep it balanced and genuine):\n${positives.map((p) => `  - ${p}`).join("\n")}\n\n` : "") +
+      (partnershipBits.length ? `WHAT THE SCHOOL HAS ALREADY DONE (mention briefly to show partnership): ${partnershipBits.join("; ")}.\n\n` : "") +
+      `Signed by: ${teacherSig}${schoolName ? `, ${schoolName}` : ""}.`;
+
+    const prompt =
+      `You are writing a warm, honest, and up-building letter to the PARENTS/GUARDIANS of a junior-high student, from their teacher, to bring the whole picture together in one place. ` +
+      `This is pastoral and partnership-minded — the goal is to help the parents understand the pattern and to invite them to work WITH the school, never to shame the child. ` +
+      `TONE: caring, respectful, hopeful, specific, and truthful. Do not exaggerate, but do not downplay genuine safety concerns either. Assume the best about the student and the family. ` +
+      `STRUCTURE: (1) a warm opening that affirms the student by name; (2) a concise, factual recap of the concerns ORGANISED BY TEACHER (e.g. "In {Teacher}'s class…"), keeping it brief — do not list every date mechanically; (3) any encouraging moments, honestly noted; (4) a short note that the school has been engaged (meetings/notices/consequences) and wants to partner; (5) a forward-looking close that invites a conversation and expresses confidence in the student. ` +
+      `HARD RULES: Never name, describe, or hint at any OTHER student (write "a classmate" or "another student"). Never quote slurs, profanity, or crude language — describe it sensitively (e.g. "used hurtful language toward a classmate"). Do not include private staff notes verbatim. Address the parents and the student (e.g. "Dear ${studentFirst} and parents,"). Sign off as ${teacherSig}${schoolName ? `, ${schoolName}` : ""}. ` +
+      `LENGTH: about 250–320 words, flowing prose (a short paragraph per section is fine; a brief teacher-grouped list is acceptable in section 2). Use ONLY the information below — do not invent events, consequences, or quotes.\n\n${ctxText}`;
+
+    // Deterministic fallback (no AI key): a plain, kind, teacher-grouped note.
+    let summary =
+      `Dear ${studentFirst} and parents,\n\n` +
+      `I wanted to bring together, in one place, how things have been going for ${studentFirst} so we can support ${studentFirst} together.\n\n` +
+      (concernGroups ? `${concernGroups}\n\n` : `There have been a few things we've been working through.\n\n`) +
+      (positives.length ? `We've also seen encouraging moments:\n${positives.map((p) => `  - ${p}`).join("\n")}\n\n` : "") +
+      (partnershipBits.length ? `The school has stayed engaged: ${partnershipBits.join("; ")}.\n\n` : "") +
+      `We'd welcome the chance to talk this through with you and partner on next steps. We believe in ${studentFirst} and are confident we can help ${studentFirst} thrive.\n\n` +
+      `Warm regards,\n${teacherSig}${schoolName ? `\n${schoolName}` : ""}`;
+    let aiUsed = false;
+    try {
+      const client = makeDefaultAiClient(config || {});
+      if (client) {
+        const out = await Promise.race([
+          client.complete(prompt, { maxTokens: 1200 }),
+          new Promise((_, r) => setTimeout(() => r(new Error("AI timeout")), 30000)),
+        ]);
+        if (out && String(out).trim()) { summary = stripMarkdown(String(out).trim()); aiUsed = true; }
+      }
+    } catch {
+      /* fall back to the deterministic note */
+    }
+
+    await audit(req.schoolId, "parent_summary.generated", req, { studentId: student._id, meta: { scope, aiUsed, concerns: concernCount } });
+    res.json({ ok: true, summary, aiUsed, scope, concernCount, teacherGroups: Object.keys(byTeacher).length });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Division/teacher EXECUTIVE summary — an AI overview over a 6/12-month window,
 // scoped to me (this teacher) or all teachers. Behaviour trend, interaction
 // patterns, notices home, current strike load. Copied to clipboard by the UI.
