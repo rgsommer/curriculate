@@ -429,11 +429,26 @@ function HousesCard({ canLog, isAdmin, portalCode, events = [] }: { canLog: bool
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  // Tap a house → composite breakdown (staff view: full, incl. conduct), same as /houses.
+  const [openHouse, setOpenHouse] = useState<string | null>(null);
+  const [detailById, setDetailById] = useState<Record<string, any>>({});
+  const [detailBusy, setDetailBusy] = useState(false);
 
   function load() {
     api<{ houses: any[] }>("/houses").then((d) => setHouses(d.houses || [])).catch(() => setHouses([]));
   }
   useEffect(load, []);
+
+  async function toggleHouse(id: string) {
+    if (openHouse === id) { setOpenHouse(null); return; }
+    setOpenHouse(id);
+    if (!detailById[id]) {
+      setDetailBusy(true);
+      try { const d = await api<any>(`/houses/detail?houseId=${encodeURIComponent(id)}`); setDetailById((p) => ({ ...p, [id]: d })); }
+      catch { /* leave undefined → shows nothing */ }
+      finally { setDetailBusy(false); }
+    }
+  }
 
   async function award() {
     if (!houseId || !Number(points)) return;
@@ -518,16 +533,76 @@ function HousesCard({ canLog, isAdmin, portalCode, events = [] }: { canLog: bool
       {msg && <p className="mt-2 text-sm text-green-700">{msg}</p>}
 
       <ul className="mt-3 space-y-2">
-        {houses.map((h) => (
-          <li key={h._id} className="flex items-center gap-3">
-            <span className="inline-block h-3 w-3 shrink-0 rounded-full" style={{ background: h.color || "#0f172a" }} />
-            <span className="w-28 shrink-0 text-sm font-medium">{h.name}</span>
-            <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
-              <div className="h-full rounded-full" style={{ width: `${barPct(h.points)}%`, background: h.color || "#0f172a", opacity: (h.points || 0) < 0 ? 0.45 : 1 }} />
-            </div>
-            <span className="w-12 shrink-0 text-right text-sm tabular-nums font-semibold">{h.points || 0}</span>
+        {houses.map((h) => {
+          const d = detailById[h._id];
+          const isOpen = openHouse === h._id;
+          return (
+          <li key={h._id}>
+            <button type="button" onClick={() => toggleHouse(h._id)} className="flex w-full items-center gap-3 rounded-lg px-1 py-1 text-left hover:bg-slate-50">
+              <span className="inline-block h-3 w-3 shrink-0 rounded-full" style={{ background: h.color || "#0f172a" }} />
+              <span className="w-28 shrink-0 text-sm font-medium">{h.name}</span>
+              <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+                <div className="h-full rounded-full" style={{ width: `${barPct(h.points)}%`, background: h.color || "#0f172a", opacity: (h.points || 0) < 0 ? 0.45 : 1 }} />
+              </div>
+              <span className="w-12 shrink-0 text-right text-sm tabular-nums font-semibold">{h.points || 0}</span>
+              <span className="w-3 shrink-0 text-xs text-slate-400">{isOpen ? "▾" : "▸"}</span>
+            </button>
+            {isOpen && (
+              <div className="mt-1 ml-6 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
+                {!d ? (
+                  <p className="text-slate-400">{detailBusy ? "Loading…" : "No details."}</p>
+                ) : (
+                  <>
+                    {d.individual?.negative < 0 && (
+                      <p className="mb-2 rounded-md bg-amber-50 px-2 py-1 text-[11px] text-amber-700">👁 Staff view: students don&apos;t see the conduct (negative) details below.</p>
+                    )}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="rounded-lg bg-white p-2">
+                        <div className="text-xs text-slate-400">Individual Compass points</div>
+                        <div className="font-bold tabular-nums">{d.individual?.total > 0 ? `+${d.individual.total}` : d.individual?.total ?? 0}</div>
+                        <div className="text-[11px] text-slate-400">+{d.individual?.positive ?? 0} good{d.individual?.negative ? ` · ${d.individual.negative} conduct` : ""}</div>
+                      </div>
+                      <div className="rounded-lg bg-white p-2">
+                        <div className="text-xs text-slate-400">Team &amp; house events</div>
+                        <div className="font-bold tabular-nums">{d.team?.total > 0 ? `+${d.team.total}` : d.team?.total ?? 0}</div>
+                      </div>
+                    </div>
+                    {(d.individual?.items || []).length > 0 && (
+                      <div className="mt-3">
+                        <div className="text-xs font-semibold text-slate-600">Individual Compass points</div>
+                        <ul className="mt-1 divide-y divide-slate-100">
+                          {d.individual.items.map((it: any, i: number) => (
+                            <li key={i} className="flex items-center justify-between gap-2 py-1">
+                              <span className="min-w-0 truncate text-slate-600">{it.reason} <span className="text-slate-300">×{it.count}</span></span>
+                              <span className={`shrink-0 tabular-nums font-medium ${it.points < 0 ? "text-red-600" : "text-green-600"}`}>{it.points > 0 ? `+${it.points}` : it.points}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {(d.team?.items || []).length > 0 && (
+                      <div className="mt-3">
+                        <div className="text-xs font-semibold text-slate-600">Team &amp; house events</div>
+                        <ul className="mt-1 divide-y divide-slate-100">
+                          {d.team.items.map((it: any, i: number) => (
+                            <li key={i} className="flex items-center justify-between gap-2 py-1">
+                              <span className="min-w-0 truncate text-slate-600">{it.reason} <span className="text-slate-300">×{it.count}</span></span>
+                              <span className={`shrink-0 tabular-nums font-medium ${it.points < 0 ? "text-red-600" : "text-green-600"}`}>{it.points > 0 ? `+${it.points}` : it.points}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {(d.individual?.items || []).length === 0 && (d.team?.items || []).length === 0 && (
+                      <p className="text-slate-400">No points yet.</p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
           </li>
-        ))}
+          );
+        })}
       </ul>
       <p className="mt-2 text-xs text-slate-400">
         {houses.reduce((n, h) => n + (h.members || 0), 0)} students assigned · positive = awards, negative = incident deductions ·{" "}
