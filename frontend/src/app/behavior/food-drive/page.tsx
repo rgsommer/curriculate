@@ -26,19 +26,19 @@ export default function FoodDrivePage() {
   if (!getToken()) return <p className="text-slate-500">Please <Link href={loginHref("/behavior/food-drive")} className="underline">sign in</Link>.</p>;
 
   const INSTRUCTIONS = [
-    "FOOD DRIVE — how to run it in Compass",
+    "TALLY IMPORT — how to run a counted event in Compass (food drive, cleanup, read-a-thon, etc.)",
     "",
     "1. Give each homeroom the printed class list (names only).",
-    "2. During Christian Ed. (Mon–Thu), the class rep writes the NUMBER OF ITEMS beside each student's name.",
-    "3. Collect the sheets Thursday after class.",
+    "2. During the event window, the class rep writes the COUNT beside each student's name (items brought, bags collected, books read, laps run, …).",
+    "3. Collect the sheets at the end of the window.",
     "4. Photograph or scan each sheet (or save them as one PDF).",
-    "5. In Compass → Food Drive import, upload the sheets and click “Read sheets.”",
+    "5. In Compass → Tally import, type what it's for, upload the sheets, and click “Read sheets.”",
     "6. Check the read-back: fix any unmatched name (dropdown) or wrong count, set the points, then “Award points.”",
-    "   • Top donors overall get bonus points (default 30 / 20 / 10).",
-    "   • The houses with the most total items place 1st/2nd/3rd (default 100 / 60 / 30).",
-    "7. Friday drop-offs are donated but NOT counted (they can't be recorded in class that day).",
+    "   • Top contributors overall get bonus points (default 30 / 20 / 10).",
+    "   • The houses with the highest total place 1st/2nd/3rd (default 100 / 60 / 30).",
+    "7. Anything handed in after the counting window can still be accepted but isn't counted (it can't be recorded on the sheets).",
     "",
-    "Tip: decide the per-item scale and keep the same label each year for a clean record.",
+    "Tip: decide the scale and keep a consistent event name for a clean record.",
   ].join("\n");
 
   async function copyInstructions() {
@@ -80,18 +80,23 @@ export default function FoodDrivePage() {
       <div>
         <Link href="/behavior" className="text-sm text-slate-500 underline">← dashboard</Link>
         <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
-          <h1 className="text-xl font-semibold">Food Drive import</h1>
+          <h1 className="text-xl font-semibold">Tally import</h1>
           <button onClick={copyInstructions} className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
             {copied ? "✓ Copied" : "📋 Copy instructions (for reps / future years)"}
           </button>
         </div>
-        <p className="text-sm text-slate-400">Upload the class sheets (typed names, handwritten item counts — photos, scans, or a PDF). Compass reads the counts, matches each name to a student &amp; house, then awards the top donors and the top houses.</p>
+        <p className="text-sm text-slate-400">For any counted event — food drive, garbage cleanup, read-a-thon, laps, etc. Upload the class sheets (typed names, a handwritten count beside each — photos, scans, or a PDF); Compass reads the counts, matches each name to a student &amp; house, then awards the top contributors and the top houses.</p>
       </div>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4">
+        <label className="block text-sm">
+          <span className="font-medium text-slate-700">What is this for?</span>
+          <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Food Drive, Garbage Cleanup, Read-a-thon"
+            className="mt-1 w-full max-w-md rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        </label>
         <input type="file" accept="image/*,application/pdf" multiple
           onChange={(e) => setFiles(Array.from(e.target.files || []))}
-          className="block w-full text-sm" />
+          className="mt-3 block w-full text-sm" />
         {files.length > 0 && <p className="mt-1 text-xs text-slate-400">{files.length} file(s) selected</p>}
         <button onClick={parse} disabled={busy || !files.length}
           className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">
@@ -111,7 +116,7 @@ export default function FoodDrivePage() {
           <div className="mt-3 overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="text-left text-xs uppercase text-slate-400">
-                <th className="py-1 pr-2">From sheet</th><th className="py-1 pr-2">Student</th><th className="py-1 pr-2">House</th><th className="py-1 pr-2 text-right">Items</th>
+                <th className="py-1 pr-2">From sheet</th><th className="py-1 pr-2">Student</th><th className="py-1 pr-2">House</th><th className="py-1 pr-2 text-right">Count</th>
               </tr></thead>
               <tbody className="divide-y divide-slate-100">
                 {rows.map((r, i) => (
@@ -137,11 +142,11 @@ export default function FoodDrivePage() {
             </table>
           </div>
 
-          <div className="mt-4 grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-3">
-            <label className="text-sm">Label<input value={label} onChange={(e) => setLabel(e.target.value)} className="mt-1 w-full rounded border border-slate-300 px-2 py-1" /></label>
-            <label className="text-sm">Top donors get (comma pts)<input value={ind} onChange={(e) => setInd(e.target.value)} className="mt-1 w-full rounded border border-slate-300 px-2 py-1" /></label>
+          <div className="mt-4 grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-2">
+            <label className="text-sm">Top contributors get (comma pts)<input value={ind} onChange={(e) => setInd(e.target.value)} className="mt-1 w-full rounded border border-slate-300 px-2 py-1" /></label>
             <label className="text-sm">Top houses get (comma pts)<input value={hs} onChange={(e) => setHs(e.target.value)} className="mt-1 w-full rounded border border-slate-300 px-2 py-1" /></label>
           </div>
+          <p className="mt-1 text-xs text-slate-400">Awarding for: <span className="font-medium">{label || "—"}</span> (change &ldquo;What is this for?&rdquo; above).</p>
           <button onClick={apply} disabled={busy || !withItems}
             className="mt-3 rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">
             {busy ? "Awarding…" : "Award points"}
@@ -151,20 +156,20 @@ export default function FoodDrivePage() {
 
       {result && (
         <section className="rounded-xl border border-green-300 bg-green-50 p-4">
-          <h2 className="font-semibold text-green-800">✓ Done — {result.totalItems} items counted</h2>
+          <h2 className="font-semibold text-green-800">✓ Done — {label} · {result.totalItems} counted</h2>
           {result.houses?.length > 0 && (
             <div className="mt-2">
               <p className="text-sm font-medium">House placements</p>
               <ul className="mt-1 text-sm text-slate-700">
-                {result.houses.map((h: any, i: number) => <li key={i}>{["🥇","🥈","🥉"][i] || `${i + 1}.`} {h.house} — <b>+{h.points}</b> ({h.items} items)</li>)}
+                {result.houses.map((h: any, i: number) => <li key={i}>{["🥇","🥈","🥉"][i] || `${i + 1}.`} {h.house} — <b>+{h.points}</b> ({h.items})</li>)}
               </ul>
             </div>
           )}
           {result.students?.length > 0 && (
             <div className="mt-2">
-              <p className="text-sm font-medium">Top donors</p>
+              <p className="text-sm font-medium">Top contributors</p>
               <ul className="mt-1 text-sm text-slate-700">
-                {result.students.map((s: any, i: number) => <li key={i}>{["🥇","🥈","🥉"][i] || `${i + 1}.`} {s.name} — <b>+{s.points}</b> ({s.items} items)</li>)}
+                {result.students.map((s: any, i: number) => <li key={i}>{["🥇","🥈","🥉"][i] || `${i + 1}.`} {s.name} — <b>+{s.points}</b> ({s.items})</li>)}
               </ul>
             </div>
           )}

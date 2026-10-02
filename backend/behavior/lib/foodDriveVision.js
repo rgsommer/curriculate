@@ -67,8 +67,8 @@ export async function readFoodDriveSheets(files) {
     required: ["rows"],
   };
   const instr =
-    "Each image is a Food Drive class sheet: a TYPED list of student names, each with a HANDWRITTEN number of food-drive items written beside the name. " +
-    "For EVERY name on EVERY sheet, return the student's name exactly as typed and the handwritten count as an integer. " +
+    "Each image is a class tally sheet: a TYPED list of student names, each with a HANDWRITTEN number (a count — e.g. food-drive items, bags of garbage collected, books read, laps run) written beside the name. " +
+    "For EVERY name on EVERY sheet, return the student's name exactly as typed and the handwritten count as an integer in the 'items' field. " +
     "If a row has no number, or the number is blank/illegible, return items: null (do not guess). " +
     "Do not invent names, do not skip names, and do not include header or total rows.";
 

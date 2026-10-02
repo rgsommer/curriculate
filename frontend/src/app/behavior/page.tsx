@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import { api, getToken, loginHref, issueWhiteSlip, completeConsequence, homeroomFollowup, type Me, type StudentSummary } from "./_lib/api";
 import { Markdown } from "./_lib/Markdown";
@@ -146,7 +146,7 @@ export default function BehaviorDashboard() {
             )}
             {housesOn && (
               <Link href="/behavior/food-drive" className="rounded-lg border border-slate-300 px-3 py-1.5">
-                Food Drive import
+                Tally import
               </Link>
             )}
           </div>
@@ -580,7 +580,8 @@ function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: st
         // even if they're not otherwise on probation-watch).
         const watch = (d.students || [])
           .filter((s) => s.pendingWhiteSlipId || (s.pendingConsequences && s.pendingConsequences.length > 0) || ((s.noticesHomeCount || 0) >= 1 && (s.activeCount || 0) >= t - 1))
-          .sort((a, b) => (b.pendingWhiteSlipId ? 1 : 0) - (a.pendingWhiteSlipId ? 1 : 0) || (b.noticesHomeCount || 0) - (a.noticesHomeCount || 0) || (b.activeCount || 0) - (a.activeCount || 0));
+          // Grouped by homeroom (classGroup), then most-urgent first within a homeroom.
+          .sort((a, b) => (a.classGroup || "").localeCompare(b.classGroup || "") || (b.pendingWhiteSlipId ? 1 : 0) - (a.pendingWhiteSlipId ? 1 : 0) || (b.noticesHomeCount || 0) - (a.noticesHomeCount || 0) || (b.activeCount || 0) - (a.activeCount || 0));
         setRows(watch);
       })
       .catch(() => setRows([]));
@@ -619,12 +620,17 @@ function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: st
         Already had a notice home and back at or near the {trigger}-strike trigger. The next notice carries the rule-based consequence below; open a student for AI coaching suggestions too.
       </p>
       <ul className="mt-2 divide-y divide-slate-100">
-        {rows.map((s) => {
+        {rows.map((s, i) => {
           // Prefer the handbook-ladder recommendation (white-slip count / notices
           // this term) when the backend provides it; else the admin ladder step.
           const action = s.recommendedConsequence || nextAction(s.noticesHomeCount || 0);
+          const newHr = i === 0 || (rows[i - 1].classGroup || "") !== (s.classGroup || "");
           return (
-            <li key={s._id} className="py-2">
+            <Fragment key={s._id}>
+            {newHr && (
+              <li className="!border-t-0 pt-2 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-400">{s.classGroup || "No homeroom"}</li>
+            )}
+            <li className="py-2">
               <div className="flex items-center justify-between gap-2 text-sm">
                 <span className="flex min-w-0 items-center gap-2">
                   <Link href={`/behavior/student/${s._id}`} className="min-w-0 hover:text-slate-600">
@@ -661,6 +667,7 @@ function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: st
                 </div>
               ))}
             </li>
+            </Fragment>
           );
         })}
       </ul>
@@ -679,7 +686,8 @@ function StudentsToWatch({ fadeDays }: { fadeDays?: number }) {
         setTrigger(t);
         const watch = (d.students || [])
           .filter((s) => (s.activeCount || 0) >= t - 1)
-          .sort((a, b) => (b.activeCount || 0) - (a.activeCount || 0));
+          // Grouped by homeroom (classGroup), then most strikes first within a homeroom.
+          .sort((a, b) => (a.classGroup || "").localeCompare(b.classGroup || "") || (b.activeCount || 0) - (a.activeCount || 0));
         setRows(watch);
       })
       .catch(() => setRows([]));
@@ -695,19 +703,27 @@ function StudentsToWatch({ fadeDays }: { fadeDays?: number }) {
         {fadeDays ? ` Strikes fade after ${fadeDays} days, so the trend can still turn around.` : ""}
       </p>
       <ul className="mt-2 divide-y divide-slate-100">
-        {rows.map((s) => (
-          <li key={s._id} className="flex items-center justify-between gap-2 py-2 text-sm">
-            <span className="flex min-w-0 items-center gap-2">
-              <Link href={`/behavior/student/${s._id}`} className="min-w-0 truncate font-medium hover:text-slate-600">
-                {s.lastName}, {s.firstName} <span className="text-slate-400">{s.classGroup}</span>
-              </Link>
-              <HrButton studentId={s._id} done={s.hrFollowedUpThisWeek} />
-            </span>
-            <span className={`shrink-0 font-semibold tabular-nums ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
-              {s.activeCount}/{trigger} →
-            </span>
-          </li>
-        ))}
+        {rows.map((s, i) => {
+          const newHr = i === 0 || (rows[i - 1].classGroup || "") !== (s.classGroup || "");
+          return (
+          <Fragment key={s._id}>
+            {newHr && (
+              <li className="!border-t-0 pt-2 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-400">{s.classGroup || "No homeroom"}</li>
+            )}
+            <li className="flex items-center justify-between gap-2 py-2 text-sm">
+              <span className="flex min-w-0 items-center gap-2">
+                <Link href={`/behavior/student/${s._id}`} className="min-w-0 truncate font-medium hover:text-slate-600">
+                  {s.lastName}, {s.firstName} <span className="text-slate-400">{s.classGroup}</span>
+                </Link>
+                <HrButton studentId={s._id} done={s.hrFollowedUpThisWeek} />
+              </span>
+              <span className={`shrink-0 font-semibold tabular-nums ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
+                {s.activeCount}/{trigger} →
+              </span>
+            </li>
+          </Fragment>
+          );
+        })}
       </ul>
     </Card>
   );
