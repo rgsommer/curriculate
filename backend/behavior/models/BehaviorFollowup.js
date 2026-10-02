@@ -26,8 +26,14 @@ const BehaviorFollowupSchema = new mongoose.Schema(
     // escalation: 0 = original, 1 = after first miss, 2+ = parent + VP).
     missLevel: { type: Number, default: 0 },
 
-    // The teacher responsible for checking it (the notice's sending teacher).
+    // The teacher responsible for checking it — the teacher who LOGGED the offence
+    // (so only they are prompted), falling back to the notice sender.
     assignedByTeacherId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorTeacher", required: true, index: true },
+
+    // The original incident this consequence came from (for context + the date
+    // shown on the reminder).
+    incidentId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorIncident", default: null },
+    incidentAt: { type: Date, default: null },
 
     noticeId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorNotice", default: null },
 

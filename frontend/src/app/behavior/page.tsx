@@ -931,6 +931,11 @@ function ReminderToday() {
               <p className="text-sm font-medium">
                 {name} <span className="text-slate-400">{s?.classGroup}</span>
                 {f.multiplier > 1 && <span className="ml-2 text-xs text-red-600">×{f.multiplier}</span>}
+                {(f.incidentAt || f.createdAt) && (
+                  <span className="ml-2 text-xs font-normal text-slate-400">
+                    · incident {new Date(f.incidentAt || f.createdAt).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}
+                  </span>
+                )}
               </p>
               <p className="text-sm text-slate-600">
                 {f.behaviorName}: {f.consequenceText}

@@ -3416,7 +3416,11 @@ async function createFollowups({ schoolId, student, config, contributingIncident
       await BehaviorFollowup.create({
         schoolId, studentId: student._id, behaviorId: bid, behaviorName: beh.name,
         consequenceText: inc.behaviorSnapshot?.consequenceText || beh.consequenceText,
-        multiplier, missLevel, assignedByTeacherId: sentByTeacherId, noticeId, dueDate: due, status: "open",
+        multiplier, missLevel,
+        // Prompt the teacher who LOGGED the offence (not just the notice sender).
+        assignedByTeacherId: inc.teacherId || sentByTeacherId,
+        incidentId: inc._id || null, incidentAt: inc.timestamp || null,
+        noticeId, dueDate: due, status: "open",
       })
     );
   }
