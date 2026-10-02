@@ -77,8 +77,12 @@ export default function BehaviorDashboard() {
         <p className="mt-1 text-sm text-slate-500 capitalize">Role: {membership.role}</p>
       </Card>
 
-      {!membership.name?.trim() && (
-        <SetMyName onSaved={(n) => setMe((m) => (m && m.membership ? { ...m, membership: { ...m.membership, name: n } } : m))} />
+      {(!membership.name?.trim() || !membership.courtesyName?.trim()) && (
+        <SetMyName
+          name={membership.name || ""}
+          courtesyName={membership.courtesyName || ""}
+          onSaved={(n, c) => setMe((m) => (m && m.membership ? { ...m, membership: { ...m.membership, name: n, courtesyName: c } } : m))}
+        />
       )}
 
       {canLog && (
@@ -274,29 +278,42 @@ function PositiveNudge() {
   );
 }
 
-// Prompt an invited teacher (who joined by email with no name) to choose the
-// name they want shown in Compass. Appears until a name is set.
-function SetMyName({ onSaved }: { onSaved: (name: string) => void }) {
-  const [name, setName] = useState("");
+// First sign-in prompt: capture the teacher's full name (friendly/internal) AND
+// their official parent-facing name. Appears until both are set.
+function SetMyName({ name: name0, courtesyName: courtesy0, onSaved }: { name?: string; courtesyName?: string; onSaved: (name: string, courtesyName: string) => void }) {
+  const [name, setName] = useState(name0 || "");
+  const [courtesyName, setCourtesyName] = useState(courtesy0 || "");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   async function save() {
-    if (!name.trim()) return;
+    if (!name.trim()) { setErr("Please enter your first and last name."); return; }
     setBusy(true); setErr("");
-    try { await api("/my-name", { method: "PUT", body: { name: name.trim() } }); onSaved(name.trim()); }
-    catch (e: any) { setErr(e.message); setBusy(false); }
+    try {
+      await api("/my-name", { method: "PUT", body: { name: name.trim(), courtesyName: courtesyName.trim() } });
+      onSaved(name.trim(), courtesyName.trim());
+    } catch (e: any) { setErr(e.message); setBusy(false); }
   }
   return (
     <Card>
-      <h2 className="font-semibold">What name should appear in Compass?</h2>
-      <p className="mt-0.5 text-sm text-slate-500">This is how you&apos;ll be shown (e.g. &ldquo;logged by …&rdquo;). You can change it later, or an admin can.</p>
-      <div className="mt-2 flex flex-wrap gap-2">
-        <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save()}
-          placeholder="e.g. Mr. Lee / Ms. Grewal" className="min-w-[14rem] flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" autoFocus />
-        <button onClick={save} disabled={busy || !name.trim()} className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">
-          {busy ? "Saving…" : "Save name"}
-        </button>
+      <h2 className="font-semibold">Welcome — let&apos;s set your name</h2>
+      <p className="mt-0.5 text-sm text-slate-500">Two quick things, so notices and logs read correctly. You can change these later, or an admin can.</p>
+      <div className="mt-3 space-y-3">
+        <label className="block text-sm">
+          <span className="font-medium text-slate-700">Your name</span>
+          <span className="block text-xs text-slate-400">How you&apos;re shown to staff in Compass (e.g. &ldquo;logged by …&rdquo;).</span>
+          <input value={name} onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Richard Sommer" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" autoFocus />
+        </label>
+        <label className="block text-sm">
+          <span className="font-medium text-slate-700">Your official (parent-facing) name</span>
+          <span className="block text-xs text-slate-400">Used in messages home and on notices (e.g. &ldquo;Mr. Sommer&rdquo;, &ldquo;Miss Lau&rdquo;).</span>
+          <input value={courtesyName} onChange={(e) => setCourtesyName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save()}
+            placeholder="e.g. Mr. Sommer" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        </label>
       </div>
+      <button onClick={save} disabled={busy || !name.trim()} className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">
+        {busy ? "Saving…" : "Save"}
+      </button>
       {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
     </Card>
   );

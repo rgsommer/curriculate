@@ -2080,9 +2080,12 @@ router.put("/my-name", authAny, loadMembership, async (req, res, next) => {
   try {
     const name = String(req.body?.name || "").trim().slice(0, 80);
     if (!name) return res.status(400).json({ ok: false, error: "Please enter a name." });
-    await BehaviorTeacher.updateOne({ _id: req.membership._id }, { $set: { name } });
-    await audit(req.schoolId, "team.self_name_set", req, { meta: { name } });
-    res.json({ ok: true, name });
+    const $set = { name };
+    // Optionally set the parent-facing official name in the same call (first sign-in prompt).
+    if (req.body?.courtesyName !== undefined) $set.courtesyName = String(req.body.courtesyName || "").trim().slice(0, 60);
+    await BehaviorTeacher.updateOne({ _id: req.membership._id }, { $set });
+    await audit(req.schoolId, "team.self_name_set", req, { meta: { name, courtesyName: $set.courtesyName } });
+    res.json({ ok: true, name, courtesyName: $set.courtesyName });
   } catch (err) { next(err); }
 });
 

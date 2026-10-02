@@ -116,6 +116,7 @@ export type Membership = {
   schoolId: string;
   role: "originator" | "admin" | "teacher" | "principal";
   name: string;
+  courtesyName?: string;
   email: string;
   housesCommittee?: boolean;
   homeworkPrefs?: { lateWeeks?: number | null; outstandingBelow?: number | null };
