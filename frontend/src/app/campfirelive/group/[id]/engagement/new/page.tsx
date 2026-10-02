@@ -1266,12 +1266,22 @@ export default function NewEngagementPage() {
     <div>
       <Link
         href={`/campfirelive/group/${groupId}`}
-        className="text-sm text-slate-500 hover:text-slate-700 mb-4 inline-block"
+        className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-600 hover:bg-slate-200"
       >
-        ← Back to group
+        <span aria-hidden>←</span>
+        <span>{groups.find((g) => g.id === groupId)?.avatar_emoji ?? "🔥"}</span>
+        <span>{groups.find((g) => g.id === groupId)?.name ?? "Back to group"}</span>
       </Link>
 
-      <h1 className="text-2xl font-extrabold text-slate-900 mb-6">New Engagement</h1>
+      <h1 className="text-2xl font-extrabold text-slate-900 mb-1">New Engagement</h1>
+      {groups.find((g) => g.id === groupId) && (
+        <p className="text-sm text-slate-500 mb-6">
+          in {groups.find((g) => g.id === groupId)?.avatar_emoji}{" "}
+          <span className="font-semibold text-slate-700">
+            {groups.find((g) => g.id === groupId)?.name}
+          </span>
+        </p>
+      )}
 
       {/* Step 1: Choose Type */}
       {step === "type" && (

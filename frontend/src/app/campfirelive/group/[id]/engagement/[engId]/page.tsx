@@ -801,6 +801,11 @@ export default function EngagementDetailPage() {
   // A draft that's already scheduled to auto-open — the host is DONE; opening early
   // is optional, so this state reads as "all set" rather than "action needed".
   const isScheduledDraft = isDraft && !!engagement.scheduled_open_at;
+  // A scheduled open date that has already passed should read as "open it now", not
+  // "scheduled" for a date in the past.
+  const schedOpenPast =
+    !!engagement.scheduled_open_at &&
+    new Date(engagement.scheduled_open_at as string).getTime() <= Date.now();
   // ── Prize contests: pot goes to the voted winner (raffle/hunt) or the best score
   // (tournament). `tourn` flips the copy to "best total wins" instead of "votes". ──
   const raffle = raffleOf(engagement.config);
@@ -5971,12 +5976,15 @@ export default function EngagementDetailPage() {
                 <>
                   <div className="flex items-center gap-2 text-sm font-bold text-emerald-900">
                     <span className="rounded-full bg-emerald-200 px-2 py-0.5 text-[11px] uppercase tracking-wide">
-                      Scheduled
+                      {schedOpenPast ? "Open it" : "Scheduled"}
                     </span>
-                    ✓ You&apos;re all set — nothing more to do
+                    {schedOpenPast
+                      ? "The open date has passed — open it now"
+                      : "✓ You're all set — nothing more to do"}
                   </div>
                   <p className="mt-1 text-xs text-emerald-800/90">
-                    📅 This opens on its own{" "}
+                    📅 This{" "}
+                    {schedOpenPast ? "was set to open" : "opens on its own"}{" "}
                     <strong>
                       {new Date(engagement.scheduled_open_at as string).toLocaleDateString(
                         "en-US",
@@ -5987,13 +5995,23 @@ export default function EngagementDetailPage() {
                           year: "numeric",
                         }
                       )}
-                    </strong>{" "}
-                    and emails the whole group then. Only you can see it until then.
-                    {engagement.type === "birthday"
-                      ? " It reveals on the birthday and repeats every year."
-                      : ""}{" "}
-                    Nothing else is needed — the options are only if you want to change
-                    it.
+                    </strong>
+                    {schedOpenPast ? (
+                      <>
+                        , which has passed. Tap <strong>Open &amp; notify now</strong> to go
+                        live and email the group.
+                      </>
+                    ) : (
+                      <>
+                        {" "}
+                        and emails the whole group then. Only you can see it until then.
+                        {engagement.type === "birthday"
+                          ? " It reveals on the birthday and repeats every year."
+                          : ""}{" "}
+                        Nothing else is needed — the options are only if you want to change
+                        it.
+                      </>
+                    )}
                   </p>
                 </>
               ) : (
@@ -6030,7 +6048,7 @@ export default function EngagementDetailPage() {
                   disabled={launching}
                   className="rounded-full border border-orange-300 bg-white px-4 py-2 text-sm font-semibold text-orange-700 hover:bg-orange-50 disabled:opacity-50"
                 >
-                  {launching ? "Opening…" : "🚀 Open early & notify now"}
+                  {launching ? "Opening…" : schedOpenPast ? "🚀 Open & notify now" : "🚀 Open early & notify now"}
                 </button>
               ) : (
                 <button
