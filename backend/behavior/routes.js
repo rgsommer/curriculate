@@ -289,6 +289,7 @@ async function composeConsequenceMessageAI(opts) {
     `Begin with the greeting: "Dear ${first} and parents,".`,
     `The student's name is ${opts.studentName} — use it where natural; NEVER output a bracketed placeholder.`,
     `Note that ${dayPhrase} there was a concern — ${opts.behaviorName}${opts.detailText ? `: ${opts.detailText}` : ""}. Then clearly state what the student must now do: ${opts.consequenceText}. ${deadline}`,
+    `For any deadline, keep the wording EXACTLY "the next school day" — do NOT say "tomorrow", "Saturday", a weekday, or a date (the next school day may be after the weekend or a holiday).`,
     `Close with a brief encouraging "fresh start / from now on" line and sign off exactly as: ${opts.teacherName}.`,
     `3–6 short sentences, plain prose, no bullet points, no invented facts, no placeholders.`,
   ].join("\n");
@@ -299,6 +300,8 @@ async function composeConsequenceMessageAI(opts) {
     ]);
     let t = stripMarkdown(String(out || "").trim());
     t = t.replace(/\[[^\]]*\b(student|name|pupil|child)\b[^\]]*\]/gi, opts.studentName || "").replace(/\[[^\]]*\]/g, "").replace(/\s{2,}/g, " ").trim();
+    // Guardrail: a deadline must never read "tomorrow" (could be a weekend/holiday).
+    t = t.replace(/\bby\s+tomorrow\b/gi, "by the next school day").replace(/\btomorrow\b/gi, "the next school day");
     return t || det;
   } catch (e) { console.warn("[behavior] consequence message AI failed:", e?.message || e); return det; }
 }
