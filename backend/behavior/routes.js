@@ -6878,6 +6878,21 @@ router.post("/house/food-drive/apply", authAny, loadMembership, canLog, async (r
       awardedStudents.push({ name: `${s.preferredName || s.firstName} ${s.lastName}`.trim(), place: i + 1, points: p, items: r.items });
     }
 
+    // Save a celebratory banner for /houses (first name + last initial for the
+    // donors — minimal PII on a public wall board), shown for ~2 weeks.
+    const bannerStudents = [];
+    for (let i = 0; i < rankedStudents.length && i < Math.max(indPts.length, 3); i++) {
+      const r = rankedStudents[i]; const s = sById[r.studentId];
+      if (!s) continue;
+      bannerStudents.push({ name: `${s.preferredName || s.firstName} ${(s.lastName || "").charAt(0)}.`.trim(), place: i + 1, items: r.items });
+    }
+    const eventResult = {
+      label, at,
+      houses: awardedHouses.map((h) => ({ name: h.house, place: h.place, items: h.items, points: h.points })),
+      students: bannerStudents,
+    };
+    await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: { houseEventResult: eventResult } });
+
     await audit(req.schoolId, "house.food_drive", req, { meta: { label, rows: rows.length, houses: awardedHouses.length, donors: awardedStudents.length } });
     res.json({ ok: true, houses: awardedHouses, students: awardedStudents, totalItems: rows.reduce((a, b) => a + b.items, 0) });
   } catch (err) {
@@ -7433,7 +7448,7 @@ router.get("/public/houses", async (req, res, next) => {
   try {
     const code = String(req.query.code || "").trim();
     if (!/^\d{3,6}$/.test(code)) return res.status(400).json({ ok: false, error: "Enter your school code." });
-    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true }).select("schoolId housePointsResetAt houseNegativeResetAt housesPublicShowNegatives housesPublicShowPositives houseCaps houseRewards merchStore").lean();
+    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true }).select("schoolId housePointsResetAt houseNegativeResetAt housesPublicShowNegatives housesPublicShowPositives houseCaps houseRewards merchStore houseEventResult").lean();
     if (!config) return res.status(404).json({ ok: false, error: "No school matches that code." });
     const schoolId = config.schoolId;
     const sid = new mongoose.Types.ObjectId(schoolId);
@@ -7558,7 +7573,13 @@ router.get("/public/houses", async (req, res, next) => {
     const merch = config.merchStore?.enabled
       ? (config.merchStore.items || []).slice().sort((a, b) => (a.points || 0) - (b.points || 0)).map((i) => ({ name: i.name, points: i.points, image: i.image || "" }))
       : [];
-    res.json({ ok: true, enabled: true, schoolName: school?.name || "", houses: houseOut, competitions: compOut, activity, dailyTopStudent, dailyTopHouse, topStudents, rewards, merch });
+    // Latest tally-event banner — shown for ~14 days after upload.
+    let eventResult = null;
+    const er = config.houseEventResult;
+    if (er?.at && Date.now() - new Date(er.at).getTime() < 14 * DAY_MS) {
+      eventResult = { label: er.label || "Results", at: er.at, houses: er.houses || [], students: er.students || [] };
+    }
+    res.json({ ok: true, enabled: true, schoolName: school?.name || "", houses: houseOut, competitions: compOut, activity, dailyTopStudent, dailyTopHouse, topStudents, rewards, merch, eventResult });
   } catch (err) {
     next(err);
   }

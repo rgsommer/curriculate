@@ -181,6 +181,10 @@ const BehaviorConfigSchema = new mongoose.Schema(
     // (so the public portal isn't openly browseable). Blank = portal disabled.
     housePortalCode: { type: String, default: "" },
 
+    // Latest tally-event result (food drive, cleanup, …), shown as a celebratory
+    // banner on /houses for ~2 weeks after upload. { label, at, houses[], students[] }.
+    houseEventResult: { type: mongoose.Schema.Types.Mixed, default: null },
+
     // Start-of-term marker: only house points earned AFTER this date count toward
     // the standings (earlier events are kept for history). Null = count all.
     housePointsResetAt: { type: Date, default: null },

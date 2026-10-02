@@ -8,7 +8,8 @@ type Comp = { name: string; monthLabel: string; scored: boolean; results: { plac
 type Activity = { house: string; color: string; points: number; reason: string; at: string };
 type TopStudent = { rank: number; name: string; photoUrl?: string; house: string; color: string; points: number };
 type MerchItem = { name: string; points: number; image?: string };
-type Board = { schoolName: string; houses: House[]; competitions: Comp[]; activity: Activity[]; topStudents: TopStudent[]; merch: MerchItem[] };
+type EventResult = { label: string; at: string; houses: { name: string; place: number; items: number; points: number }[]; students: { name: string; place: number; items: number }[] };
+type Board = { schoolName: string; houses: House[]; competitions: Comp[]; activity: Activity[]; topStudents: TopStudent[]; merch: MerchItem[]; eventResult?: EventResult | null };
 type DetailItem = { reason: string; points: number; count: number };
 type HouseDetail = {
   house: { id: string; name: string; color: string };
@@ -26,7 +27,7 @@ async function fetchBoard(code: string): Promise<{ ok: boolean; error?: string; 
     const r = await fetch(`${API_BASE}/api/behavior/public/houses?code=${encodeURIComponent(code)}`);
     const d = await r.json();
     if (!d.ok) return { ok: false, error: d.error || "Could not load standings" };
-    return { ok: true, board: { schoolName: d.schoolName || "", houses: d.houses || [], competitions: d.competitions || [], activity: d.activity || [], topStudents: d.topStudents || [], merch: d.merch || [] } };
+    return { ok: true, board: { schoolName: d.schoolName || "", houses: d.houses || [], competitions: d.competitions || [], activity: d.activity || [], topStudents: d.topStudents || [], merch: d.merch || [], eventResult: d.eventResult || null } };
   } catch {
     return { ok: false, error: "Network error — try again" };
   }
@@ -267,6 +268,35 @@ export default function HousesPortal() {
           </ul>
         )}
       </section>
+
+      {board?.eventResult && (board.eventResult.houses.length > 0 || board.eventResult.students.length > 0) && (
+        <section className="rounded-2xl border border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 p-5">
+          <h2 className="text-lg font-bold text-amber-900">🏆 {board.eventResult.label} results</h2>
+          <div className="mt-3 grid gap-4 sm:grid-cols-2">
+            {board.eventResult.houses.length > 0 && (
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">Top houses</div>
+                <ul className="mt-1 space-y-0.5 text-sm text-slate-700">
+                  {board.eventResult.houses.map((h, i) => (
+                    <li key={i}>{["🥇","🥈","🥉"][h.place - 1] || `${h.place}.`} <span className="font-semibold">{h.name}</span> <span className="text-slate-400">— {h.items} items</span></li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {board.eventResult.students.length > 0 && (
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">Top contributors</div>
+                <ul className="mt-1 space-y-0.5 text-sm text-slate-700">
+                  {board.eventResult.students.map((s, i) => (
+                    <li key={i}>{["🥇","🥈","🥉"][s.place - 1] || `${s.place}.`} <span className="font-semibold">{s.name}</span> <span className="text-slate-400">— {s.items} items</span></li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+          <p className="mt-3 text-xs text-amber-700/80">Thanks to everyone who gave! Points have been added to the standings below.</p>
+        </section>
+      )}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5">
         <h2 className="font-semibold">Leaderboard</h2>
