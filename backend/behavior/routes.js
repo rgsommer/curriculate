@@ -807,6 +807,11 @@ router.put("/config", authAny, loadMembership, requireAdmin, async (req, res, ne
     if (req.body?.whiteSlipLadder && typeof req.body.whiteSlipLadder === "object") {
       for (const [k, v] of Object.entries(req.body.whiteSlipLadder)) update[`whiteSlipLadder.${k}`] = v;
     }
+    // Daily VP consequence-digest settings (field-merge, so toggling never
+    // clobbers lastSentAt, the once-a-day idempotency marker).
+    if (req.body?.consequenceDigest && typeof req.body.consequenceDigest === "object") {
+      for (const [k, v] of Object.entries(req.body.consequenceDigest)) update[`consequenceDigest.${k}`] = v;
+    }
     const config = await BehaviorConfig.findOneAndUpdate(
       { schoolId: req.schoolId },
       { $set: update },
@@ -5649,6 +5654,112 @@ export async function sendAdminDigestForSchool(schoolId, { force = false } = {})
 // teachers who've been quiet. Composite per teacher; each flagged student gets a
 // one-tap "I've talked to them" button (signed link) plus what to discuss, so
 // the teacher never has to dig in the app — though the same blue button is there.
+// Daily VP accountability digest: consequences teachers were to carry out that
+// aren't done yet, grouped by the logging teacher, flagging ones past the fade
+// window as "missed" (a late consequence loses its effect). Builds follow-through
+// habits; VP always, each teacher optionally. Toggle in Setup.
+export async function sendConsequenceDigestForSchool(schoolId, { force = false } = {}) {
+  const config = await BehaviorConfig.findOne({ schoolId }).lean();
+  if (!config) return { ok: false, error: "no config" };
+  const cd = config.consequenceDigest || {};
+  if (!force && cd.enabled === false) return { ok: false, skipped: "disabled" };
+  if (!force && cd.lastSentAt && Date.now() - new Date(cd.lastSentAt).getTime() < 20 * 60 * 60 * 1000) {
+    return { ok: false, skipped: "already sent today" };
+  }
+  const fadeDays = cd.fadeDays ?? 2;
+  const now = Date.now();
+  const lookback = new Date(now - 10 * DAY_MS); // show recent outstanding only
+  const missedCutoff = now - fadeDays * DAY_MS;
+
+  const cons = await BehaviorConsequence.find({
+    schoolId, kind: "corrective", completed: false,
+    status: { $in: ["issued", "recommended", "other"] },
+    type: { $not: /^Parent message/i },
+    at: { $gte: lookback },
+  }).select("studentId type detail byTeacherId byName at").sort({ at: 1 }).lean();
+  if (!cons.length && !force) { await BehaviorConfig.updateOne({ schoolId }, { $set: { "consequenceDigest.lastSentAt": new Date() } }); return { ok: true, sent: 0, items: 0 }; }
+
+  const sIds = [...new Set(cons.map((c) => String(c.studentId)))];
+  const tIds = [...new Set(cons.map((c) => String(c.byTeacherId)).filter((x) => x && x !== "null"))];
+  const [students, teachers, school] = await Promise.all([
+    BehaviorStudent.find({ _id: { $in: sIds } }).select("firstName preferredName lastName classGroup").lean(),
+    BehaviorTeacher.find({ _id: { $in: tIds } }).select("name courtesyName email").lean(),
+    BehaviorSchool.findById(schoolId).select("name").lean(),
+  ]);
+  const sName = Object.fromEntries(students.map((s) => [String(s._id), `${s.preferredName || s.firstName} ${s.lastName || ""}`.trim() + (s.classGroup ? ` (${s.classGroup})` : "")]));
+  const tById = Object.fromEntries(teachers.map((t) => [String(t._id), t]));
+  const tLabel = (t) => (t?.name || "").trim() || emailLocalName(t?.email) || "A teacher";
+
+  // Group by teacher.
+  const byTeacher = {};
+  for (const c of cons) {
+    const k = String(c.byTeacherId || "none");
+    (byTeacher[k] ||= []).push({
+      student: sName[String(c.studentId)] || "a student",
+      type: c.type || "consequence", detail: c.detail || "",
+      at: c.at, missed: new Date(c.at).getTime() < missedCutoff,
+    });
+  }
+  const fmtItem = (it) => {
+    const d = new Date(it.at).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: SCHOOL_TZ });
+    return `${escapeHtml(it.student)} — ${escapeHtml(it.type)}${it.detail ? `: ${escapeHtml(it.detail)}` : ""} <span style="color:#94a3b8">(${d})</span>${it.missed ? ` <span style="color:#b91c1c;font-weight:600">· missed</span>` : ""}`;
+  };
+  const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+  const from = fromAddr ? { name: "Compass", address: fromAddr } : undefined;
+  const schoolName = config.branding?.schoolName || school?.name || "";
+  const followThrough = `<p style="margin:12px 0 0;font-size:12px;color:#64748b">A consequence works best when it follows the offence promptly — within a day or two. Items marked <b style="color:#b91c1c">missed</b> are past that window; they fade off the active to-do list, but please close the loop and keep the habit of timely follow-through.</p>`;
+
+  let sent = 0, totalItems = cons.length;
+
+  // VP (+ admins) digest — everything, grouped by teacher.
+  const vpEmail = (config.vp?.email || "").trim().toLowerCase();
+  const adminList = await BehaviorTeacher.find({ schoolId, role: { $in: ["originator", "admin"] } }).select("email").lean();
+  const to = [...new Set([vpEmail, ...adminList.map((a) => (a.email || "").toLowerCase())].filter(Boolean))];
+  if (to.length) {
+    const groupsHtml = Object.entries(byTeacher).map(([tid, items]) => {
+      const name = tid === "none" ? "Unassigned" : tLabel(tById[tid]);
+      return `<div style="margin:0 0 12px"><div style="font-weight:700;color:#0f172a">${escapeHtml(name)} <span style="font-weight:400;color:#94a3b8;font-size:12px">(${items.length})</span></div>` +
+        `<ul style="margin:4px 0 0;padding-left:18px;color:#334155;line-height:1.6">${items.map((it) => `<li>${fmtItem(it)}</li>`).join("")}</ul></div>`;
+    }).join("");
+    const missedCount = cons.filter((c) => new Date(c.at).getTime() < missedCutoff).length;
+    try {
+      await sendEmail({
+        from, to,
+        subject: `Consequences to follow up — ${schoolName || "today"} (${totalItems}${missedCount ? `, ${missedCount} missed` : ""})`,
+        text: `Consequences not yet carried out, by teacher:\n\n` + Object.entries(byTeacher).map(([tid, items]) => `${tid === "none" ? "Unassigned" : tLabel(tById[tid])}:\n` + items.map((it) => `  • ${it.student} — ${it.type}${it.detail ? `: ${it.detail}` : ""} (${new Date(it.at).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ })})${it.missed ? " · MISSED" : ""}`).join("\n")).join("\n\n"),
+        html: emailShell({ title: "Consequences to follow up", schoolName: schoolName || "Compass", preheader: `${totalItems} outstanding${missedCount ? `, ${missedCount} missed` : ""}`,
+          contentHtml: `<p style="margin:0 0 12px;color:#334155">These consequences were logged but aren't marked done yet, grouped by the teacher who logged them. A quick nudge helps them land while they still matter.</p>${groupsHtml}${followThrough}` }),
+      });
+      sent += 1;
+    } catch (e) { console.warn("[behavior/consq-digest] VP send failed:", e?.message || e); }
+  }
+
+  // Each teacher their own list (optional).
+  if (cd.emailTeachers !== false) {
+    for (const [tid, items] of Object.entries(byTeacher)) {
+      if (tid === "none") continue;
+      const t = tById[tid];
+      const email = (t?.email || "").trim();
+      if (!email) continue;
+      try {
+        await sendEmail({
+          from, to: email,
+          subject: `Your consequences to follow up (${items.length})`,
+          text: `Hi ${tLabel(t).split(" ")[0]},\n\nThese consequences you logged aren't marked done yet:\n\n` + items.map((it) => `  • ${it.student} — ${it.type}${it.detail ? `: ${it.detail}` : ""} (${new Date(it.at).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ })})${it.missed ? " · past the follow-up window" : ""}`).join("\n") + `\n\nA consequence works best right after the offence — please close these out. Mark them done on your Compass dashboard.`,
+          html: emailShell({ title: "Your consequences to follow up", schoolName: schoolName || "Compass", preheader: `${items.length} to close out`,
+            contentHtml: `<p style="margin:0 0 10px">Hi ${escapeHtml(tLabel(t).split(" ")[0])},</p><p style="margin:0 0 10px;color:#334155">These consequences you logged aren't marked done yet:</p>` +
+              `<ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6">${items.map((it) => `<li>${fmtItem(it)}</li>`).join("")}</ul>${followThrough}` +
+              emailButton("Open Compass", `${appBase()}/behavior`, "#0f172a") }),
+        });
+        sent += 1;
+      } catch (e) { console.warn("[behavior/consq-digest] teacher send failed:", e?.message || e); }
+    }
+  }
+
+  await BehaviorConfig.updateOne({ schoolId }, { $set: { "consequenceDigest.lastSentAt": new Date() } });
+  return { ok: true, sent, items: totalItems };
+}
+
 export async function sendTeacherNudgesForSchool(schoolId, { force = false } = {}) {
   const config = await BehaviorConfig.findOne({ schoolId }).lean();
   if (!config) return { ok: false, error: "no config" };
@@ -5759,6 +5870,15 @@ router.post("/teacher-nudge/run", authAny, loadMembership, requireAdmin, async (
   try {
     const r = await sendTeacherNudgesForSchool(req.schoolId, { force: true });
     await audit(req.schoolId, "teacher_nudge.run", req, { meta: { sent: r.sent, ok: r.ok } });
+    res.json(r);
+  } catch (err) { next(err); }
+});
+
+// Send the daily VP consequence digest now (admin) — preview/test.
+router.post("/consequence-digest/run", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const r = await sendConsequenceDigestForSchool(req.schoolId, { force: true });
+    await audit(req.schoolId, "consequence_digest.run", req, { meta: { sent: r.sent, items: r.items, ok: r.ok } });
     res.json(r);
   } catch (err) { next(err); }
 });

@@ -117,6 +117,7 @@ export default function SetupPage() {
       <TeacherHomeworkPrefs config={me.config} prefs={me.membership?.homeworkPrefs} />
       <RecommendedActionsSettings config={me.config} />
       <GuddSettings config={me.config} />
+      <ConsequenceDigestSettings config={me.config} />
       <AdminDigestSettings config={me.config} myEmail={me.membership?.email || ""} />
       <EdsbySection edsby={me.config?.edsby} />
       <InviteSection domain={me.school?.emailDomain || ""} isOriginator={me.membership.role === "originator"} />
@@ -708,6 +709,57 @@ function AdminDigestSettings({ config, myEmail }: { config: any; myEmail: string
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <input value={recipient} onChange={(e) => setRecipient(e.target.value)} onBlur={(e) => saveCfg({ recipientEmail: e.target.value })}
           placeholder={`Send to (defaults to admins${myEmail ? `, e.g. ${myEmail}` : ""})`} className={`${inputCls} flex-1`} />
+        <button onClick={sendNow} disabled={busy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">
+          {busy ? "Sending…" : "Send now"}
+        </button>
+      </div>
+      {msg && <p className={`mt-2 text-sm ${msg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{msg}</p>}
+    </Card>
+  );
+}
+
+function ConsequenceDigestSettings({ config }: { config: any }) {
+  const d = config?.consequenceDigest || {};
+  const [enabled, setEnabled] = useState<boolean>(d.enabled !== false);
+  const [emailTeachers, setEmailTeachers] = useState<boolean>(d.emailTeachers !== false);
+  const [fadeDays, setFadeDays] = useState<number | string>(d.fadeDays ?? 2);
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function saveCfg(next: { enabled?: boolean; emailTeachers?: boolean; fadeDays?: number }) {
+    const body = { enabled, emailTeachers, fadeDays: Math.max(1, Number(fadeDays) || 2), ...next };
+    setEnabled(body.enabled); setEmailTeachers(body.emailTeachers); setFadeDays(body.fadeDays);
+    try { await api("/config", { method: "PUT", body: { consequenceDigest: body } }); } catch (e: any) { setMsg(`✗ ${e.message}`); }
+  }
+  async function sendNow() {
+    setBusy(true); setMsg("");
+    try {
+      const r = await api<{ ok: boolean; sent?: number; items?: number; error?: string; skipped?: string }>("/consequence-digest/run", { body: {} });
+      setMsg(r.ok ? `✓ Sent ${r.sent ?? 0} email(s) · ${r.items ?? 0} outstanding consequence(s).` : `✗ ${r.error || r.skipped || "Failed"}`);
+    } catch (e: any) { setMsg(`✗ ${e.message}`); } finally { setBusy(false); }
+  }
+
+  return (
+    <Card>
+      <div className="flex items-center justify-between">
+        <h2 className="font-semibold">Daily consequence follow-up (VP digest)</h2>
+        <label className="flex items-center gap-2 text-sm text-slate-600">
+          <input type="checkbox" checked={enabled} onChange={(e) => saveCfg({ enabled: e.target.checked })} />
+          {enabled ? "On" : "Off"}
+        </label>
+      </div>
+      <p className="mt-1 text-sm text-slate-500">A short weekday email to the VP: consequences that were logged but aren&apos;t marked done yet, grouped by the teacher who logged them. A consequence works best right after the offence, so items older than the fade window are flagged <b>missed</b> — they drop off the active to-do list, but are still reported so follow-through becomes a habit.</p>
+      <div className="mt-3 flex flex-wrap items-center gap-4">
+        <label className="flex items-center gap-2 text-sm text-slate-600">
+          <input type="checkbox" checked={emailTeachers} onChange={(e) => saveCfg({ emailTeachers: e.target.checked })} />
+          Also email each teacher their own list
+        </label>
+        <label className="flex items-center gap-2 text-sm text-slate-600">
+          Fade after
+          <input type="number" min={1} max={14} value={fadeDays} onChange={(e) => setFadeDays(e.target.value)} onBlur={(e) => saveCfg({ fadeDays: Math.max(1, Number(e.target.value) || 2) })}
+            className="w-16 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+          day(s)
+        </label>
         <button onClick={sendNow} disabled={busy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">
           {busy ? "Sending…" : "Send now"}
         </button>

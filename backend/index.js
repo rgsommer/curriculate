@@ -700,6 +700,8 @@ try {
   startMonthlyConductAward();
   const { startTeacherNudges } = await import("./behavior/jobs/teacherNudge.js");
   startTeacherNudges();
+  const { startConsequenceDigest } = await import("./behavior/jobs/consequenceDigest.js");
+  startConsequenceDigest();
   console.error("[boot] behaviours module loaded OK");
 } catch (e) {
   console.error("[boot] ❌ behaviours module FAILED to load — continuing without it:\n", e?.stack || e);

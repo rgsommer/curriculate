@@ -265,6 +265,17 @@ const BehaviorConfigSchema = new mongoose.Schema(
     houseWhiteSlipDeduct: { type: Boolean, default: false },
     houseWhiteSlipPoints: { type: Number, default: 10 },
 
+    // Daily VP accountability digest: a list of consequences teachers were to
+    // carry out that aren't done yet — grouped by teacher, flagging ones now past
+    // the effectiveness window (a late consequence loses its effect) as "missed".
+    // Helps build follow-through habits. Toggle off once habits are formed.
+    consequenceDigest: {
+      enabled: { type: Boolean, default: true },
+      fadeDays: { type: Number, default: 2 }, // after this, a consequence is "missed"
+      emailTeachers: { type: Boolean, default: true }, // also nudge each teacher their own
+      lastSentAt: { type: Date, default: null },
+    },
+
     // Bi-weekly teacher nudges: (a) a proactive "students in your homeroom to
     // check in with" email to homeroom teachers, and (b) a gentle "how's it
     // going?" note to teachers who've been quiet on Compass. intervalDays sets
