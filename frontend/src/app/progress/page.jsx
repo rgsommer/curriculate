@@ -1676,16 +1676,25 @@ export default function ProgressPage() {
                                     try {
                                       const getRes = await fetch(`${API}/results/${r.code}`);
                                       const getData = await getRes.json();
+                                      // Only write back when the Grade line was
+                                      // actually found and changed. This read is
+                                      // the public one, and for a teacher who
+                                      // hides marks it comes back with the Grade
+                                      // line already stripped out — writing that
+                                      // version back would have stored the
+                                      // student's redacted copy as the real one.
                                       if (getData.payload) {
                                         const updatedPayload = getData.payload.replace(
                                           /Grade:\s*(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/,
                                           `Grade: ${newScore} / ${newDenom}`
                                         );
-                                        await fetch(`${API}/results/${r.code}`, {
-                                          method: "PUT",
-                                          headers: { "Content-Type": "application/json" },
-                                          body: JSON.stringify({ payload: updatedPayload }),
-                                        });
+                                        if (updatedPayload !== getData.payload) {
+                                          await fetch(`${API}/results/${r.code}`, {
+                                            method: "PUT",
+                                            headers: { "Content-Type": "application/json" },
+                                            body: JSON.stringify({ payload: updatedPayload }),
+                                          });
+                                        }
                                       }
                                     } catch (err) {
                                       console.warn("[progress] denom update failed:", err);

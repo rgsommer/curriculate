@@ -246,7 +246,11 @@ export async function buildResultsPdf(results, { title, hideGrades } = {}) {
           const lvl = String(k.level || "").toLowerCase();
           const c = levelColors[lvl] || levelColors.adequate;
           const short = knownShort[k.category] || (k.category || "").split(/\s+/).map(w => w[0]).join("").slice(0, 3).toUpperCase();
-          const scoreStr = typeof k.score === "number" && typeof k.out_of === "number"
+          // The level word under each card is the whole point of these; the
+          // "2.3/3.0" beside the heading is the mark again in smaller print,
+          // and a report that goes home in a bag must not carry it when the
+          // teacher has turned marks off.
+          const scoreStr = !hideGrades && typeof k.score === "number" && typeof k.out_of === "number"
             ? `  ${k.score.toFixed(1)}/${k.out_of.toFixed(1)}` : "";
           const header = `${short} ${k.category}${scoreStr}`;
           const levelStr = String(k.level || "").charAt(0).toUpperCase() + String(k.level || "").slice(1);

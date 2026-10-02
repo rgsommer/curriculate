@@ -2487,6 +2487,20 @@ export default function BatchGrading({
       };
 
       // Update ref code via PUT (or create if missing)
+      // A re-grade used to write the payload and nothing else. The payload is
+      // what the public results page and the printed strip are built from;
+      // meta.score is what Edsby, the CSV and /progress read. So a student
+      // re-graded from 1.5 to 7.5 had a strip reading 7.5 and a gradebook
+      // still reading 1.5 — and no sign anywhere that the two disagreed.
+      // PUT merges meta, so sending these fields leaves studentId,
+      // teacherEmail and the rest alone.
+      const regradedMeta = {
+        score: updatedEntry.score ?? null,
+        outOf: updatedEntry.outOf ?? null,
+        pct: updatedEntry.pct ?? null,
+        edsbyComment: buildEdsbyComment(updatedEntry),
+      };
+
       if (resultsUrl) {
         try {
           if (updatedEntry.refCode) {
@@ -2496,6 +2510,7 @@ export default function BatchGrading({
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
                 payload: buildBatchPayloadText(updatedEntry, updatedEntry.refCode, gradeBand),
+                meta: regradedMeta,
               }),
             });
           } else {
@@ -2526,6 +2541,7 @@ export default function BatchGrading({
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   payload: buildBatchPayloadText(updatedEntry, updatedEntry.refCode, gradeBand),
+                  meta: regradedMeta,
                 }),
               }).catch(() => {});
             }
