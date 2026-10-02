@@ -8,7 +8,7 @@ import PublishedResult from "../models/PublishedResult.js";
 import { resultExpiryDate } from "../utils/retention.js";
 import { sendWeeklyDigests } from "../email/gradeNotification.js";
 
-import { hidesGradesForResult } from "../utils/gradeVisibility.js";
+import { hidesGradesForResult, teachersForResult } from "../utils/gradeVisibility.js";
 const router = express.Router();
 
 /**
@@ -163,6 +163,25 @@ function studentAuth(req, res, next) {
     next();
   } catch {
     return res.status(401).json({ error: "Invalid or expired token" });
+  }
+}
+
+// A teacher opens a student's dashboard through a student token — that is
+// how the page is built — so by the time the request arrives there is nothing
+// to say a teacher is the one looking, and they were handed the student's
+// redacted copy. Marks hidden from students are still the teacher's to see,
+// so an optional teacher token rides alongside and lifts the redaction for
+// that teacher's own classes only.
+function teacherViewer(req) {
+  const raw = req.headers["x-teacher-token"] || req.query.teacherToken || "";
+  const t = String(raw).trim();
+  if (!t) return "";
+  try {
+    const decoded = jwt.verify(t, jwtSecret());
+    if (decoded.type !== "teacher-progress") return "";
+    return String(decoded.teacherEmail || "").trim().toLowerCase();
+  } catch {
+    return ""; // an expired teacher token just means the student's view
   }
 }
 
@@ -630,8 +649,14 @@ router.get("/results", studentAuth, async (req, res) => {
     // and only one of them may have turned it on.
     // Keyed on the result's own meta, since the owner may have to be resolved
     // from the class — most published results predate meta.teacherEmail.
+    // Passing no teacher token is how the dashboard previews the student's
+    // own view, so this is the toggle as well as the reveal.
+    const viewer = teacherViewer(req);
     const hideByCode = new Map(
-      await Promise.all(results.map(async (r) => [r.code, await hidesGradesForResult(r.meta)]))
+      await Promise.all(results.map(async (r) => {
+        if (viewer && (await teachersForResult(r.meta)).includes(viewer)) return [r.code, false];
+        return [r.code, await hidesGradesForResult(r.meta)];
+      }))
     );
     let anyHidden = false;
     for (const entry of entries) {
@@ -677,6 +702,9 @@ router.get("/results", studentAuth, async (req, res) => {
       // every result, so leaving it would leak the hidden ones back.
       overallAvg: anyHidden ? visibleAvg : overallAvg,
       anyGradesHidden: anyHidden,
+      // So the page can say whose view this is rather than leaving a teacher
+      // to wonder whether the marks are missing or merely hidden.
+      viewingAsTeacher: !!viewer,
       totalAssignments: entries.length,
     });
   } catch (err) {
