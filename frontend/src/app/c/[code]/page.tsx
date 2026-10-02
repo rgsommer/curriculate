@@ -21,7 +21,7 @@ export default async function ShortCardRedirect({
     const admin = createClient(url, serviceKey);
     const { data } = await admin
       .from("engagements")
-      .select("id, group:groups(invite_code)")
+      .select("id, type, group:groups(invite_code)")
       .ilike("share_code", code)
       .maybeSingle();
 
@@ -31,7 +31,14 @@ export default async function ShortCardRedirect({
     if (data?.id && inviteCode) {
       const invRaw = searchParams?.inv;
       const inv = typeof invRaw === "string" ? invRaw : "";
-      const qs = `?e=${data.id}${inv ? `&inv=${encodeURIComponent(inv)}` : ""}`;
+      // A card / RSVP is one-way (signers get no results); everything else reveals
+      // results to participants. Flag it so the join page can offer "email me my results".
+      const returnsResults = !["birthday", "surprise", "signup"].includes(
+        (data.type as string) ?? ""
+      );
+      const qs = `?e=${data.id}${returnsResults ? "&r=1" : ""}${
+        inv ? `&inv=${encodeURIComponent(inv)}` : ""
+      }`;
       redirect(`/campfirelive/join/${inviteCode}${qs}`);
     }
   }

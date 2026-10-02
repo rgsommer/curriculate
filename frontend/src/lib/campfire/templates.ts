@@ -150,6 +150,17 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
         title: "Record your answer 🎤",
         description: "Leave a quick voice note instead of typing it out.",
       },
+      {
+        id: "class-card",
+        name: "Class Card 💌",
+        type: "birthday",
+        title: "A card from the class 💌",
+        description:
+          "The class signs a surprise card together — for a teacher, a classmate's birthday, a farewell, or a get-well. Paste the join link in Edsby and students add their note with just a name — each message stays hidden until it opens.",
+        occasion: "once",
+        onceLabel: "Class Card",
+        reveal: "sealed",
+      },
     ],
   },
   {
