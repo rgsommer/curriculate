@@ -23,6 +23,20 @@ import { completeQuest } from "../../components/QuestWidget";
 // NOTE: QR code loader, jsPDF loader, buildResultsPdf, and buildStripsPdf
 // have been moved to ./pdfReports.js (shared with page.jsx session reports).
 
+// Reports go to more than one person: the teacher's own copy, a department
+// head, a parent, the office. The backend has always accepted a list — this
+// is the parse the field needs so the button can say how many it is sending
+// to, and so a comma-separated entry is not mistaken for one bad address.
+const VALID_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function parseRecipients(raw) {
+  return Array.from(new Set(
+    String(raw || "")
+      .split(/[,;\n]+/)
+      .map((s) => s.trim().toLowerCase())
+      .filter((s) => s && VALID_EMAIL.test(s))
+  ));
+}
+
 // ---------- PDF.js loader (self-hosted proxy → CDN fallback) ----------
 // Uses the legacy UMD build (3.x) which sets window.pdfjsLib via <script>
 const PDFJS_CDN = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174";
@@ -2968,8 +2982,10 @@ export default function BatchGrading({
   }, [buildEdsbyCsv, effectiveTitle]);
 
   const sendEmail = useCallback(async () => {
-    const to = emailTo.trim();
-    if (!to || !to.includes("@")) return;
+    // An array, so the backend does not have to re-split it and a trailing
+    // comma or a stray space cannot cost a recipient.
+    const to = parseRecipients(emailTo);
+    if (!to.length) return;
 
     // Final pass: normalize all matched student names to exact roster spelling
     for (const r of results) {
@@ -3111,7 +3127,7 @@ export default function BatchGrading({
             const retryController = new AbortController();
             const retryTimeout = setTimeout(() => retryController.abort(), 30000);
             try {
-              const retryPayload = { to: emailTo.trim(), subject, html, pdfAttachments: [], csvAttachments: payload.csvAttachments || [] };
+              const retryPayload = { to, subject, html, pdfAttachments: [], csvAttachments: payload.csvAttachments || [] };
               const retryRes = await fetch(sendUrl, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -4580,14 +4596,22 @@ export default function BatchGrading({
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", minWidth: 60 }}>Send to:</span>
                 <input
-                  type="email"
+                  /* Deliberately text, not email: a browser's email input
+                     calls a comma-separated list invalid, and reports go to
+                     several people at once. */
+                  type="text"
                   value={emailTo}
                   onChange={(e) => {
                     setEmailTo(e.target.value);
-                    // Sync to parent so rosters auto-load for this email
-                    if (parentSetTeacherEmail) parentSetTeacherEmail(e.target.value);
+                    // Rosters load for one teacher, so the parent gets the
+                    // first address only — handing it the whole list matched
+                    // no teacher and quietly emptied the class pickers.
+                    if (parentSetTeacherEmail) {
+                      const first = parseRecipients(e.target.value)[0];
+                      if (first) parentSetTeacherEmail(first);
+                    }
                   }}
-                  placeholder="recipient@school.ca"
+                  placeholder="you@school.ca, head@school.ca"
                   onKeyDown={(e) => { if (e.key === "Enter") sendEmail(); }}
                   style={{
                     flex: 1,
@@ -4599,6 +4623,9 @@ export default function BatchGrading({
                   }}
                   autoFocus
                 />
+              </div>
+              <div style={{ fontSize: 11, color: "#64748b", marginLeft: 68, marginTop: -4 }}>
+                Separate several addresses with commas.
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", minWidth: 60 }}>Title:</span>
@@ -4626,19 +4653,31 @@ export default function BatchGrading({
                 >
                   Cancel
                 </button>
-                <button
-                  onClick={sendEmail}
-                  disabled={emailSending || !emailTo.includes("@")}
-                  style={{
-                    ...batchStyles.smallBtn,
-                    background: "#2563eb",
-                    color: "#fff",
-                    opacity: emailSending || !emailTo.includes("@") ? 0.5 : 1,
-                  }}
-                  type="button"
-                >
-                  {emailSending ? "Sending..." : "Send"}
-                </button>
+                {(() => {
+                  // Counted live, so a typo in the third address is visible
+                  // before the send rather than after it.
+                  const count = parseRecipients(emailTo).length;
+                  const disabled = emailSending || count === 0;
+                  return (
+                    <button
+                      onClick={sendEmail}
+                      disabled={disabled}
+                      style={{
+                        ...batchStyles.smallBtn,
+                        background: "#2563eb",
+                        color: "#fff",
+                        opacity: disabled ? 0.5 : 1,
+                      }}
+                      type="button"
+                    >
+                      {emailSending
+                        ? "Sending..."
+                        : count > 1
+                          ? `Send to ${count} recipients`
+                          : "Send"}
+                    </button>
+                  );
+                })()}
               </div>
             </div>
           )}
