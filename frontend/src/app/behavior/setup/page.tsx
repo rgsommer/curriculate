@@ -1707,6 +1707,36 @@ function HousesSection({ config }: { config?: any }) {
   const [resetAt, setResetAt] = useState<string | null>(config?.housePointsResetAt || null);
   const [resetBusy, setResetBusy] = useState(false);
 
+  // What the public /houses page shows students.
+  const [showPos, setShowPos] = useState<boolean>(config?.housesPublicShowPositives !== false);
+  const [showNeg, setShowNeg] = useState<boolean>(config?.housesPublicShowNegatives === true);
+  async function saveViewing(next: { showPos?: boolean; showNeg?: boolean }) {
+    const sp = next.showPos ?? showPos;
+    const sn = next.showNeg ?? showNeg;
+    setShowPos(sp); setShowNeg(sn);
+    try { await api("/houses/config", { method: "PUT", body: { housesPublicShowPositives: sp, housesPublicShowNegatives: sn } }); }
+    catch (e: any) { setErr(e.message); }
+  }
+
+  // "Reset negatives only" — wipe the conduct drag, keep every positive.
+  const [negResetAt, setNegResetAt] = useState<string | null>(config?.houseNegativeResetAt || null);
+  async function resetNegatives() {
+    if (!window.confirm("Reset NEGATIVE points only? Conduct deductions up to now stop counting toward the standings — every positive point earned is kept. (Reversible.)")) return;
+    setResetBusy(true);
+    try {
+      const r = await api<{ houseNegativeResetAt: string }>("/houses/reset-negatives", { body: {} });
+      setNegResetAt(r.houseNegativeResetAt);
+      load();
+    } catch (e: any) { setErr(e.message); }
+    finally { setResetBusy(false); }
+  }
+  async function clearNegReset() {
+    setResetBusy(true);
+    try { await api("/houses/config", { method: "PUT", body: { houseNegativeResetAt: null } }); setNegResetAt(null); load(); }
+    catch (e: any) { setErr(e.message); }
+    finally { setResetBusy(false); }
+  }
+
   // Captains: full roster so we can pick per-house leaders.
   const [roster, setRoster] = useState<any[] | null>(null);
   function loadRoster() {
@@ -2291,6 +2321,45 @@ function HousesSection({ config }: { config?: any }) {
             className="rounded-lg border border-slate-300 px-2 py-1" />
           <button onClick={setResetToDate} disabled={resetBusy || !resetDate}
             className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:opacity-40">Set date</button>
+        </div>
+
+        {/* Reset negatives only — keep positives, clear the conduct drag. */}
+        <div className="mt-3 border-t border-slate-200 pt-3">
+          <p className="text-xs text-slate-500">
+            {negResetAt
+              ? <>Conduct deductions before <span className="font-medium">{new Date(negResetAt).toLocaleDateString()}</span> are set aside; positives are all kept.</>
+              : "You can also clear only the conduct (negative) points and keep every positive."}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button onClick={resetNegatives} disabled={resetBusy}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:opacity-40">
+              {resetBusy ? "…" : "Reset negative points only"}
+            </button>
+            {negResetAt && (
+              <button onClick={clearNegReset} disabled={resetBusy}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:opacity-40">
+                Count negatives again
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* What students see on the public /houses page */}
+      <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <p className="text-sm font-medium text-slate-700">/houses viewing — what students see</p>
+        <p className="mt-0.5 text-xs text-slate-500">
+          Controls the public standings page. Signed-in staff always see the full breakdown (with a reminder that students don&apos;t).
+        </p>
+        <div className="mt-2 space-y-1.5">
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" checked={showPos} onChange={(e) => saveViewing({ showPos: e.target.checked })} />
+            Show <span className="font-medium">positive</span> point details to students
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" checked={showNeg} onChange={(e) => saveViewing({ showNeg: e.target.checked })} />
+            Show <span className="font-medium">negative</span> (conduct) details to students
+          </label>
         </div>
       </div>
 

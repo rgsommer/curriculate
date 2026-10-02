@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { API_BASE } from "../behavior/_lib/api";
+import { API_BASE, getToken } from "../behavior/_lib/api";
 
 type House = { id: string; name: string; color: string; image?: string; points: number; members: number; captains?: string[] };
 type Comp = { name: string; monthLabel: string; scored: boolean; results: { place: number; houseName: string; houseColor: string }[] };
@@ -15,6 +15,7 @@ type HouseDetail = {
   total: number;
   individual: { total: number; positive: number; negative: number; items: DetailItem[] };
   team: { total: number; items: DetailItem[] };
+  teacherView?: boolean;
 };
 
 const KEY = "houses_portal_code";
@@ -60,7 +61,12 @@ export default function HousesPortal() {
     if (!detailById[id]) {
       setDetailBusy(true);
       try {
-        const rr = await fetch(`${API_BASE}/api/behavior/public/houses/detail?code=${encodeURIComponent(code)}&houseId=${encodeURIComponent(id)}`);
+        // A signed-in teacher sees the full breakdown (incl. conduct) via the
+        // authenticated endpoint; students/public get the gated public one.
+        const tok = getToken();
+        const rr = tok
+          ? await fetch(`${API_BASE}/api/behavior/houses/detail?houseId=${encodeURIComponent(id)}`, { headers: { Authorization: `Bearer ${tok}` } })
+          : await fetch(`${API_BASE}/api/behavior/public/houses/detail?code=${encodeURIComponent(code)}&houseId=${encodeURIComponent(id)}`);
         const d = await rr.json();
         if (!d.ok) setDetailErr(d.error || "Could not load details.");
         else setDetailById((p) => ({ ...p, [id]: d as HouseDetail }));
@@ -304,6 +310,11 @@ export default function HousesPortal() {
                       <p className="text-red-600">{detailErr}</p>
                     ) : d ? (
                       <>
+                        {d.teacherView && d.individual.negative < 0 && (
+                          <p className="mb-2 rounded-md bg-amber-50 px-2 py-1 text-[11px] text-amber-700">
+                            👁 Staff view: students don&apos;t see the conduct (negative) details below.
+                          </p>
+                        )}
                         <div className="grid grid-cols-2 gap-2">
                           <div className="rounded-lg bg-white p-2">
                             <div className="text-xs text-slate-400">Individual Compass points</div>

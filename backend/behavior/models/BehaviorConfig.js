@@ -171,6 +171,17 @@ const BehaviorConfigSchema = new mongoose.Schema(
     // the standings (earlier events are kept for history). Null = count all.
     housePointsResetAt: { type: Date, default: null },
 
+    // "Reset negatives only": negative house-point events on/before this date stop
+    // counting toward the standings, while positives are kept. Null = count all
+    // negatives. (A separate marker from housePointsResetAt, which clears both.)
+    houseNegativeResetAt: { type: Date, default: null },
+
+    // What the PUBLIC /houses page shows students. Negatives (conduct) are hidden
+    // from students by default; positives are shown. A logged-in teacher viewing
+    // the page always sees the full breakdown (with a note that students don't).
+    housesPublicShowPositives: { type: Boolean, default: true },
+    housesPublicShowNegatives: { type: Boolean, default: false },
+
     // ── House points report (opt-in) ───────────────────────────────────────
     // A standings email with each house's total + its top-3 contributing
     // students. Off by default; admins enable + send it from Setup.

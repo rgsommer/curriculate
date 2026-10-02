@@ -6090,12 +6090,18 @@ router.post("/admin-digest", authAny, loadMembership, requireAdmin, async (req, 
 // House point totals, applying per-student caps (config.houseCaps). A single
 // student's positive and negative contributions are each capped (0 = unlimited);
 // house-level awards (no studentId — e.g. house events) are never capped.
-async function houseTotals(schoolId, cfg) {
+async function houseTotals(schoolId, cfg, { positivesOnly = false } = {}) {
   // Points earned by students no longer on the roster (graduated/withdrawn) drop
   // out of the standings; whole-house awards (no studentId) always count.
   const activeIds = (await BehaviorStudent.find({ schoolId, active: true }).select("_id").lean()).map((s) => s._id);
   const match = { schoolId, $or: [{ studentId: null }, { studentId: { $in: activeIds } }] };
   if (cfg?.housePointsResetAt) match.at = { $gt: new Date(cfg.housePointsResetAt) };
+  // "Reset negatives only": drop negative events on/before the negative-reset.
+  if (cfg?.houseNegativeResetAt) {
+    (match.$and ||= []).push({ $or: [{ points: { $gte: 0 } }, { at: { $gt: new Date(cfg.houseNegativeResetAt) } } ] });
+  }
+  // Public/positives-only view: ignore deductions entirely.
+  if (positivesOnly) match.points = { $gt: 0 };
   const posCap = Number(cfg?.houseCaps?.positive) || 0;
   const negCap = Number(cfg?.houseCaps?.negative) || 0;
   const rows = await HousePointEvent.aggregate([
@@ -6202,6 +6208,9 @@ router.put("/houses/config", authAny, loadMembership, canManageHouses, async (re
     if (Array.isArray(b.houseRewards)) $set.houseRewards = b.houseRewards.map((r) => ({ points: Number(r.points) || 0, reward: String(r.reward || "").trim() })).filter((r) => r.reward && r.points);
     if (b.houseReport) $set.houseReport = { enabled: !!b.houseReport.enabled, recipientEmail: String(b.houseReport.recipientEmail || "").trim().toLowerCase() };
     if ("encouragingMessagePoints" in b) $set.encouragingMessagePoints = Math.max(0, Number(b.encouragingMessagePoints) || 0);
+    if ("housesPublicShowPositives" in b) $set.housesPublicShowPositives = !!b.housesPublicShowPositives;
+    if ("housesPublicShowNegatives" in b) $set.housesPublicShowNegatives = !!b.housesPublicShowNegatives;
+    if ("houseNegativeResetAt" in b) $set.houseNegativeResetAt = b.houseNegativeResetAt ? new Date(b.houseNegativeResetAt) : null;
     if (b.merchStore && typeof b.merchStore === "object") {
       if ("enabled" in b.merchStore) $set["merchStore.enabled"] = !!b.merchStore.enabled;
       if (Array.isArray(b.merchStore.items)) {
@@ -6217,6 +6226,18 @@ router.put("/houses/config", authAny, loadMembership, canManageHouses, async (re
   } catch (err) {
     next(err);
   }
+});
+
+// "Reset negatives only": stamp the negative-reset marker at now, so conduct
+// deductions logged up to this moment stop dragging the standings while every
+// positive point earned is kept. Reversible by clearing the marker.
+router.post("/houses/reset-negatives", authAny, loadMembership, canManageHouses, async (req, res, next) => {
+  try {
+    const at = new Date();
+    await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: { houseNegativeResetAt: at } }, { upsert: true });
+    await audit(req.schoolId, "houses.reset_negatives", req, { meta: { at } });
+    res.json({ ok: true, houseNegativeResetAt: at });
+  } catch (err) { next(err); }
 });
 
 // Set/unset a house captain (committee or admin) — houses-scoped, so it doesn't
@@ -7000,7 +7021,7 @@ router.get("/public/houses", async (req, res, next) => {
   try {
     const code = String(req.query.code || "").trim();
     if (!/^\d{3,6}$/.test(code)) return res.status(400).json({ ok: false, error: "Enter your school code." });
-    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true }).select("schoolId housePointsResetAt houseCaps houseRewards merchStore").lean();
+    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true }).select("schoolId housePointsResetAt houseNegativeResetAt housesPublicShowNegatives housesPublicShowPositives houseCaps houseRewards merchStore").lean();
     if (!config) return res.status(404).json({ ok: false, error: "No school matches that code." });
     const schoolId = config.schoolId;
     const sid = new mongoose.Types.ObjectId(schoolId);
@@ -7009,7 +7030,9 @@ router.get("/public/houses", async (req, res, next) => {
     const houses = await BehaviorHouse.find({ schoolId, active: true }).sort({ sortOrder: 1, name: 1 }).lean();
     const pointMatch = { schoolId: sid };
     if (config.housePointsResetAt) pointMatch.at = { $gt: new Date(config.housePointsResetAt) };
-    const totalById = await houseTotals(sid, config);
+    // Students see a positive standings board unless the school opts to show
+    // conduct deductions publicly.
+    const totalById = await houseTotals(sid, config, { positivesOnly: config.housesPublicShowNegatives !== true });
     // Only currently-enrolled students appear in the per-student displays —
     // graduated/withdrawn (deactivated) students keep their history but drop off
     // the leaderboards. Also track each active student's CURRENT house so points
@@ -7211,60 +7234,96 @@ router.post("/public/houses/visit", async (req, res) => {
 // house events (whole-house awards, studentId null). NEVER returns any student
 // name — only summed totals and per-reason lines, mirroring the leaderboard's
 // active-student + reset-date scope.
+// Composite breakdown of where a house's points came from (NEVER any names).
+// `includeNegatives`/`includePositives` gate what's returned: the public page
+// hides conduct (negatives) from students by default; a teacher sees it all.
+async function computeHouseDetail(sid, houseId, cfg, { includeNegatives = true, includePositives = true } = {}) {
+  const house = await BehaviorHouse.findOne({ _id: houseId, schoolId: sid }).select("name color").lean();
+  if (!house) return null;
+  const activeIds = (await BehaviorStudent.find({ schoolId: sid, active: true }).select("_id").lean()).map((s) => s._id);
+  const match = { schoolId: sid, houseId: new mongoose.Types.ObjectId(String(houseId)), $or: [{ studentId: null }, { studentId: { $in: activeIds } }] };
+  if (cfg?.housePointsResetAt) match.at = { $gt: new Date(cfg.housePointsResetAt) };
+  // Honour "reset negatives only": drop negative events on/before the cutoff.
+  if (cfg?.houseNegativeResetAt) {
+    (match.$and ||= []).push({ $or: [{ points: { $gte: 0 } }, { at: { $gt: new Date(cfg.houseNegativeResetAt) } } ] });
+  }
+
+  const rows = await HousePointEvent.aggregate([
+    { $match: match },
+    { $group: {
+      _id: { team: { $eq: ["$studentId", null] }, reason: { $ifNull: ["$reason", ""] } },
+      points: { $sum: "$points" },
+      count: { $sum: 1 },
+    } },
+  ]);
+
+  const indMap = {}, teamMap = {};
+  let indPos = 0, indNeg = 0, teamTotal = 0;
+  for (const r of rows) {
+    const reason = (r._id.reason || "").trim() || "Other";
+    if (r._id.team) {
+      teamMap[reason] = (teamMap[reason] || { reason, points: 0, count: 0 });
+      teamMap[reason].points += r.points; teamMap[reason].count += r.count;
+      teamTotal += r.points;
+    } else {
+      indMap[reason] = (indMap[reason] || { reason, points: 0, count: 0 });
+      indMap[reason].points += r.points; indMap[reason].count += r.count;
+      if (r.points >= 0) indPos += r.points; else indNeg += r.points;
+    }
+  }
+  const byImpact = (a, b) => Math.abs(b.points) - Math.abs(a.points);
+  // Filter the per-reason items by sign per the viewer's permissions.
+  let individualItems = Object.values(indMap)
+    .filter((it) => (it.points >= 0 ? includePositives : includeNegatives))
+    .sort(byImpact);
+  let teamItems = Object.values(teamMap)
+    .filter((it) => (it.points >= 0 ? includePositives : includeNegatives))
+    .sort(byImpact);
+  const shownPos = includePositives ? indPos : 0;
+  const shownNeg = includeNegatives ? indNeg : 0;
+  const individualTotal = shownPos + shownNeg;
+  const teamShown = teamItems.reduce((a, it) => a + it.points, 0);
+
+  return {
+    house: { id: String(house._id), name: house.name, color: house.color || "#0f172a" },
+    total: individualTotal + teamShown,
+    individual: { total: individualTotal, positive: shownPos, negative: shownNeg, items: individualItems },
+    team: { total: teamShown, items: teamItems },
+  };
+}
+
 router.get("/public/houses/detail", async (req, res, next) => {
   try {
     const code = String(req.query.code || "").trim();
     if (!/^\d{3,6}$/.test(code)) return res.status(400).json({ ok: false, error: "Enter your school code." });
     const houseId = String(req.query.houseId || "").trim();
     if (!mongoose.Types.ObjectId.isValid(houseId)) return res.status(400).json({ ok: false, error: "Bad house." });
-    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true }).select("schoolId housePointsResetAt").lean();
+    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true })
+      .select("schoolId housePointsResetAt houseNegativeResetAt housesPublicShowPositives housesPublicShowNegatives").lean();
     if (!config) return res.status(404).json({ ok: false, error: "No school matches that code." });
-    const schoolId = config.schoolId;
-    const sid = new mongoose.Types.ObjectId(schoolId);
-    const house = await BehaviorHouse.findOne({ _id: houseId, schoolId }).select("name color").lean();
-    if (!house) return res.status(404).json({ ok: false, error: "House not found." });
+    const sid = new mongoose.Types.ObjectId(config.schoolId);
+    // Student-facing: conduct (negatives) hidden unless the school opts in.
+    const includeNegatives = config.housesPublicShowNegatives === true;
+    const includePositives = config.housesPublicShowPositives !== false;
+    const detail = await computeHouseDetail(sid, houseId, config, { includeNegatives, includePositives });
+    if (!detail) return res.status(404).json({ ok: false, error: "House not found." });
+    res.json({ ok: true, ...detail, teacherView: false });
+  } catch (err) {
+    next(err);
+  }
+});
 
-    // Same scope as the leaderboard: graduated students' individual points drop
-    // out; whole-house awards always count; only points after any reset date.
-    const activeIds = (await BehaviorStudent.find({ schoolId: sid, active: true }).select("_id").lean()).map((s) => s._id);
-    const match = { schoolId: sid, houseId: new mongoose.Types.ObjectId(houseId), $or: [{ studentId: null }, { studentId: { $in: activeIds } }] };
-    if (config.housePointsResetAt) match.at = { $gt: new Date(config.housePointsResetAt) };
-
-    const rows = await HousePointEvent.aggregate([
-      { $match: match },
-      { $group: {
-        _id: { team: { $eq: ["$studentId", null] }, reason: { $ifNull: ["$reason", ""] } },
-        points: { $sum: "$points" },
-        count: { $sum: 1 },
-      } },
-    ]);
-
-    const indMap = {}, teamMap = {};
-    let indPos = 0, indNeg = 0, teamTotal = 0;
-    for (const r of rows) {
-      const reason = (r._id.reason || "").trim() || "Other";
-      if (r._id.team) {
-        teamMap[reason] = (teamMap[reason] || { reason, points: 0, count: 0 });
-        teamMap[reason].points += r.points; teamMap[reason].count += r.count;
-        teamTotal += r.points;
-      } else {
-        indMap[reason] = (indMap[reason] || { reason, points: 0, count: 0 });
-        indMap[reason].points += r.points; indMap[reason].count += r.count;
-        if (r.points >= 0) indPos += r.points; else indNeg += r.points;
-      }
-    }
-    const byImpact = (a, b) => Math.abs(b.points) - Math.abs(a.points);
-    const individualItems = Object.values(indMap).sort(byImpact);
-    const teamItems = Object.values(teamMap).sort(byImpact);
-    const individualTotal = indPos + indNeg;
-
-    res.json({
-      ok: true,
-      house: { id: String(house._id), name: house.name, color: house.color || "#0f172a" },
-      total: individualTotal + teamTotal,
-      individual: { total: individualTotal, positive: indPos, negative: indNeg, items: individualItems },
-      team: { total: teamTotal, items: teamItems },
-    });
+// Authenticated teacher view of the same breakdown — always full (positives AND
+// negatives), with a teacherView flag so the UI can note students don't see the
+// negative detail. Used by the /houses page when a teacher is logged in.
+router.get("/houses/detail", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const houseId = String(req.query.houseId || "").trim();
+    if (!mongoose.Types.ObjectId.isValid(houseId)) return res.status(400).json({ ok: false, error: "Bad house." });
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("housePointsResetAt houseNegativeResetAt").lean();
+    const detail = await computeHouseDetail(new mongoose.Types.ObjectId(String(req.schoolId)), houseId, config || {}, { includeNegatives: true, includePositives: true });
+    if (!detail) return res.status(404).json({ ok: false, error: "House not found." });
+    res.json({ ok: true, ...detail, teacherView: true });
   } catch (err) {
     next(err);
   }
