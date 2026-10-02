@@ -2845,6 +2845,7 @@ router.post("/behaviors", authAny, loadMembership, canLog, async (req, res, next
       kind,
       triggerMode,
       consequenceText: kind === "positive" ? "" : String(req.body?.consequenceText || ""),
+      consequenceTiming: req.body?.consequenceTiming === "after_first" ? "after_first" : "first",
       points: Number(req.body?.points) || 0,
       categories,
       uniform: kind === "negative" && Array.isArray(req.body?.categories) && req.body.categories.includes("uniform"),
@@ -2887,6 +2888,7 @@ router.put("/behaviors/:id", authAny, loadMembership, canLog, async (req, res, n
     if ("keyword" in b) beh.keyword = String(b.keyword || "").trim();
     if (b.kind === "positive" || b.kind === "negative") beh.kind = b.kind;
     if ("consequenceText" in b) beh.consequenceText = String(b.consequenceText || "");
+    if (["first", "after_first"].includes(b.consequenceTiming)) beh.consequenceTiming = b.consequenceTiming;
     if (["THRESHOLD", "IMMEDIATE", "INTERACTION"].includes(b.triggerMode)) beh.triggerMode = b.triggerMode;
     if ("points" in b) beh.points = Number(b.points) || 0;
     if ("immediateWhiteSlip" in b) beh.immediateWhiteSlip = !!b.immediateWhiteSlip;
@@ -2993,11 +2995,20 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
       if (behavior.immediateWhiteSlip) {
         await fireWhiteSlip({ req, student, config, behaviorName: behavior.name, detailText, at: timestamp, relatedIncidentId: inc._id });
       } else if (shouldSendConsequenceNote(behavior)) {
-        // A non-white-slip consequence: record it now (shows on the record, can be
-        // marked done) and queue a "post to Edsby" message so the family hears
-        // about it now — not only if/when the threshold notice fires.
-        await recordLoggedConsequence({ req, student, behavior, detailText, at: timestamp, incidentId: inc._id });
-        consequenceNotes.push({ incidentId: inc._id, behavior, detailText, at: timestamp });
+        // "After first occasion": the first time is a warning only — the
+        // consequence applies from the second occurrence of THIS behaviour onward.
+        let applyConsequence = true;
+        if (behavior.consequenceTiming === "after_first") {
+          const priorSame = await BehaviorIncident.countDocuments({ schoolId: req.schoolId, studentId: student._id, behaviorId: behavior._id, _id: { $ne: inc._id } });
+          applyConsequence = priorSame > 0;
+        }
+        if (applyConsequence) {
+          // A non-white-slip consequence: record it now (shows on the record, can be
+          // marked done) and queue a "post to Edsby" message so the family hears
+          // about it now — not only if/when the threshold notice fires.
+          await recordLoggedConsequence({ req, student, behavior, detailText, at: timestamp, incidentId: inc._id });
+          consequenceNotes.push({ incidentId: inc._id, behavior, detailText, at: timestamp });
+        }
       }
 
       // House points: this behaviour's value scaled by the intensity weight.

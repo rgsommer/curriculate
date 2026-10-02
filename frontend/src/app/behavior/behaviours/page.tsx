@@ -108,6 +108,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
   const [kind, setKind] = useState<"negative" | "positive">(b?.kind || ((b?.points ?? 0) > 0 ? "positive" : "negative"));
   const [triggerMode, setTriggerMode] = useState(b?.triggerMode || (add ? "THRESHOLD" : "THRESHOLD"));
   const [consequenceText, setConsequenceText] = useState(b?.consequenceText || "");
+  const [consequenceTiming, setConsequenceTiming] = useState(b?.consequenceTiming || "first");
   const [followUpType, setFollowUpType] = useState(b?.followUpType || "none");
   const [points, setPoints] = useState<number | string>(b?.points ?? 0);
   const [categories, setCategories] = useState<string[]>(
@@ -126,6 +127,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
     setName(b?.name || ""); setKeyword(b?.keyword || "");
     setKind(b?.kind || ((b?.points ?? 0) > 0 ? "positive" : "negative"));
     setTriggerMode(b?.triggerMode || "THRESHOLD"); setConsequenceText(b?.consequenceText || "");
+    setConsequenceTiming(b?.consequenceTiming || "first");
     setFollowUpType(b?.followUpType || "none"); setPoints(b?.points ?? 0);
     setCategories(Array.isArray(b?.categories) ? b.categories : (b?.uniform ? ["uniform"] : []));
     setImmediateWhiteSlip(!!b?.immediateWhiteSlip); setErr(null);
@@ -199,10 +201,10 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
     setErr(null);
     try {
       if (add) {
-        await api("/behaviors", { body: { name, keyword, kind, triggerMode, consequenceText, followUpType, points: Number(points) || 0, categories, immediateWhiteSlip, scope: scopeStandard ? "standard" : "custom" } });
-        setName(""); setKeyword(""); setKind("negative"); setConsequenceText(""); setTriggerMode("THRESHOLD"); setFollowUpType("none"); setPoints(0); setCategories([]); setImmediateWhiteSlip(false);
+        await api("/behaviors", { body: { name, keyword, kind, triggerMode, consequenceText, consequenceTiming, followUpType, points: Number(points) || 0, categories, immediateWhiteSlip, scope: scopeStandard ? "standard" : "custom" } });
+        setName(""); setKeyword(""); setKind("negative"); setConsequenceText(""); setConsequenceTiming("first"); setTriggerMode("THRESHOLD"); setFollowUpType("none"); setPoints(0); setCategories([]); setImmediateWhiteSlip(false);
       } else {
-        await api(`/behaviors/${b._id}`, { method: "PUT", body: { name, keyword, kind, triggerMode, consequenceText, followUpType, points: Number(points) || 0, categories, immediateWhiteSlip } });
+        await api(`/behaviors/${b._id}`, { method: "PUT", body: { name, keyword, kind, triggerMode, consequenceText, consequenceTiming, followUpType, points: Number(points) || 0, categories, immediateWhiteSlip } });
         setExpanded(false); // collapse back to the compact summary after saving
       }
       onChanged();
@@ -234,6 +236,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
     kind !== (b?.kind || ((b?.points ?? 0) > 0 ? "positive" : "negative")) ||
     triggerMode !== (b?.triggerMode || "THRESHOLD") ||
     consequenceText !== (b?.consequenceText || "") ||
+    consequenceTiming !== (b?.consequenceTiming || "first") ||
     followUpType !== (b?.followUpType || "none") ||
     Number(points) !== Number(b?.points ?? 0) ||
     JSON.stringify([...categories].sort()) !== JSON.stringify([...origCats].sort()) ||
@@ -260,6 +263,12 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
         {!positive && !interaction && (
           <>
             <input value={consequenceText} onChange={(e) => setConsequenceText(e.target.value)} placeholder="Consequence (in the note home)" className={`${inputCls} col-span-2`} />
+            {consequenceText.trim() && (
+              <select value={consequenceTiming} onChange={(e) => setConsequenceTiming(e.target.value)} className={inputCls} title="When the consequence applies">
+                <option value="first">Consequence on first occasion</option>
+                <option value="after_first">Consequence after first occasion (1st = warning)</option>
+              </select>
+            )}
             <select value={followUpType} onChange={(e) => setFollowUpType(e.target.value)} className={inputCls}>
               {FOLLOWUPS.map((f) => <option key={f.v} value={f.v}>{f.label}</option>)}
             </select>
