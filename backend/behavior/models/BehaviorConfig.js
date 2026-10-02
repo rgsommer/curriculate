@@ -77,6 +77,20 @@ const BehaviorConfigSchema = new mongoose.Schema(
     // Email the logging teacher a suggested parent note to review/edit/send.
     teacherDraft: { type: Boolean, default: true },
 
+    // How a THRESHOLD (pattern) notice is handled — the accumulation case, NOT a
+    // handbook white-slip offence. Lets a school route the proposed parent note to
+    // the student's homeroom teacher (their voice, their send) and copy the VP the
+    // recommendation, without prescribing a consequence (VP's discretion).
+    //   sender:  "logging" (default) = the teacher who logged it; "homeroom" = the
+    //            student's homeroom teacher authors/sends it.
+    //   notifyVp: email the VP the proposed note as a recommendation for awareness.
+    //   omitConsequence: don't state a consequence in the note (leave it unsaid).
+    thresholdNotice: {
+      sender: { type: String, enum: ["logging", "homeroom"], default: "logging" },
+      notifyVp: { type: Boolean, default: false },
+      omitConsequence: { type: Boolean, default: false },
+    },
+
     // Weekly admin digest (opt-in): a Monday email to leadership summarising the
     // week — students/teachers/behaviours/notices + supportive suggestions.
     adminDigest: {

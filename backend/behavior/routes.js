@@ -787,7 +787,7 @@ router.put("/config", authAny, loadMembership, requireAdmin, async (req, res, ne
       "aiSendMode", "cancelWindowSeconds", "aiProvider", "aiModel",
       "noticesResetMode", "termStartDates", "repeatScopeDays",
       "reminderTime", "manualNonSchoolDays", "houseReport", "housesEnabled", "housePointsResetAt",
-      "homework", "vpNotify", "teacherDraft", "consequenceLadder", "consequenceWhitelist", "adminDigest", "houseCaps", "houseEvents", "houseRewards",
+      "homework", "vpNotify", "teacherDraft", "thresholdNotice", "consequenceLadder", "consequenceWhitelist", "adminDigest", "houseCaps", "houseEvents", "houseRewards",
       "encouragingMessagePoints", "houseIndividualPoints", "autoRecommendWhiteSlipAtThreshold",
       "housePositivePoints", "houseNegativePoints", "houseWhiteSlipDeduct", "houseWhiteSlipPoints",
     ];
@@ -3265,7 +3265,22 @@ async function composeAndCreateNotice({
 
   const firstTs = contextIncidents.length ? new Date(contextIncidents[0].timestamp).getTime() : Date.now();
   const daysSinceFirst = Math.max(0, Math.round((Date.now() - firstTs) / DAY_MS));
-  const sender = await BehaviorTeacher.findById(sentByTeacherId).lean();
+
+  // Threshold-notice policy: a pattern of notes (not a handbook offence) can be
+  // routed to the student's HOMEROOM teacher to author & send (their voice), with
+  // the VP copied the recommendation — and, when configured, no consequence is
+  // stated (left to the VP's discretion). Positive notes are never re-routed.
+  const tn = (config?.thresholdNotice) || {};
+  let hrTeacher = null;
+  let effectiveSenderId = sentByTeacherId;
+  if (!isPositive && tn.sender === "homeroom" && student.classGroup) {
+    hrTeacher = await BehaviorTeacher.findOne({ schoolId, homeroom: student.classGroup }).lean();
+    if (hrTeacher) effectiveSenderId = hrTeacher._id;
+  }
+  const omitConsequence = !isPositive && !!tn.omitConsequence;
+  const effectiveConsequenceTexts = omitConsequence ? [] : consequenceTexts;
+
+  const sender = await BehaviorTeacher.findById(effectiveSenderId).lean();
   // Sign with the SENDING TEACHER's name so a parent always knows who it's from.
   // Only fall back to the division block when there's no teacher name at all —
   // never sign a note "Teachers at …" when we know the individual teacher.
@@ -3341,12 +3356,16 @@ async function composeAndCreateNotice({
       detail: personalize(i.detailText || ""),
       uniform: !!i.behaviorSnapshot?.uniform,
     })),
-    consequences: consequenceTexts.map(personalize),
+    consequences: effectiveConsequenceTexts.map(personalize),
     sequenceNo,
     daysSinceFirst,
     schoolName: config?.branding?.schoolName || "",
     signature,
-    toneGuidance: config?.branding?.toneGuidance || "",
+    toneGuidance: [
+      config?.branding?.toneGuidance || "",
+      hrTeacher ? `Write in the first person AS ${studentName}'s homeroom teacher bringing together what ${studentName}'s teachers have observed; attribute each concern to the teacher who noted it, and do not imply you personally witnessed them all.` : "",
+      omitConsequence ? "Do NOT state or recommend a specific consequence; this note simply makes the family aware of the pattern." : "",
+    ].filter(Boolean).join(" "),
     ccVp,
   };
   const aiClient = makeDefaultAiClient(config || {});
@@ -3364,8 +3383,8 @@ async function composeAndCreateNotice({
   const autoDispatch = !awaitDecision && config?.aiSendMode !== "draft";
   const notice = await BehaviorNotice.create({
     schoolId, studentId: student._id, periodNo: 1, sequenceNo, reason,
-    fromTeachers, triggeringIncidentIds, consequenceTexts, channels, recipients, ccVp,
-    renderedText: text, aiUsed, status: "queued", sentByTeacherId,
+    fromTeachers, triggeringIncidentIds, consequenceTexts: effectiveConsequenceTexts, channels, recipients, ccVp,
+    renderedText: text, aiUsed, status: "queued", sentByTeacherId: effectiveSenderId,
     cancelUntil: new Date(Date.now() + cancelWindow * 1000),
     autoDispatch,
   });
@@ -3404,6 +3423,41 @@ async function composeAndCreateNotice({
     }
   } catch (e) {
     console.warn("[behavior] teacher copy email failed:", e?.message || e);
+  }
+
+  // VP recommendation copy: at a threshold pattern (not a handbook offence), send
+  // the VP the proposed parent note as a recommendation for awareness — the HR
+  // teacher is asked to send it; whether any further consequence follows is the
+  // VP's call. No white slip is implied. Best-effort; never blocks the notice.
+  if (!isPositive && tn.notifyVp && (config?.vp?.email || "").trim()) {
+    try {
+      const hrLabel = (hrTeacher?.courtesyName || hrTeacher?.name || senderName || "the homeroom teacher").trim();
+      const cls = student.classGroup ? ` (${student.classGroup})` : "";
+      const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+      await sendEmail({
+        from: fromAddr ? { name: "Compass", address: fromAddr } : undefined,
+        to: config.vp.email.trim(),
+        subject: `For your awareness — recommended parent note for ${studentName}${cls}`,
+        text:
+          `A pattern of notes has reached the threshold for ${studentName}${cls}.\n\n` +
+          `Below is a proposed note home, recommended for ${hrLabel} (homeroom) to review and send. ` +
+          `No white slip has been issued — those are reserved for handbook offences. ` +
+          `Whether any further consequence should follow is left to your discretion.\n\n----- PROPOSED NOTE -----\n${text}`,
+        html: emailShell({
+          title: `Recommended parent note — ${escapeHtml(studentName)}${escapeHtml(cls)}`,
+          schoolName: schoolName || "Compass",
+          preheader: `A proposed note for ${escapeHtml(hrLabel)} to send — for your awareness.`,
+          footnote: "No white slip is implied (those are reserved for handbook offences). Any further consequence is at your discretion.",
+          contentHtml:
+            `<p style="margin:0 0 10px;color:#334155">A pattern of notes has reached the threshold for <strong>${escapeHtml(studentName)}${escapeHtml(cls)}</strong>.</p>` +
+            `<p style="margin:0 0 12px;color:#334155">Below is a proposed note home, recommended for <strong>${escapeHtml(hrLabel)}</strong> (homeroom) to review and send. No white slip has been issued — those are reserved for handbook offences — and whether any further consequence should follow is left to your discretion.</p>` +
+            `<hr style="border:none;border-top:1px solid #e2e8f0;margin:12px 0">` +
+            pasteableNote(noteToHtml(richText), { channel: "Edsby" }),
+        }),
+      });
+    } catch (e) {
+      console.warn("[behavior] VP recommendation email failed:", e?.message || e);
+    }
   }
 
   if (autoDispatch) scheduleDispatch(notice._id, cancelWindow);
