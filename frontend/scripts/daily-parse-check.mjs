@@ -159,6 +159,66 @@ check("duty title: recess duty is what students are doing", P.friendlyDutyTitle(
 check("duty title: playground", P.friendlyDutyTitle("Playground") === "Out on the playground");
 check("duty title: dismissal", P.friendlyDutyTitle("Dismissal Rm212") === "Dismissal");
 check("duty title: no school", P.friendlyDutyTitle("No School (Labour Day)") === "No school today");
+// ---- the prayers before class (Poems column Q) ----
+{
+  const cell = (q) => { const r = []; r[16] = q; return r; };
+  const rows = [
+    cell("Prayers before class"),
+    cell("Before study — Thomas Aquinas | Creator of all things, true source of light and wisdom."),
+    cell("Before a test [test] | Lord, you know what I have studied and what I have not."),
+    cell("O come, Emmanuel [advent] | Come, long-expected Jesus."),
+    cell("Open my eyes | Open my eyes, that I may behold wondrous things out of your law."),
+  ];
+  const all = P.classPrayers(rows);
+  check("prayers: the heading row is not a prayer", all.length === 4, all.length);
+  check("prayers: the title comes off the front", all[0].title === "Before study — Thomas Aquinas", all[0].title);
+  check("prayers: and the prayer is what is left", all[0].text === "Creator of all things, true source of light and wisdom.");
+  check("prayers: a tag is read and kept out of the title", all[1].tag === "test" && all[1].title === "Before a test", all[1]);
+  check("prayers: an untagged one has no tag", all[0].tag === "" && all[3].tag === "");
+  check(
+    "prayers: a cell written on two lines works the same way",
+    P.parsePrayerCell("Before study\nCreator of all things.").title === "Before study",
+  );
+  check(
+    "prayers: a cell with no title still says the prayer",
+    P.parsePrayerCell("Creator of all things.").text === "Creator of all things.",
+  );
+
+  // Easter is what the seasons hang off, so it is worth pinning.
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  check("prayers: Easter 2026 is 5 April", iso(P.easterSunday(2026)) === "2026-04-05", iso(P.easterSunday(2026)));
+  check("prayers: Easter 2027 is 28 March", iso(P.easterSunday(2027)) === "2027-03-28", iso(P.easterSunday(2027)));
+  check("prayers: Ash Wednesday 2026 is in Lent", P.churchSeason(new Date(2026, 1, 18)) === "lent", P.churchSeason(new Date(2026, 1, 18)));
+  check("prayers: Easter Monday is Eastertide", P.churchSeason(new Date(2026, 3, 6)) === "easter");
+  check("prayers: Advent 2026 begins 29 November", P.churchSeason(new Date(2026, 10, 29)) === "advent"
+    && P.churchSeason(new Date(2026, 10, 28)) === "", P.churchSeason(new Date(2026, 10, 28)));
+  check("prayers: Christmas Day is Christmas", P.churchSeason(new Date(2026, 11, 25)) === "christmas");
+  check("prayers: an ordinary day in October has no season", P.churchSeason(new Date(2026, 9, 2)) === "");
+
+  // A tagged prayer is kept for its own day, and the pick holds still.
+  const octoberDay = new Date(2026, 9, 2);
+  const plain = P.prayerForClass(all, octoberDay, 600);
+  check("prayers: an ordinary day takes an untagged one", plain.tag === "", plain);
+  const onTest = P.prayerForClass(all, octoberDay, 600, { test: true });
+  check("prayers: a test day takes the test prayer", onTest.tag === "test", onTest);
+  const inAdvent = P.prayerForClass(all, new Date(2026, 11, 1), 600);
+  check("prayers: Advent takes the Advent one", inAdvent.tag === "advent", inAdvent);
+  check(
+    "prayers: the same class gets the same prayer all period",
+    P.prayerForClass(all, octoberDay, 600).text === plain.text,
+  );
+  // Every period starts on a multiple of five minutes, so a plain multiply-and-
+  // remainder put two classes an hour apart on the same prayer all day.
+  {
+    const got = [600, 660, 775, 810, 870].map((m) => P.prayerForClass(all, octoberDay, m).title);
+    check("prayers: the periods of a day do not all get the same one", new Set(got).size > 1, got);
+    const week = [0, 1, 2, 3, 4].map((d) =>
+      P.prayerForClass(all, new Date(2026, 9, 5 + d), 600).title);
+    check("prayers: nor does the same period every day of the week", new Set(week).size > 1, week);
+  }
+  check("prayers: nothing in the column is no prayer", P.prayerForClass([], octoberDay, 600) === null);
+}
+
 // The reminders carry the test and the due dates, and the sheet writes them as
 // one semicolon-separated run. On the half they are a list, one to a line.
 {
@@ -420,6 +480,25 @@ check("lessons: video from column K", L.J003.video === "https://youtu.be/lessonv
 check("lessons: picture from an =IMAGE() in column I", L.H001.image === "https://example.com/history.png", L.H001.image);
 check("lessons: a rich-text handout in the homework cell", L.H001.links.some((x) => x.label === "Due Dates handout"), L.H001.links);
 check("lessons: a row that is not a lesson is skipped", !L["NOT A CODE"], Object.keys(L));
+
+// The code cell is not always only the code: the sheet marks a lesson that has
+// a picture with "~G007 📷", and the whole row was being skipped for it — no
+// page, no homework, no picture, no video, for every lesson so marked.
+{
+  const marked = [
+    ["Code", "", "Page", "Homework", "", "", "Picture", "", "Video"],
+    ["~G007 \uD83D\uDCF7", "", "p. 18-23", "Finish the term list", "", "", "https://example.com/geo.png", "", "https://youtu.be/geovid"],
+    ["B003 — Can I Trust the Bible?", "", "p. 1", "", "", "", "", "", ""],
+  ];
+  const M = P.parseLessons(marked, [], []);
+  check("lessons: a camera after the code still reads as that code", !!M.G007, Object.keys(M));
+  check("lessons: and the row's material comes with it",
+    M.G007.page === "p. 18-23" && M.G007.image === "https://example.com/geo.png" && M.G007.video === "https://youtu.be/geovid",
+    M.G007);
+  check("lessons: a title after the code is fine too", !!M.B003 && M.B003.page === "p. 1", Object.keys(M));
+  check("lessons: the header a class writes matches it", P.normalizeCode("G007 \uD83D\uDCF7") === "G007", P.normalizeCode("G007 \uD83D\uDCF7"));
+  check("lessons: a longer code is not cut down to four", P.normalizeCode("G0071") === "G0071", P.normalizeCode("G0071"));
+}
 
 const dayWithMat = P.classesFromText("History 7A (22) 202 (H001) Today we introduce the course. What makes a useful perspective? - Handouts Reminders: none.", L);
 check("day plan carries the lesson's material", dayWithMat[0].page === "p. 2" && dayWithMat[0].image === "https://example.com/history.png" && dayWithMat[0].links.length === 1, dayWithMat[0]);

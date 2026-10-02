@@ -494,6 +494,32 @@ a.subj.deck:hover { text-decoration-color: currentColor; }
   96%, 100% { transform: translateX(0); }
 }
 
+/* The prayer before class, at the top of the lesson column for its first
+   minutes. A light blue of its own — not a subject colour, because it is the
+   one thing on the screen that belongs to no subject — and set in the serif,
+   large, with the sheet's own line breaks kept, since a prayer is lines. */
+.block.prayer-open {
+  background: #eaf2fb;
+  border-left: 5px solid #5b8ec9;
+  color: #16304d;
+  margin-bottom: 2.4vh;
+  padding: 2vh 1.8vw;
+  border-radius: 8px;
+}
+/* The title, then a line, then the prayer. */
+.block.prayer-open h3 {
+  color: #3f6fa9;
+  letter-spacing: .12em;
+  padding-bottom: .8vh;
+  margin-bottom: .9vh;
+  border-bottom: 1px solid #c3d8ef;
+}
+.block.prayer-open .prayer-text {
+  font-family: var(--font-merriweather), Georgia, serif;
+  font-size: calc(clamp(17px, 3.1vh, 34px) * var(--fit));
+  line-height: 1.34;
+  white-space: pre-line;
+}
 /* The Prayercast, in the right-hand half for the minutes after O Canada. The
    tile fills the column — this is meant to be pressed from across the room,
    not found — and expanding it is the same overlay the bar's little one uses. */

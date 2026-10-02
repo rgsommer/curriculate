@@ -16,7 +16,7 @@
 // picture and any image the sheet puts in the feature cell E1).
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { EMPTY_SOURCES, dueAndComingUp, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, evaluateNotice, firstClassStart, formalDiscussion, testWeekday, birthdaysToday, birthdaysForSection, joinNames, specialDays, calendarEvents, columnName, firstVerse, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
+import { EMPTY_SOURCES, churchSeason, dueAndComingUp, prayerForClass, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, evaluateNotice, firstClassStart, formalDiscussion, testWeekday, birthdaysToday, birthdaysForSection, joinNames, specialDays, calendarEvents, columnName, firstVerse, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
 
 const CLASS_LABELS = ["7A", "7B", "7C", "8A", "8B", "8C"];
 // The Setup slot table's own columns, for ?debug=1.
@@ -1735,7 +1735,21 @@ export default function DailyPage() {
               {row("bell schedule", (data.dayTimes || []).map(fmt).join("  ") || "")}
               {row("periods in view", P.map((x) => `${fmt(x.start)}${x.subj ? ` ${x.subj}` : x.empty ? " —" : " duty"}`).join("  |  "))}
               {row("right-hand half", halfStory())}
+              {row("prayers before class (Poems Q2:Q)", (sources.prayers || []).length
+                ? `${(sources.prayers || []).length} of them  ·  ${setup.classPrayerMin} min at the top of the lesson column  ·  `
+                  + `season: ${churchSeason(clock) || "ordinary time"}`
+                  + `  ·  this class: ${((prayerForClass(sources.prayers || [], clock, cur ? cur.start : 0) || {}).title || "—")}`
+                  + `  ·  tagged: ${(sources.prayers || []).filter((x) => x.tag).map((x) => x.tag).join(", ") || "none"}`
+                : "nothing in Poems column Q — the board shows no prayer")}
               {row("lesson material", cur ? `page: ${cur.page || "—"} · homework: ${(cur.homework || "—").slice(0, 60)} · image: ${cur.image || "—"} · video: ${cur.video || "—"}` : "")}
+              {/* Nothing here at all usually means the Lessons row was never
+                  matched, which is a different problem from a picture that will
+                  not load — so say which. */}
+              {row("this class's Lessons row", cur
+                ? (cur.page || cur.homework || cur.image || cur.video
+                  ? `found for ${cur.code || "(no code)"}`
+                  : `NOT found for ${cur.code || "(no code)"} — nothing in E, F, I, J or K reached the board`)
+                : "")}
               {row("handouts (current class)", cur && (cur.links || []).length ? cur.links.map((l) => `${l.label} \u2192 ${l.url}`).join("  |  ") : "")}
               {row("puzzle", meta.puzzle)}
               {row("riddle", meta.riddle)}
@@ -2092,8 +2106,28 @@ export default function DailyPage() {
     // leaving that half of the screen empty and the panel overfull.
     const assignOnLeft = !cur.plan.length && cur.assign.length > 0;
     const lessonList = assignOnLeft ? cur.assign : cur.plan;
+    // The prayer before class leads the lesson column for its first minutes:
+    // the room settles, says it together, and the lesson is underneath when
+    // they look up. One of the sheet's own (Poems column Q), picked for this
+    // class on this day and holding still while it is up.
+    // A test in this class today — the lesson's own words, not the reminders,
+    // which point at the next class ("TEST next class") rather than this one.
+    // (`testToday` above is the day the memory verse is tested, which is a
+    // different thing entirely.)
+    const testInClass = /\b(test|quiz|exam)\b/i.test(
+      `${cur.q || ""} ${cur.today || ""} ${(cur.plan || []).join(" ")}`
+    );
+    const prayer = elapsed < setup.classPrayerMin
+      ? prayerForClass(sources.prayers || [], clock, cur.start, { test: testInClass })
+      : null;
     const leftCol = (
       <div>
+        {prayer ? (
+          <div className="block prayer-open">
+            <h3>{prayer.title || "Before we begin"}</h3>
+            <p className="prayer-text">{prayer.text}</p>
+          </div>
+        ) : null}
         <p className="eyebrow">Today</p>
         {/* A lesson written without a question leads with what it is about,
             rather than repeating the class name under the class name. */}
