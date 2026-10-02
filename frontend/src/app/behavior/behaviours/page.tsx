@@ -5,9 +5,9 @@ import Link from "next/link";
 import { api, getToken, loginHref, type Me } from "../_lib/api";
 
 const FOLLOWUPS = [
-  { v: "none", label: "No follow-up" },
   { v: "next_school_day", label: "Due next school day" },
   { v: "custom_deadline", label: "Custom deadline" },
+  { v: "none", label: "No follow-up (rare)" },
 ];
 const MODES = [
   { v: "THRESHOLD", label: "Counts toward strikes" },
@@ -109,7 +109,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
   const [triggerMode, setTriggerMode] = useState(b?.triggerMode || (add ? "THRESHOLD" : "THRESHOLD"));
   const [consequenceText, setConsequenceText] = useState(b?.consequenceText || "");
   const [consequenceTiming, setConsequenceTiming] = useState(b?.consequenceTiming || "first");
-  const [followUpType, setFollowUpType] = useState(b?.followUpType || "none");
+  const [followUpType, setFollowUpType] = useState(b?.followUpType || (add ? "next_school_day" : "none"));
   const [points, setPoints] = useState<number | string>(b?.points ?? 0);
   const [categories, setCategories] = useState<string[]>(
     Array.isArray(b?.categories) ? b.categories : (b?.uniform ? ["uniform"] : [])
@@ -262,7 +262,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
         )}
         {!positive && !interaction && (
           <>
-            <input value={consequenceText} onChange={(e) => setConsequenceText(e.target.value)} placeholder="Consequence (in the note home)" className={`${inputCls} col-span-2`} />
+            <input value={consequenceText} onChange={(e) => { const v = e.target.value; setConsequenceText(v); if (v.trim() && followUpType === "none") setFollowUpType("next_school_day"); }} placeholder="Consequence (in the note home)" className={`${inputCls} col-span-2`} />
             <select value={consequenceTiming} onChange={(e) => setConsequenceTiming(e.target.value)} className={inputCls} title="When the consequence applies">
               <option value="first">Consequence on first occasion</option>
               <option value="after_first">Consequence after first occasion (1st = warning)</option>
