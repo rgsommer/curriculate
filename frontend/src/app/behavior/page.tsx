@@ -104,7 +104,7 @@ export default function BehaviorDashboard() {
         channelLabel={me.config?.edsby?.enabled ? "Edsby" : me.config?.channels?.emailToParents ? "email" : ""}
       />}
 
-      {canLog && <ReminderToday />}
+      {canLog && <ReminderToday firstName={(membership.name || "").trim().split(" ")[0]} />}
 
       {canLog && <ProbationWatch ladder={me.config?.consequenceLadder || []} />}
 
@@ -892,7 +892,7 @@ function PendingDecisions({ autoSend, channelLabel }: { autoSend: boolean; chann
   );
 }
 
-function ReminderToday() {
+function ReminderToday({ firstName }: { firstName?: string }) {
   const [items, setItems] = useState<any[] | null>(null);
   const [msg, setMsg] = useState("");
 
@@ -918,7 +918,8 @@ function ReminderToday() {
 
   return (
     <Card>
-      <h2 className="font-semibold">Reminder for today</h2>
+      <h2 className="font-semibold">{firstName ? `Reminders for ${firstName} today` : "Reminder for today"}</h2>
+      <p className="mt-0.5 text-xs text-slate-400">Consequences from offences you logged — for you to follow up on.</p>
       {msg && <p className="mt-1 text-sm text-amber-700">{msg}</p>}
       {items === null && <p className="mt-1 text-sm text-slate-400">Loading…</p>}
       {items && items.length === 0 && <p className="mt-1 text-sm text-slate-500">Nothing due today 🎉</p>}
