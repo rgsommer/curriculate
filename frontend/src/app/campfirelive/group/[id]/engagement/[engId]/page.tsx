@@ -1526,7 +1526,14 @@ export default function EngagementDetailPage() {
           : editRecurrence,
         allow_member_invites: editAllowMemberInvites,
         excluded_user_ids: editExcludedIds,
-        excluded_emails: editExcludedEmails,
+        excluded_emails: editExcludedEmails
+          .map(
+            (e) =>
+              (e.match(/[^\s<>,;"']+@[^\s<>,;"']+\.[^\s<>,;"']+/)?.[0] || "")
+                .trim()
+                .toLowerCase()
+          )
+          .filter(Boolean),
         gift_enabled: isRaffleEng ? true : editGiftEnabled,
         gift_recipient_email: editGiftEnabled
           ? editGiftRecipientEmail.trim() || null
@@ -6930,11 +6937,15 @@ export default function EngagementDetailPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        const em = addRecipEmail.trim().toLowerCase();
-                        if (
-                          /\S+@\S+\.\S+/.test(em) &&
-                          !editExcludedEmails.includes(em)
-                        ) {
+                        // Accept "Name <email@x>" or a bare address — pull out the email.
+                        const em = (
+                          addRecipEmail.match(
+                            /[^\s<>,;"']+@[^\s<>,;"']+\.[^\s<>,;"']+/
+                          )?.[0] || ""
+                        )
+                          .trim()
+                          .toLowerCase();
+                        if (em && !editExcludedEmails.includes(em)) {
                           setEditExcludedEmails((prev) => [...prev, em]);
                           setAddRecipEmail("");
                         }

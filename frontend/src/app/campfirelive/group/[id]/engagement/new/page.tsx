@@ -2787,8 +2787,13 @@ export default function NewEngagementPage() {
                     onKeyDown={(e) => {
                       if (e.key !== "Enter") return;
                       e.preventDefault();
-                      const em = hideFromPaste.trim().toLowerCase();
-                      if (!em || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) return;
+                      // Accept "Name <email@x>" or a bare address — pull out the email.
+                      const em = (
+                        hideFromPaste.match(/[^\s<>,;"']+@[^\s<>,;"']+\.[^\s<>,;"']+/)?.[0] || ""
+                      )
+                        .trim()
+                        .toLowerCase();
+                      if (!em) return;
                       setPendingInvitees((prev) =>
                         prev.some((p) => p.email.toLowerCase() === em)
                           ? prev
