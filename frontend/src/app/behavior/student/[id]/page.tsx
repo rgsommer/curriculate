@@ -86,8 +86,10 @@ export default function StudentPage() {
   const [emailTo, setEmailTo] = useState("");
   const [emailBusy, setEmailBusy] = useState(false);
 
-  // Parent-facing "whole picture" summary (warm, grouped by teacher, clipboard)
+  // Parent-facing "whole picture" summary (warm narrative + factual record)
   const [parentSummary, setParentSummary] = useState<string>("");
+  const [parentHistory, setParentHistory] = useState<{ date: string; offense: string; teacher: string; consequence: string }[]>([]);
+  const [parentHistoryText, setParentHistoryText] = useState<string>("");
   const [parentMsg, setParentMsg] = useState<string>("");
   const [parentBusy, setParentBusy] = useState<"" | "period" | "all">("");
 
@@ -187,16 +189,23 @@ export default function StudentPage() {
     }
   }
 
+  function parentFullText(summaryText: string, historyText: string) {
+    return summaryText + (historyText ? `\n\n— Behaviour record —\n${historyText}` : "");
+  }
   async function parentSummaryGen(scope: "period" | "all") {
     setParentBusy(scope);
     setParentMsg("");
     setParentSummary("");
+    setParentHistory([]);
+    setParentHistoryText("");
     try {
-      const r = await api<{ summary: string; aiUsed: boolean; concernCount: number; teacherGroups: number }>(
+      const r = await api<{ summary: string; history: { date: string; offense: string; teacher: string; consequence: string }[]; historyText: string; aiUsed: boolean; concernCount: number; teacherGroups: number }>(
         `/students/${params.id}/parent-summary`, { body: { scope }, timeoutMs: 45000 });
       setParentSummary(r.summary);
-      navigator.clipboard?.writeText(r.summary).then(
-        () => setParentMsg(`Copied — review it, then paste into Edsby.${r.aiUsed ? "" : " (template — no AI key set)"}`),
+      setParentHistory(r.history || []);
+      setParentHistoryText(r.historyText || "");
+      navigator.clipboard?.writeText(parentFullText(r.summary, r.historyText || "")).then(
+        () => setParentMsg(`Copied note + record — review it, then paste into Edsby.${r.aiUsed ? "" : " (template — no AI key set)"}`),
         () => setParentMsg("Generated below (clipboard blocked — copy manually)."),
       );
     } catch (e: any) {
@@ -206,7 +215,7 @@ export default function StudentPage() {
     }
   }
   async function copyParentSummary() {
-    try { await navigator.clipboard.writeText(parentSummary); setParentMsg("Copied to clipboard."); }
+    try { await navigator.clipboard.writeText(parentFullText(parentSummary, parentHistoryText)); setParentMsg("Copied note + record to clipboard."); }
     catch { setParentMsg("Clipboard blocked — select and copy manually."); }
   }
 
@@ -591,11 +600,28 @@ export default function StudentPage() {
           {parentSummary && (
             <button
               onClick={copyParentSummary}
-              title="Click to copy"
+              title="Click to copy the note and the record"
               className="mt-2 block w-full cursor-pointer rounded-lg border border-slate-200 bg-slate-50 p-4 text-left text-sm text-slate-700 hover:bg-slate-100"
             >
               <Markdown text={parentSummary} />
-              <span className="mt-2 block text-xs text-slate-400">Review before posting — remove anything you wouldn&apos;t want shared. Tap to copy ⧉</span>
+              {parentHistory.length > 0 && (
+                <span className="mt-3 block border-t border-slate-200 pt-3">
+                  <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Behaviour record</span>
+                  <span className="mt-1 block divide-y divide-slate-100">
+                    {parentHistory.map((h, i) => (
+                      <span key={i} className="flex flex-wrap items-baseline gap-x-2 py-1">
+                        <span className="w-14 shrink-0 text-xs text-slate-400">{h.date}</span>
+                        <span className="font-medium text-slate-700">{h.offense}</span>
+                        <span className="text-xs text-slate-500">· {h.teacher}</span>
+                        {h.consequence
+                          ? <span className="text-xs text-slate-600">· consequence: {h.consequence}</span>
+                          : <span className="text-xs text-slate-400">· no consequence recorded</span>}
+                      </span>
+                    ))}
+                  </span>
+                </span>
+              )}
+              <span className="mt-3 block text-xs text-slate-400">The note is AI-written; the record below it is pulled straight from the log. Review before posting — remove anything you wouldn&apos;t want shared. Tap to copy ⧉</span>
             </button>
           )}
         </div>

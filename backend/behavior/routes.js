@@ -4279,11 +4279,37 @@ router.post("/students/:id/parent-summary", authAny, loadMembership, async (req,
     const meetingsInWindow = meetings.filter((m) => !cutoff || new Date(m.timestamp).getTime() >= cutoff);
     const consequences = await BehaviorConsequence.find({ studentId: student._id, kind: "corrective" }).sort({ at: 1 }).lean();
     const consInWindow = consequences.filter((c) => !cutoff || new Date(c.at).getTime() >= cutoff);
+    // Map a consequence to the incident it was given for (when linked), so the
+    // factual record can show "what consequence, if any" per offence.
+    const consByIncident = new Map();
+    for (const c of consequences) if (c.relatedIncidentId) consByIncident.set(String(c.relatedIncidentId), c);
 
+    // Deterministic factual record: date · offence · teacher · consequence (if
+    // any). Built from the data, NOT the AI, so it's always accurate. Offences
+    // only (positives and parent-contact logs are summarised elsewhere).
+    const history = [];
+    for (const i of incidents) {
+      const isPositive = i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0;
+      if (isPositive || i.behaviorSnapshot?.triggerMode === "INTERACTION") continue;
+      const c = consByIncident.get(String(i._id));
+      history.push({
+        date: new Date(i.timestamp).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: SCHOOL_TZ }),
+        offense: i.behaviorSnapshot?.name || "—",
+        teacher: tName[String(i.teacherId)] || "a teacher",
+        consequence: c ? (c.detail && c.detail.length <= 70 ? `${c.type} — ${c.detail}` : c.type) : "",
+      });
+    }
+    const historyText = history
+      .map((h) => `• ${h.date} — ${h.offense} — ${h.teacher}${h.consequence ? ` — consequence: ${h.consequence}` : " — (no consequence recorded)"}`)
+      .join("\n");
+
+    // Partnership facts — ONLY what's actually on record, stated with exact
+    // counts (the AI must not round or invent these). Parent "contacts" are
+    // logged calls/meetings; we don't claim more than one unless there is more.
     const partnershipBits = [];
-    if (meetingsInWindow.length) partnershipBits.push(`${meetingsInWindow.length} parent contact(s)/meeting(s) already logged with the family`);
-    if (noticesInWindow.length) partnershipBits.push(`${noticesInWindow.length} notice(s) sent home over this period`);
-    if (consInWindow.length) partnershipBits.push(`${consInWindow.length} consequence(s) applied at school (e.g. ${[...new Set(consInWindow.map((c) => c.type))].slice(0, 3).join(", ")})`);
+    if (meetingsInWindow.length) partnershipBits.push(`${meetingsInWindow.length} parent contact${meetingsInWindow.length === 1 ? "" : "s"} logged with the family`);
+    if (noticesInWindow.length) partnershipBits.push(`${noticesInWindow.length} notice${noticesInWindow.length === 1 ? "" : "s"} sent home this period`);
+    if (consInWindow.length) partnershipBits.push(`${consInWindow.length} consequence${consInWindow.length === 1 ? "" : "s"} applied at school`);
 
     const teacherSig = (req.membership?.courtesyName || "").trim() || actorName(req);
     const schoolName = config?.branding?.schoolName || "";
@@ -4298,17 +4324,23 @@ router.post("/students/:id/parent-summary", authAny, loadMembership, async (req,
       `Window: ${scope === "period" ? `current behaviour period${resetDateLabel ? ` (since ${resetDateLabel})` : ""}` : "full record"} — ${span}.\n` +
       `Number of concerns in this window: ${concernCount}, observed by ${tIds.length} teacher(s).\n\n` +
       `CONCERNS GROUPED BY TEACHER:\n${concernGroups || "(none in this window)"}\n\n` +
-      (positives.length ? `POSITIVE / ENCOURAGING moments in the same window (weave in to keep it balanced and genuine):\n${positives.map((p) => `  - ${p}`).join("\n")}\n\n` : "") +
-      (partnershipBits.length ? `WHAT THE SCHOOL HAS ALREADY DONE (mention briefly to show partnership): ${partnershipBits.join("; ")}.\n\n` : "") +
+      (positives.length
+        ? `POSITIVE / ENCOURAGING moments actually on record in this window (you MAY reference these honestly):\n${positives.map((p) => `  - ${p}`).join("\n")}\n\n`
+        : `POSITIVE / ENCOURAGING moments on record in this window: NONE. Do not invent any; see the hard rule on this.\n\n`) +
+      (partnershipBits.length
+        ? `WHAT THE SCHOOL HAS ACTUALLY DONE (these exact facts only — do not round up, add, or embellish): ${partnershipBits.join("; ")}.\n\n`
+        : `WHAT THE SCHOOL HAS ACTUALLY DONE: nothing is recorded yet in this window — do NOT claim any meetings, calls, notices, or consequences happened.\n\n`) +
       `Signed by: ${teacherSig}${schoolName ? `, ${schoolName}` : ""}.`;
 
     const prompt =
       `You are writing a warm, honest, and up-building letter to the PARENTS/GUARDIANS of a junior-high student, from their teacher, to bring the whole picture together in one place. ` +
       `This is pastoral and partnership-minded — the goal is to help the parents understand the pattern and to invite them to work WITH the school, never to shame the child. ` +
       `TONE: caring, respectful, hopeful, specific, and truthful. Do not exaggerate, but do not downplay genuine safety concerns either. Assume the best about the student and the family. ` +
-      `STRUCTURE: (1) a warm opening that affirms the student by name; (2) a concise, factual recap of the concerns ORGANISED BY TEACHER (e.g. "In {Teacher}'s class…"), keeping it brief — do not list every date mechanically; (3) any encouraging moments, honestly noted; (4) a short note that the school has been engaged (meetings/notices/consequences) and wants to partner; (5) a forward-looking close that invites a conversation and expresses confidence in the student. ` +
-      `HARD RULES: Never name, describe, or hint at any OTHER student (write "a classmate" or "another student"). Never quote slurs, profanity, or crude language — describe it sensitively (e.g. "used hurtful language toward a classmate"). Do not include private staff notes verbatim. Address the parents and the student (e.g. "Dear ${studentFirst} and parents,"). Sign off as ${teacherSig}${schoolName ? `, ${schoolName}` : ""}. ` +
-      `LENGTH: about 250–320 words, flowing prose (a short paragraph per section is fine; a brief teacher-grouped list is acceptable in section 2). Use ONLY the information below — do not invent events, consequences, or quotes.\n\n${ctxText}`;
+      `STRUCTURE: (1) a warm, genuine opening that greets the student and parents (you may say you're glad to have the student in class — a relational affirmation — but do NOT assert specific talents or traits as fact); (2) a concise, factual recap of the concerns ORGANISED BY TEACHER (e.g. "In {Teacher}'s class…"), kept brief; (3) encouraging moments ONLY IF they are listed on record above; (4) a short note on what the school has ALREADY done, using the exact facts above (omit this if nothing is recorded); (5) a forward-looking close that invites a conversation and expresses confidence in the student. ` +
+      `HARD RULES — these override tone: (a) Use ONLY the information below. Do NOT invent, infer, round, or embellish ANY fact — not events, dates, consequences, quotes, meetings, calls, OR praise. (b) Do NOT attribute specific strengths/talents (e.g. "creativity", "leadership", "enthusiasm") unless such a positive is explicitly listed on record above; if none are listed, keep affirmation purely relational and general. (c) If no meetings/calls/notices/consequences are listed, do NOT say the school has met with, called, or contacted the family. (d) Never name, describe, or hint at any OTHER student (write "a classmate"). (e) Never quote slurs, profanity, or crude language — describe it sensitively (e.g. "used hurtful language toward a classmate"). (f) Do not reproduce private staff notes verbatim. ` +
+      `A precise factual record (date · offence · teacher · consequence) will be appended beneath your letter automatically, so you do NOT need to reproduce a table of every date — write the narrative and let the record carry the details. ` +
+      `Address the parents and the student (e.g. "Dear ${studentFirst} and parents,"). Sign off as ${teacherSig}${schoolName ? `, ${schoolName}` : ""}. ` +
+      `LENGTH: about 200–280 words of flowing prose.\n\n${ctxText}`;
 
     // Deterministic fallback (no AI key): a plain, kind, teacher-grouped note.
     let summary =
@@ -4334,7 +4366,7 @@ router.post("/students/:id/parent-summary", authAny, loadMembership, async (req,
     }
 
     await audit(req.schoolId, "parent_summary.generated", req, { studentId: student._id, meta: { scope, aiUsed, concerns: concernCount } });
-    res.json({ ok: true, summary, aiUsed, scope, concernCount, teacherGroups: Object.keys(byTeacher).length });
+    res.json({ ok: true, summary, history, historyText, aiUsed, scope, concernCount, teacherGroups: Object.keys(byTeacher).length });
   } catch (err) {
     next(err);
   }
