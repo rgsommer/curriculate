@@ -305,6 +305,14 @@ const BehaviorConfigSchema = new mongoose.Schema(
     // check in with" email to homeroom teachers, and (b) a gentle "how's it
     // going?" note to teachers who've been quiet on Compass. intervalDays sets
     // the cadence; lastRunAt guards against sending twice in a period.
+    // Monthly per-teacher encouragement email ("your month in Compass"). The
+    // per-teacher opt-out lives on BehaviorTeacher.monthlySummary; this just marks
+    // the last month it ran (YYYY-MM) so the cron fires once a month per school.
+    monthlyTeacherSummary: {
+      enabled: { type: Boolean, default: true },
+      lastRunMonth: { type: String, default: "" },
+    },
+
     teacherNudge: {
       enabled: { type: Boolean, default: true },
       intervalDays: { type: Number, default: 14 },

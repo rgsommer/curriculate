@@ -54,6 +54,11 @@ const BehaviorTeacherSchema = new mongoose.Schema(
     // "logged by / reported by" attribution. Falls back to the display name.
     courtesyName: { type: String, default: "" },
 
+    // Monthly "your month in Compass" encouragement email to this teacher (their
+    // own This-school-year / my-interactions recap). On by default; admins can
+    // toggle it per member on the Team tab.
+    monthlySummary: { type: Boolean, default: true },
+
     // Per-teacher parent-message templates (encouraging / proactive notes home the
     // teacher copies and sends themselves). Each has a name and a body with
     // placeholders like {student}, {parents}, {he}, {subject}. Seeded with a

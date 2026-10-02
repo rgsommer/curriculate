@@ -702,6 +702,8 @@ try {
   startTeacherNudges();
   const { startConsequenceDigest } = await import("./behavior/jobs/consequenceDigest.js");
   startConsequenceDigest();
+  const { startMonthlyTeacherSummary } = await import("./behavior/jobs/monthlyTeacherSummary.js");
+  startMonthlyTeacherSummary();
   console.error("[boot] behaviours module loaded OK");
 } catch (e) {
   console.error("[boot] ❌ behaviours module FAILED to load — continuing without it:\n", e?.stack || e);

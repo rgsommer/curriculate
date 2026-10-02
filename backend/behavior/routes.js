@@ -1942,7 +1942,7 @@ router.get("/team", authAny, loadMembership, async (req, res, next) => {
       return res.status(403).json({ ok: false, error: "Admins and principals only" });
     }
     const teachers = await BehaviorTeacher.find({ schoolId: req.schoolId })
-      .select("name email role status createdAt userId housesCommittee homeroom courtesyName")
+      .select("name email role status createdAt userId housesCommittee homeroom courtesyName monthlySummary")
       .lean();
 
     const incAgg = await BehaviorIncident.aggregate([
@@ -1997,6 +1997,7 @@ router.get("/team", authAny, loadMembership, async (req, res, next) => {
           status: t.status,
           homeroom: t.homeroom || "",
           courtesyName: t.courtesyName || "",
+          monthlySummary: t.monthlySummary !== false,
           joinedAt: t.createdAt,
           // History-inclusive: itemised incidents + standalone legacy offences.
           incidents: (inc?.n || 0) + legOff,
@@ -2145,6 +2146,20 @@ router.put("/team/courtesy", authAny, loadMembership, requireAdmin, async (req, 
     await BehaviorTeacher.updateOne({ _id: target._id }, { $set: { courtesyName } });
     await audit(req.schoolId, "team.courtesy_changed", req, { meta: { target: target.email, courtesyName } });
     res.json({ ok: true, userId, courtesyName });
+  } catch (err) { next(err); }
+});
+
+// Toggle a member's monthly "your month in Compass" encouragement email (admin).
+router.put("/team/monthly-summary", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const userId = String(req.body?.userId || "").trim();
+    const on = !!req.body?.on;
+    if (!userId) return res.status(400).json({ ok: false, error: "Missing userId." });
+    const target = await BehaviorTeacher.findOne({ schoolId: req.schoolId, userId });
+    if (!target) return res.status(404).json({ ok: false, error: "Member not found in this school." });
+    await BehaviorTeacher.updateOne({ _id: target._id }, { $set: { monthlySummary: on } });
+    await audit(req.schoolId, "team.monthly_summary_changed", req, { meta: { target: target.email, on } });
+    res.json({ ok: true, userId, monthlySummary: on });
   } catch (err) { next(err); }
 });
 
@@ -6138,6 +6153,89 @@ export async function sendConsequenceDigestForSchool(schoolId, { force = false }
   return { ok: true, sent, items: totalItems };
 }
 
+// Monthly "your month in Compass" encouragement email to each teacher — their
+// own This-school-year recap (positives, concerns, interactions, notices,
+// follow-through) with the red/green monthly chart. Positive reinforcement to
+// keep staff using Compass. Per-teacher opt-out: BehaviorTeacher.monthlySummary.
+export async function sendMonthlyTeacherSummaries(schoolId, { force = false } = {}) {
+  const config = await BehaviorConfig.findOne({ schoolId }).lean();
+  if (!config) return { ok: false, error: "no config" };
+  if (!force && config.monthlyTeacherSummary?.enabled === false) return { ok: false, skipped: "disabled" };
+  const monthKey = new Date().toISOString().slice(0, 7);
+  if (!force && config.monthlyTeacherSummary?.lastRunMonth === monthKey) return { ok: false, skipped: "already ran this month" };
+
+  const now = new Date();
+  const startYear = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1; // Sept = month 8
+  const cutoff = new Date(startYear, 8, 1);
+  const windowShort = "this school year";
+  const school = await BehaviorSchool.findById(schoolId).select("name").lean();
+  const schoolName = config.branding?.schoolName || school?.name || "";
+  const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+  const from = fromAddr ? { name: "Compass", address: fromAddr } : undefined;
+  const teachers = await BehaviorTeacher.find({ schoolId, status: "accepted" }).select("name courtesyName email monthlySummary").lean();
+
+  let sent = 0;
+  for (const t of teachers) {
+    if (t.monthlySummary === false) continue;
+    const email = (t.email || "").trim();
+    if (!email) continue;
+
+    const incs = await BehaviorIncident.find({ schoolId, teacherId: t._id, timestamp: { $gt: cutoff } })
+      .select("behaviorSnapshot timestamp studentId").lean();
+    let off = 0, pos = 0, intx = 0; const studs = new Set(); const byMonthKind = {}; const byType = {};
+    for (const i of incs) {
+      const isPos = i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0;
+      const isInt = !isPos && i.behaviorSnapshot?.triggerMode === "INTERACTION";
+      studs.add(String(i.studentId));
+      const k = new Date(i.timestamp).toISOString().slice(0, 7);
+      byMonthKind[k] = byMonthKind[k] || { neg: 0, pos: 0 };
+      if (isPos) { pos += 1; byMonthKind[k].pos += 1; }
+      else if (isInt) { intx += 1; }
+      else { off += 1; byMonthKind[k].neg += 1; const n = i.behaviorSnapshot?.name || "Other"; byType[n] = (byType[n] || 0) + 1; }
+    }
+    const notices = await BehaviorNotice.find({ schoolId, sentByTeacherId: t._id, createdAt: { $gt: cutoff } }).select("status").lean();
+    const noticesSent = notices.filter((n) => n.status === "sent").length;
+    const fus = await BehaviorFollowup.find({ schoolId, assignedByTeacherId: t._id, createdAt: { $gt: cutoff } }).select("status").lean();
+    const fuTotal = fus.length;
+    const fuResolved = fus.filter((f) => f.status === "done" || f.status === "waived").length;
+    const fuPct = fuTotal ? Math.round((fuResolved / fuTotal) * 100) : 0;
+
+    const totalActivity = off + pos + intx + notices.length;
+    if (!force && totalActivity === 0) continue; // nothing to celebrate yet (inactivity nudge covers that)
+
+    const first = (t.courtesyName || t.name || "there").trim().split(/\s+/)[0] || "there";
+    const topTypes = Object.entries(byType).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, v]) => `${k} ${v}`).join(", ");
+    const headline = `You've recognised ${pos} positive(s), logged ${off} concern(s) and had ${intx} documented interaction(s) across ${studs.size} student(s) ${windowShort}.`;
+    const li = (s) => `<li style="margin:2px 0">${s}</li>`;
+    const statsHtml = `<ul style="margin:6px 0 0;padding-left:18px;color:#334155;line-height:1.7">` +
+      li(`<strong>Positives recognised:</strong> ${pos}`) +
+      li(`<strong>Concerns logged:</strong> ${off}${topTypes ? ` <span style="color:#94a3b8">(${escapeHtml(topTypes)})</span>` : ""}`) +
+      li(`<strong>Documented interactions:</strong> ${intx}`) +
+      li(`<strong>Notices home:</strong> ${notices.length} (${noticesSent} sent)`) +
+      (fuTotal ? li(`<strong>Consequence follow-through:</strong> ${fuPct}% of ${fuTotal}`) : "") +
+      li(`<strong>Students supported:</strong> ${studs.size}`) + `</ul>`;
+    const contentHtml =
+      `<p style="margin:0 0 10px">Hi ${escapeHtml(first)},</p>` +
+      `<p style="margin:0 0 12px;color:#334155">Thank you for the care you've put into your students this year. Here's your month-by-month picture in Compass (${windowShort}):</p>` +
+      statsHtml +
+      `<h3 style="margin:16px 0 6px;font-size:14px;color:#0f172a">Monthly volume (red = concerns, green = positives)</h3>` +
+      monthlyKindChartHtml(byMonthKind) +
+      `<p style="margin:14px 0 0;color:#334155">Every note you add — a quick positive as much as a concern — builds the shared picture that helps each student and backs up your colleagues. Thank you for keeping it up.</p>` +
+      emailButton("Open Compass", `${appBase()}/behavior`, "#16a34a");
+    const text = `Hi ${first},\n\n${headline}\n\n` +
+      `Positives recognised: ${pos}\nConcerns logged: ${off}${topTypes ? ` (${topTypes})` : ""}\nDocumented interactions: ${intx}\nNotices home: ${notices.length} (${noticesSent} sent)\n` +
+      (fuTotal ? `Consequence follow-through: ${fuPct}% of ${fuTotal}\n` : "") +
+      `Students supported: ${studs.size}\n\nThank you for keeping the shared picture up to date.\n${appBase()}/behavior`;
+    try {
+      await sendEmail({ from, to: email, subject: `Your month in Compass${schoolName ? ` — ${schoolName}` : ""}`, text,
+        html: emailShell({ title: "Your month in Compass", schoolName: schoolName || "Compass", preheader: headline, accent: "#16a34a", contentHtml }) });
+      sent += 1;
+    } catch (e) { console.warn("[behavior/monthly-summary] send failed for", email, e?.message || e); }
+  }
+  await BehaviorConfig.updateOne({ schoolId }, { $set: { "monthlyTeacherSummary.lastRunMonth": monthKey } });
+  return { ok: true, sent };
+}
+
 // Event-driven homeroom check-in: email the student's homeroom teacher a
 // proactive "have an encouraging word" nudge for ONE student (dated incidents +
 // one-tap "I've talked to them"). Fired when a student crosses to 2 active
@@ -6326,6 +6424,15 @@ router.post("/teacher-nudge/run", authAny, loadMembership, requireAdmin, async (
   try {
     const r = await sendTeacherNudgesForSchool(req.schoolId, { force: true });
     await audit(req.schoolId, "teacher_nudge.run", req, { meta: { sent: r.sent, ok: r.ok } });
+    res.json(r);
+  } catch (err) { next(err); }
+});
+
+// Send the monthly per-teacher "your month in Compass" summaries now (admin).
+router.post("/monthly-summary/run", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const r = await sendMonthlyTeacherSummaries(req.schoolId, { force: true });
+    await audit(req.schoolId, "monthly_summary.run", req, { meta: { sent: r.sent, ok: r.ok } });
     res.json(r);
   } catch (err) { next(err); }
 });
