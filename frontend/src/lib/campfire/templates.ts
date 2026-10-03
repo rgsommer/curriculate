@@ -152,6 +152,22 @@ export function passItOnCard(
   return { templateId: "thank-you-card", emoji: "💌", seasonLine: null };
 }
 
+// Teacher Appreciation card — listed in both the Classroom pack (where teachers look)
+// and the Cards pack; one definition so they never drift apart.
+const TEACHER_APPRECIATION_CARD: EngagementTemplate = {
+  id: "teacher-appreciation",
+  note:
+    "Tell your teacher what you appreciate — a favourite lesson, something they helped you with, or simply thank you. It stays hidden until the card opens. 🍎",
+  name: "Teacher Appreciation 🍎",
+  type: "birthday",
+  title: "Thank you for all you do! 🍎",
+  description:
+    "A surprise thank-you card the class signs for a teacher. Paste the join link in Edsby — students add a note with just their name, and each one stays hidden until it opens. Add a group gift so everyone can chip in.",
+  occasion: "once",
+  onceLabel: "Teacher Appreciation",
+  reveal: "sealed",
+};
+
 export const TEMPLATE_PACKS: TemplatePack[] = [
   {
     id: "icebreaker",
@@ -236,6 +252,7 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
         title: "Record your answer 🎤",
         description: "Leave a quick voice note instead of typing it out.",
       },
+      TEACHER_APPRECIATION_CARD,
       {
         id: "class-card",
         note:
@@ -405,19 +422,7 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
         // A card holds until the date and opens for the recipient then.
         reveal: "sealed",
       },
-      {
-        id: "teacher-appreciation",
-        note:
-          "Tell your teacher what you appreciate — a favourite lesson, something they helped you with, or simply thank you. It stays hidden until the card opens. 🍎",
-        name: "Teacher Appreciation 🍎",
-        type: "birthday",
-        title: "Thank you for all you do! 🍎",
-        description:
-          "A surprise card the class signs for a teacher during Teacher Appreciation Week. Notes stay hidden until it opens — add a group gift so everyone can chip in for a thank-you.",
-        occasion: "once",
-        onceLabel: "Teacher Appreciation",
-        reveal: "sealed",
-      },
+      TEACHER_APPRECIATION_CARD,
       {
         id: "celebration-card",
         note:

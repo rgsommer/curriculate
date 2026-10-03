@@ -95,6 +95,13 @@ const TYPE_HELP: Partial<Record<EngagementType, { how: string; sees: string }>> 
   },
 };
 
+// A name's trailing emoji (incl. variation selectors / ZWJ sequences). Built with the
+// RegExp constructor because the TS target predates the /u literal flag.
+const TRAILING_EMOJI = new RegExp(
+  "^(.*?)\\s*(\\p{Extended_Pictographic}(?:\\uFE0F|\\u200D\\p{Extended_Pictographic})*)\\s*$",
+  "u"
+);
+
 export default function NewEngagementPage() {
   const params = useParams();
   const groupId = params.id as string;
@@ -1475,7 +1482,15 @@ export default function NewEngagementPage() {
                             title={t.title}
                             className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:border-orange-300 hover:bg-orange-50"
                           >
-                            {ENGAGEMENT_TYPES[t.type].icon} {t.name}
+                            {(() => {
+                              // A template whose name carries its own emoji ("Class Card 💌")
+                              // shows THAT up front — not the generic type icon as well
+                              // ("🎂 Class Card 💌").
+                              const m = t.name.match(TRAILING_EMOJI);
+                              return m
+                                ? `${m[2]} ${m[1]}`
+                                : `${ENGAGEMENT_TYPES[t.type].icon} ${t.name}`;
+                            })()}
                           </button>
                         ))}
                       </div>
