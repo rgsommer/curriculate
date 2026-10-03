@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, getToken, loginHref } from "../_lib/api";
 import { cardCls } from "../_components/ui";
+import { toast } from "../_components/toast";
 
 type TeamRow = {
   _id: string;
@@ -59,8 +60,8 @@ export default function TeamPage() {
     const trimmed = name.trim();
     if (!trimmed) return;
     setData((d) => d && { ...d, teachers: d.teachers.map((t) => (t.userId === userId ? { ...t, name: trimmed } : t)) });
-    try { await api("/team/name", { method: "PUT", body: { userId, name: trimmed } }); }
-    catch (e: any) { setErr(e.message); }
+    try { await api("/team/name", { method: "PUT", body: { userId, name: trimmed } }); toast(); }
+    catch (e: any) { setErr(e.message); toast(e.message, "error"); }
   }
 
   async function setSetupAccess(userId: string, canEditSetup: boolean) {
@@ -69,8 +70,10 @@ export default function TeamPage() {
     setData((d) => d && { ...d, teachers: d.teachers.map((t) => (t.userId === userId ? { ...t, role: canEditSetup ? "admin" : "teacher" } : t)) });
     try {
       await api("/team/role", { method: "PUT", body: { userId, canEditSetup } });
+      toast();
     } catch (e: any) {
       setErr(e.message);
+      toast(e.message, "error");
       // revert on failure
       setData((d) => d && { ...d, teachers: d.teachers.map((t) => (t.userId === userId ? { ...t, role: canEditSetup ? "teacher" : "admin" } : t)) });
     } finally {
@@ -81,34 +84,36 @@ export default function TeamPage() {
   async function saveHomeroomMember(userId: string, value: string) {
     const v = value.trim();
     setData((d) => d && { ...d, teachers: d.teachers.map((t) => (t.userId === userId ? { ...t, homeroom: v } : t)) });
-    try { await api("/team/homeroom", { method: "PUT", body: { userId, homeroom: v } }); }
-    catch (e: any) { setErr(e.message); }
+    try { await api("/team/homeroom", { method: "PUT", body: { userId, homeroom: v } }); toast(); }
+    catch (e: any) { setErr(e.message); toast(e.message, "error"); }
   }
   async function saveHomeroomInvite(email: string, value: string) {
     const v = value.trim();
     setData((d) => d && { ...d, pending: d.pending.map((p) => (p.email === email ? { ...p, homeroom: v } : p)) });
-    try { await api("/team/homeroom", { method: "PUT", body: { email, homeroom: v } }); }
-    catch (e: any) { setErr(e.message); }
+    try { await api("/team/homeroom", { method: "PUT", body: { email, homeroom: v } }); toast(); }
+    catch (e: any) { setErr(e.message); toast(e.message, "error"); }
   }
   async function saveCourtesy(userId: string, value: string) {
     const v = value.trim();
     setData((d) => d && { ...d, teachers: d.teachers.map((t) => (t.userId === userId ? { ...t, courtesyName: v } : t)) });
-    try { await api("/team/courtesy", { method: "PUT", body: { userId, courtesyName: v } }); }
-    catch (e: any) { setErr(e.message); }
+    try { await api("/team/courtesy", { method: "PUT", body: { userId, courtesyName: v } }); toast(); }
+    catch (e: any) { setErr(e.message); toast(e.message, "error"); }
   }
 
   async function setMonthlySummary(userId: string, on: boolean) {
     setData((d) => d && { ...d, teachers: d.teachers.map((t) => (t.userId === userId ? { ...t, monthlySummary: on } : t)) });
-    try { await api("/team/monthly-summary", { method: "PUT", body: { userId, on } }); }
-    catch (e: any) { setErr(e.message); setData((d) => d && { ...d, teachers: d.teachers.map((t) => (t.userId === userId ? { ...t, monthlySummary: !on } : t)) }); }
+    try { await api("/team/monthly-summary", { method: "PUT", body: { userId, on } }); toast(); }
+    catch (e: any) { setErr(e.message); toast(e.message, "error"); setData((d) => d && { ...d, teachers: d.teachers.map((t) => (t.userId === userId ? { ...t, monthlySummary: !on } : t)) }); }
   }
 
   async function setCommittee(userId: string, on: boolean) {
     setData((d) => d && { ...d, teachers: d.teachers.map((t) => (t.userId === userId ? { ...t, housesCommittee: on } : t)) });
     try {
       await api("/team/houses-committee", { method: "PUT", body: { userId, on } });
+      toast();
     } catch (e: any) {
       setErr(e.message);
+      toast(e.message, "error");
       setData((d) => d && { ...d, teachers: d.teachers.map((t) => (t.userId === userId ? { ...t, housesCommittee: !on } : t)) });
     }
   }

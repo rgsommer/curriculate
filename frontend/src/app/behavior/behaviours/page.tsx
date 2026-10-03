@@ -317,7 +317,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
             <button onClick={save} disabled={!name.trim() || busy || needsCategory} title={needsCategory ? "Pick at least one category first" : ""} className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white disabled:opacity-40">Add</button>
           ) : (
             <button onClick={save} disabled={busy || !dirty || needsCategory} title={needsCategory ? "Pick at least one category first" : ""}
-              className={`rounded-lg px-3 py-1.5 text-sm font-medium text-white disabled:opacity-100 ${dirty ? "bg-amber-500" : "bg-green-600"}`}>
+              className={`rounded-lg px-3 py-1.5 text-sm font-medium text-white disabled:opacity-100 ${dirty ? "bg-amber-600" : "bg-green-600"}`}>
               {busy ? "Saving…" : dirty ? "Save" : "Saved"}
             </button>
           )}

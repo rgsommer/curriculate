@@ -5,6 +5,7 @@ import NavLink from "./_components/NavLink";
 import LogNavLink from "./_components/LogNavLink";
 import TourButton from "./_components/TourButton";
 import FeedbackButton from "./_components/FeedbackButton";
+import { Toaster } from "./_components/toast";
 
 export const metadata = {
   title: "Compass — Curriculate",
@@ -34,6 +35,7 @@ export default function BehaviorLayout({ children }: { children: ReactNode }) {
       </header>
       <main className="mx-auto max-w-3xl px-4 py-5">{children}</main>
       <FeedbackButton />
+      <Toaster />
     </div>
   );
 }

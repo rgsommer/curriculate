@@ -4,6 +4,7 @@ import { Children, isValidElement, useEffect, useRef, useState, type ReactNode }
 import Link from "next/link";
 import { api, getToken, loginHref, API_BASE, getMyTemplates, saveMyTemplates, type Me, type ParentTemplate } from "../_lib/api";
 import { inputCls } from "../_components/ui";
+import { toast } from "../_components/toast";
 
 // School-approved consequences shown by default (admins can edit). The AI coach
 // only ever suggests from this list, filling in specifics (line text, word
@@ -309,6 +310,11 @@ function ParentTemplatesSection() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [loaded, setLoaded] = useState(false);
+  // Edits are tracked explicitly (data loads async, so a snapshot diff would
+  // flag the initial load as "unsaved").
+  const [dirty, setDirty] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const touch = () => { setDirty(true); setSaved(false); };
 
   useEffect(() => {
     getMyTemplates()
@@ -316,14 +322,18 @@ function ParentTemplatesSection() {
       .catch(() => setLoaded(true));
   }, []);
 
-  const update = (i: number, field: "name" | "body" | "kind", value: string) =>
-    setTemplates((list) => list.map((t, idx) => (idx === i ? { ...t, [field]: value } : t)));
-  const add = () => setTemplates((list) => [...list, { name: "New template", body: "Dear {parents},\n\n\n\n{teacher}\n{school}", kind: "encouraging" }]);
-  const remove = (i: number) => setTemplates((list) => list.filter((_, idx) => idx !== i));
+  const update = (i: number, field: "name" | "body" | "kind", value: string) => {
+    touch(); setTemplates((list) => list.map((t, idx) => (idx === i ? { ...t, [field]: value } : t)));
+  };
+  const add = () => { touch(); setTemplates((list) => [...list, { name: "New template", body: "Dear {parents},\n\n\n\n{teacher}\n{school}", kind: "encouraging" }]); };
+  const remove = (i: number) => { touch(); setTemplates((list) => list.filter((_, idx) => idx !== i)); };
 
   async function save() {
     setBusy(true); setMsg("");
-    try { const r = await saveMyTemplates({ subject, templates }); setTemplates(r.templates || templates); setMsg("✓ Saved"); }
+    try {
+      const r = await saveMyTemplates({ subject, templates }); setTemplates(r.templates || templates);
+      setDirty(false); setSaved(true); setTimeout(() => setSaved(false), 1800);
+    }
     catch (e: any) { setMsg(`✗ ${e.message}`); }
     finally { setBusy(false); }
   }
@@ -343,7 +353,7 @@ function ParentTemplatesSection() {
 
       <div className="mt-3">
         <Field label="My subject / class (fills {subject})">
-          <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="e.g. Grade 7 Math"
+          <input value={subject} onChange={(e) => { touch(); setSubject(e.target.value); }} placeholder="e.g. Grade 7 Math"
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
         </Field>
       </div>
@@ -371,9 +381,8 @@ function ParentTemplatesSection() {
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <button type="button" onClick={add} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">+ Add template</button>
-        <button type="button" onClick={save} disabled={busy}
-          className={`rounded-lg px-4 py-1.5 text-sm font-semibold text-white ${busy ? "bg-slate-400" : "bg-slate-900"}`}>{busy ? "Saving…" : "Save"}</button>
-        {msg && <span className={`text-sm ${msg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{msg}</span>}
+        <SaveButton state={{ busy, saved, dirty }} onClick={save} label="Save templates" />
+        {msg && <span className="text-sm text-red-600">{msg}</span>}
       </div>
     </Card>
   );
@@ -741,7 +750,7 @@ function AdminDigestSettings({ config, myEmail }: { config: any; myEmail: string
     const adminDigest = { enabled, recipientEmail: recipient, ...next };
     setEnabled(adminDigest.enabled);
     setRecipient(adminDigest.recipientEmail);
-    try { await api("/config", { method: "PUT", body: { adminDigest } }); } catch (e: any) { setMsg(`✗ ${e.message}`); }
+    try { await api("/config", { method: "PUT", body: { adminDigest } }); toast(); } catch (e: any) { setMsg(`✗ ${e.message}`); toast(e.message, "error"); }
   }
   async function sendNow() {
     setBusy(true); setMsg("");
@@ -784,7 +793,7 @@ function ConsequenceDigestSettings({ config }: { config: any }) {
   async function saveCfg(next: { enabled?: boolean; emailTeachers?: boolean; fadeDays?: number }) {
     const body = { enabled, emailTeachers, fadeDays: Math.max(1, Number(fadeDays) || 2), ...next };
     setEnabled(body.enabled); setEmailTeachers(body.emailTeachers); setFadeDays(body.fadeDays);
-    try { await api("/config", { method: "PUT", body: { consequenceDigest: body } }); } catch (e: any) { setMsg(`✗ ${e.message}`); }
+    try { await api("/config", { method: "PUT", body: { consequenceDigest: body } }); toast(); } catch (e: any) { setMsg(`✗ ${e.message}`); toast(e.message, "error"); }
   }
   async function sendNow() {
     setBusy(true); setMsg("");
@@ -940,15 +949,7 @@ function RecommendedActionsSettings({ config }: { config: any }) {
         </div>
       </div>
 
-      <button
-        onClick={save}
-        disabled={busy || (!dirty && !saved)}
-        className={`mt-3 rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-60 ${
-          saved ? "bg-green-600" : dirty ? "bg-amber-600" : "bg-slate-900"
-        }`}
-      >
-        {busy ? "Saving…" : saved ? "Saved ✓" : dirty ? "Save changes" : "Saved"}
-      </button>
+      <SaveButton state={{ busy, saved, dirty }} onClick={save} label="Saved" className="mt-3" />
     </Card>
   );
 }
@@ -1769,8 +1770,8 @@ function HousesSection({ config }: { config?: any }) {
     const sp = next.showPos ?? showPos;
     const sn = next.showNeg ?? showNeg;
     setShowPos(sp); setShowNeg(sn);
-    try { await api("/houses/config", { method: "PUT", body: { housesPublicShowPositives: sp, housesPublicShowNegatives: sn } }); }
-    catch (e: any) { setErr(e.message); }
+    try { await api("/houses/config", { method: "PUT", body: { housesPublicShowPositives: sp, housesPublicShowNegatives: sn } }); toast(); }
+    catch (e: any) { setErr(e.message); toast(e.message, "error"); }
   }
 
   // "Reset negatives only" — wipe the conduct drag, keep every positive.
@@ -1780,6 +1781,7 @@ function HousesSection({ config }: { config?: any }) {
     setResetBusy(true);
     try {
       const r = await api<{ houseNegativeResetAt: string }>("/houses/reset-negatives", { body: {} });
+      toast("Negative points reset ✓");
       setNegResetAt(r.houseNegativeResetAt);
       load();
     } catch (e: any) { setErr(e.message); }
@@ -1787,7 +1789,7 @@ function HousesSection({ config }: { config?: any }) {
   }
   async function clearNegReset() {
     setResetBusy(true);
-    try { await api("/houses/config", { method: "PUT", body: { houseNegativeResetAt: null } }); setNegResetAt(null); load(); }
+    try { await api("/houses/config", { method: "PUT", body: { houseNegativeResetAt: null } }); setNegResetAt(null); load(); toast("Counting negatives again ✓"); }
     catch (e: any) { setErr(e.message); }
     finally { setResetBusy(false); }
   }
@@ -1800,8 +1802,8 @@ function HousesSection({ config }: { config?: any }) {
 
   async function setCaptain(studentId: string, on: boolean) {
     setRoster((prev) => (prev || []).map((s) => (s._id === studentId ? { ...s, houseCaptain: on } : s)));
-    try { await api("/houses/captain", { method: "PUT", body: { studentId, on } }); }
-    catch (e: any) { setErr(e.message); loadRoster(); }
+    try { await api("/houses/captain", { method: "PUT", body: { studentId, on } }); toast(); }
+    catch (e: any) { setErr(e.message); toast(e.message, "error"); loadRoster(); }
   }
 
   async function startNewTerm() {
@@ -1810,6 +1812,7 @@ function HousesSection({ config }: { config?: any }) {
     try {
       const now = new Date().toISOString();
       await api("/houses/config", { method: "PUT", body: { housePointsResetAt: now } });
+      toast("New term started ✓");
       setResetAt(now);
       load();
     } catch (e: any) { setErr(e.message); }
@@ -1825,6 +1828,7 @@ function HousesSection({ config }: { config?: any }) {
     try {
       const iso = new Date(resetDate + "T00:00:00").toISOString();
       await api("/houses/config", { method: "PUT", body: { housePointsResetAt: iso } });
+      toast("Standings reset ✓");
       setResetAt(iso);
       load();
     } catch (e: any) { setErr(e.message); }
@@ -1835,6 +1839,7 @@ function HousesSection({ config }: { config?: any }) {
     setResetBusy(true);
     try {
       await api("/houses/config", { method: "PUT", body: { housePointsResetAt: null } });
+      toast("Counting all points again ✓");
       setResetAt(null);
       load();
     } catch (e: any) { setErr(e.message); }
@@ -1876,7 +1881,7 @@ function HousesSection({ config }: { config?: any }) {
     const houseReport = { enabled: reportOn, recipientEmail: recipient, ...next };
     setReportOn(houseReport.enabled);
     setRecipient(houseReport.recipientEmail);
-    try { await api("/houses/config", { method: "PUT", body: { houseReport } }); } catch (e: any) { setErr(e.message); }
+    try { await api("/houses/config", { method: "PUT", body: { houseReport } }); toast(); } catch (e: any) { setErr(e.message); toast(e.message, "error"); }
   }
   async function sendReport() {
     setReportBusy(true);
@@ -1902,7 +1907,7 @@ function HousesSection({ config }: { config?: any }) {
     }
   }
   async function save(h: any, patch: any) {
-    try { await api(`/houses/${h._id}`, { method: "PUT", body: patch }); load(); } catch (e: any) { setErr(e.message); }
+    try { await api(`/houses/${h._id}`, { method: "PUT", body: patch }); load(); toast(); } catch (e: any) { setErr(e.message); toast(e.message, "error"); }
   }
   // Resize a chosen image to a small square crest (≤256px) data URL, then save it.
   async function uploadHouseImage(h: any, file: File) {
