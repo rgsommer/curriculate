@@ -20,6 +20,7 @@ import { hasProfanity } from "@/lib/campfire/profanity";
 import { formatWhen } from "@/lib/campfire/dates";
 import { cfAlert, cfConfirm, cfPrompt } from "@/lib/campfire/dialogs";
 import { CF_PRIMARY, CF_PRIMARY_SM, CF_SECONDARY, CF_SECONDARY_SM, chipClass } from "@/lib/campfire/ui";
+import { passItOnCard } from "@/lib/campfire/templates";
 
 // Shrink a phone photo before upload: longest side ≤ 2000px, JPEG. Keeps a handwritten
 // note perfectly readable while cutting a 4 MB photo to a few hundred KB (school Wi-Fi).
@@ -8956,10 +8957,47 @@ export default function EngagementDetailPage() {
         </div>
       )}
 
+      {/* ── Pass it on ── The moment someone signs (or receives) a card is when they're
+          most likely to start one for someone else, so cards get their own nudge with
+          the right template pre-filled. Group members start it in this group; guests
+          (students who came in on a card link) and the recipient start their own group
+          via ?start= — the group page itself would be a dead end for them. */}
+      {isBirthdayCard && (hasResponded || isRevealed) && (() => {
+        const pass = passItOnCard(engagement.title);
+        const inThisGroup = !isGuest && !isRecipient;
+        const href = inThisGroup
+          ? `/campfirelive/group/${groupId}/engagement/new?template=${pass.templateId}`
+          : `/campfirelive?start=${pass.templateId}`;
+        return (
+          <Link
+            href={href}
+            className="mb-6 block rounded-2xl border-2 border-rose-200 bg-gradient-to-br from-rose-50 to-orange-50 p-5 text-center shadow-sm transition hover:border-rose-300"
+          >
+            <div className="mb-1 text-3xl">{isRecipient ? "💛" : pass.emoji}</div>
+            <div className="text-lg font-extrabold text-slate-900">
+              {isRecipient
+                ? "Pay it forward — start a card for a colleague"
+                : "Know someone else who deserves one?"}
+            </div>
+            {pass.seasonLine && (
+              <p className="mt-1 text-sm font-semibold text-rose-700">{pass.seasonLine}</p>
+            )}
+            <p className="mt-1 text-sm text-slate-600">
+              {isRecipient
+                ? "You know how this feels now. Start one for someone who's earned it — it takes 30 seconds, and everyone signs from one link."
+                : "Start a card for another teacher, coach or friend in 30 seconds — we'll fill it in, you just add their name and share the link."}
+            </p>
+            <span className={`${CF_PRIMARY} mt-3`}>
+              {isRecipient ? "💌 Start a card" : "💌 Start a card for someone"}
+            </span>
+          </Link>
+        );
+      })()}
+
       {/* ── Start a NEW activity (distinct from responding to THIS one) ── */}
-      {(hasResponded || isRevealed) && (
+      {!isBirthdayCard && (hasResponded || isRevealed) && (
         <Link
-          href={`/campfirelive/group/${groupId}/engagement/new`}
+          href={isGuest ? "/campfirelive" : `/campfirelive/group/${groupId}/engagement/new`}
           className={`block rounded-2xl border-2 border-dashed p-5 text-center transition mb-6 ${
             iWon
               ? "border-amber-400 bg-amber-50 hover:bg-amber-100"
@@ -8968,11 +9006,17 @@ export default function EngagementDetailPage() {
         >
           <div className="mb-1 text-2xl">{iWon ? "🏆" : "✨"}</div>
           <div className="font-bold text-slate-900">
-            {iWon ? "You won! Start a new activity" : "Start a new activity"}
+            {iWon
+              ? "You won! Start a new activity"
+              : isGuest
+              ? "Start your own on Campfire"
+              : "Start a new activity"}
           </div>
           <p className="mt-0.5 text-sm text-slate-600">
             {iWon
               ? "Winner's privilege — pose the next one for the group. 🎉"
+              : isGuest
+              ? "Make a group for your own class, team or family — free."
               : "A different poll, card, sign-up, or challenge — separate from this one."}
           </p>
           <span
@@ -8982,7 +9026,7 @@ export default function EngagementDetailPage() {
                 : "bg-indigo-600"
             }`}
           >
-            + New activity
+            {isGuest ? "Get started" : "+ New activity"}
           </span>
         </Link>
       )}

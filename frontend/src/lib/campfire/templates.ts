@@ -66,6 +66,23 @@ export function seasonalCardPrompt(
   return null;
 }
 
+// "Pass it on" — the card to suggest right after someone signs or receives one. In a
+// card season (Teacher Appreciation Week, year-end, December) it's that season's card,
+// with stronger copy; otherwise it matches what they just signed (teacher → teacher
+// card, coach → coach card, anything else → a thank-you card). Used by the activity
+// page and the card emails, so both suggest the same thing.
+export function passItOnCard(
+  title: string,
+  now: Date = new Date()
+): { templateId: string; emoji: string; seasonLine: string | null } {
+  const season = seasonalCardPrompt(now);
+  if (season) return { templateId: season.templateId, emoji: season.emoji, seasonLine: season.headline };
+  if (/\bcoach/i.test(title)) return { templateId: "coach-gift", emoji: "🏆", seasonLine: null };
+  if (/\bteach|\bclass\b|\bmr\.?\s|\bmrs\.?\s|\bms\.?\s|\bmiss\s|\bmadame?\b|\bsir\b/i.test(title))
+    return { templateId: "teacher-appreciation", emoji: "🍎", seasonLine: null };
+  return { templateId: "thank-you-card", emoji: "💌", seasonLine: null };
+}
+
 export const TEMPLATE_PACKS: TemplatePack[] = [
   {
     id: "icebreaker",

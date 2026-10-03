@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import { firstName } from "./parseInvites";
 import { campfireTeaserText, campfireTeaserHtml } from "./types";
+import { passItOnCard } from "./templates";
 
 export const EMAIL_RE = /^[^\s@<>,;"']+@[^\s@<>,;"']+\.[^\s@<>,;"']+$/;
 export const MAX_INVITES = 50;
@@ -184,6 +185,34 @@ function preheaderFrom(text: string): string {
 // gradients and padding on <a>), gradient on top for clients that support it.
 function emailButton(url: string, labelHtml: string): string {
   return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:24px auto;"><tr><td align="center" bgcolor="#f97316" style="border-radius:9999px; background-color:#f97316; background-image:linear-gradient(to right,#f97316,#f43f5e);"><a href="${url}" style="display:inline-block; padding:14px 28px; color:#ffffff; font-weight:700; font-size:16px; text-decoration:none; border-radius:9999px;">${labelHtml}</a></td></tr></table>`;
+}
+
+// "Pass it on" line for card emails: the moment a card lands (or a thank-you comes
+// back) is when people most want to start one for someone else. A quiet text link —
+// the email's main button stays the one call to action. Season-aware via passItOnCard.
+function passItOnBlock(
+  fromUrl: string,
+  context: string,
+  forRecipient: boolean
+): { html: string; text: string } {
+  let origin = "https://www.curriculate.net";
+  try {
+    origin = new URL(fromUrl).origin;
+  } catch {
+    /* keep default */
+  }
+  const pass = passItOnCard(context);
+  const link = `${origin}/campfirelive?start=${pass.templateId}`;
+  const lead = forRecipient
+    ? "Pay it forward — start a card for a colleague"
+    : "Know someone else who deserves one? Start a card";
+  const season = pass.seasonLine ? `${pass.seasonLine}. ` : "";
+  const html = `
+  <p style="margin:20px 0 0; padding:12px 14px; background:#fff7ed; border:1px solid #fed7aa; border-radius:12px; font-size:14px; color:#7c2d12; text-align:center;">${
+    forRecipient ? "💛" : pass.emoji
+  } ${escapeHtml(season)}<a href="${link}" style="color:#c2410c; font-weight:700; text-decoration:underline;">${lead} &rarr;</a><br><span style="font-size:12px; color:#9a3412;">Takes 30 seconds — everyone signs from one link.</span></p>`;
+  const text = `\n\n${forRecipient ? "💛" : pass.emoji} ${season}${lead}: ${link}`;
+  return { html, text };
 }
 
 // "Get the app" promo block for email footers. Derives the landing URL from the email's
@@ -393,9 +422,10 @@ export function cardRevealEmail(opts: {
         recipientName
       )}</strong> received the card with <strong>${wishes}</strong> — each message is private to them.`;
   const cta = forRecipient ? "Open my card" : "See the card";
-  const text = forRecipient
+  const pass = passItOnBlock(url, title, forRecipient);
+  const text = (forRecipient
     ? `Your card is here! Open "${title}" in ${groupName} — ${wishes} written just for you.\n\n${cta}: ${url}`
-    : `"${title}" just opened in ${groupName}. ${recipientName} received the card with ${wishes} — each message is private to them.\n\n${cta}: ${url}`;
+    : `"${title}" just opened in ${groupName}. ${recipientName} received the card with ${wishes} — each message is private to them.\n\n${cta}: ${url}`) + pass.text;
   const html = `
 <div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
   <div style="font-size:40px;">${icon}</div>
@@ -403,6 +433,7 @@ export function cardRevealEmail(opts: {
   <p style="color:#475569; margin:0 0 12px;">${lead}</p>
   ${emailButton(url, `${cta}`)}
   <p style="margin:0;"><a href="${url}" style="color:#64748b; font-size:12px; word-break:break-all;">${url}</a></p>
+  ${pass.html}
 </div>`.trim();
   return { subject, text, html };
 }
@@ -421,10 +452,12 @@ export function cardThanksEmail(opts: {
   const lead = `${escapeHtml(
     recipientName
   )} loved the card the group signed in ${escapeHtml(groupName)} and wanted to say thanks.`;
+  const pass = passItOnBlock(url, `${recipientName} ${groupName}`, false);
   const text =
     `${recipientName} loved the card from ${groupName} and says thank you!` +
     (note ? `\n\n"${note}"` : "") +
-    `\n\nSee the card: ${url}`;
+    `\n\nSee the card: ${url}` +
+    pass.text;
   const html = `
 <div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
   <div style="font-size:40px;">${icon}</div>
@@ -439,6 +472,7 @@ export function cardThanksEmail(opts: {
   }
   ${emailButton(url, "See the card")}
   <p style="margin:0;"><a href="${url}" style="color:#64748b; font-size:12px; word-break:break-all;">${url}</a></p>
+  ${pass.html}
 </div>`.trim();
   return { subject, text, html };
 }
