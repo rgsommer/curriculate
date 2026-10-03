@@ -22,6 +22,10 @@ export interface EngagementTemplate {
     | "once"
     | "wedding";
   onceLabel?: string;
+  // The note SIGNERS see on the card ("Note to signers"). `description` is written for
+  // the host picking a template (it can list uses + tips like "paste the link in
+  // Edsby"); this is the short, card-specific instruction everyone else reads.
+  note?: string;
   // Sign-up templates: pre-filled claimable slots + optional party type.
   slots?: { label: string; capacity: number }[];
   partyKind?: string;
@@ -64,6 +68,71 @@ export function seasonalCardPrompt(
       headline: "Year-end is here — start a thank-you card for a teacher or coach",
     };
   return null;
+}
+
+// Card-specific "note to signers", by occasion — what people read when they sign. One
+// table so the create form, templates and old-data repair all agree. Never a list of
+// every occasion: each card speaks only to its own.
+const CARD_NOTES = {
+  birthday: "Write your birthday wishes — they stay hidden until the card opens on the big day! 🎂",
+  anniversary: "Write your anniversary wishes — they stay hidden until the card opens on the day. 💍",
+  mothers_day: "Write your Mother's Day wishes — they stay hidden until the card opens on the day. 💐",
+  fathers_day: "Write your Father's Day wishes — they stay hidden until the card opens on the day. 👔",
+  wedding: "Write your wishes for the couple — they stay hidden until the wedding day. 💒",
+  teacher:
+    "Tell your teacher what you appreciate — a favourite lesson, something they helped you with, or simply thank you. It stays hidden until the card opens. 🍎",
+  thanks: "Write a thank-you note — what you're grateful for this year. It stays hidden until the card opens. 💌",
+  coach:
+    "Thank your coach for the season — a favourite moment or something they taught you. It stays hidden until the card opens. 🏆",
+  christmas: "Write your Christmas wishes — they stay hidden until the card opens on the day. 🎄",
+  getwell:
+    "Send your get-well wishes — they stay hidden until the card opens, then arrive all at once to lift their spirits. 🌻",
+  farewell:
+    "Write your goodbye — a favourite memory or a wish for what's next. It stays hidden until the card opens. 👋",
+  class:
+    "Add your note to the card — a thank-you, a favourite memory, or a kind wish. Just your name, no account needed. Only they'll see it, when the card opens. 💌",
+  general: "Write your note — it stays hidden until the card opens on the day. 🎉",
+} as const;
+
+// Every default note (current + the old generic type default), so callers can tell a
+// note the host hasn't touched from one they wrote themselves.
+export const DEFAULT_CARD_NOTES: string[] = [
+  ...Object.values(CARD_NOTES),
+  "Sign the card with your birthday wishes — it opens on the big day!",
+];
+
+// The right signer note for a card, from its occasion (and the one-time label / title
+// when the occasion is a free-form "once" card).
+export function cardNoteFor(
+  occasion: string | null | undefined,
+  label?: string | null,
+  title?: string | null
+): string {
+  switch (occasion) {
+    case "birthday":
+      return CARD_NOTES.birthday;
+    case "anniversary":
+      return CARD_NOTES.anniversary;
+    case "mothers_day":
+      return CARD_NOTES.mothers_day;
+    case "fathers_day":
+      return CARD_NOTES.fathers_day;
+    case "wedding":
+      return CARD_NOTES.wedding;
+  }
+  const t = `${label ?? ""} ${title ?? ""}`;
+  if (/father'?s day/i.test(t)) return CARD_NOTES.fathers_day;
+  if (/mother'?s day/i.test(t)) return CARD_NOTES.mothers_day;
+  if (/birthday/i.test(t)) return CARD_NOTES.birthday;
+  if (/anniversar/i.test(t)) return CARD_NOTES.anniversary;
+  if (/teacher|\bmr\.?\s|\bmrs\.?\s|\bms\.?\s|\bmiss\s/i.test(t)) return CARD_NOTES.teacher;
+  if (/coach|season/i.test(t)) return CARD_NOTES.coach;
+  if (/christmas|holiday/i.test(t)) return CARD_NOTES.christmas;
+  if (/get well|recover/i.test(t)) return CARD_NOTES.getwell;
+  if (/farewell|miss you|goodbye|retire/i.test(t)) return CARD_NOTES.farewell;
+  if (/year-?end|thank/i.test(t)) return CARD_NOTES.thanks;
+  if (/class/i.test(t)) return CARD_NOTES.class;
+  return CARD_NOTES.general;
 }
 
 // "Pass it on" — the card to suggest right after someone signs or receives one. In a
@@ -169,6 +238,8 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
       },
       {
         id: "class-card",
+        note:
+          "Add your note to the card — a thank-you, a favourite memory, or a kind wish. Just your name, no account needed. Only they'll see it, when the card opens. 💌",
         name: "Class Card 💌",
         type: "birthday",
         title: "A card from the class 💌",
@@ -206,6 +277,8 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
       },
       {
         id: "birthday-card",
+        note:
+          "Write your birthday wishes — they stay hidden until the card opens on the big day! 🎂",
         name: "Celebration Card 🎉",
         type: "birthday",
         title: "Happy {age} Birthday! 🎂",
@@ -320,6 +393,8 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
       },
       {
         id: "thank-you-card",
+        note:
+          "Write a thank-you note — what you're grateful for this year. It stays hidden until the card opens. 💌",
         name: "Thank-You Card 💌",
         type: "birthday",
         title: "Thank you so much! 💌",
@@ -332,6 +407,8 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
       },
       {
         id: "teacher-appreciation",
+        note:
+          "Tell your teacher what you appreciate — a favourite lesson, something they helped you with, or simply thank you. It stays hidden until the card opens. 🍎",
         name: "Teacher Appreciation 🍎",
         type: "birthday",
         title: "Thank you for all you do! 🍎",
@@ -343,6 +420,8 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
       },
       {
         id: "celebration-card",
+        note:
+          "Write your wishes — they stay hidden until the card opens on the day. 🎉",
         name: "Celebration Card 🎂",
         type: "birthday",
         title: "A card for someone special 🎉",
@@ -353,6 +432,8 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
       },
       {
         id: "coach-gift",
+        note:
+          "Thank your coach for the season — a favourite moment or something they taught you. It stays hidden until the card opens. 🏆",
         name: "Coach Thank-You 🏆",
         type: "birthday",
         title: "Thanks for a great season, Coach! 🏆",
@@ -364,6 +445,8 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
       },
       {
         id: "christmas-card",
+        note:
+          "Write your Christmas wishes — they stay hidden until the card opens on the day. 🎄",
         name: "Christmas Card 🎄",
         type: "birthday",
         title: "Merry Christmas! 🎄",
@@ -375,6 +458,8 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
       },
       {
         id: "wedding-card",
+        note:
+          "Write your wishes for the couple — they stay hidden until the wedding day. 💒",
         name: "Wedding Card 💒",
         type: "birthday",
         title: "Wishing you every happiness! 💒",
@@ -385,6 +470,8 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
       },
       {
         id: "get-well-card",
+        note:
+          "Send your get-well wishes — they stay hidden until the card opens, then arrive all at once to lift their spirits. 🌻",
         name: "Get Well Card 🌻",
         type: "birthday",
         title: "Get well soon! 🌻",
@@ -396,6 +483,8 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
       },
       {
         id: "farewell-card",
+        note:
+          "Write your goodbye — a favourite memory or a wish for what's next. It stays hidden until the card opens. 👋",
         name: "Farewell Card 👋",
         type: "birthday",
         title: "We'll miss you! 👋",

@@ -25,7 +25,12 @@ import {
   type EngagementType,
   type RevealMode,
 } from "@/lib/campfire/types";
-import { TEMPLATE_PACKS, type EngagementTemplate } from "@/lib/campfire/templates";
+import {
+  TEMPLATE_PACKS,
+  cardNoteFor,
+  DEFAULT_CARD_NOTES,
+  type EngagementTemplate,
+} from "@/lib/campfire/templates";
 import { formatWhen } from "@/lib/campfire/dates";
 import { cfAlert } from "@/lib/campfire/dialogs";
 import { CF_PRIMARY, CF_SECONDARY_SM } from "@/lib/campfire/ui";
@@ -391,7 +396,7 @@ export default function NewEngagementPage() {
     if (type === "birthday") {
       if (!title.trim()) setTitle("Happy {age} Birthday! 🎂");
       if (!description.trim())
-        setDescription("Sign the card with your birthday wishes — it opens on the big day!");
+        setDescription(cardNoteFor("birthday"));
       setReveal("sealed");
     }
     if (type === "scavenger_hunt") {
@@ -527,7 +532,8 @@ export default function NewEngagementPage() {
     custom: "Sign the card — it opens on the day!",
   };
   const titleDefaults = new Set(Object.values(OCCASION_TITLE));
-  const descDefaults = new Set(Object.values(OCCASION_DESC));
+  // Untouched = blank, an old occasion default, or one of the card notes.
+  const descDefaults = new Set<string>([...Object.values(OCCASION_DESC), ...DEFAULT_CARD_NOTES]);
 
   // Pick a celebration occasion: pre-fill title + description (only overwriting blanks
   // or a previous occasion's default, so a host's own wording is never clobbered).
@@ -545,14 +551,24 @@ export default function NewEngagementPage() {
         : t
     );
     setDescription((d) =>
-      !d.trim() || descDefaults.has(d) ? OCCASION_DESC[value] : d
+      !d.trim() || descDefaults.has(d) ? cardNoteFor(value, onceLabel, title) : d
     );
   };
+  // A one-time card's note follows its label as it's typed ("Get Well" → get-well
+  // wishes), again only while the host hasn't written their own.
+  useEffect(() => {
+    if (selectedType !== "birthday" || occasion !== "once") return;
+    setDescription((d) =>
+      !d.trim() || descDefaults.has(d) ? cardNoteFor("once", onceLabel, title) : d
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onceLabel]);
 
   const applyTemplate = (t: EngagementTemplate) => {
     setSelectedType(t.type);
     setTitle(t.title);
-    setDescription(t.description ?? "");
+    // Signers see the card-specific note, never the host-facing picker description.
+    setDescription(t.note ?? t.description ?? "");
     if (t.type === "poll") {
       const opts = t.options ?? [];
       setPollOptions(opts.length >= 2 ? opts : [...opts, "", ""].slice(0, 3));
