@@ -169,8 +169,9 @@ export default function TeamPage() {
       <section className={cardCls}>
         <h2 className="font-semibold">Members ({accepted.length})</h2>
 
-        {/* Phone layout: a card per member (the wide table is unusable at 375px). */}
-        <div className="mt-2 space-y-3 sm:hidden">
+        {/* A card per member at every width — Compass's ~768px column can't fit an
+            11-column table (it clipped the right-hand columns even on desktop). */}
+        <div className="mt-2 grid gap-3 sm:grid-cols-2">
           {teachers.map((t) => (
             <div key={t._id} className={`rounded-lg border border-slate-200 p-3 ${t.status === "pending" ? "opacity-70" : ""}`}>
               <div className="flex items-start justify-between gap-2">
@@ -185,15 +186,18 @@ export default function TeamPage() {
                   <div className="mt-0.5 text-xs capitalize text-slate-500">{t.role}{t.status === "pending" ? " · invited, not joined" : ""}</div>
                 </div>
                 <div className="shrink-0 text-right text-xs text-slate-500">
-                  <div className="tabular-nums">{t.incidents} inc · {t.notices} notices</div>
-                  <div>{t.status === "pending" ? "—" : ago(t.lastActiveAt)}</div>
+                  <div className="tabular-nums" title={t.legacyOffences ? `incl. ${t.legacyOffences} earlier offence(s) imported from past records` : undefined}>
+                    {t.incidents} inc{t.legacyOffences ? "*" : ""} · {t.notices} notices
+                  </div>
+                  <div>{t.status === "pending" ? "—" : t.lastActiveAt ? `active ${ago(t.lastActiveAt)}` : "not active yet"}</div>
+                  <div>joined {shortDate(t.joinedAt)}</div>
                 </div>
               </div>
               {isAdmin && t.status !== "pending" && (
                 <div className="mt-2 grid grid-cols-2 gap-2">
                   <label className="text-xs text-slate-500">Official name
                     <input defaultValue={t.courtesyName || ""} onBlur={(e) => { if (e.target.value.trim() !== (t.courtesyName || "")) saveCourtesy(t.userId, e.target.value); }}
-                      placeholder="Mr. Sommer" className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-sm" />
+                      placeholder="e.g. Mrs. Smith" className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-sm" />
                   </label>
                   <label className="text-xs text-slate-500">Homeroom
                     <input defaultValue={t.homeroom || ""} onBlur={(e) => { if (e.target.value.trim() !== (t.homeroom || "")) saveHomeroomMember(t.userId, e.target.value); }}
@@ -229,133 +233,9 @@ export default function TeamPage() {
           {teachers.length === 0 && <p className="text-slate-500">No members yet.</p>}
         </div>
 
-        <div className="mt-2 hidden overflow-x-auto sm:block">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs uppercase tracking-wide text-slate-400">
-                <th className="py-1.5 pr-3">Teacher</th>
-                <th className="py-1.5 pr-3">Role</th>
-                <th className="py-1.5 pr-3" title="How this teacher is named in parent notices, e.g. Mr. Sommer / Miss Lau.">Official name</th>
-                <th className="py-1.5 pr-3" title="Homeroom class (e.g. 7A). Used for the proactive check-in email.">Homeroom</th>
-                <th className="py-1.5 pr-3">Joined</th>
-                <th className="py-1.5 pr-3">Last active</th>
-                <th className="py-1.5 pr-3 text-right">Incidents</th>
-                <th className="py-1.5 pr-3 text-right">Notices</th>
-                <th className="py-1.5 text-center" title="Can edit Setup (roster, behaviours, Edsby, etc.)">Edit setup</th>
-                <th className="py-1.5 text-center" title="Can manage Houses (define/assign houses, groups, events, points, portal) without full Setup access">Houses cmte</th>
-                <th className="py-1.5 text-center" title="Email this teacher a monthly 'your month in Compass' encouragement recap (their own stats)">Monthly email</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {teachers.map((t) => (
-                <tr key={t._id} className={t.status === "pending" ? "text-slate-400" : ""}>
-                  <td className="py-2 pr-3">
-                    <div className="font-medium">
-                      {t.name || <span className="italic text-slate-400">{t.email.split("@")[0]} (no name set)</span>}
-                      {isAdmin && t.status !== "pending" && (
-                        <button onClick={() => renameMember(t.userId, t.name || "")} className="ml-2 text-xs font-normal text-slate-500 underline">edit</button>
-                      )}
-                    </div>
-                    <div className="text-xs text-slate-400">{t.email}</div>
-                  </td>
-                  <td className="py-2 pr-3 capitalize">{t.role}</td>
-                  <td className="py-2 pr-3">
-                    {isAdmin && t.status !== "pending" ? (
-                      <input
-                        defaultValue={t.courtesyName || ""}
-                        onBlur={(e) => { if ((e.target.value.trim()) !== (t.courtesyName || "")) saveCourtesy(t.userId, e.target.value); }}
-                        placeholder="Mr. Sommer"
-                        className="w-28 rounded border border-slate-300 px-1.5 py-0.5 text-xs"
-                      />
-                    ) : (
-                      <span className="text-xs text-slate-500">{t.courtesyName || "—"}</span>
-                    )}
-                  </td>
-                  <td className="py-2 pr-3">
-                    {isAdmin ? (
-                      <input
-                        defaultValue={t.homeroom || ""}
-                        onBlur={(e) => { if ((e.target.value.trim()) !== (t.homeroom || "")) saveHomeroomMember(t.userId, e.target.value); }}
-                        placeholder="e.g. 7A"
-                        className="w-16 rounded border border-slate-300 px-1.5 py-0.5 text-xs"
-                      />
-                    ) : (
-                      <span className="text-xs text-slate-500">{t.homeroom || "—"}</span>
-                    )}
-                  </td>
-                  <td className="py-2 pr-3">{shortDate(t.joinedAt)}</td>
-                  <td className="py-2 pr-3">
-                    {t.status === "pending" ? (
-                      <span className="rounded bg-amber-100 px-1.5 text-xs text-amber-700">invited — not joined</span>
-                    ) : (
-                      <span title={t.lastActiveAt ? new Date(t.lastActiveAt).toLocaleString() : ""}>{ago(t.lastActiveAt)}</span>
-                    )}
-                  </td>
-                  <td className="py-2 pr-3 text-right tabular-nums">
-                    {t.incidents}
-                    {t.legacyOffences ? <span className="ml-1 text-xs font-normal text-slate-400" title={`${t.legacyOffences} earlier offence(s) imported from past records`}>(incl. {t.legacyOffences})</span> : null}
-                  </td>
-                  <td className="py-2 pr-3 text-right tabular-nums">{t.notices}</td>
-                  <td className="py-2 text-center">
-                    {t.role === "originator" ? (
-                      <span title="The originator always has Setup access" className="text-xs text-slate-400">always</span>
-                    ) : t.role === "principal" ? (
-                      <span title="Principal is a read-only role" className="text-xs text-slate-400">—</span>
-                    ) : (
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 cursor-pointer accent-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
-                        checked={t.role === "admin"}
-                        disabled={!isOriginator || t.status === "pending" || savingSetup === t.userId}
-                        aria-label={`Edit-setup access for ${t.name || t.email}`}
-                        title={isOriginator ? "Allow this member to edit Setup" : "Only the originator can change this"}
-                        onChange={(e) => setSetupAccess(t.userId, e.target.checked)}
-                      />
-                    )}
-                  </td>
-                  <td className="py-2 text-center">
-                    {t.role === "principal" ? (
-                      <span className="text-xs text-slate-400">—</span>
-                    ) : t.role === "originator" || t.role === "admin" ? (
-                      <span className="text-xs text-slate-400" title="Admins already manage Houses">admin</span>
-                    ) : (
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 cursor-pointer accent-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
-                        checked={!!t.housesCommittee}
-                        disabled={!isAdmin || t.status === "pending"}
-                        aria-label={`Houses committee access for ${t.name || t.email}`}
-                        title={isAdmin ? "Let this member manage Houses without full Setup access" : "Admins only"}
-                        onChange={(e) => setCommittee(t.userId, e.target.checked)}
-                      />
-                    )}
-                  </td>
-                  <td className="py-2 text-center">
-                    {t.status === "pending" ? (
-                      <span className="text-xs text-slate-400">—</span>
-                    ) : (
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 cursor-pointer accent-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
-                        checked={t.monthlySummary !== false}
-                        disabled={!isAdmin}
-                        aria-label={`Monthly summary email for ${t.name || t.email}`}
-                        title={isAdmin ? "Send this teacher a monthly recap of their own Compass activity" : "Admins only"}
-                        onChange={(e) => setMonthlySummary(t.userId, e.target.checked)}
-                      />
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {teachers.length === 0 && (
-                <tr><td colSpan={11} className="py-3 text-slate-400">No members yet.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
         {teachers.some((t) => t.legacyOffences) && (
           <p className="mt-2 text-xs text-slate-400">
-            Incidents include earlier offences imported from past records (shown as “incl. N”). Those historical offences may also appear among the notices home, so the two columns aren&apos;t additive.
+            * Incidents include earlier offences imported from past records. Those historical offences may also appear among the notices home, so the two columns aren&apos;t additive.
           </p>
         )}
       </section>
