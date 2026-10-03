@@ -26,6 +26,7 @@ import {
   type RevealMode,
 } from "@/lib/campfire/types";
 import { TEMPLATE_PACKS, type EngagementTemplate } from "@/lib/campfire/templates";
+import { formatWhen } from "@/lib/campfire/dates";
 
 // Plain-language "how it works" per type — { how it works, what each person sees }.
 const TYPE_HELP: Partial<Record<EngagementType, { how: string; sees: string }>> = {
@@ -2431,10 +2432,7 @@ export default function NewEngagementPage() {
                         />
                         <span className="text-slate-600">
                           days before the{" "}
-                          {new Date(deadline).toLocaleDateString(undefined, {
-                            month: "short",
-                            day: "numeric",
-                          })}{" "}
+                          {formatWhen(deadline, { time: false, weekday: false })}{" "}
                           reveal.
                         </span>
                       </div>

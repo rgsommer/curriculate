@@ -33,10 +33,50 @@ export default function JoinGroupPage() {
   // r=1 → this engagement reveals results to participants (a contest), so offer an
   // optional "email me my results". Cards/RSVPs omit it (one-way, no results).
   const wantsResults = params2?.get("r") === "1";
+  // ?gone=1 → a short card link (/c/…) that no longer resolves.
+  const linkGone = params2?.get("gone") === "1";
+
+  // Check the code BEFORE anything else, so a bad/expired link never creates a guest
+  // account, and a good one can say who's inviting you to what.
+  type InviteInfo = {
+    group: { name: string; emoji: string; host: string | null };
+    card: { title: string } | null;
+  };
+  const [invite, setInvite] = useState<"checking" | "invalid" | InviteInfo>(
+    linkGone ? "invalid" : "checking"
+  );
+  useEffect(() => {
+    if (linkGone) return;
+    let cancelled = false;
+    const qs = new URLSearchParams({ code });
+    if (engId) qs.set("e", engId);
+    fetch(`/api/campfire/invite/info?${qs}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (cancelled) return;
+        setInvite(d?.ok ? { group: d.group, card: d.card ?? null } : "invalid");
+      })
+      .catch(() => {
+        // Network hiccup: don't block a possibly-valid invite — fall back to the
+        // old behaviour (the join RPC itself still rejects a bad code).
+        if (!cancelled) setInvite({ group: { name: "", emoji: "🔥", host: null }, card: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [code, engId, linkGone]);
+  const info = typeof invite === "object" ? invite : null;
 
   // Once we have a signed-in user (guest or email), do the actual join.
   useEffect(() => {
-    if (authLoading || !user) return;
+    if (authLoading || !user || invite === "checking") return;
+    if (invite === "invalid") {
+      setStatus("error");
+      setError(
+        "This invite link has expired or isn't valid anymore. Ask whoever sent it for a new one."
+      );
+      return;
+    }
 
     setStatus("joining");
 
@@ -109,7 +149,7 @@ export default function JoinGroupPage() {
         }, 1500);
       }
     });
-  }, [user, session, authLoading, code, invEmail, engId, joinGroup, joinEngagementAsGuest, router]);
+  }, [user, session, authLoading, code, invEmail, engId, joinGroup, joinEngagementAsGuest, router, invite]);
 
   const handleGuest = async () => {
     const name = guestName.trim();
@@ -146,16 +186,20 @@ export default function JoinGroupPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-rose-50 flex items-center justify-center p-6">
       <div className="max-w-md w-full text-center">
-        {authLoading ? (
+        {authLoading || (invite === "checking" && !user) ? (
           <>
             <div className="text-5xl mb-4 animate-pulse">🔥</div>
             <h1 className="text-2xl font-extrabold text-slate-900 mb-2">One sec…</h1>
           </>
-        ) : joining ? (
+        ) : joining && invite !== "invalid" ? (
           <>
             <div className="text-5xl mb-4 animate-pulse">🔥</div>
             <h1 className="text-2xl font-extrabold text-slate-900 mb-2">Joining…</h1>
-            <p className="text-slate-500">Invite code: {code}</p>
+            {info?.group.name && (
+              <p className="text-slate-500">
+                {info.group.emoji} {info.card?.title ?? info.group.name}
+              </p>
+            )}
           </>
         ) : status === "success" ? (
           <>
@@ -163,16 +207,22 @@ export default function JoinGroupPage() {
             <h1 className="text-2xl font-extrabold text-slate-900 mb-2">You&apos;re in!</h1>
             <p className="text-slate-500">Taking you there…</p>
           </>
-        ) : status === "error" ? (
+        ) : status === "error" || invite === "invalid" ? (
           <>
-            <div className="text-5xl mb-4">😕</div>
-            <h1 className="text-2xl font-extrabold text-slate-900 mb-2">Couldn&apos;t join</h1>
-            <p className="text-slate-500 mb-4">{error}</p>
+            <div className="text-5xl mb-4">{invite === "invalid" ? "🔗" : "😕"}</div>
+            <h1 className="text-2xl font-extrabold text-slate-900 mb-2">
+              {invite === "invalid" ? "This link has expired" : "Couldn't join"}
+            </h1>
+            <p className="text-slate-600 mb-5">
+              {invite === "invalid"
+                ? "This invite link isn't valid anymore. Ask whoever sent it to share a fresh one."
+                : "Something went wrong joining. Check your connection and try the link again."}
+            </p>
             <Link
-              href="/campfirelive"
-              className="inline-block rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-2.5 text-sm font-semibold text-white"
+              href={user ? "/campfirelive" : "/campfirelive/auth"}
+              className="inline-block rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-3 text-sm font-semibold text-white"
             >
-              Go to Dashboard
+              {user ? "Go to my groups" : "Open Campfire"}
             </Link>
           </>
         ) : (
@@ -182,15 +232,23 @@ export default function JoinGroupPage() {
             <div className="text-center mb-5">
               <div className="text-5xl mb-2">{engId ? "🎉" : "🔥"}</div>
               <h1 className="text-2xl font-extrabold text-slate-900">You&apos;re invited!</h1>
-              <p className="text-slate-500 text-sm mt-1">
+              {info?.group.name && (
+                <p className="mt-2 text-lg font-bold text-slate-800">
+                  {info.card ? info.card.title : `${info.group.emoji} ${info.group.name}`}
+                </p>
+              )}
+              {info?.group.host && (
+                <p className="text-sm text-slate-500">
+                  {info.card ? `in ${info.group.emoji} ${info.group.name} · ` : ""}
+                  hosted by {info.group.host}
+                </p>
+              )}
+              <p className="text-slate-500 text-sm mt-2">
                 {engId
-                  ? "Add your message to a Campfire card — just your name, no account, and you're only signing this one card."
-                  : (
-                    <>
-                      Join the Campfire group (code{" "}
-                      <span className="font-mono">{code}</span>)
-                    </>
-                  )}
+                  ? "Add your message — just your name, no account, and you're only signing this one card."
+                  : info?.group.name
+                  ? "Join the group to take part."
+                  : "Join the Campfire group."}
               </p>
             </div>
 
@@ -251,7 +309,7 @@ export default function JoinGroupPage() {
                 {engId ? "Or sign in with email / Google" : "Or join with email / Google"}
               </button>
               <p className="mt-1 text-xs text-slate-400">
-                {engId ? "Use this to keep access across devices." : "Pick this for more results."}
+                Keeps your spot on any device.
               </p>
             </div>
           </div>

@@ -24,12 +24,16 @@ export function campfireFrom() {
 // Gmail/Yahoo/Apple Mail show a native "Unsubscribe" button that POSTs to our endpoint —
 // which only works when the URL carries the recipient (?e=). Always pass `to` when known;
 // the mailto is the fallback for clients that don't do one-click.
-export function unsubHeaders(to?: string): Record<string, string> {
-  const addr = process.env.CONTACT_REPLYTO || "admin@curriculate.net";
+function unsubUrlFor(to?: string): string {
   const base = (process.env.CAMPFIRE_BASE_URL || "https://www.curriculate.net").replace(/\/+$/, "");
-  const httpUnsub = to
+  return to
     ? `${base}/campfire/unsubscribe?e=${encodeURIComponent(to.trim().toLowerCase())}`
     : `${base}/campfire/unsubscribe`;
+}
+
+export function unsubHeaders(to?: string): Record<string, string> {
+  const addr = process.env.CONTACT_REPLYTO || "admin@curriculate.net";
+  const httpUnsub = unsubUrlFor(to);
   return {
     "List-Unsubscribe": `<${httpUnsub}>, <mailto:${addr}?subject=unsubscribe%20campfire>`,
     "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
@@ -95,13 +99,42 @@ export async function sendCampfireBatch(
   }
   if (!kept.length) return { error: null };
 
-  // 2. Re-stamp per-recipient one-click unsubscribe headers (wins over any set upstream).
-  const stamped = kept.map((m) => ({
-    ...m,
-    headers: { ...(m.headers || {}), ...unsubHeaders(recip(m)) },
-  }));
+  // 2. Re-stamp per-recipient one-click unsubscribe headers (wins over any set upstream),
+  //    and 3. add the visible footer (unsubscribe link + sender identity, required by
+  //    CASL / CAN-SPAM) to any message that doesn't already carry one.
+  const stamped = kept.map((m) => {
+    const out: Record<string, unknown> = {
+      ...m,
+      headers: { ...(m.headers || {}), ...unsubHeaders(recip(m)) },
+    };
+    const footer = emailFooter(unsubUrlFor(recip(m) || undefined));
+    if (typeof m.html === "string" && !m.html.includes("/campfire/unsubscribe")) {
+      out.html = m.html + footer.html;
+    }
+    if (typeof m.text === "string" && !m.text.includes("/campfire/unsubscribe")) {
+      out.text = m.text + footer.text;
+    }
+    return out;
+  });
 
-  return resend.batch.send(stamped as Parameters<typeof resend.batch.send>[0]);
+  return resend.batch.send(stamped as unknown as Parameters<typeof resend.batch.send>[0]);
+}
+
+// Visible footer for every Campfire email: who sent it, an unsubscribe link, and the
+// sender's mailing address (CASL requires a physical address — set
+// CAMPFIRE_POSTAL_ADDRESS on Vercel; it's omitted until then).
+function emailFooter(unsubUrl: string): { html: string; text: string } {
+  const address = (process.env.CAMPFIRE_POSTAL_ADDRESS || "").trim();
+  const html = `
+  <div style="max-width:480px; margin:28px auto 0; padding:16px 8px 0; border-top:1px solid #e2e8f0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; font-size:12px; line-height:1.6; color:#64748b; text-align:center;">
+    You&rsquo;re getting this because you&rsquo;re part of a Campfire group.<br>
+    <a href="${unsubUrl}" style="color:#64748b; text-decoration:underline;">Unsubscribe from Campfire emails</a><br>
+    Campfire is operated by 10323594 Canada Corp${address ? ` &middot; ${escapeHtml(address)}` : ""}
+  </div>`;
+  const text = `\n\n—\nYou're getting this because you're part of a Campfire group.\nUnsubscribe: ${unsubUrl}\nCampfire is operated by 10323594 Canada Corp${
+    address ? ` · ${address}` : ""
+  }`;
+  return { html, text };
 }
 
 // "Get the app" promo block for email footers. Derives the landing URL from the email's
@@ -324,7 +357,7 @@ export function cardRevealEmail(opts: {
   <h1 style="font-size:22px; margin:8px 0;">${escapeHtml(headline)}</h1>
   <p style="color:#475569; margin:0 0 12px;">${lead}</p>
   <p style="text-align:center; margin:24px 0;">
-    <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">${cta}</a>
+    <a href="${url}" style="background-color:#f97316; background-image:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">${cta}</a>
   </p>
   <p style="margin:0;"><a href="${url}" style="color:#ea580c; word-break:break-all;">${url}</a></p>
 </div>`.trim();
@@ -410,7 +443,7 @@ This is the good part.${appPromoBlock(url).text}`;
   <h1 style="font-size:22px; margin:8px 0;">${escapeHtml(headline)}</h1>
   <p style="color:#475569; margin:0 0 12px;">${leadHtml}</p>
   <p style="text-align:center; margin:24px 0;">
-    <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">See what everyone said &rarr;</a>
+    <a href="${url}" style="background-color:#f97316; background-image:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">See what everyone said &rarr;</a>
   </p>
   <p style="color:#64748b; font-size:13px; margin:0 0 12px;">This is the good part. 💛</p>
   ${appPromoBlock(url).html}
@@ -502,7 +535,7 @@ export function newEngagementEmail(opts: {
   }
   // Skip the generic "answer by" line when we've already given the open date above.
   if (deadline && !holdUntilDeadline) {
-    bits.push(`⏰ Get your answer in by ${new Date(deadline).toLocaleString()}.`);
+    bits.push(`⏰ Get your answer in by ${formatRevealWhen(deadline)}.`);
   }
 
   const text = `${intro}
@@ -525,7 +558,7 @@ ${campfireTeaserText()}${appPromoBlock(url).text}`;
     ${bits.map((b) => `<li style="margin-bottom:6px;">${escapeHtml(b)}</li>`).join("")}
   </ul>
   <p style="text-align:center; margin:24px 0;">
-    <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">${escapeHtml(cta)}</a>
+    <a href="${url}" style="background-color:#f97316; background-image:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">${escapeHtml(cta)}</a>
   </p>
   <p style="margin:0;"><a href="${url}" style="color:#ea580c; word-break:break-all;">${url}</a></p>
   ${appPromoBlock(url).html}
@@ -549,7 +582,7 @@ export function cardLiveEmail(opts: {
   const { groupName, title, typeLabel, typeIcon, deadline, url } = opts;
   const subject = `Your ${typeLabel} just opened: "${title}"`;
   const when = deadline
-    ? ` It reveals on ${new Date(deadline).toLocaleDateString()}, so there's time to round everyone up.`
+    ? ` It reveals on ${formatRevealWhen(deadline)}, so there's time to round everyone up.`
     : "";
   const intro = `Heads up — the ${typeLabel} you set up in ${groupName} just opened automatically. Add yours and make sure everyone's invited before the big day.${when}`;
   const text = `${intro}
@@ -564,7 +597,7 @@ Open it: ${url}`;
   <p style="color:#475569; margin:0 0 6px;">${escapeHtml(intro)}</p>
   <h2 style="font-size:18px; margin:8px 0 14px;">"${escapeHtml(title)}"</h2>
   <p style="text-align:center; margin:24px 0;">
-    <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">Open it</a>
+    <a href="${url}" style="background-color:#f97316; background-image:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">Open it</a>
   </p>
   <p style="margin:0;"><a href="${url}" style="color:#ea580c; word-break:break-all;">${url}</a></p>
 </div>`.trim();
@@ -654,7 +687,7 @@ ${isSignup ? "Sign up here" : "Respond here"}: ${url}${appPromoBlock(url).text}`
   <p style="color:#475569; margin:0 0 12px;">${introHtml} ${who} — ${closingHtml}</p>
   ${noteHtml}
   <p style="text-align:center; margin:24px 0;">
-    <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">${cta}</a>
+    <a href="${url}" style="background-color:#f97316; background-image:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">${cta}</a>
   </p>
   <p style="margin:0;"><a href="${url}" style="color:#ea580c; word-break:break-all;">${url}</a></p>
   ${appPromoBlock(url).html}
@@ -768,7 +801,7 @@ Moments like these are best while they're fresh.${appPromoBlock(url).text}${
   } people have been busy. Here's what's waiting:</p>
   ${groups.map(groupHtml).join("")}
   <p style="text-align:center; margin:24px 0;">
-    <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">See what&rsquo;s waiting &rarr;</a>
+    <a href="${url}" style="background-color:#f97316; background-image:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">See what&rsquo;s waiting &rarr;</a>
   </p>
   <p style="color:#64748b; font-size:13px; margin:0 0 12px;">Moments like these are best while they&rsquo;re fresh. 💛</p>
   ${appPromoBlock(url).html}
@@ -989,7 +1022,7 @@ ${campfireTeaserText()}${appPromoBlock(joinUrl).text}`;
   <p style="color:#475569; margin:0 0 12px;">${escapeHtml(lead)}</p>
   <p style="color:#475569; margin:0 0 12px;">Campfire is where your group plays together — polls, challenges, questions — with one twist: <strong>nobody sees anyone's answers until everyone has responded.</strong> Then it all unlocks at once. 🎉</p>
   <p style="text-align:center; margin:28px 0;">
-    <a href="${joinUrl}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">Join the group</a>
+    <a href="${joinUrl}" style="background-color:#f97316; background-image:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">Join the group</a>
   </p>
   <p style="color:#64748b; font-size:14px; margin:0 0 4px;">Or paste this link into your browser:</p>
   <p style="margin:0 0 16px;"><a href="${joinUrl}" style="color:#ea580c; word-break:break-all;">${joinUrl}</a></p>

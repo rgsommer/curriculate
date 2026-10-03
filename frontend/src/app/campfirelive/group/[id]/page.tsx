@@ -9,6 +9,7 @@ import { supabase } from "@/lib/campfire/supabase";
 import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, formatMoney, raffleOf, nextMonthlyNthWeekday } from "@/lib/campfire/types";
 import type { MonthlyNth } from "@/lib/campfire/hooks";
 import { parseInviteList } from "@/lib/campfire/parseInvites";
+import { formatWhen } from "@/lib/campfire/dates";
 
 export default function GroupDetailPage() {
   const params = useParams();
@@ -1340,16 +1341,23 @@ See you around the campfire! 🏕️`
         </div>
       )}
 
-      {/* Engagement Tabs — the Recurring tab only shows when there's something in it */}
-      <div className="flex gap-1 mb-4 bg-slate-100 rounded-xl p-1 w-fit">
+      {/* Engagement Tabs — the Recurring tab only shows when there's something in it.
+          Scrolls sideways on a narrow phone instead of clipping the last tabs (the page
+          itself has overflow-x hidden, so a non-scrolling row would hide them). */}
+      <div
+        role="tablist"
+        className="input-mode-scroll mb-4 flex max-w-full gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1 sm:w-fit"
+      >
         {(["active", "upcoming", "recurring", "revealed", "all"] as const)
           .filter((t) => t !== "upcoming" || upcomingEngagements.length > 0)
           .filter((t) => t !== "recurring" || recurringEngagements.length > 0)
           .map((t) => (
             <button
               key={t}
+              role="tab"
+              aria-selected={tab === t}
               onClick={() => setTab(t)}
-              className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${
+              className={`flex-shrink-0 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition ${
                 tab === t
                   ? "bg-white text-slate-900 shadow-sm"
                   : "text-slate-500 hover:text-slate-700"
@@ -1453,10 +1461,7 @@ See you around the campfire! 🏕️`
                         // itself; no manual launch needed.
                         <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 border border-violet-300 px-2.5 py-1 text-xs font-semibold text-violet-800">
                           🗓️ Opens{" "}
-                          {new Date(eng.scheduled_open_at).toLocaleDateString(undefined, {
-                            month: "short",
-                            day: "numeric",
-                          })}
+                          {formatWhen(eng.scheduled_open_at, { time: false, weekday: false })}
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 border border-orange-300 px-2.5 py-1 text-xs font-semibold text-orange-800">
@@ -1534,7 +1539,7 @@ See you around the campfire! 🏕️`
                         ?.giftShowTotal !== false ||
                         eng.creator_id === user.id ||
                         eng.gift_initiated_by === user.id) && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-cyan-50 border border-cyan-200 px-2.5 py-1 text-xs font-semibold text-cyan-700">
+                      <span data-hide-on-android className="inline-flex items-center gap-1 rounded-full bg-cyan-50 border border-cyan-200 px-2.5 py-1 text-xs font-semibold text-cyan-700">
                         {raffleOf(eng.config) ? "🏆" : "🎁"}{" "}
                         {formatMoney(giftTotals[eng.id] ?? 0, eng.gift_currency)}{" "}
                         {raffleOf(eng.config) ? "in the pot" : "chipped in"}
@@ -1561,15 +1566,9 @@ See you around the campfire! 🏕️`
 
                 {/* Deadline */}
                 {eng.deadline && eng.status === "active" && (
-                  <p className="mt-2 text-xs text-slate-400">
-                    Deadline:{" "}
-                    {new Date(eng.deadline).toLocaleDateString("en-US", {
-                      weekday: "short",
-                      month: "short",
-                      day: "numeric",
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })}
+                  <p className="mt-2 text-xs text-slate-500">
+                    {eng.hold_until_deadline ? "⏳ Reveals" : "Deadline"}:{" "}
+                    {formatWhen(eng.deadline)}
                   </p>
                 )}
               </Link>

@@ -14,6 +14,11 @@ import type { Profile } from "./types";
 export const FREE_MAX_GROUPS = 1; // main conversion lever — teachers have several classes
 export const FREE_MAX_MEMBERS_PER_GROUP = 40; // covers a full class; big teams convert
 
+// Flip to true once Campfire Plus checkout actually works. Until then every upgrade
+// surface (trial banners, the Settings upgrade card) stays hidden — showing an
+// "Upgrade" button that leads nowhere breaks trust.
+export const CHECKOUT_LIVE = false;
+
 // ── Pricing (display only; real charge is the Stripe Price) ──
 export const PLUS_PRICE_MONTHLY = "$4.99";
 export const PLUS_PRICE_YEARLY = "$39.99";

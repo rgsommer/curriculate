@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/campfire/AuthProvider";
 import { supabase } from "@/lib/campfire/supabase";
+import { CHECKOUT_LIVE, PLUS_FEATURES, PLUS_PRICE_MONTHLY } from "@/lib/campfire/premium";
 
 export default function SettingsPage() {
   const { user, profile, isTrialActive, trialDaysLeft, refreshProfile, signOut } = useAuth();
@@ -105,7 +106,9 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Subscription */}
+      {/* Subscription — hidden entirely until Campfire Plus checkout is live (a
+          trial/upgrade panel with no working checkout just strands people). */}
+      {(CHECKOUT_LIVE || profile?.is_premium) && (
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm mb-6">
         <h2 className="font-bold text-slate-900 mb-4">Subscription</h2>
 
@@ -114,7 +117,7 @@ export default function SettingsPage() {
             <div className="flex items-center gap-2">
               <span className="text-lg">⭐</span>
               <div>
-                <div className="font-bold text-green-900">Premium Active</div>
+                <div className="font-bold text-green-900">Campfire Plus active</div>
                 <div className="text-sm text-green-700">
                   You have full access to all Campfire features.
                 </div>
@@ -149,52 +152,40 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {!profile?.is_premium && (
-          /* Premium purchase is hidden in the iOS app (App Store 3.1.1 — digital
-             goods must use Apple IAP). Web & Android keep it. */
-          <div data-hide-on-ios className="space-y-3">
+        {!profile?.is_premium && CHECKOUT_LIVE && (
+          /* Purchase is hidden in the iOS app (App Store 3.1.1 — digital goods must use
+             Apple IAP) and the Android app (Play "no financial features" build). */
+          <div data-hide-on-ios data-hide-on-android className="space-y-3">
             <div className="rounded-xl border-2 border-orange-300 bg-gradient-to-r from-orange-50 to-rose-50 p-5">
               <div className="flex justify-between items-start mb-3">
                 <div>
-                  <h3 className="font-bold text-slate-900">Campfire Premium</h3>
-                  <p className="text-sm text-slate-600">Everything you need for your groups</p>
+                  <h3 className="font-bold text-slate-900">Campfire Plus</h3>
+                  <p className="text-sm text-slate-600">For hosts who run more than one group</p>
                 </div>
                 <div className="text-right">
-                  <div className="text-2xl font-extrabold text-slate-900">$4.99</div>
+                  <div className="text-2xl font-extrabold text-slate-900">{PLUS_PRICE_MONTHLY}</div>
                   <div className="text-xs text-slate-500">/month</div>
                 </div>
               </div>
               <ul className="text-sm text-slate-700 space-y-1.5 mb-4">
-                {[
-                  "Unlimited groups and engagements",
-                  "No ads",
-                  "Priority support",
-                  "Expanded random guest pools",
-                  "Advanced group analytics",
-                  "Export to social media",
-                  "Exclusive engagement types",
-                ].map((f) => (
+                {PLUS_FEATURES.map((f) => (
                   <li key={f} className="flex items-center gap-2">
                     <span className="text-orange-500">✓</span> {f}
                   </li>
                 ))}
               </ul>
+              {/* TODO: start the real Stripe Checkout session here before flipping
+                  CHECKOUT_LIVE in premium.ts. */}
               <button
-                onClick={async () => {
-                  // In production: create Stripe Checkout session via API route
-                  // For now, placeholder
-                  alert(
-                    "Stripe Checkout will open here. Connect your Stripe account to enable payments."
-                  );
-                }}
                 className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-3 text-sm font-bold text-white shadow-sm hover:opacity-90"
               >
-                Upgrade to Premium
+                Upgrade to Campfire Plus
               </button>
             </div>
           </div>
         )}
       </div>
+      )}
 
       {/* Preferences */}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm mb-6">

@@ -35,6 +35,7 @@ export default function DashboardPage() {
   const { groups, loading, createGroup, joinGroup, setGroupNotify } = useGroups();
   const [showCreate, setShowCreate] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
+  const [groupBlocked, setGroupBlocked] = useState(false);
   // Deep link (?start=<template>): after this group is made, jump straight into a
   // new engagement with that template pre-loaded.
   const [startTemplate, setStartTemplate] = useState<string | null>(null);
@@ -750,7 +751,8 @@ export default function DashboardPage() {
                   {season.headline}
                 </div>
                 <div className="text-xs text-slate-600">
-                  Everyone signs the card — add a group gift to chip in together.
+                  Everyone signs the card
+                  <span data-hide-on-android> — add a group gift to chip in together</span>.
                 </div>
               </div>
             </div>
@@ -794,20 +796,36 @@ export default function DashboardPage() {
 
       {/* Actions */}
       <div className="flex gap-3 mb-8">
+        {/* Never silently disabled: when a new group isn't allowed, tapping says why. */}
         <button
-          onClick={() => { setShowCreate(true); setShowJoin(false); setError(""); }}
-          disabled={!isTrialActive}
-          className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+          onClick={() => {
+            if (!isTrialActive) {
+              setGroupBlocked(true);
+              return;
+            }
+            setShowCreate(true);
+            setShowJoin(false);
+            setError("");
+          }}
+          className={`rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-3 text-sm font-semibold text-white shadow-sm hover:opacity-90 ${
+            isTrialActive ? "" : "opacity-60"
+          }`}
         >
           + New Group
         </button>
         <button
-          onClick={() => { setShowJoin(true); setShowCreate(false); setError(""); }}
-          className="rounded-full border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+          onClick={() => { setShowJoin(true); setShowCreate(false); setGroupBlocked(false); setError(""); }}
+          className="rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
         >
           Join Group
         </button>
       </div>
+      {groupBlocked && (
+        <div role="status" className="-mt-5 mb-8 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Starting another group isn&apos;t available on your account right now. Your
+          existing groups keep working, and you can still join any group with an invite.
+        </div>
+      )}
 
       {/* Create Group Modal */}
       {showCreate && (
@@ -886,7 +904,7 @@ export default function DashboardPage() {
                   className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
                 />
                 {isHouseSchool(newSchool) && (
-                  <p className="mt-1 text-xs font-medium text-emerald-700">
+                  <p data-hide-on-android className="mt-1 text-xs font-medium text-emerald-700">
                     ✓ Referral fees are waived for this school — no charge beyond the
                     gift, and no commission to anyone.
                   </p>

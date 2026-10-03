@@ -43,6 +43,7 @@ export default async function ShortCardRedirect({
     }
   }
 
-  // Unknown / expired code → send them to the app rather than a dead page.
-  redirect("/campfirelive");
+  // Unknown / expired code → the join page's friendly "this link has expired" screen,
+  // instead of silently dropping them on the sign-in wall.
+  redirect("/campfirelive/join/expired?gone=1");
 }

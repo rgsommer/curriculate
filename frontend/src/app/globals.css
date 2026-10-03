@@ -33,6 +33,21 @@ body.capacitor-native {
 body.capacitor-native header.sticky {
   padding-top: env(safe-area-inset-top, 0px);
 }
+/* Campfire: iOS zooms the page whenever a field under 16px gets focus, and doesn't
+   zoom back out. Force 16px form text on phones and anywhere in the native shell. */
+@media (max-width: 767px) {
+  .campfire-app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  .campfire-app select,
+  .campfire-app textarea {
+    font-size: 16px !important;
+  }
+}
+body.capacitor-native .campfire-app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+body.capacitor-native .campfire-app select,
+body.capacitor-native .campfire-app textarea {
+  font-size: 16px !important;
+}
+
 /* iOS-only: hide in-app purchase surfaces (premium upgrade, gift chip-in) to
    comply with App Store Guideline 3.1.1 (digital goods must use Apple IAP).
    NativeBridge adds `capacitor-ios` only inside the iOS shell; web/Android keep

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { usePathname } from "next/navigation";
 
 function anonId() {
   if (typeof window === "undefined") return "";
@@ -19,6 +20,7 @@ function anonId() {
 // Floating feedback / ideas widget — posts to the shared /api/feedback pipeline
 // (the same one the other Curriculate products use), tagged as campfire.
 export default function CampfireFeedback() {
+  const pathname = usePathname() ?? "";
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [email, setEmail] = useState("");
@@ -55,8 +57,15 @@ export default function CampfireFeedback() {
     setSending(false);
   };
 
+  // Keep the sign-in and join screens focused on their one job.
+  if (pathname.startsWith("/campfirelive/auth") || pathname.startsWith("/campfirelive/join")) {
+    return null;
+  }
+
   return (
     <>
+      {/* Neutral style so it doesn't compete with the page's real call-to-action;
+          lifted above the iPhone home indicator in the native shell. */}
       <button
         onClick={() => {
           setOpen(true);
@@ -64,7 +73,8 @@ export default function CampfireFeedback() {
           setError("");
         }}
         title="Share feedback or an idea"
-        className="fixed bottom-4 right-4 z-40 rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2.5 text-sm font-semibold text-white shadow-lg hover:opacity-90"
+        style={{ bottom: "max(1rem, calc(env(safe-area-inset-bottom, 0px) + 0.5rem))" }}
+        className="fixed right-4 z-40 rounded-full border border-slate-200 bg-white/95 px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-md backdrop-blur hover:border-orange-300 hover:text-orange-700"
       >
         💡 Feedback
       </button>

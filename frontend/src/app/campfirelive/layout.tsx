@@ -106,8 +106,11 @@ export default function CampfireLiveLayout({
       />
       <PwaRegister />
       <NativeBridge />
-      <AppShell>{children}</AppShell>
-      <CampfireFeedback />
+      {/* .campfire-app scopes Campfire-only global rules (e.g. 16px form text). */}
+      <div className="campfire-app">
+        <AppShell>{children}</AppShell>
+        <CampfireFeedback />
+      </div>
     </>
   );
 }

@@ -17,6 +17,7 @@ import QRCode from "qrcode";
 import type { CampfireGift } from "@/lib/campfire/types";
 import { supabase } from "@/lib/campfire/supabase";
 import { hasProfanity } from "@/lib/campfire/profanity";
+import { formatWhen } from "@/lib/campfire/dates";
 
 // ── Canvas helpers for the shareable results card ──
 function roundRectPath(
@@ -583,6 +584,9 @@ export default function EngagementDetailPage() {
   const [scheduleOpenInput, setScheduleOpenInput] = useState("");
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [extending, setExtending] = useState(false);
+  // "Reveal now" is irreversible and emails everyone — ask once before doing it.
+  const [confirmReveal, setConfirmReveal] = useState(false);
+  const [revealing, setRevealing] = useState(false);
   const [stoppingRecur, setStoppingRecur] = useState(false);
   // Editing a monthly Nth-weekday release schedule (week/weekday/time/window).
   const [schedEditing, setSchedEditing] = useState(false);
@@ -1203,15 +1207,7 @@ export default function EngagementDetailPage() {
   };
 
   // Human description of WHEN this will reveal — keeps the waiting copy honest.
-  const deadlineStr = engagement.deadline
-    ? new Date(engagement.deadline).toLocaleDateString("en-US", {
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      })
-    : null;
+  const deadlineStr = engagement.deadline ? formatWhen(engagement.deadline) : null;
   const deadlinePassed =
     !!engagement.deadline && new Date(engagement.deadline).getTime() < Date.now();
   // What unlocks it, written honestly for the current state — including the
@@ -5348,15 +5344,7 @@ export default function EngagementDetailPage() {
     ).length;
     const iAmIn = R > 1 && myGuessCount >= R - 1;
     // Fallback share time if not everyone guesses: the close date.
-    const revealBy = engagement.deadline
-      ? new Date(engagement.deadline).toLocaleDateString(undefined, {
-          weekday: "short",
-          month: "short",
-          day: "numeric",
-          hour: "numeric",
-          minute: "2-digit",
-        })
-      : null;
+    const revealBy = engagement.deadline ? formatWhen(engagement.deadline) : null;
 
     // My score (after reveal).
     let myCorrect = 0;
@@ -6122,10 +6110,7 @@ export default function EngagementDetailPage() {
                   {engagement.deadline && (
                     <p className="max-w-[16rem] self-start text-left text-[11px] text-slate-400">
                       Prefilled to 2 weeks before your{" "}
-                      {new Date(engagement.deadline).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                      })}{" "}
+                      {formatWhen(engagement.deadline, { time: false, weekday: false })}{" "}
                       close date.
                     </p>
                   )}
@@ -7161,11 +7146,7 @@ export default function EngagementDetailPage() {
               (engagement.scheduled_open_at || engagement.launched_at) as string
             ).getTime();
             const future = openTs > Date.now();
-            const dateStr = new Date(openTs).toLocaleDateString("en-US", {
-              weekday: "short",
-              month: "short",
-              day: "numeric",
-            });
+            const dateStr = formatWhen(new Date(openTs), { time: false });
             const lead = engagement.lead_days ?? 14;
             const recurringNote =
               engagement.recurrence_rule === "yearly"
@@ -7183,15 +7164,9 @@ export default function EngagementDetailPage() {
 
         {/* Deadline */}
         {engagement.deadline && engagement.status === "active" && (
-          <p className="text-xs text-slate-400 mt-2">
+          <p className="text-xs text-slate-500 mt-2">
             {engagement.hold_until_deadline ? "⏳ Reveals" : "Deadline"}:{" "}
-            {new Date(engagement.deadline).toLocaleDateString("en-US", {
-              weekday: "short",
-              month: "short",
-              day: "numeric",
-              hour: "numeric",
-              minute: "2-digit",
-            })}
+            {formatWhen(engagement.deadline)}
             {engagement.hold_until_deadline &&
               " — held until then, even if everyone responds early."}
           </p>
@@ -7544,13 +7519,52 @@ export default function EngagementDetailPage() {
                   : " Nudged everyone and some won't respond? End it early and reveal."}
               </p>
             </div>
-            <button
-              onClick={revealNow}
-              className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-2 text-sm font-semibold text-white hover:opacity-90"
-            >
-              🎬 Reveal now
-            </button>
+            {!confirmReveal && (
+              <button
+                onClick={() => setConfirmReveal(true)}
+                className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-3 text-sm font-semibold text-white hover:opacity-90"
+              >
+                🎬 Reveal now
+              </button>
+            )}
           </div>
+          {confirmReveal && (
+            <div role="alertdialog" className="mt-3 rounded-xl border border-orange-200 bg-orange-50 p-3">
+              <p className="text-sm font-semibold text-slate-900">
+                Reveal to everyone now?
+              </p>
+              <p className="mt-0.5 text-sm text-slate-600">
+                {Math.max(0, (engagement.total_expected ?? 0) - responseCount) > 0
+                  ? `${Math.max(0, (engagement.total_expected ?? 0) - responseCount)} still haven't answered. `
+                  : ""}
+                Everyone gets an email and the results open — this can&apos;t be undone.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  disabled={revealing}
+                  onClick={async () => {
+                    setRevealing(true);
+                    try {
+                      await revealNow();
+                    } finally {
+                      setRevealing(false);
+                      setConfirmReveal(false);
+                    }
+                  }}
+                  className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
+                >
+                  {revealing ? "Revealing…" : "Yes, reveal now"}
+                </button>
+                <button
+                  disabled={revealing}
+                  onClick={() => setConfirmReveal(false)}
+                  className="rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Not yet
+                </button>
+              </div>
+            </div>
+          )}
 
           {engagement.reveal === "sealed" && (
             <div className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-400">
@@ -7577,13 +7591,7 @@ export default function EngagementDetailPage() {
                 </div>
                 <div className="text-xs text-slate-500">
                   Opens{" "}
-                  {new Date(engagement.deadline).toLocaleDateString("en-US", {
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                    hour: "numeric",
-                    minute: "2-digit",
-                  })}{" "}
+                  {formatWhen(engagement.deadline)}{" "}
                   regardless — like a gift on the day. Off = reveals as soon as everyone
                   who&apos;s in has responded.
                 </div>
@@ -8264,10 +8272,7 @@ export default function EngagementDetailPage() {
               <p className="text-sm text-slate-600">
                 🗳 Voting is open — tap <b>Vote</b> on your favourite entry below.
                 {voteClosesAt
-                  ? ` Closes ${new Date(voteClosesAt).toLocaleDateString("en-US", {
-                      month: "short",
-                      day: "numeric",
-                    })}.`
+                  ? ` Closes ${formatWhen(new Date(voteClosesAt), { weekday: false })}.`
                   : ""}{" "}
                 The winner gets{" "}
                 {formatMoney(
