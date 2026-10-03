@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { api, getToken, loginHref, getMyTemplates, generateParentMessage, type Me, type GuddStatus, type ParentTemplate } from "../../_lib/api";
+import { cardCls } from "../../_components/ui";
 import GuddChip from "../../_components/GuddChip";
 import { Markdown } from "../../_lib/Markdown";
 import { Timeline, buildByMonth } from "../../_components/Timeline";
@@ -527,7 +528,7 @@ export default function StudentPage() {
       </div>
 
       {/* Strikes + admin summary */}
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
+      <section className={cardCls}>
         <div className="flex items-baseline justify-between">
           <h2 className="font-semibold">Strikes toward a notice (all teachers)</h2>
           <span className="text-2xl font-bold">
@@ -671,7 +672,7 @@ export default function StudentPage() {
         const nextStep = ladder.find((l) => l.noticeNumber === notices + 1);
         if (!ladder.length && notices === 0) return null;
         return (
-          <section className="rounded-xl border border-slate-200 bg-white p-5">
+          <section className={cardCls}>
             <h2 className="font-semibold">Recommended actions</h2>
             <div className="mt-2 space-y-1 text-sm">
               {currentStep && <p>Rule-based (current — {notices} notice{notices === 1 ? "" : "s"} home): <span className="font-semibold">{currentStep.action}</span></p>}
@@ -843,7 +844,7 @@ export default function StudentPage() {
 
       {/* Encouraging notes home (logged encouraging parent messages) */}
       {(data.consequences || []).some((c) => c.kind === "encouraging") && (
-        <section className="rounded-xl border border-slate-200 bg-white p-5">
+        <section className={cardCls}>
           <h2 className="font-semibold text-green-800">Encouragements — notes home</h2>
           <ul className="mt-2 divide-y divide-slate-100">
             {data.consequences!.filter((c) => c.kind === "encouraging").map((c) => (
@@ -861,7 +862,7 @@ export default function StudentPage() {
 
       {/* Trend over time */}
       {Object.keys(byMonth).length > 0 && (
-        <section className="rounded-xl border border-slate-200 bg-white p-5">
+        <section className={cardCls}>
           <h2 className="font-semibold">Trend over time</h2>
           <div className="mt-3">
             <Timeline byMonth={byMonth} />
@@ -870,7 +871,7 @@ export default function StudentPage() {
       )}
 
       {/* Communication history */}
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
+      <section className={cardCls}>
         <h2 className="font-semibold">Communication history</h2>
         {data.notices.length === 0 && <p className="mt-1 text-sm text-slate-400">No notices yet.</p>}
         <ul className="mt-2 space-y-2">

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, getToken, loginHref } from "../_lib/api";
+import { cardCls } from "../_components/ui";
 
 type TeamRow = {
   _id: string;
@@ -160,7 +161,7 @@ export default function TeamPage() {
       </div>
 
       {/* Members */}
-      <section className="rounded-xl border border-slate-200 bg-white p-4">
+      <section className={cardCls}>
         <h2 className="font-semibold">Members ({accepted.length})</h2>
         <div className="mt-2 overflow-x-auto">
           <table className="w-full text-sm">
@@ -291,7 +292,7 @@ export default function TeamPage() {
       </section>
 
       {/* Pending invites */}
-      <section className="rounded-xl border border-slate-200 bg-white p-4">
+      <section className={cardCls}>
         <div className="flex items-center justify-between">
           <h2 className="font-semibold">Pending invites ({pending.length})</h2>
           <Link href="/behavior/setup#invite" className="text-sm text-slate-500 underline">invite more →</Link>

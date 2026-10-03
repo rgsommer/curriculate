@@ -7,6 +7,7 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
 import { api, getToken, loginHref } from "../_lib/api";
+import { cardCls } from "../_components/ui";
 
 type Stats = {
   months: number | string;
@@ -170,7 +171,7 @@ function Stat({ label, value, accent }: { label: string; value: number | string;
 
 function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4">
+    <section className={cardCls}>
       <h2 className="mb-2 text-sm font-semibold">{title}</h2>
       {children}
     </section>

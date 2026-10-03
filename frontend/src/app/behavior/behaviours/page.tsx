@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, getToken, loginHref, type Me } from "../_lib/api";
+import { inputCls } from "../_components/ui";
 
 const FOLLOWUPS = [
   { v: "next_school_day", label: "Due next school day" },
@@ -362,5 +363,3 @@ function PointsBadge({ points }: { points: number }) {
     </span>
   );
 }
-
-const inputCls = "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm";

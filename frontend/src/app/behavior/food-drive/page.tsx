@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, getToken, loginHref, type Me } from "../_lib/api";
+import { cardCls, Button } from "../_components/ui";
 
 type Row = { name: string; items: number | null; studentId: string | null; studentLabel: string | null; house: string | null; houseColor: string | null };
 type RosterOpt = { id: string; label: string; house: string };
@@ -88,7 +89,7 @@ export default function FoodDrivePage() {
         <p className="text-sm text-slate-400">For any counted event — food drive, garbage cleanup, read-a-thon, laps, etc. Upload the class sheets (typed names, a handwritten count beside each — photos, scans, or a PDF); Compass reads the counts, matches each name to a student &amp; house, then awards the top contributors and the top houses.</p>
       </div>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4">
+      <section className={cardCls}>
         <label className="block text-sm">
           <span className="font-medium text-slate-700">What is this for?</span>
           <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Food Drive, Garbage Cleanup, Read-a-thon"
@@ -98,16 +99,15 @@ export default function FoodDrivePage() {
           onChange={(e) => setFiles(Array.from(e.target.files || []))}
           className="mt-3 block w-full text-sm" />
         {files.length > 0 && <p className="mt-1 text-xs text-slate-400">{files.length} file(s) selected</p>}
-        <button onClick={parse} disabled={busy || !files.length}
-          className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">
+        <Button onClick={parse} disabled={busy || !files.length} className="mt-3">
           {busy && !result ? "Reading…" : "Read sheets"}
-        </button>
+        </Button>
         {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
         {msg && <p className="mt-2 text-sm text-green-700">{msg}</p>}
       </section>
 
       {rows && !result && (
-        <section className="rounded-xl border border-slate-200 bg-white p-4">
+        <section className={cardCls}>
           <div className="flex flex-wrap items-end justify-between gap-2">
             <h2 className="font-semibold">Review &amp; award <span className="text-xs font-normal text-slate-400">({matched} matched · {withItems} with a count)</span></h2>
           </div>
@@ -147,10 +147,9 @@ export default function FoodDrivePage() {
             <label className="text-sm">Top houses get (comma pts)<input value={hs} onChange={(e) => setHs(e.target.value)} className="mt-1 w-full rounded border border-slate-300 px-2 py-1" /></label>
           </div>
           <p className="mt-1 text-xs text-slate-400">Awarding for: <span className="font-medium">{label || "—"}</span> (change &ldquo;What is this for?&rdquo; above).</p>
-          <button onClick={apply} disabled={busy || !withItems}
-            className="mt-3 rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">
+          <Button variant="success" onClick={apply} disabled={busy || !withItems} className="mt-3">
             {busy ? "Awarding…" : "Award points"}
-          </button>
+          </Button>
         </section>
       )}
 

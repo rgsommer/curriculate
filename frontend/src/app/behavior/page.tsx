@@ -5,6 +5,7 @@ import Link from "next/link";
 import { api, getToken, loginHref, issueWhiteSlip, completeConsequence, homeroomFollowup, type Me, type StudentSummary } from "./_lib/api";
 import { Markdown } from "./_lib/Markdown";
 import SendNoticeModal from "./_components/SendNoticeModal";
+import { Card } from "./_components/ui";
 
 export default function BehaviorDashboard() {
   const [me, setMe] = useState<Me | null>(null);
@@ -1167,6 +1168,3 @@ function ReminderToday({ firstName }: { firstName?: string }) {
   );
 }
 
-function Card({ children }: { children: React.ReactNode }) {
-  return <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">{children}</section>;
-}

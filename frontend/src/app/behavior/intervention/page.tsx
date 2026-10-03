@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, getToken, loginHref, type Me } from "../_lib/api";
+import { cardCls } from "../_components/ui";
 import GuddChip from "../_components/GuddChip";
 
 type Row = { studentId: string; name: string; classGroup: string; grade?: string; strikes?: number; triggerCount?: number; count?: number; lastAt: string };
@@ -59,7 +60,7 @@ export default function InterventionPage() {
 
       {/* Behaviour trend */}
       {data.trends && data.trends.length > 0 && (
-        <section className="rounded-xl border border-slate-200 bg-white p-5">
+        <section className={cardCls}>
           <h2 className="font-semibold">Behaviour trend (last 6 months)</h2>
           <p className="mt-0.5 text-xs text-slate-400"><span className="text-red-500">■</span> incidents · <span className="text-green-600">■</span> encouragements</p>
           {(() => {
@@ -101,7 +102,7 @@ export default function InterventionPage() {
       )}
 
       {/* At or near threshold */}
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
+      <section className={cardCls}>
         <h2 className="font-semibold">At or near a notice ({data.triggerCount} strikes)</h2>
         {data.atThreshold.length === 0 && <p className="mt-1 text-sm text-slate-400">No students near the threshold right now.</p>}
         <ul className="mt-2 divide-y divide-slate-100">
@@ -146,7 +147,7 @@ export default function InterventionPage() {
 
       {/* GUDD — students who've lost or are at risk of losing the dress-down */}
       {data.gudd?.enabled && (
-        <section className="rounded-xl border border-slate-200 bg-white p-5">
+        <section className={cardCls}>
           <h2 className="font-semibold">{data.gudd.name || "GUDD"} — lost or at risk</h2>
           {(!data.gudd.students || data.gudd.students.length === 0) && (
             <p className="mt-1 text-sm text-slate-400">No uniform infractions on record right now.</p>
@@ -169,7 +170,7 @@ export default function InterventionPage() {
       )}
 
       {/* Most-logged */}
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
+      <section className={cardCls}>
         <h2 className="font-semibold">Most-logged (last 60 days)</h2>
         {data.topRepeat.length === 0 && <p className="mt-1 text-sm text-slate-400">No incidents logged recently.</p>}
         <ul className="mt-2 divide-y divide-slate-100">
@@ -189,7 +190,7 @@ export default function InterventionPage() {
       </section>
 
       {/* By class */}
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
+      <section className={cardCls}>
         <h2 className="font-semibold">Incidents by class (last 60 days)</h2>
         {data.byClass.length === 0 && <p className="mt-1 text-sm text-slate-400">No data yet.</p>}
         <ul className="mt-3 space-y-2">
@@ -209,7 +210,7 @@ export default function InterventionPage() {
 
       {/* App usage this week */}
       {data.usage && data.usage.length > 0 && (
-        <section className="rounded-xl border border-slate-200 bg-white p-5">
+        <section className={cardCls}>
           <h2 className="font-semibold">App usage this week</h2>
           <p className="mt-0.5 text-xs text-slate-400">{data.activeThisWeek ?? 0} of {data.usage.length} staff have opened it this week (page loads). A quick read on adoption.</p>
           <ul className="mt-2 divide-y divide-slate-100">
@@ -228,7 +229,7 @@ export default function InterventionPage() {
 
       {/* Teachers who may welcome support */}
       {data.teachers && data.teachers.length > 0 && (
-        <section className="rounded-xl border border-slate-200 bg-white p-5">
+        <section className={cardCls}>
           <h2 className="font-semibold">Staff activity (last 60 days)</h2>
           <p className="mt-0.5 text-xs text-slate-400">Incidents vs encouragements logged. A ★ flags a heavier-than-typical incident load with few encouragements — a teacher who may welcome support or co-planning, not a performance judgement.</p>
           <table className="mt-2 w-full text-sm">

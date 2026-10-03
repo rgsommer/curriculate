@@ -3,6 +3,7 @@
 import { Children, isValidElement, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { api, getToken, loginHref, API_BASE, getMyTemplates, saveMyTemplates, type Me, type ParentTemplate } from "../_lib/api";
+import { inputCls } from "../_components/ui";
 
 // School-approved consequences shown by default (admins can edit). The AI coach
 // only ever suggests from this list, filling in specifics (line text, word
@@ -2679,7 +2680,6 @@ function TestToolsSection({ email, collapsed = false, canManageStudents = true }
   );
 }
 
-const inputCls = "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm";
 
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
