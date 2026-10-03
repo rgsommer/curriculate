@@ -58,7 +58,7 @@ export default function CompetitionsPage() {
       <div>
         <Link href="/behavior" className="text-sm text-slate-500 underline">← dashboard</Link>
         <h1 className="mt-1 text-xl font-semibold">House competitions</h1>
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-slate-500">
           A Sept–June calendar. Scoring an event awards capped placement points
           ({(comps[0]?.placementPoints || [500, 300, 200, 100]).join(" / ")}) on top of everyday behaviour points — so one
           event can&apos;t run away with the year.
@@ -114,19 +114,19 @@ function CompRow({ c, houses, editable, onChanged }: { c: Comp; houses: House[];
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
           <div className="font-medium">
-            <span className="text-xs text-slate-400">{c.monthLabel}</span> · {c.name}
+            <span className="text-xs text-slate-500">{c.monthLabel}</span> · {c.name}
           </div>
           {c.results.length > 0 ? (
             <div className="mt-1 flex flex-wrap gap-1.5">
               {c.results.map((r) => (
                 <span key={r.place} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs">
                   <span className="inline-block h-2 w-2 rounded-full" style={{ background: r.houseColor }} />
-                  {ord(r.place)} {r.houseName} <span className="text-slate-400">+{r.points}</span>
+                  {ord(r.place)} {r.houseName} <span className="text-slate-500">+{r.points}</span>
                 </span>
               ))}
             </div>
           ) : (
-            <div className="mt-0.5 text-xs text-slate-400">Not scored yet</div>
+            <div className="mt-0.5 text-xs text-slate-500">Not scored yet</div>
           )}
         </div>
         {editable && (

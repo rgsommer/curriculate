@@ -444,7 +444,7 @@ export default function LogIncidentPage() {
               <h2 className="font-semibold">
                 {notice ? "Incidents in this notice" : "Strikes so far (all teachers)"}
               </h2>
-              <span className={`text-sm font-medium ${notice ? "text-slate-400" : countColor(trigger.length, triggerCount)}`}>
+              <span className={`text-sm font-medium ${notice ? "text-slate-500" : countColor(trigger.length, triggerCount)}`}>
                 {trigger.length}
                 {!notice && ` / ${triggerCount}`}
               </span>
@@ -454,7 +454,7 @@ export default function LogIncidentPage() {
                 <li key={i} className="py-2 text-sm">
                   <div className="flex items-center justify-between">
                     <span className="font-medium">{t.offense}</span>
-                    <span className="text-slate-400">{fmtDateTime(t.date)}</span>
+                    <span className="text-slate-500">{fmtDateTime(t.date)}</span>
                   </div>
                   <div className="text-slate-500">
                     {t.teacher || "—"}
@@ -564,7 +564,7 @@ export default function LogIncidentPage() {
             <p className="font-semibold">
               {student.preferredName || student.firstName} {student.lastName}
             </p>
-            <p className="text-sm text-slate-400">{[student.classGroup, gradeLabel(student.grade)].filter(Boolean).join(" · ")}</p>
+            <p className="text-sm text-slate-500">{[student.classGroup, gradeLabel(student.grade)].filter(Boolean).join(" · ")}</p>
           </div>
           <Link href={`/behavior/student/${student._id}`} className="text-sm text-slate-500 underline">full history</Link>
         </div>
@@ -640,7 +640,7 @@ export default function LogIncidentPage() {
             </div>
           )}
           {kindFilter === "negative" && keywords.length > 0 && (
-            <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-400">
+            <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
               <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-sky-400" /> Class preparedness</span>
               <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-rose-400" /> Behaviour</span>
               <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-indigo-400" /> Uniform (GUDD)</span>
@@ -662,7 +662,7 @@ export default function LogIncidentPage() {
             ))}
           </select>
           {offenseOptions.length === 0 && (
-            <p className="mt-1 text-xs text-slate-400">
+            <p className="mt-1 text-xs text-slate-500">
               No {kindFilter} behaviours yet — <Link href="/behavior/behaviours" className="underline">add one</Link>.
             </p>
           )}
@@ -679,7 +679,7 @@ export default function LogIncidentPage() {
             </div>
           )}
         </div>
-        <Link href="/behavior/behaviours" className="text-xs text-slate-400 underline">manage behaviours</Link>
+        <Link href="/behavior/behaviours" className="text-xs text-slate-500 underline">manage behaviours</Link>
 
         <label className="block">
           <span className="mb-1 block text-sm font-medium text-slate-600">Date &amp; time of incident</span>
@@ -733,7 +733,7 @@ export default function LogIncidentPage() {
               })}
             </div>
           )}
-          <p className="mt-1 text-xs text-slate-400">Stored privately for the student record — never sent to parents. Up to 5 files, 30 MB each.</p>
+          <p className="mt-1 text-xs text-slate-500">Stored privately for the student record — never sent to parents. Up to 5 files, 30 MB each.</p>
         </div>
 
         {kindFilter === "negative" && (
@@ -815,7 +815,7 @@ export default function LogIncidentPage() {
                 {s.preferredName && s.preferredName !== s.firstName && s.preferredName !== s.lastName ? ` (${s.preferredName})` : ""}
                 {s.activeCount ? <span className="ml-2 text-xs font-normal">({s.activeCount})</span> : null}
               </span>
-              <span className="text-sm text-slate-400">{s.classGroup}</span>
+              <span className="text-sm text-slate-500">{s.classGroup}</span>
             </button>
             <Link
               href={`/behavior/student/${s._id}`}
@@ -826,9 +826,9 @@ export default function LogIncidentPage() {
             </Link>
           </li>
         ))}
-        {students.length === 0 && <li className="px-4 py-3 text-sm text-slate-400">No students yet — import a roster in Setup.</li>}
+        {students.length === 0 && <li className="px-4 py-3 text-sm text-slate-500">No students yet — import a roster in Setup.</li>}
         {students.length > 0 && visible.length === 0 && (
-          <li className="px-4 py-3 text-sm text-slate-400">
+          <li className="px-4 py-3 text-sm text-slate-500">
             {query ? "No matches." : "Pick a class above, or search by name."}
           </li>
         )}
@@ -1008,7 +1008,7 @@ function BatchLog({
           </div>
         )}
         {keywords.length > 0 && (
-          <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-400">
+          <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
             <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-sky-400" /> Class preparedness</span>
             <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-rose-400" /> Behaviour</span>
             <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-indigo-400" /> Uniform (GUDD)</span>
@@ -1040,7 +1040,7 @@ function BatchLog({
       {/* Step 2: the students */}
       <div>
         <span className="mb-1 block text-sm font-medium text-slate-600">
-          2. Tap the students {pickedIds.length > 0 && <span className="text-slate-400">· {pickedIds.length} selected</span>}
+          2. Tap the students {pickedIds.length > 0 && <span className="text-slate-500">· {pickedIds.length} selected</span>}
         </span>
         <div className="mb-2 flex flex-wrap gap-2">
           {classes.map((c) => (
@@ -1071,11 +1071,11 @@ function BatchLog({
                   {s.lastName}, {s.firstName}{s.preferredName && s.preferredName !== s.firstName && s.preferredName !== s.lastName ? ` (${s.preferredName})` : ""}
                   {s.activeCount ? <span className="text-xs font-normal">({s.activeCount})</span> : null}
                 </span>
-                <span className="text-sm text-slate-400">{s.classGroup}</span>
+                <span className="text-sm text-slate-500">{s.classGroup}</span>
               </button>
             </li>
           ))}
-          {visible.length === 0 && <li className="px-4 py-3 text-sm text-slate-400">Pick a class above, or search by name.</li>}
+          {visible.length === 0 && <li className="px-4 py-3 text-sm text-slate-500">Pick a class above, or search by name.</li>}
         </ul>
       </div>
 

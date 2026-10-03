@@ -217,7 +217,7 @@ function ReadOnlySettings({ me }: { me: Me }) {
       {me.membership?.housesCommittee ? <HousesSection config={me.config} /> : <ReadOnlyHouses />}
       <details className="rounded-2xl border border-slate-200 bg-white p-5">
         <summary className="flex cursor-pointer list-none items-center justify-between font-semibold">
-          Division thresholds &amp; branding <span className="text-xs font-normal text-slate-400">view only ▾</span>
+          Division thresholds &amp; branding <span className="text-xs font-normal text-slate-500">view only ▾</span>
         </summary>
         <div className="mt-3 divide-y divide-slate-100">
           <Row label="Trigger count" val={c.triggerCount ?? 3} />
@@ -244,11 +244,11 @@ function ReadOnlyHouses() {
   return (
     <details className="rounded-2xl border border-slate-200 bg-white p-5">
       <summary className="flex cursor-pointer list-none items-center justify-between font-semibold">
-        Houses <span className="text-xs font-normal text-slate-400">view only ▾</span>
+        Houses <span className="text-xs font-normal text-slate-500">view only ▾</span>
       </summary>
       <div className="mt-3 space-y-1.5">
         {houses === null ? (
-          <p className="text-xs text-slate-400">Loading…</p>
+          <p className="text-xs text-slate-500">Loading…</p>
         ) : (
           houses.map((h) => (
             <div key={h._id} className="flex items-center gap-2 text-sm">
@@ -256,7 +256,7 @@ function ReadOnlyHouses() {
                 ? <img src={h.image} alt="" className="h-5 w-5 rounded object-cover" />
                 : <span className="inline-block h-3 w-3 rounded-full" style={{ background: h.color || "#0f172a" }} />}
               <span>{h.name}</span>
-              <span className="ml-auto text-xs text-slate-400">{h.members ?? 0} students</span>
+              <span className="ml-auto text-xs text-slate-500">{h.members ?? 0} students</span>
             </div>
           ))
         )}
@@ -346,7 +346,7 @@ function ParentTemplatesSection() {
         Your own encouraging / proactive notes home. On the Students page, pick a template and tap ✉ beside a student to copy a personalised
         message and log it — you send it yourself. Edit freely; keep the <code className="rounded bg-slate-100 px-1">{`{placeholders}`}</code>.
       </p>
-      <p className="mt-1 text-xs text-slate-400">
+      <p className="mt-1 text-xs text-slate-500">
         Placeholders: <code>{`{student}`}</code> <code>{`{parents}`}</code> <code>{`{parent1}`}</code> <code>{`{parentEmails}`}</code>{" "}
         <code>{`{he}`}</code>/<code>{`{him}`}</code>/<code>{`{his}`}</code> <code>{`{subject}`}</code> <code>{`{teacher}`}</code> <code>{`{school}`}</code>
       </p>
@@ -473,7 +473,7 @@ function ConfigSection({ config }: { config: any }) {
         <p className="text-sm font-medium text-slate-700">How parents &amp; the VP are contacted</p>
         <label className="mt-2 flex items-center gap-2 text-sm">
           <input type="checkbox" checked={c.edsby} onChange={(e) => setC({ ...c, edsby: e.target.checked })} />
-          Edsby <span className="text-slate-400">(recommended — parents see who it&apos;s from)</span>
+          Edsby <span className="text-slate-500">(recommended — parents see who it&apos;s from)</span>
         </label>
         <label className="mt-2 flex items-start gap-2 text-sm">
           <input type="checkbox" checked={c.emailToParents} onChange={(e) => setC({ ...c, emailToParents: e.target.checked })} className="mt-0.5" />
@@ -733,7 +733,7 @@ function TeacherHomeworkPrefs({ config, prefs }: { config: any; prefs: any }) {
           <input type="number" min={1} max={10} value={below} placeholder={`default ${hw.outstandingBelow ?? 6}`} onChange={(e) => setBelow(e.target.value)} className={inputCls} />
         </Field>
       </div>
-      <p className="mt-2 text-xs text-slate-400">Term dates (admin-set, apply to all): {termsStr}</p>
+      <p className="mt-2 text-xs text-slate-500">Term dates (admin-set, apply to all): {termsStr}</p>
       <div className="mt-3"><SaveButton state={saveState} onClick={save} label="Save my thresholds" /></div>
     </Card>
   );
@@ -899,7 +899,7 @@ function RecommendedActionsSettings({ config }: { config: any }) {
           <div key={i} className="flex items-center gap-2">
             <span className="text-sm text-slate-500">Notice</span>
             <input type="number" min={1} value={l.noticeNumber} onChange={(e) => setLadder((p) => p.map((x, j) => (j === i ? { ...x, noticeNumber: Number(e.target.value) } : x)))} className="w-16 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
-            <span className="text-sm text-slate-400">→</span>
+            <span className="text-sm text-slate-500">→</span>
             <input value={l.action} onChange={(e) => setLadder((p) => p.map((x, j) => (j === i ? { ...x, action: e.target.value } : x)))} placeholder="e.g. White slip" className="flex-1 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
             <button onClick={() => setLadder((p) => p.filter((_, j) => j !== i))} className="text-xs text-red-600">remove</button>
           </div>
@@ -911,7 +911,7 @@ function RecommendedActionsSettings({ config }: { config: any }) {
         <p className="text-sm font-medium text-slate-700">Approved consequences (the AI coach picks only from these)</p>
         <button onClick={() => setWhitelistText(RECOMMENDED_CONSEQUENCES.join("\n"))} className="shrink-0 text-xs text-slate-500 underline">Load recommended list</button>
       </div>
-      <p className="text-xs text-slate-400">One per line. You don&apos;t need to say what merits each — the coach matches them to the behaviour. Where a line invites specifics (the line text + how many times, an essay word-count + topic, a reflection&apos;s verses), the coach fills those in by occurrence.</p>
+      <p className="text-xs text-slate-500">One per line. You don&apos;t need to say what merits each — the coach matches them to the behaviour. Where a line invites specifics (the line text + how many times, an essay word-count + topic, a reflection&apos;s verses), the coach fills those in by occurrence.</p>
       <textarea
         value={whitelistText}
         onChange={(e) => setWhitelistText(e.target.value)}
@@ -925,7 +925,7 @@ function RecommendedActionsSettings({ config }: { config: any }) {
           <input type="checkbox" checked={wsOn} onChange={(e) => setWsOn(e.target.checked)} className="mt-0.5" />
           <span className="text-sm">
             <span className="font-medium text-slate-700">Handbook white-slip escalation</span>
-            <span className="block text-xs text-slate-400">When on, the recommended consequence follows the handbook&apos;s numeric rules: enough notices home in a term → a white slip; and repeat white slips → detention, then suspension.</span>
+            <span className="block text-xs text-slate-500">When on, the recommended consequence follows the handbook&apos;s numeric rules: enough notices home in a term → a white slip; and repeat white slips → detention, then suspension.</span>
           </span>
         </label>
         <div className="mt-2 space-y-1.5 text-sm text-slate-600" style={{ opacity: wsOn ? 1 : 0.4 }}>
@@ -945,7 +945,7 @@ function RecommendedActionsSettings({ config }: { config: any }) {
             <input type="number" min={0} value={wsSusDays} onChange={(e) => setWsSusDays(e.target.value)} disabled={!wsOn} className="w-14 rounded border border-slate-300 px-2 py-1" />
             <span>-day <strong>suspension</strong></span>
           </div>
-          <p className="text-xs text-slate-400">Handbook defaults: 5 notices → white slip; 3rd–5th white slip → detention; 6th → 2-day suspension.</p>
+          <p className="text-xs text-slate-500">Handbook defaults: 5 notices → white slip; 3rd–5th white slip → detention; 6th → 2-day suspension.</p>
         </div>
       </div>
 
@@ -1036,7 +1036,7 @@ function GuddSettings({ config }: { config: any }) {
             </label>
           </div>
           <p className="mt-3 text-sm font-medium text-slate-700">Escalation ladder (applied after the GUDD is lost)</p>
-          <p className="text-xs text-slate-400">One consequence per line. The 1st further infraction after the loss gets line 1, the 2nd gets line 2, holding at the last line.</p>
+          <p className="text-xs text-slate-500">One consequence per line. The 1st further infraction after the loss gets line 1, the 2nd gets line 2, holding at the last line.</p>
           <textarea value={escText} onChange={(e) => setEscText(e.target.value)} rows={4} className={`${inputCls} mt-1 font-sans`}
             placeholder={"Lunch detention\nMeeting with the VP\nIn-school suspension"} />
 
@@ -1044,7 +1044,7 @@ function GuddSettings({ config }: { config: any }) {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <p className="text-sm font-medium text-slate-700">Disqualification report &amp; period reset</p>
-                <p className="text-xs text-slate-400">
+                <p className="text-xs text-slate-500">
                   {g.resetAt ? `Current period started ${new Date(g.resetAt).toLocaleString()}.` : "Counting over the fade window (list not cleared yet)."}
                 </p>
               </div>
@@ -1069,19 +1069,19 @@ function GuddSettings({ config }: { config: any }) {
                   <ul className="mt-1 divide-y divide-slate-100 text-sm">
                     {report.lost.map((r: any) => (
                       <li key={r.studentId} className="flex justify-between gap-2 py-1">
-                        <span>{r.name} <span className="text-slate-400">{r.classGroup}</span></span>
+                        <span>{r.name} <span className="text-slate-500">{r.classGroup}</span></span>
                         <span className="text-slate-500">{r.count}/{r.threshold}{r.consequence ? ` · ${r.consequence}` : ""}</span>
                       </li>
                     ))}
                   </ul>
-                ) : <p className="text-xs text-slate-400">None have lost it this period.</p>}
+                ) : <p className="text-xs text-slate-500">None have lost it this period.</p>}
                 {report.atRisk?.length > 0 && (
                   <details className="mt-2">
                     <summary className="cursor-pointer text-xs text-slate-500">At risk ({report.atRisk.length})</summary>
                     <ul className="mt-1 divide-y divide-slate-100 text-sm">
                       {report.atRisk.map((r: any) => (
                         <li key={r.studentId} className="flex justify-between gap-2 py-1">
-                          <span>{r.name} <span className="text-slate-400">{r.classGroup}</span></span>
+                          <span>{r.name} <span className="text-slate-500">{r.classGroup}</span></span>
                           <span className="text-slate-500">{r.count}/{r.threshold}</span>
                         </li>
                       ))}
@@ -1280,12 +1280,12 @@ function EdsbySection({ edsby }: { edsby: any }) {
     <Card>
       <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center justify-between gap-2 text-left">
         <h2 id="edsby" className="scroll-mt-20 font-semibold">Edsby connection</h2>
-        <span className="flex items-center gap-2 text-sm text-slate-400">
+        <span className="flex items-center gap-2 text-sm text-slate-500">
           <span className={`rounded-full px-2 py-0.5 text-xs ${enabled ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}>{enabled ? "on" : "off"}</span>
           {open ? "▾" : "▸"}
         </span>
       </button>
-      {!open && <p className="mt-1 text-sm text-slate-400">Post notices over your school&apos;s Edsby session. Tap to configure.</p>}
+      {!open && <p className="mt-1 text-sm text-slate-500">Post notices over your school&apos;s Edsby session. Tap to configure.</p>}
       {open && (<>
       <p className="mt-1 text-sm text-slate-500">
         Edsby has no public API, so notices are posted using your school&apos;s signed-in session — each
@@ -1319,7 +1319,7 @@ function EdsbySection({ edsby }: { edsby: any }) {
         </Button>
         {detectMsg && <span className={`text-xs ${detectMsg.startsWith("✓") ? "text-green-700" : detectMsg.startsWith("✗") ? "text-red-600" : "text-slate-500"}`}>{detectMsg}</span>}
       </div>
-      <p className="mt-1 text-xs text-slate-400">
+      <p className="mt-1 text-xs text-slate-500">
         Can&apos;t find jver/cver by hand? In DevTools → Network, click any{" "}
         <code className="rounded bg-slate-100 px-1">?xds=Panorama</code> request → <span className="font-medium">Headers → Request Headers</span>
         {" "}→ copy <code className="rounded bg-slate-100 px-1">x-xds-jver</code> and <code className="rounded bg-slate-100 px-1">x-xds-cver</code>. (jver is also the
@@ -1338,7 +1338,7 @@ function EdsbySection({ edsby }: { edsby: any }) {
           <li>Open <span className="font-medium">Headers → Request Headers</span> and find the <code className="rounded bg-slate-100 px-1">Cookie:</code> line.</li>
           <li>Copy <span className="font-medium">everything after</span> <code className="rounded bg-slate-100 px-1">Cookie:</code> and paste it above, then <span className="font-medium">Save</span>.</li>
         </ol>
-        <p className="mt-2 text-slate-400">
+        <p className="mt-2 text-slate-500">
           The app can&apos;t grab this for you — browsers block one site from reading another&apos;s session cookie. You only
           need to redo it when sends start failing over to email (the cookie expires every so often).
         </p>
@@ -1356,14 +1356,14 @@ function EdsbySection({ edsby }: { edsby: any }) {
             {tokenBusy ? "Generating…" : ingestTokenSet ? "Regenerate token" : "1. Generate token"}
           </Button>
           {ingestToken && <code className="break-all rounded bg-slate-100 px-1.5 py-0.5 text-[11px]">{ingestToken}</code>}
-          {!ingestToken && ingestTokenSet && <span className="text-slate-400">A token already exists (hidden) — regenerate to see a new one.</span>}
+          {!ingestToken && ingestTokenSet && <span className="text-slate-500">A token already exists (hidden) — regenerate to see a new one.</span>}
         </div>
         <ol className="mt-2 list-decimal space-y-1 pl-4">
           <li>Generate the token above and copy it.</li>
           <li><a href="/behaviours-edsby-cookie-sync.zip" download className="text-slate-700 underline">Download the extension</a>, unzip it (you&apos;ll get a <code className="rounded bg-slate-100 px-1">behaviours-edsby-cookie-sync</code> folder), then in <code className="rounded bg-slate-100 px-1">chrome://extensions</code> turn on Developer mode → <span className="font-medium">Load unpacked</span> → pick that folder.</li>
           <li>Open the extension&apos;s Options, enter <span className="font-medium">your Edsby host</span> and paste the token, then <span className="font-medium">Push current cookie now</span>.</li>
         </ol>
-        <p className="mt-2 text-slate-400">The token is the credential — keep it secret. Regenerating it here revokes the old one (update the extension afterwards).</p>
+        <p className="mt-2 text-slate-500">The token is the credential — keep it secret. Regenerating it here revokes the old one (update the extension afterwards).</p>
       </details>
 
       <details className="mt-1 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
@@ -1380,7 +1380,7 @@ function EdsbySection({ edsby }: { edsby: any }) {
               variant="secondary" size="xs" className="mt-1">Copy script</Button>
           </>
         )}
-        <p className="mt-2 text-slate-400">
+        <p className="mt-2 text-slate-500">
           The app only reads what you POST — any of cookie, formkey, jver, cver, userNid, zoomId, baseUrl. Send the cookie
           using your script&apos;s own accessor (replace the <code className="rounded bg-slate-100 px-1">document.cookie</code> line).
         </p>
@@ -1969,12 +1969,12 @@ function HousesSection({ config }: { config?: any }) {
             <label className="relative h-8 w-8 shrink-0 cursor-pointer overflow-hidden rounded border border-slate-300 bg-slate-50" title={h.image ? "Change crest" : "Upload a crest/logo"}>
               {h.image
                 ? <img src={h.image} alt="" className="h-full w-full object-cover" />
-                : <span className="flex h-full w-full items-center justify-center text-sm text-slate-400">＋</span>}
+                : <span className="flex h-full w-full items-center justify-center text-sm text-slate-500">＋</span>}
               <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadHouseImage(h, f); e.target.value = ""; }} />
             </label>
             <input defaultValue={h.name} onBlur={(e) => e.target.value.trim() && save(h, { name: e.target.value })} className={`${inputCls} flex-1`} />
-            {h.image && <button onClick={() => save(h, { image: "" })} className="text-xs text-slate-400 underline">clear</button>}
-            <span className="w-24 text-right text-xs text-slate-400">{h.members} students · {h.points} pts</span>
+            {h.image && <button onClick={() => save(h, { image: "" })} className="text-xs text-slate-500 underline">clear</button>}
+            <span className="w-24 text-right text-xs text-slate-500">{h.members} students · {h.points} pts</span>
             <button onClick={() => remove(h)} className="rounded-lg border border-red-300 px-2 py-1 text-xs text-red-700">Remove</button>
           </div>
         ))}
@@ -2001,12 +2001,12 @@ function HousesSection({ config }: { config?: any }) {
             Rebalance only unassigned
           </Button>
         </div>
-        <p className="mt-1 text-xs text-slate-400">Use “Rebalance only unassigned” after a mid-year roster import to slot new students into the existing houses without reshuffling everyone.</p>
+        <p className="mt-1 text-xs text-slate-500">Use “Rebalance only unassigned” after a mid-year roster import to slot new students into the existing houses without reshuffling everyone.</p>
         {backfillMsg && <p className={`mt-2 text-xs ${backfillMsg.startsWith("✓") ? "text-green-700" : "text-red-600"}`}>{backfillMsg}</p>}
 
         <div className="mt-4 border-t border-slate-100 pt-3">
           <p className="text-sm font-medium text-slate-700">Booster-event groups (#1 / #2)</p>
-          <p className="text-xs text-slate-400">For events where a whole house won&apos;t fit one room, split each house into two groups — balanced by grade &amp; gender, siblings together. Set each group&apos;s room below; students see their group &amp; room in the House portal by typing their last name.</p>
+          <p className="text-xs text-slate-500">For events where a whole house won&apos;t fit one room, split each house into two groups — balanced by grade &amp; gender, siblings together. Set each group&apos;s room below; students see their group &amp; room in the House portal by typing their last name.</p>
           <Button onClick={splitGroups} disabled={splitBusy}
             variant="secondary" className="mt-2">
             {splitBusy ? "Splitting…" : "Split houses into 2 balanced groups"}
@@ -2034,22 +2034,22 @@ function HousesSection({ config }: { config?: any }) {
         {/* How houses earn points — three switches */}
         <div className="mt-4 border-t border-slate-100 pt-3">
           <p className="text-sm font-medium text-slate-700">How houses earn points</p>
-          <p className="text-xs text-slate-400">Choose which point systems are active. You can run individual points, the monthly award, and the GUDD award in any combination.</p>
+          <p className="text-xs text-slate-500">Choose which point systems are active. You can run individual points, the monthly award, and the GUDD award in any combination.</p>
 
           {/* 1) Individual points — split by positive / negative / white slip */}
           <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
             <p className="text-sm font-medium text-slate-700">Individual behaviour points</p>
-            <p className="text-xs text-slate-400">Behaviours are always recorded and still drive strikes/notices — these only control whether they move house points.</p>
+            <p className="text-xs text-slate-500">Behaviours are always recorded and still drive strikes/notices — these only control whether they move house points.</p>
             <div className="mt-2 space-y-2">
               <label className="flex items-start gap-2">
                 <input type="checkbox" checked={posPts} onChange={(e) => setPosPts(e.target.checked)} className="mt-0.5" />
                 <span className="text-sm"><span className="font-medium text-green-700">Add points for positive behaviour</span>
-                  <span className="block text-xs text-slate-400">Logging a positive adds its points to the student&apos;s house.</span></span>
+                  <span className="block text-xs text-slate-500">Logging a positive adds its points to the student&apos;s house.</span></span>
               </label>
               <label className="flex items-start gap-2">
                 <input type="checkbox" checked={negPts} onChange={(e) => setNegPts(e.target.checked)} className="mt-0.5" />
                 <span className="text-sm"><span className="font-medium text-red-600">Deduct points for negative behaviour (infractions)</span>
-                  <span className="block text-xs text-slate-400">Logging an infraction subtracts its points. Leave off to keep the house board all-positive.</span></span>
+                  <span className="block text-xs text-slate-500">Logging an infraction subtracts its points. Leave off to keep the house board all-positive.</span></span>
               </label>
               <label className={`flex items-start gap-2 ${negPts ? "opacity-40" : ""}`}>
                 <input type="checkbox" checked={wsDeduct && !negPts} disabled={negPts} onChange={(e) => setWsDeduct(e.target.checked)} className="mt-0.5" />
@@ -2058,7 +2058,7 @@ function HousesSection({ config }: { config?: any }) {
                     <input type="number" min={0} value={wsPts} disabled={negPts || !wsDeduct} onChange={(e) => setWsPts(e.target.value)} className="w-16 rounded border border-slate-300 px-1.5 py-0.5 text-sm disabled:opacity-50" />
                     <span className="text-xs text-slate-500">points per white slip</span>
                   </span>
-                  <span className="block text-xs text-slate-400">{negPts ? "Turn off per-infraction deductions to use this (avoids double-counting)." : "A single, larger penalty for a white slip while everyday infractions don't cost points."}</span>
+                  <span className="block text-xs text-slate-500">{negPts ? "Turn off per-infraction deductions to use this (avoids double-counting)." : "A single, larger penalty for a white slip while everyday infractions don't cost points."}</span>
                 </span>
               </label>
             </div>
@@ -2071,7 +2071,7 @@ function HousesSection({ config }: { config?: any }) {
               <input type="checkbox" checked={mcOn} onChange={(e) => setMcOn(e.target.checked)} className="mt-0.5" />
               <span className="text-sm">
                 <span className="font-medium text-slate-700">Monthly award: 1st / 2nd / 3rd each month</span>
-                <span className="block text-xs text-slate-400">On the last school day of each month, award house points to the top houses.</span>
+                <span className="block text-xs text-slate-500">On the last school day of each month, award house points to the top houses.</span>
               </span>
             </label>
             <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
@@ -2097,7 +2097,7 @@ function HousesSection({ config }: { config?: any }) {
               <input type="checkbox" checked={gaOn} onChange={(e) => setGaOn(e.target.checked)} className="mt-0.5" />
               <span className="text-sm">
                 <span className="font-medium text-slate-700">GUDD dress-down award: 1st / 2nd / 3rd when the list is recycled</span>
-                <span className="block text-xs text-slate-400">When you clear the GUDD list for a new period, the houses with the fewest excluded members are awarded these points.</span>
+                <span className="block text-xs text-slate-500">When you clear the GUDD list for a new period, the houses with the fewest excluded members are awarded these points.</span>
               </span>
             </label>
             <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
@@ -2113,7 +2113,7 @@ function HousesSection({ config }: { config?: any }) {
         {/* Per-student point caps */}
         <div className="mt-4 border-t border-slate-100 pt-3">
           <p className="text-sm font-medium text-slate-700">Per-student point caps</p>
-          <p className="text-xs text-slate-400">Limit how much any one student can move their house total (0 = unlimited). Positive and negative are capped separately; points awarded to a whole house aren&apos;t capped.</p>
+          <p className="text-xs text-slate-500">Limit how much any one student can move their house total (0 = unlimited). Positive and negative are capped separately; points awarded to a whole house aren&apos;t capped.</p>
           <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
             <label className="flex items-center gap-1.5">Max + per student
               <input type="number" min={0} value={posCap} onChange={(e) => setPosCap(e.target.value)} className="w-20 rounded-lg border border-slate-300 px-2 py-1" /></label>
@@ -2126,7 +2126,7 @@ function HousesSection({ config }: { config?: any }) {
         {/* Encouraging-message reward */}
         <div className="mt-4 border-t border-slate-100 pt-3">
           <p className="text-sm font-medium text-slate-700">Encouraging message reward</p>
-          <p className="text-xs text-slate-400">House points added to a student&apos;s house when a teacher sends them an encouraging parent message (0 = none).</p>
+          <p className="text-xs text-slate-500">House points added to a student&apos;s house when a teacher sends them an encouraging parent message (0 = none).</p>
           <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
             <label className="flex items-center gap-1.5">Points per encouraging message
               <input type="number" min={0} value={encPts} onChange={(e) => setEncPts(e.target.value)} className="w-20 rounded-lg border border-slate-300 px-2 py-1" /></label>
@@ -2137,7 +2137,7 @@ function HousesSection({ config }: { config?: any }) {
         {/* Standard add/deduct scheme for infractions & positives */}
         <div className="mt-4 border-t border-slate-100 pt-3">
           <p className="text-sm font-medium text-slate-700">Standard house points on behaviours</p>
-          <p className="text-xs text-slate-400">Give every behaviour a recommended house-point value: −1 minor, −2 moderate, −3 serious/values-based, −5 immediate; +3 positive, +5 notable. Only fills behaviours still at 0 — your custom values are kept. You usually don&apos;t need this: positives are already set, and infractions only move house points if you&apos;ve turned on &ldquo;Deduct for negatives.&rdquo; Tune any value in the Behaviours list.</p>
+          <p className="text-xs text-slate-500">Give every behaviour a recommended house-point value: −1 minor, −2 moderate, −3 serious/values-based, −5 immediate; +3 positive, +5 notable. Only fills behaviours still at 0 — your custom values are kept. You usually don&apos;t need this: positives are already set, and infractions only move house points if you&apos;ve turned on &ldquo;Deduct for negatives.&rdquo; Tune any value in the Behaviours list.</p>
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <Button type="button" disabled={applyPtsBusy}
               onClick={async () => {
@@ -2155,7 +2155,7 @@ function HousesSection({ config }: { config?: any }) {
         {/* House events with preset points */}
         <div className="mt-4 border-t border-slate-100 pt-3">
           <p className="text-sm font-medium text-slate-700">House events (preset points)</p>
-          <p className="text-xs text-slate-400">Define events with set point values for quick awarding from the dashboard (e.g. “Trivia — 1st” = 50). Load a preset list to start, then edit or add your own — including new events that come up during the year.</p>
+          <p className="text-xs text-slate-500">Define events with set point values for quick awarding from the dashboard (e.g. “Trivia — 1st” = 50). Load a preset list to start, then edit or add your own — including new events that come up during the year.</p>
           <div className="mt-1">
             <button type="button"
               onClick={() => setEvents((p) => {
@@ -2183,7 +2183,7 @@ function HousesSection({ config }: { config?: any }) {
         {/* Reward tiers */}
         <div className="mt-4 border-t border-slate-100 pt-3">
           <p className="text-sm font-medium text-slate-700">Rewards (reach X points → reward)</p>
-          <p className="text-xs text-slate-400">When a house&apos;s total reaches the points, it unlocks the reward — shown on the portal &amp; display board (e.g. 50 → “Ice cream sundae”). Load a suggested ladder to start, then tune the points and wording to your school.</p>
+          <p className="text-xs text-slate-500">When a house&apos;s total reaches the points, it unlocks the reward — shown on the portal &amp; display board (e.g. 50 → “Ice cream sundae”). Load a suggested ladder to start, then tune the points and wording to your school.</p>
           <div className="mt-1">
             <button type="button"
               onClick={() => setRewards((p) => {
@@ -2199,7 +2199,7 @@ function HousesSection({ config }: { config?: any }) {
             {rewards.map((r, i) => (
               <div key={i} className="flex items-center gap-2">
                 <input type="number" min={1} value={r.points} onChange={(e) => setRewards((p) => p.map((x, j) => (j === i ? { ...x, points: Number(e.target.value) || 0 } : x)))} className="w-20 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
-                <span className="text-sm text-slate-400">pts →</span>
+                <span className="text-sm text-slate-500">pts →</span>
                 <input value={r.reward} onChange={(e) => setRewards((p) => p.map((x, j) => (j === i ? { ...x, reward: e.target.value } : x)))} placeholder="Reward (e.g. Ice cream sundae)" className="flex-1 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
                 <button onClick={() => setRewards((p) => p.filter((_, j) => j !== i))} className="text-xs text-red-600">remove</button>
               </div>
@@ -2215,7 +2215,7 @@ function HousesSection({ config }: { config?: any }) {
             <input type="checkbox" checked={merchOn} onChange={(e) => setMerchOn(e.target.checked)} className="mt-0.5" />
             <span className="text-sm">
               <span className="font-medium text-slate-700">Merch store (students spend their points)</span>
-              <span className="block text-xs text-slate-400">Students see their personal points balance and this catalog on the /houses portal, then see a teacher to redeem. Spending here is a separate wallet — it never lowers a house&apos;s standing.</span>
+              <span className="block text-xs text-slate-500">Students see their personal points balance and this catalog on the /houses portal, then see a teacher to redeem. Spending here is a separate wallet — it never lowers a house&apos;s standing.</span>
             </span>
           </label>
           <div className="mt-2">
@@ -2233,7 +2233,7 @@ function HousesSection({ config }: { config?: any }) {
               <div key={i} className="flex items-center gap-2">
                 <input value={m.name} onChange={(e) => setMerch((p) => p.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} placeholder="Item (e.g. Hoodie)" className="flex-1 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
                 <input type="number" min={1} value={m.points} onChange={(e) => setMerch((p) => p.map((x, j) => (j === i ? { ...x, points: Number(e.target.value) || 0 } : x)))} className="w-20 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
-                <span className="text-sm text-slate-400">pts</span>
+                <span className="text-sm text-slate-500">pts</span>
                 <button onClick={() => setMerch((p) => p.filter((_, j) => j !== i))} className="text-xs text-red-600">remove</button>
               </div>
             ))}
@@ -2264,7 +2264,7 @@ function HousesSection({ config }: { config?: any }) {
               variant="secondary" size="sm">
               {inviteCopied ? "✓ Copied — paste into Edsby" : "📋 Copy invite message (for Edsby)"}
             </Button>
-            <p className="mt-1 text-xs text-slate-400">Rich, ready-to-paste message inviting students to the portal — with your code built into a one-click link.</p>
+            <p className="mt-1 text-xs text-slate-500">Rich, ready-to-paste message inviting students to the portal — with your code built into a one-click link.</p>
           </div>
         )}
         <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -2288,7 +2288,7 @@ function HousesSection({ config }: { config?: any }) {
         <p className="text-sm font-medium text-slate-700">House captains</p>
         <p className="mt-0.5 text-xs text-slate-500">Mark a student leader for each house. Captains show on the standings report and the student portal (first name + last initial only).</p>
         {roster === null ? (
-          <p className="mt-2 text-xs text-slate-400">Loading roster…</p>
+          <p className="mt-2 text-xs text-slate-500">Loading roster…</p>
         ) : (
           <div className="mt-2 space-y-3">
             {(houses || []).map((h) => {
@@ -2305,10 +2305,10 @@ function HousesSection({ config }: { config?: any }) {
                     {caps.map((s) => (
                       <button key={s._id} onClick={() => setCaptain(s._id, false)}
                         className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-xs text-slate-700 ring-1 ring-slate-200">
-                        © {s.preferredName || s.firstName} {s.lastName}{s.houseGroup ? ` · #${s.houseGroup}` : ""} <span className="text-slate-400">✕</span>
+                        © {s.preferredName || s.firstName} {s.lastName}{s.houseGroup ? ` · #${s.houseGroup}` : ""} <span className="text-slate-500">✕</span>
                       </button>
                     ))}
-                    {caps.length === 0 && <span className="text-xs text-slate-400">No captains yet.</span>}
+                    {caps.length === 0 && <span className="text-xs text-slate-500">No captains yet.</span>}
                     {nonCaps.length > 0 && (
                       <select
                         value=""
@@ -2328,7 +2328,7 @@ function HousesSection({ config }: { config?: any }) {
                 </div>
               );
             })}
-            {(houses || []).length === 0 && <p className="text-xs text-slate-400">Define houses first.</p>}
+            {(houses || []).length === 0 && <p className="text-xs text-slate-500">Define houses first.</p>}
           </div>
         )}
       </div>
@@ -2338,7 +2338,7 @@ function HousesSection({ config }: { config?: any }) {
         <p className="text-sm font-medium text-slate-700">House teachers</p>
         <p className="mt-0.5 text-xs text-slate-500">Up to two staff leads (“heads of house”) per house. Shown on the printed houses list.</p>
         {(houses || []).length === 0 ? (
-          <p className="mt-2 text-xs text-slate-400">Define houses first.</p>
+          <p className="mt-2 text-xs text-slate-500">Define houses first.</p>
         ) : (
           <div className="mt-2 space-y-1.5">
             {(houses || []).map((h) => (
@@ -2636,7 +2636,7 @@ function TestToolsSection({ email, collapsed = false, canManageStudents = true }
   return (
     <Card>
       <details open={!collapsed}>
-      <summary className="flex cursor-pointer list-none items-center justify-between font-semibold">Test &amp; cleanup <span className="text-xs font-normal text-slate-400">▾</span></summary>
+      <summary className="flex cursor-pointer list-none items-center justify-between font-semibold">Test &amp; cleanup <span className="text-xs font-normal text-slate-500">▾</span></summary>
       {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
 
       <div className="mt-3">
@@ -2696,7 +2696,7 @@ function TestToolsSection({ email, collapsed = false, canManageStudents = true }
       {canManageStudents && (
       <div className="mt-5 border-t border-slate-100 pt-4">
         <p className="text-sm font-medium text-slate-700">Manage / remove a student</p>
-        <p className="text-xs text-slate-400">Deactivate hides a student who left (keeps their history). Delete is permanent.</p>
+        <p className="text-xs text-slate-500">Deactivate hides a student who left (keeps their history). Delete is permanent.</p>
         {msg && <p className="mt-1 text-sm text-green-700">{msg}</p>}
         <div className="mt-2 flex gap-2">
           <input
@@ -2712,7 +2712,7 @@ function TestToolsSection({ email, collapsed = false, canManageStudents = true }
           {results.map((s) => (
             <li key={s._id} className="flex items-center justify-between gap-2 py-2 text-sm">
               <span>
-                {s.lastName}, {s.firstName} <span className="text-slate-400">{[s.classGroup, s.grade].filter(Boolean).join(" · ")}</span>
+                {s.lastName}, {s.firstName} <span className="text-slate-500">{[s.classGroup, s.grade].filter(Boolean).join(" · ")}</span>
                 {s.active === false && <span className="ml-2 rounded bg-slate-100 px-1.5 text-xs text-slate-500">deactivated</span>}
               </span>
               <span className="flex shrink-0 items-center gap-1.5">
@@ -2808,7 +2808,7 @@ function Card({ children }: { children: ReactNode }) {
         <button type="button" onClick={toggle} aria-expanded={open}
           className="flex min-w-0 flex-1 items-center gap-3 text-left">
           <span className="min-w-0">{titleNode}</span>
-          <span className={`shrink-0 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden>▾</span>
+          <span className={`shrink-0 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`} aria-hidden>▾</span>
         </button>
         {headerExtras}
       </div>

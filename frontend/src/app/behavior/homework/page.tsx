@@ -49,9 +49,9 @@ export default function HomeworkPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-semibold">Homework</h1>
-        <p className="text-sm text-slate-400">Assignments, completion, formal discussions, averages, and outstanding-work reminders — per class.</p>
+        <p className="text-sm text-slate-500">Assignments, completion, formal discussions, averages, and outstanding-work reminders — per class.</p>
       </div>
-      {classes.length === 0 && <p className="text-sm text-slate-400">No classes yet — import a roster in Setup.</p>}
+      {classes.length === 0 && <p className="text-sm text-slate-500">No classes yet — import a roster in Setup.</p>}
       {classes.map((c) => (
         <ClassSection key={c} classGroup={c} subjects={subjects} currentTerm={currentTerm} onSubjectsChange={(s) => setMe((m) => (m ? { ...m, config: { ...m.config, homework: { ...m.config?.homework, subjects: s } } } : m))} />
       ))}
@@ -90,7 +90,7 @@ function ClassSection({ classGroup, subjects, currentTerm, onSubjectsChange }: {
     <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
       <div className="flex items-center justify-between gap-2 px-4 py-3">
         <button onClick={() => setOpen((o) => !o)} className="flex items-center gap-2 text-left font-semibold">
-          <span className="text-slate-400">{open ? "▾" : "▸"}</span> {classGroup}
+          <span className="text-slate-500">{open ? "▾" : "▸"}</span> {classGroup}
         </button>
         {open && (
           <div className="flex flex-wrap gap-1.5 text-xs">
@@ -111,9 +111,9 @@ function ClassSection({ classGroup, subjects, currentTerm, onSubjectsChange }: {
           {panel === "outstanding" && <OutstandingPanel classGroup={classGroup} onPosted={load} />}
 
           {!data ? (
-            <p className="mt-3 text-sm text-slate-400">Loading…</p>
+            <p className="mt-3 text-sm text-slate-500">Loading…</p>
           ) : data.assignments.length === 0 ? (
-            <p className="mt-3 text-sm text-slate-400">No assignments yet. Tap “+ Assignment”.</p>
+            <p className="mt-3 text-sm text-slate-500">No assignments yet. Tap “+ Assignment”.</p>
           ) : (
             <ul className="mt-3 divide-y divide-slate-100">
               {data.assignments.map((a) => (
@@ -124,7 +124,7 @@ function ClassSection({ classGroup, subjects, currentTerm, onSubjectsChange }: {
                       <span className="font-medium">{a.subject || "—"}</span>
                       <span className="ml-2 text-slate-500">{a.description || typeLabel(a.type)}</span>
                     </span>
-                    <span className="shrink-0 text-xs text-slate-400">
+                    <span className="shrink-0 text-xs text-slate-500">
                       {typeLabel(a.type)} · {fmtDate(a.date)} · /{a.denom}{a.type === "discussion" ? " ▸" : openAssignment === a._id ? " ▾" : " ▸"}
                     </span>
                   </button>
@@ -175,7 +175,7 @@ function Grid({ assignment, students, scoreFor, onChanged }: { assignment: Assig
 
   return (
     <div className="mt-2 rounded-lg bg-slate-50 p-2">
-      <p className="mb-1 px-1 text-[11px] text-slate-400">Tap to mark complete (auto-scores by lateness). Double-tap to edit. <b>E</b> = excused (dropped from totals). Blank counts as 0 at term end. Amber = messaged about.</p>
+      <p className="mb-1 px-1 text-[11px] text-slate-500">Tap to mark complete (auto-scores by lateness). Double-tap to edit. <b>E</b> = excused (dropped from totals). Blank counts as 0 at term end. Amber = messaged about.</p>
       <ul className="divide-y divide-slate-100">
         {students.map((s) => {
           const sc = scoreFor(assignment._id, s._id);
@@ -192,14 +192,14 @@ function Grid({ assignment, students, scoreFor, onChanged }: { assignment: Assig
                   className={`min-w-[3.5rem] rounded-lg px-3 py-1.5 text-sm font-semibold disabled:opacity-50 ${
                     score != null ? "bg-green-100 text-green-800"
                     : messaged ? "bg-amber-100 text-amber-800"
-                    : "border border-dashed border-slate-300 text-slate-400"}`}
+                    : "border border-dashed border-slate-300 text-slate-500"}`}
                 >
                   {busy === s._id ? "…" : excused ? "—" : score != null ? `${score}/${assignment.denom}` : messaged ? "sent" : "tap"}
                 </button>
                 <button
                   onClick={() => toggleExcused(s._id, !excused)}
                   disabled={busy === s._id}
-                  className={`h-8 w-8 rounded-lg text-xs font-bold ${excused ? "bg-slate-700 text-white" : "border border-slate-300 text-slate-400"}`}
+                  className={`h-8 w-8 rounded-lg text-xs font-bold ${excused ? "bg-slate-700 text-white" : "border border-slate-300 text-slate-500"}`}
                   title="Excused (e.g. absent) — dropped from the total"
                 >E</button>
               </span>
@@ -312,28 +312,28 @@ function ReportPanel({ classGroup, subjects, currentTerm }: { classGroup: string
       </div>
 
       {loading || !data ? (
-        <p className="mt-3 text-sm text-slate-400">Loading…</p>
+        <p className="mt-3 text-sm text-slate-500">Loading…</p>
       ) : data.assignmentCount === 0 ? (
-        <p className="mt-3 text-sm text-slate-400">No {typeLabel(type)} for {subject} in this term yet.</p>
+        <p className="mt-3 text-sm text-slate-500">No {typeLabel(type)} for {subject} in this term yet.</p>
       ) : (
         <>
           <p className="mt-2 text-sm text-slate-600">
             {data.assignmentCount} assignment{data.assignmentCount === 1 ? "" : "s"} · class average <span className="font-semibold">{data.classAverage ?? "—"}/10</span> · {totalOutstanding} result{totalOutstanding === 1 ? "" : "s"} outstanding (blank or &lt;{data.below})
           </p>
           <table className="mt-2 w-full text-sm">
-            <thead><tr className="text-left text-xs uppercase text-slate-400"><th className="py-1">Student</th><th className="text-right">Mark</th><th className="text-right">Avg/10</th><th className="text-right">Outstanding</th></tr></thead>
+            <thead><tr className="text-left text-xs uppercase text-slate-500"><th className="py-1">Student</th><th className="text-right">Mark</th><th className="text-right">Avg/10</th><th className="text-right">Outstanding</th></tr></thead>
             <tbody>
               {data.rows.map((r) => (
                 <tr key={r.studentId} className="border-t border-slate-100">
                   <td className="py-1">{r.lastName}, {r.firstName}</td>
-                  <td className="text-right tabular-nums">{r.outOf ? `${r.total}/${r.outOf}` : "—"}{r.excused ? <span className="ml-1 text-[10px] text-slate-400">({r.excused}E)</span> : null}</td>
+                  <td className="text-right tabular-nums">{r.outOf ? `${r.total}/${r.outOf}` : "—"}{r.excused ? <span className="ml-1 text-[10px] text-slate-500">({r.excused}E)</span> : null}</td>
                   <td className={`text-right font-semibold tabular-nums ${r.average != null && r.average < data.below ? "text-red-600" : ""}`}>{r.average ?? "—"}</td>
-                  <td className={`text-right tabular-nums ${r.outstanding ? "text-amber-700" : "text-slate-400"}`}>{r.outstanding}</td>
+                  <td className={`text-right tabular-nums ${r.outstanding ? "text-amber-700" : "text-slate-500"}`}>{r.outstanding}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <p className="mt-1 text-[11px] text-slate-400">End-of-term CSV sums this type (e.g. 8 checks → /80); blanks count as 0, “E” excused are dropped.</p>
+          <p className="mt-1 text-[11px] text-slate-500">End-of-term CSV sums this type (e.g. 8 checks → /80); blanks count as 0, “E” excused are dropped.</p>
         </>
       )}
     </div>
@@ -361,8 +361,8 @@ function OutstandingPanel({ classGroup, onPosted }: { classGroup: string; onPost
     } catch (e: any) { setMsg(`✗ ${e.message}`); } finally { setBusy(false); }
   }
 
-  if (!rows) return <p className="text-sm text-slate-400">Loading outstanding…</p>;
-  if (!rows.length) return <p className="text-sm text-slate-400">Nobody is behind 🎉</p>;
+  if (!rows) return <p className="text-sm text-slate-500">Loading outstanding…</p>;
+  if (!rows.length) return <p className="text-sm text-slate-500">Nobody is behind 🎉</p>;
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
       <p className="text-sm font-medium text-slate-700">Outstanding work (current + previous term)</p>
@@ -373,7 +373,7 @@ function OutstandingPanel({ classGroup, onPosted }: { classGroup: string; onPost
             <label className="flex items-center gap-2">
               <input type="checkbox" checked={!!picked[s.studentId]} onChange={(e) => setPicked((p) => ({ ...p, [s.studentId]: e.target.checked }))} />
               <span className="font-medium">{s.name}</span>
-              <span className="text-xs text-slate-400">{s.items.length} item{s.items.length === 1 ? "" : "s"}{s.lastMessagedAt ? ` · messaged ${fmtDate(s.lastMessagedAt)}` : ""}</span>
+              <span className="text-xs text-slate-500">{s.items.length} item{s.items.length === 1 ? "" : "s"}{s.lastMessagedAt ? ` · messaged ${fmtDate(s.lastMessagedAt)}` : ""}</span>
             </label>
           </li>
         ))}
@@ -382,7 +382,7 @@ function OutstandingPanel({ classGroup, onPosted }: { classGroup: string; onPost
         <Button onClick={() => post(false)} disabled={busy || !Object.values(picked).some(Boolean)} size="sm">Send to checked</Button>
         <Button onClick={() => post(true)} disabled={busy} variant="secondary" size="sm">Send to whole class</Button>
       </div>
-      <p className="mt-1 text-[11px] text-slate-400">Whole-class skips anyone messaged recently. Message says they’ve fallen behind and to show work in person; partial credit if shown within 7 days.</p>
+      <p className="mt-1 text-[11px] text-slate-500">Whole-class skips anyone messaged recently. Message says they’ve fallen behind and to show work in person; partial credit if shown within 7 days.</p>
     </div>
   );
 }
@@ -442,7 +442,7 @@ function DiscussionTool({ assignment, students, initial, onClose }: { assignment
       <div className="flex items-center justify-between">
         <div>
           <h2 className="font-semibold">Formal Discussion · {assignment.classGroup}</h2>
-          <p className="text-xs text-slate-400">{assignment.subject} · {assignment.description || fmtDate(assignment.date)}</p>
+          <p className="text-xs text-slate-500">{assignment.subject} · {assignment.description || fmtDate(assignment.date)}</p>
         </div>
         <button onClick={onClose} className="text-sm text-slate-500 underline">close</button>
       </div>
@@ -454,7 +454,7 @@ function DiscussionTool({ assignment, students, initial, onClose }: { assignment
           const leading = sc != null && sc === top && top > 0;
           return (
             <li key={s._id} className={`flex items-center justify-between gap-2 rounded-lg border p-2 ${leading ? "border-green-400 bg-green-50" : st.absent ? "border-slate-200 bg-slate-50 opacity-60" : current === s._id ? "border-indigo-300 bg-indigo-50" : "border-slate-200"}`}>
-              <span className="min-w-0 flex-1 truncate text-sm font-medium">{s.lastName}, {s.firstName}{st.turns ? <span className="ml-1 text-[10px] text-slate-400">· {st.turns} turn{st.turns === 1 ? "" : "s"}</span> : null}</span>
+              <span className="min-w-0 flex-1 truncate text-sm font-medium">{s.lastName}, {s.firstName}{st.turns ? <span className="ml-1 text-[10px] text-slate-500">· {st.turns} turn{st.turns === 1 ? "" : "s"}</span> : null}</span>
               <span className="w-12 text-center text-sm font-bold tabular-nums">{st.absent ? "A" : sc != null ? sc : "—"}</span>
               <div className="flex shrink-0 gap-1">
                 <button onClick={() => tick(s._id, -1)} disabled={st.absent} className="h-8 w-8 rounded-lg bg-red-100 font-bold text-red-700 disabled:opacity-30">−</button>

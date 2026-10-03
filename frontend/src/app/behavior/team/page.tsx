@@ -234,7 +234,7 @@ export default function TeamPage() {
         </div>
 
         {teachers.some((t) => t.legacyOffences) && (
-          <p className="mt-2 text-xs text-slate-400">
+          <p className="mt-2 text-xs text-slate-500">
             * Incidents include earlier offences imported from past records. Those historical offences may also appear among the notices home, so the two columns aren&apos;t additive.
           </p>
         )}
@@ -254,7 +254,7 @@ export default function TeamPage() {
               <li key={p.email} className="flex items-center justify-between gap-2 py-2 text-sm">
                 <div className="min-w-0">
                   <div className="truncate font-medium">{p.email}</div>
-                  <div className="text-xs text-slate-400">
+                  <div className="text-xs text-slate-500">
                     {p.role} · invited {ago(p.invitedAt)}{p.lastSentAt && new Date(p.lastSentAt).getTime() - new Date(p.invitedAt).getTime() > 60000 ? `, resent ${ago(p.lastSentAt)}` : ""}{p.invitedBy ? ` by ${p.invitedBy}` : ""}
                     {noteByEmail[p.email] ? <span className="ml-2 text-green-700">{noteByEmail[p.email]}</span> : null}
                   </div>

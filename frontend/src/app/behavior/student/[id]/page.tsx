@@ -519,7 +519,7 @@ export default function StudentPage() {
         <div>
           <Link href="/behavior/log" className="no-print text-sm text-slate-500 underline">← back to logging</Link>
           <h1 className="mt-1 text-xl font-semibold">{s.preferredName || s.firstName} {s.lastName}</h1>
-          <p className="text-sm text-slate-400">{[s.classGroup, s.grade].filter(Boolean).join(" · ")}</p>
+          <p className="text-sm text-slate-500">{[s.classGroup, s.grade].filter(Boolean).join(" · ")}</p>
         </div>
         <Button onClick={() => window.print()}
           variant="secondary" size="sm" className="no-print shrink-0">
@@ -533,7 +533,7 @@ export default function StudentPage() {
           <h2 className="font-semibold">Strikes toward a notice (all teachers)</h2>
           <span className="text-2xl font-bold">
             {data.activeCount}
-            <span className="text-base font-normal text-slate-400"> / {data.triggerCount}</span>
+            <span className="text-base font-normal text-slate-500"> / {data.triggerCount}</span>
           </span>
         </div>
         <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
@@ -559,7 +559,7 @@ export default function StudentPage() {
               size="sm">
               {wsBusy ? "Preparing…" : "Recommend a white slip"}
             </Button>
-            <p className="mt-1 text-xs text-slate-400">Copies a parent note to your clipboard and emails you a copy (CC the VP).</p>
+            <p className="mt-1 text-xs text-slate-500">Copies a parent note to your clipboard and emails you a copy (CC the VP).</p>
           </div>
         )}
         <a href="#incident-log" className="no-print mt-2 inline-block text-sm font-medium text-slate-600 underline underline-offset-2 hover:text-slate-900">
@@ -568,7 +568,7 @@ export default function StudentPage() {
 
         <div className="mt-4 border-t border-slate-100 pt-3">
           <p className="text-sm font-medium text-slate-700">Admin summary (AI) → clipboard</p>
-          <p className="text-xs text-slate-400">Includes private teacher notes. For VP/principal — not sent to parents.</p>
+          <p className="text-xs text-slate-500">Includes private teacher notes. For VP/principal — not sent to parents.</p>
           <div className="mt-2 flex flex-wrap gap-2">
             <Button onClick={() => adminSummary("all")} disabled={!!summaryBusy}
               variant="secondary" size="sm">
@@ -588,7 +588,7 @@ export default function StudentPage() {
                 className="mt-2 block w-full cursor-pointer rounded-lg border border-slate-200 bg-slate-50 p-4 text-left text-sm text-slate-700 hover:bg-slate-100"
               >
                 <Markdown text={summary} />
-                <span className="mt-2 block text-xs text-slate-400">Tap to copy ⧉</span>
+                <span className="mt-2 block text-xs text-slate-500">Tap to copy ⧉</span>
               </button>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <input
@@ -608,7 +608,7 @@ export default function StudentPage() {
 
         <div className="mt-4 border-t border-slate-100 pt-3">
           <p className="text-sm font-medium text-slate-700">Parent summary (AI) → clipboard</p>
-          <p className="text-xs text-slate-400">A warm, honest note for parents that pulls the whole picture together, grouped by teacher. Review it, then paste into Edsby — nothing is sent automatically. No other student is named.</p>
+          <p className="text-xs text-slate-500">A warm, honest note for parents that pulls the whole picture together, grouped by teacher. Review it, then paste into Edsby — nothing is sent automatically. No other student is named.</p>
           <div className="mt-2 flex flex-wrap gap-2">
             <Button onClick={() => parentSummaryGen("period")} disabled={!!parentBusy}
               variant="secondary" size="sm">
@@ -622,13 +622,13 @@ export default function StudentPage() {
           {parentMsg && <p className="mt-2 text-sm text-green-700">{parentMsg}</p>}
 
           <div className="mt-3 border-t border-slate-100 pt-3">
-            <p className="text-xs text-slate-400">Or send it straight to the student&apos;s <span className="font-medium text-slate-600">homeroom teacher</span> to post — the VP is copied, and it&apos;s logged as an intervention. Nothing reaches parents automatically.</p>
+            <p className="text-xs text-slate-500">Or send it straight to the student&apos;s <span className="font-medium text-slate-600">homeroom teacher</span> to post — the VP is copied, and it&apos;s logged as an intervention. Nothing reaches parents automatically.</p>
             <div className="mt-2 flex flex-wrap items-center gap-3">
               <Button onClick={sendHrNote} disabled={hrNoteBusy}
                 size="sm">
                 {hrNoteBusy ? "Sending…" : hrNoteSentAt ? "✉ Re-send to homeroom teacher (cc VP)" : "✉ Send to homeroom teacher (cc VP)"}
               </Button>
-              {hrNoteSentAt && <span className="text-xs text-slate-400">Last sent {new Date(hrNoteSentAt).toLocaleString()}</span>}
+              {hrNoteSentAt && <span className="text-xs text-slate-500">Last sent {new Date(hrNoteSentAt).toLocaleString()}</span>}
             </div>
             {hrNoteMsg && <p className={`mt-2 text-sm ${hrNoteMsg.startsWith("Sent") ? "text-green-700" : "text-red-600"}`}>{hrNoteMsg}</p>}
           </div>
@@ -645,20 +645,20 @@ export default function StudentPage() {
                   <span className="mt-1 block divide-y divide-slate-100">
                     {parentHistory.map((h, i) => (
                       <span key={i} className="flex flex-wrap items-baseline gap-x-2 py-1">
-                        <span className="w-14 shrink-0 text-xs text-slate-400">{h.date}</span>
+                        <span className="w-14 shrink-0 text-xs text-slate-500">{h.date}</span>
                         <span className="font-medium text-slate-700">{h.offense}</span>
                         <span className="text-xs text-slate-500">· {h.teacher}</span>
                         {h.kind === "conversation"
                           ? null
                           : h.consequence
                           ? <span className="text-xs text-slate-600">· consequence: {h.consequence}</span>
-                          : <span className="text-xs text-slate-400">· no consequence recorded</span>}
+                          : <span className="text-xs text-slate-500">· no consequence recorded</span>}
                       </span>
                     ))}
                   </span>
                 </span>
               )}
-              <span className="mt-3 block text-xs text-slate-400">The note is AI-written; the record below it is pulled straight from the log. Review before posting — remove anything you wouldn&apos;t want shared. Tap to copy ⧉</span>
+              <span className="mt-3 block text-xs text-slate-500">The note is AI-written; the record below it is pulled straight from the log. Review before posting — remove anything you wouldn&apos;t want shared. Tap to copy ⧉</span>
             </button>
           )}
         </div>
@@ -677,7 +677,7 @@ export default function StudentPage() {
             <div className="mt-2 space-y-1 text-sm">
               {currentStep && <p>Rule-based (current — {notices} notice{notices === 1 ? "" : "s"} home): <span className="font-semibold">{currentStep.action}</span></p>}
               {nextStep && <p className="text-slate-600">If a further notice fires: <span className="font-medium">{nextStep.action}</span></p>}
-              {!currentStep && !nextStep && <p className="text-slate-400">No rule-based ladder set (Setup → Recommended actions).</p>}
+              {!currentStep && !nextStep && <p className="text-slate-500">No rule-based ladder set (Setup → Recommended actions).</p>}
             </div>
             <div className="mt-3 border-t border-slate-100 pt-3">
               {!rec ? (
@@ -688,7 +688,7 @@ export default function StudentPage() {
                 <p className="text-sm text-slate-500">{rec.aiUsed ? "No suggestions." : "AI coaching unavailable (no key set), or no recent offences to assess."}</p>
               ) : (
                 <>
-                  <p className="text-xs text-slate-400">Coaching suggestions (from your approved list — your call):</p>
+                  <p className="text-xs text-slate-500">Coaching suggestions (from your approved list — your call):</p>
                   <ul className="mt-1 space-y-1.5">
                     {rec.ai.map((s, i) => (
                       <li key={i} className="text-sm">
@@ -698,7 +698,7 @@ export default function StudentPage() {
                       </li>
                     ))}
                   </ul>
-                  {rec.offences.length > 0 && <p className="mt-2 text-xs text-slate-400">Based on: {rec.offences.join(", ")}</p>}
+                  {rec.offences.length > 0 && <p className="mt-2 text-xs text-slate-500">Based on: {rec.offences.join(", ")}</p>}
                 </>
               )}
             </div>
@@ -710,7 +710,7 @@ export default function StudentPage() {
       {pmTemplates.length > 0 && (
         <section className="no-print rounded-xl border border-slate-200 bg-white p-5">
           <h2 className="font-semibold">Send a parent message</h2>
-          <p className="text-xs text-slate-400">Fills a template for {s.preferredName || s.firstName}, copies it (rich text, ready for Edsby), and logs it. Nothing is sent automatically.</p>
+          <p className="text-xs text-slate-500">Fills a template for {s.preferredName || s.firstName}, copies it (rich text, ready for Edsby), and logs it. Nothing is sent automatically.</p>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
             <select value={pmTpl} onChange={(e) => { setPmTpl(e.target.value); try { localStorage.setItem("pm_template", e.target.value); } catch { /* ignore */ } }}
               className="rounded-lg border border-slate-300 px-2 py-1.5">
@@ -744,7 +744,7 @@ export default function StudentPage() {
       {/* Log a parent meeting / contact (interaction — no strike, nothing home) */}
       <section className="no-print rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="font-semibold">Log a parent meeting / contact</h2>
-        <p className="text-xs text-slate-400">Keeps a dated record (e.g. phone call, conference). Does not count as a strike and sends nothing home.</p>
+        <p className="text-xs text-slate-500">Keeps a dated record (e.g. phone call, conference). Does not count as a strike and sends nothing home.</p>
         <div className="mt-2 flex flex-wrap gap-2">
           <input
             value={meetingNote}
@@ -764,7 +764,7 @@ export default function StudentPage() {
       {/* Document a consequence actually applied */}
       <section className="no-print rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="font-semibold">Consequences given</h2>
-        <p className="text-xs text-slate-400">These are consequences that have <strong>already been given</strong> (by you or an admin) — not suggestions. Record one here, then tick <strong>Mark done</strong> once the student has completed it.</p>
+        <p className="text-xs text-slate-500">These are consequences that have <strong>already been given</strong> (by you or an admin) — not suggestions. Record one here, then tick <strong>Mark done</strong> once the student has completed it.</p>
         <p className="mt-2 text-xs font-medium text-slate-600">Record a consequence you gave:</p>
         <div className="mt-1 flex flex-wrap gap-2">
           <input list="consequence-types" value={consType} onChange={(e) => setConsType(e.target.value)}
@@ -797,7 +797,7 @@ export default function StudentPage() {
                     <span>
                       <span className="font-medium text-slate-900">{c.type}</span>
                       {c.detail ? <span className="text-slate-600"> — {c.detail}</span> : null}
-                      <span className="ml-2 text-xs text-slate-400">{fmtDT(c.at)}{c.byName ? ` · ${c.byName}` : ""}</span>
+                      <span className="ml-2 text-xs text-slate-500">{fmtDT(c.at)}{c.byName ? ` · ${c.byName}` : ""}</span>
                     </span>
                     <button onClick={() => removeConsequence(c._id)} className="no-print shrink-0 text-xs text-red-600">remove</button>
                   </div>
@@ -807,7 +807,7 @@ export default function StudentPage() {
                     {notified ? (
                       <span className="inline-flex items-center gap-1 text-xs text-slate-500">
                         <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">✉ Sent to parents{c.notifiedByName ? ` · ${c.notifiedByName}` : ""}</span>
-                        <button onClick={() => markConsequenceNotified(c._id, false)} className="text-slate-400 hover:underline">undo</button>
+                        <button onClick={() => markConsequenceNotified(c._id, false)} className="text-slate-500 hover:underline">undo</button>
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-2">
@@ -823,7 +823,7 @@ export default function StudentPage() {
                     {done ? (
                       <span className="inline-flex items-center gap-1 text-xs text-slate-500">
                         <span className="rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-700">✓ Completed{c.completedByName ? ` · ${c.completedByName}` : ""}</span>
-                        <button onClick={() => markConsequenceDone(c._id, false)} className="text-slate-400 hover:underline">undo</button>
+                        <button onClick={() => markConsequenceDone(c._id, false)} className="text-slate-500 hover:underline">undo</button>
                       </span>
                     ) : (
                       <button onClick={() => markConsequenceDone(c._id, true)}
@@ -851,7 +851,7 @@ export default function StudentPage() {
               <li key={c._id} className="flex items-center justify-between gap-2 py-1.5 text-sm">
                 <span>
                   <span className="font-medium text-slate-900">{c.type}</span>
-                  <span className="ml-2 text-xs text-slate-400">{fmtDT(c.at)}{c.byName ? ` · ${c.byName}` : ""}</span>
+                  <span className="ml-2 text-xs text-slate-500">{fmtDT(c.at)}{c.byName ? ` · ${c.byName}` : ""}</span>
                 </span>
                 <button onClick={() => removeConsequence(c._id)} className="no-print shrink-0 text-xs text-red-600">remove</button>
               </li>
@@ -873,7 +873,7 @@ export default function StudentPage() {
       {/* Communication history */}
       <section className={cardCls}>
         <h2 className="font-semibold">Communication history</h2>
-        {data.notices.length === 0 && <p className="mt-1 text-sm text-slate-400">No notices yet.</p>}
+        {data.notices.length === 0 && <p className="mt-1 text-sm text-slate-500">No notices yet.</p>}
         <ul className="mt-2 space-y-2">
           {data.notices.map((n) => (
             <li key={n._id} className="rounded-lg border border-slate-200">
@@ -881,7 +881,7 @@ export default function StudentPage() {
                 className="flex w-full items-center justify-between px-3 py-2 text-left">
                 <span className="text-sm">
                   Notice #{n.sequenceNo} · {n.reason}{n.ccVp ? " · VP CC" : ""}
-                  <span className="ml-2 text-slate-400">{new Date(n.createdAt).toLocaleDateString()}</span>
+                  <span className="ml-2 text-slate-500">{new Date(n.createdAt).toLocaleDateString()}</span>
                 </span>
                 <span className={`rounded px-2 py-0.5 text-xs ${
                   n.status === "sent" ? "bg-green-100 text-green-700"
@@ -893,7 +893,7 @@ export default function StudentPage() {
               </button>
               {openNotice === n._id && (
                 <div className="border-t border-slate-100 px-3 py-2">
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-slate-500">
                     {n.channels.join(", ")} · {n.aiUsed ? "AI-composed" : "template"} · from{" "}
                     {n.fromTeachers.map((t) => t.name || "teacher").join(", ")}
                   </p>
@@ -923,7 +923,7 @@ export default function StudentPage() {
                         <Button onClick={() => saveNoticeEdit(n._id)} variant="secondary" size="sm">{n.status === "sent" ? "Save changes" : "Save (keep queued)"}</Button>
                         <Button onClick={() => setEditId(null)} variant="secondary" size="sm">Cancel</Button>
                       </div>
-                      <p className="mt-1 text-xs text-slate-400">{n.status === "sent" ? "Editing a sent notice updates the on-file record only — it is not re-sent to the parent." : "Save keeps the note in the queue until you press Send."}</p>
+                      <p className="mt-1 text-xs text-slate-500">{n.status === "sent" ? "Editing a sent notice updates the on-file record only — it is not re-sent to the parent." : "Save keeps the note in the queue until you press Send."}</p>
                     </div>
                   ) : (
                     <>
@@ -946,8 +946,8 @@ export default function StudentPage() {
                       {n.status === "sent" && (
                         <div className="mt-2 flex flex-wrap items-center gap-2">
                           <Button onClick={() => { setEditId(n._id); setEditText(n.renderedText); }} variant="secondary" size="xs">Edit note</Button>
-                          {n.editedAfterSendAt && <span className="text-xs text-slate-400">edited after sending</span>}
-                          <span className="text-xs text-slate-400">Updates the record only — not re-sent.</span>
+                          {n.editedAfterSendAt && <span className="text-xs text-slate-500">edited after sending</span>}
+                          <span className="text-xs text-slate-500">Updates the record only — not re-sent.</span>
                         </div>
                       )}
                       {n.status === "failed" && (
@@ -975,9 +975,9 @@ export default function StudentPage() {
                   {inc.behaviorSnapshot.name}
                   {inc.weight && inc.weight !== 1 ? <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">×{inc.weight.toFixed(1)}</span> : null}
                   {inc.behaviorSnapshot.triggerMode === "IMMEDIATE" && <span className="ml-2 text-xs text-amber-600">immediate</span>}
-                  {inc.teacherName ? <span className="text-slate-400"> · {inc.teacherName}</span> : null}
+                  {inc.teacherName ? <span className="text-slate-500"> · {inc.teacherName}</span> : null}
                 </span>
-                <span className="flex shrink-0 items-center gap-2 pl-2 text-slate-400">
+                <span className="flex shrink-0 items-center gap-2 pl-2 text-slate-500">
                   {fmtDT(inc.timestamp)}
                   {canEditInc(inc) && editIncId !== inc._id && (
                     <>
@@ -1013,7 +1013,7 @@ export default function StudentPage() {
                         )}
                       </a>
                     ) : (
-                      <span key={i} className="flex h-20 w-20 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-xs text-slate-400">{a.kind}</span>
+                      <span key={i} className="flex h-20 w-20 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-xs text-slate-500">{a.kind}</span>
                     )
                   )}
                 </div>
@@ -1023,7 +1023,7 @@ export default function StudentPage() {
                 <ul className="mt-1 space-y-0.5 pl-3">
                   {inc.teacherNotes!.map((tn, i) => (
                     <li key={i} className="text-xs text-slate-500">
-                      📝 {tn.text} <span className="text-slate-400">— {tn.name || "teacher"}, {new Date(tn.at).toLocaleDateString()}</span>
+                      📝 {tn.text} <span className="text-slate-500">— {tn.name || "teacher"}, {new Date(tn.at).toLocaleDateString()}</span>
                     </li>
                   ))}
                 </ul>
@@ -1043,7 +1043,7 @@ export default function StudentPage() {
               </div>
             </li>
           ))}
-          {data.incidents.length === 0 && <li className="py-2 text-slate-400">No incidents.</li>}
+          {data.incidents.length === 0 && <li className="py-2 text-slate-500">No incidents.</li>}
         </ul>
       </section>
 
@@ -1068,12 +1068,12 @@ export default function StudentPage() {
           <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold">White slip — recommended note</h3>
-              <button onClick={() => setWsResult(null)} className="text-slate-400 hover:text-slate-700" aria-label="Close">✕</button>
+              <button onClick={() => setWsResult(null)} className="text-slate-500 hover:text-slate-700" aria-label="Close">✕</button>
             </div>
             <p className="mt-1 text-sm text-green-700">
               {wsCopyMsg || "Prepared."}{wsResult.emailedTo ? ` Emailed to ${wsResult.emailedTo}${wsResult.ccVp ? " (CC VP)" : ""}.` : ""}
             </p>
-            <p className="mt-1 text-xs text-slate-400">Review and paste it to the parent via Edsby. Nothing was sent to the parent automatically.</p>
+            <p className="mt-1 text-xs text-slate-500">Review and paste it to the parent via Edsby. Nothing was sent to the parent automatically.</p>
             <textarea readOnly value={wsResult.note} rows={12} className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
             <div className="mt-3 flex justify-end gap-2">
               <Button onClick={() => copyText(wsResult.note)} variant="secondary" size="sm">Copy again</Button>
@@ -1117,9 +1117,9 @@ function MerchCard({ studentId, studentName }: { studentId: string; studentName:
         <h2 className="font-semibold">🎁 Rewards store</h2>
         <span className="rounded-full bg-amber-100 px-2.5 py-1 text-sm font-semibold text-amber-800">⭐ {state.balance} pts</span>
       </div>
-      <p className="text-xs text-slate-400">Spends from {studentName}&apos;s personal points. This does not change any house total.</p>
+      <p className="text-xs text-slate-500">Spends from {studentName}&apos;s personal points. This does not change any house total.</p>
       {state.items.length === 0 ? (
-        <p className="mt-2 text-sm text-slate-400">No items in the store yet — add some in Setup.</p>
+        <p className="mt-2 text-sm text-slate-500">No items in the store yet — add some in Setup.</p>
       ) : (
         <div className="mt-3 flex flex-wrap gap-2">
           {state.items.map((it, i) => {

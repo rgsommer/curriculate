@@ -55,14 +55,14 @@ export default function InterventionPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-semibold">School insights</h1>
-        <p className="text-sm text-slate-400">Admin-only, read-only. Objective signals to act early and support staff — not a verdict on anyone.</p>
+        <p className="text-sm text-slate-500">Admin-only, read-only. Objective signals to act early and support staff — not a verdict on anyone.</p>
       </div>
 
       {/* Behaviour trend */}
       {data.trends && data.trends.length > 0 && (
         <section className={cardCls}>
           <h2 className="font-semibold">Behaviour trend (last 6 months)</h2>
-          <p className="mt-0.5 text-xs text-slate-400"><span className="text-red-500">■</span> incidents · <span className="text-green-600">■</span> encouragements</p>
+          <p className="mt-0.5 text-xs text-slate-500"><span className="text-red-500">■</span> incidents · <span className="text-green-600">■</span> encouragements</p>
           {(() => {
             const max = Math.max(1, ...data.trends.map((t) => t.neg + t.pos));
             return (
@@ -92,7 +92,7 @@ export default function InterventionPage() {
             {data.proactive.map((p) => (
               <li key={p.studentId} className="flex items-center justify-between gap-2 py-2 text-sm">
                 <Link href={`/behavior/student/${p.studentId}`} className="font-medium hover:underline">
-                  {p.name}<span className="ml-2 text-xs font-normal text-slate-400">{p.classGroup !== "—" ? p.classGroup : ""}{p.notices ? ` · ${p.notices} notice${p.notices === 1 ? "" : "s"}` : ""}</span>
+                  {p.name}<span className="ml-2 text-xs font-normal text-slate-500">{p.classGroup !== "—" ? p.classGroup : ""}{p.notices ? ` · ${p.notices} notice${p.notices === 1 ? "" : "s"}` : ""}</span>
                 </Link>
                 <span className="shrink-0 text-xs font-semibold text-orange-700">{p.recent} in 2 wks{p.prior ? ` (was ${p.prior})` : ""} ↑</span>
               </li>
@@ -104,7 +104,7 @@ export default function InterventionPage() {
       {/* At or near threshold */}
       <section className={cardCls}>
         <h2 className="font-semibold">At or near a notice ({data.triggerCount} strikes)</h2>
-        {data.atThreshold.length === 0 && <p className="mt-1 text-sm text-slate-400">No students near the threshold right now.</p>}
+        {data.atThreshold.length === 0 && <p className="mt-1 text-sm text-slate-500">No students near the threshold right now.</p>}
         <ul className="mt-2 divide-y divide-slate-100">
           {data.atThreshold.map((r) => {
             const at = (r.strikes || 0) >= (r.triggerCount || data.triggerCount);
@@ -112,10 +112,10 @@ export default function InterventionPage() {
               <li key={r.studentId} className="flex items-center justify-between gap-2 py-2 text-sm">
                 <Link href={`/behavior/student/${r.studentId}`} className="font-medium hover:underline">
                   {r.name}
-                  <span className="ml-2 text-xs font-normal text-slate-400">{[r.classGroup, r.grade].filter((x) => x && x !== "—").join(" · ")}</span>
+                  <span className="ml-2 text-xs font-normal text-slate-500">{[r.classGroup, r.grade].filter((x) => x && x !== "—").join(" · ")}</span>
                 </Link>
                 <span className="flex shrink-0 items-center gap-3">
-                  <span className="text-xs text-slate-400">last {fmtDate(r.lastAt)}</span>
+                  <span className="text-xs text-slate-500">last {fmtDate(r.lastAt)}</span>
                   <span className={`rounded px-2 py-0.5 text-xs font-semibold ${at ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>
                     {r.strikes} / {r.triggerCount || data.triggerCount}
                   </span>
@@ -136,7 +136,7 @@ export default function InterventionPage() {
               <li key={r.studentId} className="flex items-center justify-between gap-2 py-2 text-sm">
                 <Link href={`/behavior/student/${r.studentId}`} className="font-medium hover:underline">
                   {r.name}
-                  <span className="ml-2 text-xs font-normal text-slate-400">{[r.classGroup, r.grade].filter((x) => x && x !== "—").join(" · ")}</span>
+                  <span className="ml-2 text-xs font-normal text-slate-500">{[r.classGroup, r.grade].filter((x) => x && x !== "—").join(" · ")}</span>
                 </Link>
                 <span className="shrink-0 text-xs text-slate-500">{r.notices} notice(s) · {r.strikes} active strike(s)</span>
               </li>
@@ -150,17 +150,17 @@ export default function InterventionPage() {
         <section className={cardCls}>
           <h2 className="font-semibold">{data.gudd.name || "GUDD"} — lost or at risk</h2>
           {(!data.gudd.students || data.gudd.students.length === 0) && (
-            <p className="mt-1 text-sm text-slate-400">No uniform infractions on record right now.</p>
+            <p className="mt-1 text-sm text-slate-500">No uniform infractions on record right now.</p>
           )}
           <ul className="mt-2 divide-y divide-slate-100">
             {(data.gudd.students || []).map((r) => (
               <li key={r.studentId} className="flex items-center justify-between gap-2 py-2 text-sm">
                 <Link href={`/behavior/student/${r.studentId}`} className="font-medium hover:underline">
                   {r.name}
-                  <span className="ml-2 text-xs font-normal text-slate-400">{[r.classGroup, r.grade].filter((x) => x && x !== "—").join(" · ")}</span>
+                  <span className="ml-2 text-xs font-normal text-slate-500">{[r.classGroup, r.grade].filter((x) => x && x !== "—").join(" · ")}</span>
                 </Link>
                 <span className="flex shrink-0 items-center gap-3">
-                  <span className="text-xs text-slate-400">last {fmtDate(r.lastAt)}</span>
+                  <span className="text-xs text-slate-500">last {fmtDate(r.lastAt)}</span>
                   <GuddChip name={data.gudd!.name} count={r.count} threshold={r.threshold} consequence={r.consequence} size="xs" />
                 </span>
               </li>
@@ -172,16 +172,16 @@ export default function InterventionPage() {
       {/* Most-logged */}
       <section className={cardCls}>
         <h2 className="font-semibold">Most-logged (last 60 days)</h2>
-        {data.topRepeat.length === 0 && <p className="mt-1 text-sm text-slate-400">No incidents logged recently.</p>}
+        {data.topRepeat.length === 0 && <p className="mt-1 text-sm text-slate-500">No incidents logged recently.</p>}
         <ul className="mt-2 divide-y divide-slate-100">
           {data.topRepeat.map((r) => (
             <li key={r.studentId} className="flex items-center justify-between gap-2 py-2 text-sm">
               <Link href={`/behavior/student/${r.studentId}`} className="font-medium hover:underline">
                 {r.name}
-                <span className="ml-2 text-xs font-normal text-slate-400">{r.classGroup !== "—" ? r.classGroup : ""}</span>
+                <span className="ml-2 text-xs font-normal text-slate-500">{r.classGroup !== "—" ? r.classGroup : ""}</span>
               </Link>
               <span className="flex shrink-0 items-center gap-3">
-                <span className="text-xs text-slate-400">last {fmtDate(r.lastAt)}</span>
+                <span className="text-xs text-slate-500">last {fmtDate(r.lastAt)}</span>
                 <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">{r.count}</span>
               </span>
             </li>
@@ -192,7 +192,7 @@ export default function InterventionPage() {
       {/* By class */}
       <section className={cardCls}>
         <h2 className="font-semibold">Incidents by class (last 60 days)</h2>
-        {data.byClass.length === 0 && <p className="mt-1 text-sm text-slate-400">No data yet.</p>}
+        {data.byClass.length === 0 && <p className="mt-1 text-sm text-slate-500">No data yet.</p>}
         <ul className="mt-3 space-y-2">
           {data.byClass.map((c) => (
             <li key={c.classGroup} className="text-sm">
@@ -212,14 +212,14 @@ export default function InterventionPage() {
       {data.usage && data.usage.length > 0 && (
         <section className={cardCls}>
           <h2 className="font-semibold">App usage this week</h2>
-          <p className="mt-0.5 text-xs text-slate-400">{data.activeThisWeek ?? 0} of {data.usage.length} staff have opened it this week (page loads). A quick read on adoption.</p>
+          <p className="mt-0.5 text-xs text-slate-500">{data.activeThisWeek ?? 0} of {data.usage.length} staff have opened it this week (page loads). A quick read on adoption.</p>
           <ul className="mt-2 divide-y divide-slate-100">
             {data.usage.map((u, i) => (
               <li key={i} className="flex items-center justify-between gap-2 py-1.5 text-sm">
                 <span className="font-medium">{u.name}{u.role === "principal" ? " (principal)" : u.role === "admin" || u.role === "originator" ? " (admin)" : ""}</span>
                 <span className="flex shrink-0 items-center gap-3">
-                  <span className="text-xs text-slate-400">{u.lastSeenAt ? `last ${fmtDate(u.lastSeenAt)}` : "not yet"}</span>
-                  <span className={`rounded px-2 py-0.5 text-xs font-semibold ${u.loads > 0 ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-400"}`}>{u.loads} {u.loads === 1 ? "open" : "opens"}</span>
+                  <span className="text-xs text-slate-500">{u.lastSeenAt ? `last ${fmtDate(u.lastSeenAt)}` : "not yet"}</span>
+                  <span className={`rounded px-2 py-0.5 text-xs font-semibold ${u.loads > 0 ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}>{u.loads} {u.loads === 1 ? "open" : "opens"}</span>
                 </span>
               </li>
             ))}
@@ -231,16 +231,16 @@ export default function InterventionPage() {
       {data.teachers && data.teachers.length > 0 && (
         <section className={cardCls}>
           <h2 className="font-semibold">Staff activity (last 60 days)</h2>
-          <p className="mt-0.5 text-xs text-slate-400">Incidents vs encouragements logged. A ★ flags a heavier-than-typical incident load with few encouragements — a teacher who may welcome support or co-planning, not a performance judgement.</p>
+          <p className="mt-0.5 text-xs text-slate-500">Incidents vs encouragements logged. A ★ flags a heavier-than-typical incident load with few encouragements — a teacher who may welcome support or co-planning, not a performance judgement.</p>
           <table className="mt-2 w-full text-sm">
-            <thead><tr className="text-left text-xs uppercase text-slate-400"><th className="py-1">Teacher</th><th className="text-right">Incidents</th><th className="text-right">Encouragements</th><th className="text-right">Students</th><th className="text-right">Encourage%</th></tr></thead>
+            <thead><tr className="text-left text-xs uppercase text-slate-500"><th className="py-1">Teacher</th><th className="text-right">Incidents</th><th className="text-right">Encouragements</th><th className="text-right">Students</th><th className="text-right">Encourage%</th></tr></thead>
             <tbody>
               {data.teachers.map((t) => (
                 <tr key={t.teacherId} className={`border-t border-slate-100 ${t.flag ? "bg-amber-50" : ""}`}>
                   <td className="py-1">{t.flag ? "★ " : ""}{t.name}</td>
                   <td className="text-right tabular-nums">{t.negatives}</td>
                   <td className="text-right tabular-nums">{t.positives}</td>
-                  <td className="text-right tabular-nums text-slate-400">{t.students}</td>
+                  <td className="text-right tabular-nums text-slate-500">{t.students}</td>
                   <td className="text-right tabular-nums">{t.posRatio == null ? "—" : `${t.posRatio}%`}</td>
                 </tr>
               ))}

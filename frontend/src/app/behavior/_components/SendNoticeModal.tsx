@@ -57,7 +57,7 @@ export default function SendNoticeModal({
               <input type="checkbox" checked={includeEvidence} onChange={(e) => onToggleEvidence(e.target.checked)} className="mt-0.5" />
               <span>
                 Send the {evidenceCount} photo/video {evidenceCount === 1 ? "file" : "files"} with this note
-                <span className="block text-xs text-slate-400">Off = evidence stays in the student record only. On = emailed as attachments / shared as a link on Edsby.</span>
+                <span className="block text-xs text-slate-500">Off = evidence stays in the student record only. On = emailed as attachments / shared as a link on Edsby.</span>
               </span>
             </label>
           )}

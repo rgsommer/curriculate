@@ -86,7 +86,7 @@ export default function FoodDrivePage() {
             {copied ? "✓ Copied" : "📋 Copy instructions (for reps / future years)"}
           </Button>
         </div>
-        <p className="text-sm text-slate-400">For any counted event — food drive, garbage cleanup, read-a-thon, laps, etc. Upload the class sheets (typed names, a handwritten count beside each — photos, scans, or a PDF); Compass reads the counts, matches each name to a student &amp; house, then awards the top contributors and the top houses.</p>
+        <p className="text-sm text-slate-500">For any counted event — food drive, garbage cleanup, read-a-thon, laps, etc. Upload the class sheets (typed names, a handwritten count beside each — photos, scans, or a PDF); Compass reads the counts, matches each name to a student &amp; house, then awards the top contributors and the top houses.</p>
       </div>
 
       <section className={cardCls}>
@@ -98,7 +98,7 @@ export default function FoodDrivePage() {
         <input type="file" accept="image/*,application/pdf" multiple
           onChange={(e) => setFiles(Array.from(e.target.files || []))}
           className="mt-3 block w-full text-sm" />
-        {files.length > 0 && <p className="mt-1 text-xs text-slate-400">{files.length} file(s) selected</p>}
+        {files.length > 0 && <p className="mt-1 text-xs text-slate-500">{files.length} file(s) selected</p>}
         <Button onClick={parse} disabled={busy || !files.length} className="mt-3">
           {busy && !result ? "Reading…" : "Read sheets"}
         </Button>
@@ -109,13 +109,13 @@ export default function FoodDrivePage() {
       {rows && !result && (
         <section className={cardCls}>
           <div className="flex flex-wrap items-end justify-between gap-2">
-            <h2 className="font-semibold">Review &amp; award <span className="text-xs font-normal text-slate-400">({matched} matched · {withItems} with a count)</span></h2>
+            <h2 className="font-semibold">Review &amp; award <span className="text-xs font-normal text-slate-500">({matched} matched · {withItems} with a count)</span></h2>
           </div>
-          <p className="mt-0.5 text-xs text-slate-400">Fix any unmatched names (pick the student) or correct a count. Rows with no student or a blank/zero count are skipped.</p>
+          <p className="mt-0.5 text-xs text-slate-500">Fix any unmatched names (pick the student) or correct a count. Rows with no student or a blank/zero count are skipped.</p>
 
           <div className="mt-3 overflow-x-auto">
             <table className="w-full text-sm">
-              <thead><tr className="text-left text-xs uppercase text-slate-400">
+              <thead><tr className="text-left text-xs uppercase text-slate-500">
                 <th className="py-1 pr-2">From sheet</th><th className="py-1 pr-2">Student</th><th className="py-1 pr-2">House</th><th className="py-1 pr-2 text-right">Count</th>
               </tr></thead>
               <tbody className="divide-y divide-slate-100">
@@ -146,7 +146,7 @@ export default function FoodDrivePage() {
             <label className="text-sm">Top contributors get (comma pts)<input value={ind} onChange={(e) => setInd(e.target.value)} className="mt-1 w-full rounded border border-slate-300 px-2 py-1" /></label>
             <label className="text-sm">Top houses get (comma pts)<input value={hs} onChange={(e) => setHs(e.target.value)} className="mt-1 w-full rounded border border-slate-300 px-2 py-1" /></label>
           </div>
-          <p className="mt-1 text-xs text-slate-400">Awarding for: <span className="font-medium">{label || "—"}</span> (change &ldquo;What is this for?&rdquo; above).</p>
+          <p className="mt-1 text-xs text-slate-500">Awarding for: <span className="font-medium">{label || "—"}</span> (change &ldquo;What is this for?&rdquo; above).</p>
           <Button variant="success" onClick={apply} disabled={busy || !withItems} className="mt-3">
             {busy ? "Awarding…" : "Award points"}
           </Button>

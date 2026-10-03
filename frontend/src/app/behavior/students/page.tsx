@@ -180,21 +180,21 @@ export default function StudentsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-semibold">Students</h1>
-          <p className="text-sm text-slate-400">Search any student and open their full history, strikes, and notices home.</p>
-        </div>
-        {isAdmin && (
-          <div className="text-right">
-            <Button onClick={flagAcademics} disabled={acadBusy} variant="secondary" size="sm">
-              {acadBusy ? "Pulling…" : "🎓 Flag academics from Edsby"}
-            </Button>
-            <p className="mt-1 max-w-xs text-xs text-slate-400">Uses the latest Edsby overall averages (refresh them in the Averages/Honour-roll panel first).</p>
-          </div>
-        )}
+      <div>
+        <h1 className="text-xl font-semibold">Students</h1>
+        <p className="text-sm text-slate-500">Search any student and open their full history, strikes, and notices home.</p>
       </div>
-      {acadMsg && <p className={`text-sm ${acadMsg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{acadMsg}</p>}
+      {isAdmin && (
+        <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3">
+          <Button onClick={flagAcademics} disabled={acadBusy} variant="secondary" size="sm" className="shrink-0 self-start sm:self-auto">
+            {acadBusy ? "Pulling…" : "🎓 Flag academics from Edsby"}
+          </Button>
+          <p className="text-xs text-slate-500">
+            Uses the latest Edsby overall averages — refresh them in the Averages / Honour-roll panel first.
+            {acadMsg && <span className={`mt-1 block text-sm ${acadMsg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{acadMsg}</span>}
+          </p>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2">
         {classes.map((c) => (
@@ -285,7 +285,7 @@ export default function StudentsPage() {
                 {s.lastName}, {s.firstName}{s.preferredName && s.preferredName !== s.firstName && s.preferredName !== s.lastName ? ` (${s.preferredName})` : ""}
                 {s.activeCount ? <span className="ml-2 text-xs font-normal">({s.activeCount})</span> : null}
               </span>
-              <span className="shrink-0 text-sm text-slate-400">{s.classGroup}</span>
+              <span className="shrink-0 text-sm text-slate-500">{s.classGroup}</span>
             </Link>
 
             {templates.length > 0 && (
@@ -341,9 +341,9 @@ export default function StudentsPage() {
             )}
           </li>
         ))}
-        {students.length === 0 && <li className="px-4 py-3 text-sm text-slate-400">No students yet — import a roster in Setup.</li>}
+        {students.length === 0 && <li className="px-4 py-3 text-sm text-slate-500">No students yet — import a roster in Setup.</li>}
         {students.length > 0 && visible.length === 0 && (
-          <li className="px-4 py-3 text-sm text-slate-400">{query ? "No matches." : "Pick a class above, or search by name."}</li>
+          <li className="px-4 py-3 text-sm text-slate-500">{query ? "No matches." : "Pick a class above, or search by name."}</li>
         )}
       </ul>
     </div>

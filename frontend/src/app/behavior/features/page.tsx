@@ -240,7 +240,7 @@ export default function FeaturesPage() {
 
       {/* Hero */}
       <section id="guide-hero" className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
-        <p className="text-sm font-medium uppercase tracking-wide text-slate-400">Compass — Guide &amp; overview</p>
+        <p className="text-sm font-medium uppercase tracking-wide text-slate-500">Compass — Guide &amp; overview</p>
         <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-900">
           A school-wide, pastoral approach to behaviour.
         </h1>
@@ -348,7 +348,7 @@ export default function FeaturesPage() {
         <GuideGated />
       </div>
 
-      <p className="pb-6 text-center text-xs text-slate-400">
+      <p className="pb-6 text-center text-xs text-slate-500">
         Compass stores sensitive student information. Access is role-based and every notice is audit-logged. Ask your
         administrator about your board&apos;s privacy approval before go-live.
       </p>

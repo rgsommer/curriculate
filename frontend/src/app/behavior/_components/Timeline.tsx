@@ -2,7 +2,7 @@
 // { "YYYY-MM": { neg, pos } }.
 export function Timeline({ byMonth }: { byMonth: Record<string, { neg: number; pos: number }> }) {
   const keys = Object.keys(byMonth).sort();
-  if (!keys.length) return <p className="text-sm text-slate-400">No events to chart yet.</p>;
+  if (!keys.length) return <p className="text-sm text-slate-500">No events to chart yet.</p>;
   const max = Math.max(1, ...keys.map((k) => byMonth[k].neg + byMonth[k].pos));
   return (
     <div className="space-y-1.5">
@@ -21,7 +21,7 @@ export function Timeline({ byMonth }: { byMonth: Record<string, { neg: number; p
           </div>
         );
       })}
-      <div className="text-[11px] text-slate-400">
+      <div className="text-[11px] text-slate-500">
         <span className="text-red-500">■</span> negative · <span className="text-green-600">■</span> positive
       </div>
     </div>

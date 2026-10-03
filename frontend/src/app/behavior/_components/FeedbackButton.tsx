@@ -38,9 +38,9 @@ export default function FeedbackButton() {
         <div className="w-80 max-w-[calc(100vw-2rem)] rounded-xl border border-slate-200 bg-white p-3 shadow-lg">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold">Feedback &amp; requests</h3>
-            <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-700" aria-label="Close">✕</button>
+            <button onClick={() => setOpen(false)} className="text-slate-500 hover:text-slate-700" aria-label="Close">✕</button>
           </div>
-          <p className="mt-1 text-xs text-slate-400">Bugs, ideas, anything you&apos;d like changed. Goes to your admins; you&apos;re copied.</p>
+          <p className="mt-1 text-xs text-slate-500">Bugs, ideas, anything you&apos;d like changed. Goes to your admins; you&apos;re copied.</p>
           <textarea value={message} onChange={(e) => setMessage(e.target.value)} rows={4} autoFocus
             placeholder="What would make this better?"
             className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />

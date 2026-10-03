@@ -61,7 +61,7 @@ export default function BehavioursPage() {
       <div>
         <Link href="/behavior/log" className="text-sm text-slate-500 underline">← back to logging</Link>
         <h1 className="mt-1 text-xl font-semibold">Behaviours</h1>
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-slate-500">
           Each behaviour is <span className="text-red-600 font-medium">✕ correcting</span> (something to address) or{" "}
           <span className="text-green-600 font-medium">✓ encouraging</span> (recognition — never counts as a strike).
           {housesOn && " Set "}{housesOn && <span className="font-medium">house points</span>}{housesOn && " on any behaviour."}
@@ -96,7 +96,7 @@ export default function BehavioursPage() {
 
       <section className="rounded-xl border border-slate-200 bg-white p-4">
         <h2 className="text-sm font-semibold">Add a behaviour</h2>
-        <p className="text-xs text-slate-400">{isAdmin ? "Standard (shared) by default; toggle to make it your private one." : "Your private behaviour (only you see it)."}</p>
+        <p className="text-xs text-slate-500">{isAdmin ? "Standard (shared) by default; toggle to make it your private one." : "Your private behaviour (only you see it)."}</p>
         <BehaviorRow add allowStandard={isAdmin} housesOn={housesOn} onChanged={load} />
       </section>
     </div>
@@ -150,7 +150,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
           <span className="font-medium">
             <span className={(b.kind === "positive" || (b.points ?? 0) > 0) ? "text-green-600" : "text-red-600"}>{(b.kind === "positive" || (b.points ?? 0) > 0) ? "✓" : "✕"}</span>{" "}
             {b.name}
-            {b.keyword ? <span className="ml-2 text-xs text-slate-400">#{b.keyword}</span> : null}
+            {b.keyword ? <span className="ml-2 text-xs text-slate-500">#{b.keyword}</span> : null}
             {b.points ? <PointsBadge points={b.points} /> : null}
             {(b.categories || (b.uniform ? ["uniform"] : [])).map((c: string) => (
               <span key={c} className={`ml-2 rounded px-1.5 py-0.5 text-[10px] font-semibold ${c === "uniform" ? "bg-indigo-100 text-indigo-700" : c === "behaviour" ? "bg-rose-100 text-rose-700" : "bg-sky-100 text-sky-700"}`}>
@@ -159,7 +159,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
             ))}
             {b.immediateWhiteSlip ? <span className="ml-2 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">White slip</span> : null}
           </span>
-          <span className="text-xs text-slate-400">{(b.kind === "positive" || (b.points ?? 0) > 0) ? "positive" : MODES.find((m) => m.v === b.triggerMode)?.label?.split(" —")[0]}</span>
+          <span className="text-xs text-slate-500">{(b.kind === "positive" || (b.points ?? 0) > 0) ? "positive" : MODES.find((m) => m.v === b.triggerMode)?.label?.split(" —")[0]}</span>
         </div>
         {b.consequenceText && <p className="mt-1 text-xs text-slate-500">{b.consequenceText}</p>}
       </div>
@@ -175,7 +175,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
           <span className="min-w-0 font-medium">
             <span className={(b.kind === "positive" || (b.points ?? 0) > 0) ? "text-green-600" : "text-red-600"}>{(b.kind === "positive" || (b.points ?? 0) > 0) ? "✓" : "✕"}</span>{" "}
             {b.name}
-            {b.keyword ? <span className="ml-2 text-xs text-slate-400">#{b.keyword}</span> : null}
+            {b.keyword ? <span className="ml-2 text-xs text-slate-500">#{b.keyword}</span> : null}
             {b.points ? <PointsBadge points={b.points} /> : null}
             {(b.categories || (b.uniform ? ["uniform"] : [])).map((c: string) => (
               <span key={c} className={`ml-2 rounded px-1.5 py-0.5 text-[10px] font-semibold ${c === "uniform" ? "bg-indigo-100 text-indigo-700" : c === "behaviour" ? "bg-rose-100 text-rose-700" : "bg-sky-100 text-sky-700"}`}>
@@ -279,7 +279,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
           <label className={`flex flex-wrap items-center gap-2 text-xs text-slate-500 col-span-2`}>
             {positive ? "Points" : "House points"}
             <input type="number" value={points} onChange={(e) => setPoints(e.target.value)} className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
-            <span className="text-slate-400">
+            <span className="text-slate-500">
               {positive
                 ? "added to the student’s house when logged. Encouraging behaviours never count as a strike."
                 : "negative deducts from the student’s house; leave 0 for no points."}
@@ -288,7 +288,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
         )}
         {!positive && (
           <div className="col-span-2 text-xs text-slate-600">
-            <span className="font-medium">Category</span> <span className="text-slate-400">(teachers don&apos;t pick this — it shapes reporting &amp; rules)</span>
+            <span className="font-medium">Category</span> <span className="text-slate-500">(teachers don&apos;t pick this — it shapes reporting &amp; rules)</span>
             <div className="mt-1 flex flex-wrap gap-3">
               {[["preparedness", "Class preparedness"], ["behaviour", "Behaviour"], ["uniform", "Uniform (GUDD)"]].map(([v, label]) => (
                 <label key={v} className="flex items-center gap-1.5">
@@ -299,7 +299,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
             </div>
             {needsCategory && <p className="mt-1 text-rose-600">Pick at least one category before saving.</p>}
             {categories.includes("uniform") && (
-              <p className="mt-1 text-slate-400">Uniform → counts as a strike <em>and</em> toward losing the Good Uniform Dress Down (threshold/fade/escalations in Setup).</p>
+              <p className="mt-1 text-slate-500">Uniform → counts as a strike <em>and</em> toward losing the Good Uniform Dress Down (threshold/fade/escalations in Setup).</p>
             )}
             <label className="mt-2 flex items-start gap-2">
               <input type="checkbox" checked={immediateWhiteSlip} onChange={(e) => setImmediateWhiteSlip(e.target.checked)} className="mt-0.5" />
