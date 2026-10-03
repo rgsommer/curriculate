@@ -47,6 +47,8 @@ export default function SiteHeader() {
   // stops people mistaking the "Get Started" CTA for how to sign into Campfire.
   // The footer stays, so they can still reach the other Curriculate products.
   if (pathname?.startsWith("/campfirelive")) return null;
+  // Campfire's intro page (linked from the app's "Features") has its own slim bar.
+  if (pathname?.startsWith("/aboutcampfire")) return null;
   // Compass has its own header too — keep the app clean (footer stays).
   if (pathname?.startsWith("/behavior")) return null;
   // Student-facing House portal / wall display — no marketing chrome.

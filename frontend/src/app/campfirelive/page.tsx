@@ -16,7 +16,7 @@ import {
   isHouseSchool,
   type EngagementType,
 } from "@/lib/campfire/types";
-import { CF_PRIMARY, CF_SECONDARY } from "@/lib/campfire/ui";
+import { CF_PRIMARY, CF_SECONDARY, CF_SECONDARY_SM } from "@/lib/campfire/ui";
 
 const GROUP_EMOJIS = ["🔥", "🏕️", "⭐", "🌙", "🎯", "💪", "🙏", "🎉", "🎮", "📖", "💑", "🏠"];
 
@@ -39,6 +39,8 @@ export default function DashboardPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
   const [groupBlocked, setGroupBlocked] = useState(false);
+  // Shortcut waiting for a group choice ("?template=…" / "?type=…"), when in several.
+  const [startPath, setStartPath] = useState<string | null>(null);
   // Free plan: anyone may host FREE_MAX_GROUPS group(s); more needs an active trial or
   // Campfire Plus (see premium.ts). Members and guests are never gated on joining.
   const hostedCount = groups.filter((g) => g.creator_id === user?.id).length;
@@ -151,6 +153,8 @@ export default function DashboardPage() {
     recurrenceRule?: string | null;
   };
   const [todo, setTodo] = useState<TodoEng[]>([]);
+  // False until the first to-do load finishes — so we never flash "all caught up".
+  const [todoReady, setTodoReady] = useState(false);
   // True response counts for the home rows ("X of Y"), keyed by engagement id. Fetched
   // via a SECURITY DEFINER RPC so the sealed-RLS policy doesn't under-report pre-reveal.
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -179,10 +183,12 @@ export default function DashboardPage() {
     const ids = groupIdsKey ? groupIdsKey.split(",") : [];
     if (ids.length === 0 || !user?.id) {
       setTodo([]);
+      if (!loading) setTodoReady(true);
       return;
     }
     let cancelled = false;
     (async () => {
+      try {
       const nowMs = Date.now();
       const { data: engs } = await supabase
         .from("engagements")
@@ -256,6 +262,9 @@ export default function DashboardPage() {
             total_expected: (e.total_expected as number | null) ?? null,
           }))
       );
+      } finally {
+        if (!cancelled) setTodoReady(true);
+      }
     })();
     return () => {
       cancelled = true;
@@ -559,6 +568,10 @@ export default function DashboardPage() {
     } else {
       setShowJoin(false);
       setJoinCode("");
+      if (result.groupId) {
+        router.push(`/campfirelive/group/${result.groupId}`);
+        return;
+      }
     }
     setCreating(false);
   };
@@ -582,6 +595,8 @@ export default function DashboardPage() {
           <p className="text-slate-500 mt-1">
             Create your first group or join one with an invite code.
           </p>
+        ) : !todoReady ? (
+          <p className="mt-1 animate-pulse text-slate-500">Checking what&apos;s new…</p>
         ) : todo.length === 0 && newReveals.length === 0 ? (
           <p className="text-slate-500 mt-1">You&apos;re all caught up ✨</p>
         ) : (
@@ -758,6 +773,12 @@ export default function DashboardPage() {
         return (
           <Link
             href={`/campfirelive/group/${groups[0].id}/engagement/new?template=${season.templateId}`}
+            onClick={(e) => {
+              if (groups.length > 1) {
+                e.preventDefault();
+                setStartPath(`?template=${season.templateId}`);
+              }
+            }}
             className="group mb-6 flex items-center justify-between gap-3 rounded-2xl border-2 border-rose-200 bg-gradient-to-br from-rose-50 to-orange-50 px-5 py-4 shadow-sm transition hover:border-rose-300"
           >
             <div className="flex items-center gap-3 min-w-0">
@@ -784,6 +805,12 @@ export default function DashboardPage() {
         groups.length > 0 ? (
           <Link
             href={`/campfirelive/group/${groups[0].id}/engagement/new?type=${trending.type}`}
+            onClick={(e) => {
+              if (groups.length > 1) {
+                e.preventDefault();
+                setStartPath(`?type=${trending.type}`);
+              }
+            }}
             className="group mb-6 inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50/70 px-3.5 py-1.5 text-xs font-medium text-orange-800 hover:bg-orange-100"
             title={`Start a ${trendingMeta.label} — the most-created type across Campfire right now`}
           >
@@ -808,6 +835,39 @@ export default function DashboardPage() {
             </span>
           </div>
         )
+      )}
+
+      {/* "Start it in which group?" — for the shortcuts above when you're in several. */}
+      {startPath && (
+        <div className="mb-6 rounded-2xl border border-orange-200 bg-white p-4 shadow-sm">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="text-sm font-semibold text-slate-900">Start it in which group?</span>
+            <button
+              type="button"
+              onClick={() => setStartPath(null)}
+              aria-label="Close"
+              className="h-10 w-10 rounded-full text-slate-500 hover:bg-slate-100"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[...groups]
+              .sort(
+                (a, b) =>
+                  Number(b.creator_id === user?.id) - Number(a.creator_id === user?.id)
+              )
+              .map((g) => (
+                <Link
+                  key={g.id}
+                  href={`/campfirelive/group/${g.id}/engagement/new${startPath}`}
+                  className={CF_SECONDARY_SM}
+                >
+                  {g.avatar_emoji} {g.name}
+                </Link>
+              ))}
+          </div>
+        </div>
       )}
 
       {/* Actions */}
@@ -1018,7 +1078,11 @@ export default function DashboardPage() {
                           · by {creatorNames[g.id] ?? "the host"}
                         </span>
                       )}
-                      {s && s.invited > 0 && <span>· {s.invited} pending</span>}
+                      {s && s.invited > 0 && (
+                        <span>
+                          · {s.invited} invite{s.invited === 1 ? "" : "s"} pending
+                        </span>
+                      )}
                       {s && (s.active > 0 || s.recurring > 0) && (
                         <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-2 py-0.5 text-xs font-medium text-slate-600">
                           {s.active > 0 && <span>🔥 {s.active} active</span>}

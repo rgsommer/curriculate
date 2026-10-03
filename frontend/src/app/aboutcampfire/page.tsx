@@ -348,8 +348,21 @@ export default function AboutCampfirePage() {
         }}
       />
 
+      {/* Campfire's own slim top bar — this is Campfire's intro page, not Curriculate's. */}
+      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 pt-5">
+        <Link href="/campfirelive" className="flex items-center gap-2 font-extrabold text-slate-900">
+          <span aria-hidden className="text-2xl">🔥</span> Campfire
+        </Link>
+        <Link
+          href="/campfirelive"
+          className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+        >
+          Open Campfire →
+        </Link>
+      </div>
+
       {/* ── Hero ── */}
-      <section className="mx-auto max-w-6xl px-6 pt-16 pb-10">
+      <section className="mx-auto max-w-6xl px-6 pt-10 pb-10">
         <div className="max-w-3xl">
           <div className="flex flex-wrap gap-2 mb-4">
             <Pill>Campfire</Pill>
@@ -826,130 +839,16 @@ export default function AboutCampfirePage() {
 
         <Divider />
 
-        {/* ── Competitive Landscape ── */}
-        <SectionHeader
-          eyebrow="Differentiation"
-          title="What makes Campfire different"
-          desc="No other app combines structured group activities with this flexibility."
-        />
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse">
-            <thead>
-              <tr className="bg-slate-50">
-                <th className="text-left p-3 font-semibold border-b-2 border-slate-200">
-                  Feature
-                </th>
-                <th className="text-left p-3 font-semibold border-b-2 border-slate-200 text-orange-600">
-                  Campfire
-                </th>
-                <th className="text-left p-3 font-semibold border-b-2 border-slate-200 text-slate-500">
-                  WhatsApp / iMessage
-                </th>
-                <th className="text-left p-3 font-semibold border-b-2 border-slate-200 text-slate-500">
-                  Instagram / TikTok
-                </th>
-                <th className="text-left p-3 font-semibold border-b-2 border-slate-200 text-slate-500">
-                  Discord
-                </th>
-              </tr>
-            </thead>
-            <tbody className="text-slate-700">
-              {[
-                ["Results sealed until all respond", "Yes", "-", "-", "-"],
-                ["Structured group engagements", "Yes", "-", "-", "-"],
-                ["Polls with QR code access", "Yes", "-", "-", "Basic"],
-                ["Accountability check-ins", "Yes", "-", "-", "-"],
-                ["Blind / anonymous responses", "Yes", "-", "-", "-"],
-                ["Photo / video challenges", "Yes", "-", "Partial", "-"],
-                ["Turn-based games", "Yes", "-", "-", "Bots"],
-                ["Video greeting mash-ups", "Yes", "-", "-", "-"],
-                ["Deadline-enforced responses", "Yes", "-", "-", "-"],
-                ["Random guest opt-in", "Yes", "-", "-", "-"],
-                ["Favourites tab for replaying greetings", "Yes", "-", "-", "-"],
-                ["Recurring / scheduled engagements", "Yes", "-", "-", "-"],
-                ["Template packs", "Yes", "-", "-", "-"],
-                ["Reactions on responses", "Yes", "-", "Partial", "Partial"],
-                ["Streak tracking", "Yes", "-", "-", "-"],
-                ["Export to social media", "Yes", "-", "-", "-"],
-                ["Voice note responses", "Yes", "Yes", "-", "Yes"],
-              ].map(([feat, ...vals]) => (
-                <tr key={feat} className="hover:bg-slate-50/50">
-                  <td className="p-3 border-b border-slate-100">{feat}</td>
-                  {vals.map((v, i) => (
-                    <td
-                      key={i}
-                      className={`p-3 border-b border-slate-100 font-semibold ${
-                        i === 0
-                          ? v === "Yes"
-                            ? "text-orange-500"
-                            : "text-slate-400"
-                          : "text-slate-400"
-                      }`}
-                    >
-                      {v === "Yes" ? "✓ Yes" : v}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <Divider />
-
-        {/* ── Revenue ── */}
-        <div id="investor">
-          <SectionHeader
-            eyebrow="Revenue Model"
-            title="Free to use with a clear path to premium"
-            desc="Campfire is free with ads, with premium and enterprise tiers."
-          />
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <span className="inline-flex items-center rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-green-700 mb-3">
-                Free Tier
-              </span>
-              <h3 className="text-lg font-bold text-slate-900">Ad-Supported</h3>
-              <p className="mt-2 text-slate-600">
-                All core engagement types free. Revenue through non-intrusive ads.
-                Groups of any size, unlimited engagements.
-              </p>
-            </div>
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <span className="inline-flex items-center rounded-full bg-purple-50 px-3 py-1 text-xs font-semibold text-purple-700 mb-3">
-                Premium
-              </span>
-              <h3 className="text-lg font-bold text-slate-900">Power Features</h3>
-              <p className="mt-2 text-slate-600">
-                Remove ads, expanded random guest pools, exclusive engagement types,
-                priority support, and group analytics.
-              </p>
-            </div>
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <span className="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 mb-3">
-                Enterprise
-              </span>
-              <h3 className="text-lg font-bold text-slate-900">Organizations</h3>
-              <p className="mt-2 text-slate-600">
-                White-label for churches, schools, and organizations. Bulk group
-                management, admin dashboards, and custom branding.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <Divider />
-
         {/* ── Platform ── */}
         <SectionHeader
           eyebrow="Platform"
-          title="Works everywhere — install it like an app"
-          desc="A fast web app you can add to your home screen, with friction-free joining and privacy-first design."
+          title="Works everywhere"
+          desc="Apps for iPhone and Android, plus the web — with friction-free joining and privacy-first design."
         />
         <div className="grid gap-4 md:grid-cols-3">
           <Card
-            title="📲 Installable (PWA)"
-            desc="Add Campfire to your home screen on iOS or Android — app icon, full-screen, offline-aware — with no app store download."
+            title="📲 On your phone"
+            desc="Get the Campfire app on the App Store or Google Play — or just use it in any browser. Same groups, same account, everywhere."
           />
           <Card
             title="🔗 One-Tap Joining"

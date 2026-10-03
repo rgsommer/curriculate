@@ -11,7 +11,7 @@ import type { MonthlyNth } from "@/lib/campfire/hooks";
 import { parseInviteList } from "@/lib/campfire/parseInvites";
 import { formatWhen } from "@/lib/campfire/dates";
 import { cfAlert, cfConfirm } from "@/lib/campfire/dialogs";
-import { CF_PRIMARY, CF_PRIMARY_SM, CF_SECONDARY, CF_SECONDARY_SM } from "@/lib/campfire/ui";
+import { CF_PRIMARY, CF_PRIMARY_SM, CF_SECONDARY, CF_SECONDARY_SM, chipClass } from "@/lib/campfire/ui";
 
 export default function GroupDetailPage() {
   const params = useParams();
@@ -29,7 +29,14 @@ export default function GroupDetailPage() {
   const [memberNameInput, setMemberNameInput] = useState("");
   const [editingInviteEmail, setEditingInviteEmail] = useState<string | null>(null);
   const [inviteNameInput, setInviteNameInput] = useState("");
-  const [copied, setCopied] = useState(false);
+  // Which thing was just copied ("invite" message or bare "link"), so each button
+  // shows its own ✓ instead of one shared flag lighting up both.
+  const [copied, setCopied] = useState<"" | "invite" | "link">("");
+  // Phone share sheet available? (checked after mount so SSR markup matches)
+  const [canShare, setCanShare] = useState(false);
+  useEffect(() => {
+    setCanShare(typeof navigator !== "undefined" && typeof navigator.share === "function");
+  }, []);
   const [tab, setTab] = useState<
     "active" | "upcoming" | "recurring" | "revealed" | "all"
   >("active");
@@ -172,18 +179,31 @@ How to jump in:
 See you around the campfire! 🏕️`
     : "";
 
-  const copyInvite = () => {
-    if (!group) return;
-    navigator.clipboard.writeText(inviteMessage);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const copyText = async (text: string, which: "invite" | "link") => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(which);
+      setTimeout(() => setCopied(""), 2000);
+    } catch {
+      cfAlert("Couldn't copy automatically — press and hold the link to copy it instead.");
+    }
   };
-
   const copyLink = () => {
+    if (group) copyText(joinUrl, "link");
+  };
+  // Phones: open the share sheet (Messages, WhatsApp, Mail…) with the friendly invite.
+  // Desktop / no share sheet: copy it to paste anywhere.
+  const copyInvite = async () => {
     if (!group) return;
-    navigator.clipboard.writeText(joinUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if (canShare) {
+      try {
+        await navigator.share({ title: `Join ${group.name} on Campfire`, text: inviteMessage });
+        return;
+      } catch (e) {
+        if ((e as Error)?.name === "AbortError") return; // they closed the sheet
+      }
+    }
+    copyText(inviteMessage, "invite");
   };
 
   const showQrCode = async () => {
@@ -511,7 +531,10 @@ See you around the campfire! 🏕️`
     <div>
       {/* Group Header */}
       <div className="mb-6">
-        <Link href="/campfirelive" className="text-sm text-slate-500 hover:text-slate-700 mb-2 inline-block">
+        <Link
+          href="/campfirelive"
+          className="-ml-2 mb-1 inline-flex items-center rounded-full px-2 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+        >
           ← All Groups
         </Link>
         <div className="flex items-center gap-4">
@@ -539,36 +562,6 @@ See you around the campfire! 🏕️`
                   placeholder="Description (optional)"
                   className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 outline-none focus:border-orange-500 resize-y"
                 />
-                <label className="flex items-start gap-2 cursor-pointer rounded-lg border border-slate-200 bg-slate-50 p-2.5">
-                  <input
-                    type="checkbox"
-                    checked={group.notify_on_response !== false}
-                    onChange={(e) => setNotifyOnResponse(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
-                  />
-                  <span className="text-xs text-slate-600">
-                    <span className="font-medium text-slate-700">
-                      📬 Member digest
-                    </span>{" "}
-                    — members get one email a day summarizing new responses in this
-                    group. Turn off to keep it quiet.
-                  </span>
-                </label>
-                <label className="flex items-start gap-2 cursor-pointer rounded-lg border border-slate-200 bg-slate-50 p-2.5">
-                  <input
-                    type="checkbox"
-                    checked={group.notify_host !== false}
-                    onChange={(e) => setNotifyHost(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
-                  />
-                  <span className="text-xs text-slate-600">
-                    <span className="font-medium text-slate-700">
-                      🔔 Notify me of all activity
-                    </span>{" "}
-                    — you (the host) get a daily recap of new responses, members, and
-                    activities, even if the member digest above is off.
-                  </span>
-                </label>
                 <div className="flex items-center gap-2">
                   <button
                     disabled={savingName || !nameInput.trim()}
@@ -606,7 +599,8 @@ See you around the campfire! 🏕️`
                         setRenaming(true);
                       }}
                       title="Edit name & description"
-                      className="text-slate-500 hover:text-orange-600"
+                      aria-label="Edit group name and settings"
+                      className="flex h-10 w-10 items-center justify-center rounded-full text-slate-500 hover:bg-slate-100 hover:text-orange-600"
                     >
                       ✏️
                     </button>
@@ -696,7 +690,7 @@ See you around the campfire! 🏕️`
                   onClick={copyInvite}
                   className={`${CF_PRIMARY_SM}`}
                 >
-                  {copied ? "✓ Copied!" : "Copy invite"}
+                  {copied === "invite" ? "✓ Copied!" : canShare ? "📤 Share invite" : "📋 Copy invite"}
                 </button>
                 <button
                   onClick={showQrCode}
@@ -705,7 +699,17 @@ See you around the campfire! 🏕️`
                   Show QR
                 </button>
                 <button
-                  onClick={() => setShowEmailInvite(true)}
+                  onClick={() => {
+                    setShowInvitePanel(true);
+                    setShowEmailInvite(true);
+                    setTimeout(
+                      () =>
+                        document
+                          .getElementById("group-invite")
+                          ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                      50
+                    );
+                  }}
                   className={`${CF_SECONDARY_SM}`}
                 >
                   Email
@@ -730,6 +734,295 @@ See you around the campfire! 🏕️`
         </div>
       )}
 
+      {/* Quick actions — the list below is what people come for, so it comes next. */}
+      {engagements.length > 0 && (
+        <div className="mb-5 flex flex-wrap gap-2">
+          <Link href={`/campfirelive/group/${groupId}/engagement/new`} className={CF_PRIMARY}>
+            + Start something new
+          </Link>
+          <button
+            type="button"
+            onClick={() => {
+              setShowInvitePanel(true);
+              setTimeout(
+                () =>
+                  document
+                    .getElementById("group-invite")
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                50
+              );
+            }}
+            className={CF_SECONDARY}
+          >
+            👥 Invite people
+          </button>
+          {isAdmin && (
+            <Link href={`/campfirelive/group/${groupId}/birthdays`} className={CF_SECONDARY}>
+              🎂 Bulk add birthdays
+            </Link>
+          )}
+        </div>
+      )}
+
+      {/* Engagement Tabs — the Recurring tab only shows when there's something in it.
+          Scrolls sideways on a narrow phone instead of clipping the last tabs (the page
+          itself has overflow-x hidden, so a non-scrolling row would hide them). */}
+      <div
+        role="tablist"
+        className="input-mode-scroll mb-4 flex max-w-full gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1 sm:w-fit"
+      >
+        {(["active", "upcoming", "recurring", "revealed", "all"] as const)
+          .filter((t) => t !== "upcoming" || upcomingEngagements.length > 0)
+          .filter((t) => t !== "recurring" || recurringEngagements.length > 0)
+          .map((t) => (
+            <button
+              key={t}
+              role="tab"
+              aria-selected={tab === t}
+              onClick={() => setTab(t)}
+              className={`flex-shrink-0 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition ${
+                tab === t
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              {t === "active"
+                ? `Active (${activeEngagements.length})`
+                : t === "upcoming"
+                ? `Upcoming (${upcomingEngagements.length})`
+                : t === "recurring"
+                ? `Recurring (${recurringEngagements.length})`
+                : t === "revealed"
+                ? `Revealed (${revealedEngagements.length})`
+                : `All (${engagements.length})`}
+            </button>
+          ))}
+      </div>
+
+      {/* Engagement List */}
+      {filteredEngagements.length === 0 ? (
+        <div className="text-center py-12 text-slate-500">
+          <div className="text-4xl mb-3">
+            {tab === "active"
+              ? "🔒"
+              : tab === "upcoming"
+              ? "📅"
+              : tab === "recurring"
+              ? "🔁"
+              : tab === "revealed"
+              ? "📭"
+              : "🏕️"}
+          </div>
+          <p>
+            {tab === "active"
+              ? "No active activities. Start one!"
+              : tab === "upcoming"
+              ? "Nothing scheduled to open yet."
+              : tab === "recurring"
+              ? "No recurring cards yet."
+              : tab === "revealed"
+              ? "No revealed activities yet."
+              : "No activities yet. Be the first to start one!"}
+          </p>
+        </div>
+      ) : (
+        <div
+          className={`grid gap-3 ${
+            filteredEngagements.length > 4 ? "lg:grid-cols-2" : ""
+          }`}
+        >
+          {(tab === "revealed" && !showAllRevealed
+            ? filteredEngagements.slice(0, REVEALED_PREVIEW)
+            : filteredEngagements
+          ).map((eng) => {
+            const meta = ENGAGEMENT_TYPES[eng.type];
+            const isDraft = !eng.launched_at; // creator-only until launched (RLS hides from others)
+            const isSealed = eng.status === "active" && eng.reveal === "sealed";
+            const isRevealed = eng.status === "revealed";
+            // In the Recurring tab a revealed tail is the FINISHED last run — show the
+            // series looking forward (next date) instead of its stale response status.
+            const recurringFinished = tab === "recurring" && isRevealed;
+            const nextRun = recurringFinished ? nextRecurrence(eng) : null;
+            const progress = eng.total_expected > 0
+              ? Math.round((eng.response_count / eng.total_expected) * 100)
+              : 0;
+
+            return (
+              <Link
+                key={eng.id}
+                href={`/campfirelive/group/${groupId}/engagement/${eng.id}`}
+                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md transition"
+              >
+                <div>
+                  <div className="flex items-start gap-3">
+                    <span aria-hidden className="text-2xl">{engagementIcon(eng)}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold text-orange-700">
+                        {eng.creator_id === user?.id
+                          ? "Your"
+                          : `${nameOf(eng.creator_id, eng.creator?.display_name)}'s`}{" "}
+                        {meta?.label ?? eng.type}
+                      </p>
+                      <h3 className="font-bold text-slate-900">
+                        {resolveTitle(eng.title, eng.birth_year, eng.deadline)}
+                      </h3>
+                      <p className="text-sm text-slate-600 mt-0.5">
+                        {eng.description?.trim() || meta?.hook}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Started {formatWhen(eng.created_at, { time: false, weekday: false })}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Status + your-response chips — their own wrapping row under the
+                      title, so on a phone the title keeps the full width. One colour
+                      per meaning: orange = needs you, green = done, amber = sealed,
+                      violet = scheduled, slate = repeats, sky = money. */}
+                  <div className="mt-3 flex flex-wrap gap-1.5 pl-9">
+                    {isDraft &&
+                      (eng.scheduled_open_at &&
+                      new Date(eng.scheduled_open_at).getTime() > Date.now() ? (
+                        // Auto-scheduled (e.g. next year's recurring card) — it opens
+                        // itself; no manual launch needed.
+                        <span className={chipClass("special")}>
+                          🗓️ Opens{" "}
+                          {formatWhen(eng.scheduled_open_at, { time: false, weekday: false })}
+                        </span>
+                      ) : (
+                        <span className={chipClass("brand")}>
+                          ✏️ Draft · tap to launch
+                        </span>
+                      ))}
+                    {!isDraft && isSealed && (
+                      <span className={chipClass("warn")}>
+                        🔒 Sealed
+                      </span>
+                    )}
+                    {/* Recurring tab: the last run is done — point to the next one */}
+                    {recurringFinished && (
+                      <span className={chipClass("special")}>
+                        🗓️ Next
+                        {nextRun
+                          ? ` · ${nextRun.toLocaleDateString(undefined, {
+                              month: "short",
+                              day: "numeric",
+                            })}`
+                          : ""}
+                      </span>
+                    )}
+                    {isRevealed && !recurringFinished && (
+                      <span className={chipClass("success")}>
+                        ✓ Revealed
+                      </span>
+                    )}
+                    {/* Card opened by the recipient */}
+                    {isRevealed &&
+                      eng.type === "birthday" &&
+                      !!(eng.config as { cardViewedAt?: string } | null)
+                        ?.cardViewedAt && (
+                        <span className={chipClass("success")}>
+                          ✓ Opened
+                        </span>
+                      )}
+                    {/* Have YOU responded? (skip drafts, the surprise recipient, and a
+                        finished recurring run — that badge describes the past instance) */}
+                    {!isDraft &&
+                      !recurringFinished &&
+                      !(user && (eng.excluded_user_ids ?? []).includes(user.id)) &&
+                      (respondedIds.has(eng.id) ? (
+                        <span className={chipClass("success")}>
+                          ✓ You responded
+                        </span>
+                      ) : (
+                        <span className={chipClass("brand")}>
+                          ● Your turn
+                        </span>
+                      ))}
+                    {/* Recurring series indicator */}
+                    {eng.recurrence_rule && (
+                      <span className={chipClass("neutral")}>
+                        🔁{" "}
+                        {eng.recurrence_rule === "daily"
+                          ? "Daily"
+                          : eng.recurrence_rule === "weekly"
+                          ? "Weekly"
+                          : eng.recurrence_rule === "monthly"
+                          ? "Monthly"
+                          : "Yearly"}
+                      </span>
+                    )}
+                    {/* Group gift running total — everyone sees it by default (never
+                        the surprise recipient); the host can restrict via giftShowTotal */}
+                    {(eng.gift_enabled || !!raffleOf(eng.config)) &&
+                      (giftTotals[eng.id] ?? 0) > 0 &&
+                      !!user &&
+                      !(
+                        (eng.gift_hidden_from ?? []).includes(user.id) ||
+                        (eng.excluded_user_ids ?? []).includes(user.id)
+                      ) &&
+                      ((eng.config as { giftShowTotal?: boolean } | null)
+                        ?.giftShowTotal !== false ||
+                        eng.creator_id === user.id ||
+                        eng.gift_initiated_by === user.id) && (
+                      <span data-hide-on-android className={chipClass("info")}>
+                        {raffleOf(eng.config) ? "🏆" : "🎁"}{" "}
+                        {formatMoney(giftTotals[eng.id] ?? 0, eng.gift_currency)}{" "}
+                        {raffleOf(eng.config) ? "in the pot" : "chipped in"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Progress bar */}
+                {eng.status === "active" && (
+                  <div className="mt-3">
+                    <div className="flex justify-between text-xs text-slate-500 mb-1">
+                      <span>{eng.response_count}/{eng.total_expected} responded</span>
+                      <span>{progress}%</span>
+                    </div>
+                    <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-orange-400 to-rose-400 transition-all"
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Deadline */}
+                {eng.deadline && eng.status === "active" && (
+                  <p className="mt-2 text-xs text-slate-500">
+                    {eng.hold_until_deadline ? "⏳ Reveals" : "Deadline"}:{" "}
+                    {formatWhen(eng.deadline)}
+                  </p>
+                )}
+              </Link>
+            );
+          })}
+        </div>
+      )}
+      {tab === "revealed" &&
+        !showAllRevealed &&
+        filteredEngagements.length > REVEALED_PREVIEW && (
+          <button
+            onClick={() => setShowAllRevealed(true)}
+            className="mb-6 w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-500 hover:bg-slate-50"
+          >
+            Show {filteredEngagements.length - REVEALED_PREVIEW} older revealed
+          </button>
+        )}
+      {tab === "revealed" && emptyRevealedCount > 0 && (
+        <p className="mb-6 text-center text-xs text-slate-500">
+          {emptyRevealedCount} empty check-in{emptyRevealedCount === 1 ? "" : "s"} with no
+          responses {emptyRevealedCount === 1 ? "is" : "are"} hidden.
+        </p>
+      )}
+
+      {/* ── Group info: stats, badges, invites & members, host analytics ── */}
+      <h2 className="mb-3 mt-10 text-sm font-bold uppercase tracking-wide text-slate-500">
+        Group info
+      </h2>
       {/* Quick Stats */}
       <div className="grid grid-cols-3 gap-3 mb-6">
         <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
@@ -762,7 +1055,7 @@ See you around the campfire! 🏕️`
       )}
 
       {/* Invite + Members (collapsible) */}
-      <div className="mb-6 rounded-2xl border border-orange-200 bg-orange-50/50 p-4">
+      <div id="group-invite" className="mb-6 scroll-mt-20 rounded-2xl border border-orange-200 bg-orange-50/50 p-4">
         <button
           onClick={() => {
             // Collapsing the panel also hides the members list it controls.
@@ -791,7 +1084,11 @@ See you around the campfire! 🏕️`
             title="Invite to this group — with a peek at everything that's live"
             className={`${CF_PRIMARY}`}
           >
-            {copied ? "✓ Copied — paste it anywhere!" : "📋 Copy Invite"}
+            {copied === "invite"
+              ? "✓ Copied — paste it anywhere!"
+              : canShare
+              ? "📤 Share invite"
+              : "📋 Copy invite"}
           </button>
           {canEmailInvite && (
             <button
@@ -823,8 +1120,8 @@ See you around the campfire! 🏕️`
         </div>
 
         <p className="mt-2 text-xs text-slate-500">
-          <span className="font-semibold">📋 Copy Invite</span> — invite to this group,
-          with a peek at all the active engagements.
+          {canShare ? "📤 Share invite" : "📋 Copy invite"} sends a friendly message with
+          the join link and simple steps — ready for Messages, WhatsApp or email.
         </p>
 
 
@@ -895,18 +1192,14 @@ See you around the campfire! 🏕️`
           </div>
         )}
 
-        <p className="mt-3 text-xs text-slate-500">
-          Or copy a friendly invite with the join link + instructions — ready to
-          paste into email, iMessage, or WhatsApp.
-        </p>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
           <span className="text-slate-500">Or share directly:</span>
           <button
             onClick={copyLink}
             title="Copy join link"
-            className="rounded-md border border-slate-200 bg-white px-2 py-1 font-mono text-slate-600 hover:bg-slate-50"
+            className="min-w-0 max-w-full break-all rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-left font-mono text-slate-600 hover:bg-slate-50"
           >
-            {joinUrl.replace(/^https?:\/\//, "")}
+            {copied === "link" ? "✓ Link copied" : joinUrl.replace(/^https?:\/\//, "")}
           </button>
           <span className="text-slate-300">·</span>
           <span className="text-slate-500">
@@ -931,7 +1224,7 @@ See you around the campfire! 🏕️`
               {invitations.some((i) => i.status === "pending") && (
                 <button
                   onClick={nudgeAllPending}
-                  className="text-xs font-semibold text-orange-600 hover:underline"
+                  className="rounded-full px-2 py-1.5 text-xs font-semibold text-orange-700 hover:bg-orange-100"
                 >
                   👋 Nudge all pending
                 </button>
@@ -997,7 +1290,8 @@ See you around the campfire! 🏕️`
                               setEditingInviteEmail(inv.email);
                             }}
                             title="Edit name"
-                            className="flex-shrink-0 text-slate-500 hover:text-orange-600"
+                            aria-label="Edit name"
+                            className="flex-shrink-0 rounded-full p-1.5 text-slate-500 hover:bg-slate-100 hover:text-orange-600"
                           >
                             ✏️
                           </button>
@@ -1011,11 +1305,19 @@ See you around the campfire! 🏕️`
                             </span>
                             {isAdmin && (
                               <button
-                                onClick={() => unjoin(inv.email)}
+                                onClick={async () => {
+                                  if (
+                                    await cfConfirm(
+                                      `Set ${inv.name || inv.email} back to "not joined yet"?`,
+                                      { confirmLabel: "Undo" }
+                                    )
+                                  )
+                                    unjoin(inv.email);
+                                }}
                                 title="Marked the wrong person? Set this invite back to pending."
-                                className="text-xs font-medium text-slate-500 underline hover:text-amber-600"
+                                className="rounded-full px-2 py-1.5 text-xs font-medium text-slate-500 underline hover:text-amber-700"
                               >
-                                ↩ un-join
+                                ↩ Undo
                               </button>
                             )}
                           </>
@@ -1059,8 +1361,8 @@ See you around the campfire! 🏕️`
                         </span>
                       ) : (
                         <span className="text-amber-600">
-                          ✉️ Not emailed yet — they&apos;ll get it when you post/launch an
-                          engagement, or nudge.
+                          ✉️ Not emailed yet — they&apos;ll get it when you post an activity, or
+                          when you nudge them.
                         </span>
                       )}
                     </div>
@@ -1068,25 +1370,33 @@ See you around the campfire! 🏕️`
 
                   {/* Actions — only for pending; wrap freely on a narrow screen */}
                   {inv.status === "pending" && (
-                    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-medium">
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
                       <button
                         onClick={() => nudgeOne(inv.email)}
-                        className="text-orange-600 hover:underline"
+                        className="inline-flex min-h-10 items-center rounded-full border px-3 text-xs font-semibold border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100"
                       >
-                        👋 nudge
+                        👋 Nudge
                       </button>
                       <button
                         onClick={() => markJoined(inv.email)}
                         title="They already joined (e.g. under a different email)? Mark them in."
-                        className="text-green-600 hover:underline"
+                        className="inline-flex min-h-10 items-center rounded-full border px-3 text-xs font-semibold border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
                       >
-                        ✓ mark joined
+                        ✓ Mark joined
                       </button>
                       <button
-                        onClick={() => revokeOne(inv.email)}
-                        className="text-slate-500 hover:text-red-600 hover:underline"
+                        onClick={async () => {
+                          if (
+                            await cfConfirm(
+                              `Cancel the invite for ${inv.name || inv.email}? Their link stops working.`,
+                              { danger: true, confirmLabel: "Cancel invite", cancelLabel: "Keep it" }
+                            )
+                          )
+                            revokeOne(inv.email);
+                        }}
+                        className="inline-flex min-h-10 items-center rounded-full border px-3 text-xs font-semibold border-slate-200 bg-white text-slate-600 hover:border-red-200 hover:text-red-700"
                       >
-                        ✕ revoke
+                        ✕ Cancel invite
                       </button>
                     </div>
                   )}
@@ -1095,16 +1405,24 @@ See you around the campfire! 🏕️`
                       email)? Link them so emails — including a card reveal — reach
                       them at this address. */}
                   {isAdmin && inv.status === "pending" && members.length > 0 && (
-                    <div className="mt-1.5">
+                    <div className="mt-2">
                       <select
                         defaultValue=""
-                        onChange={(e) => {
-                          if (e.target.value) linkGuest(inv.email, e.target.value);
+                        onChange={async (e) => {
+                          const sel = e.target;
+                          const uid = sel.value;
+                          if (!uid) return;
+                          const ok = await cfConfirm(
+                            `Is ${nameOf(uid)} the same person as ${inv.name || inv.email}? Campfire emails (including card reveals) will then go to ${inv.email}.`,
+                            { confirmLabel: "Yes, same person" }
+                          );
+                          if (ok) linkGuest(inv.email, uid);
+                          else sel.value = "";
                         }}
                         title="Joined as a guest (via the link, no email)? Link them so emails reach them at this address."
-                        className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-xs text-slate-500"
+                        className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm text-slate-600 sm:w-auto"
                       >
-                        <option value="">↔ joined here as a guest?…</option>
+                        <option value="">Already joined without an email? Pick who…</option>
                         {members.map((m) => (
                           <option key={m.user_id} value={m.user_id}>
                             {nameOf(m.user_id)}
@@ -1254,6 +1572,46 @@ See you around the campfire! 🏕️`
         </div>
       )}
 
+      {/* Notifications — host settings for this group, out in the open (they save
+          the moment you tick them). */}
+      {isAdmin && (
+        <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="mb-2 text-sm font-bold text-slate-800">🔔 Notifications</div>
+          <div className="space-y-2">
+                  <label className="flex items-start gap-2 cursor-pointer rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+                      <input
+                        type="checkbox"
+                        checked={group.notify_on_response !== false}
+                        onChange={(e) => setNotifyOnResponse(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                      />
+                      <span className="text-xs text-slate-600">
+                        <span className="font-medium text-slate-700">
+                          📬 Member digest
+                        </span>{" "}
+                        — members get one email a day summarizing new responses in this
+                        group. Turn off to keep it quiet.
+                      </span>
+                    </label>
+                    <label className="flex items-start gap-2 cursor-pointer rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+                      <input
+                        type="checkbox"
+                        checked={group.notify_host !== false}
+                        onChange={(e) => setNotifyHost(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                      />
+                      <span className="text-xs text-slate-600">
+                        <span className="font-medium text-slate-700">
+                          🔔 Notify me of all activity
+                        </span>{" "}
+                        — you (the host) get a daily recap of new responses, members, and
+                        activities, even if the member digest above is off.
+                      </span>
+                    </label>
+          </div>
+        </div>
+      )}
+
       {/* Host analytics (admins only) */}
       {isAdmin && (
         <div className="mb-6">
@@ -1307,291 +1665,6 @@ See you around the campfire! 🏕️`
             </div>
           )}
         </div>
-      )}
-
-      {/* Start-your-own promo — shown once the group is rolling (fresh groups get
-          the onboarding card above instead) */}
-      {engagements.length > 0 && (
-        <div className="mb-6 rounded-2xl border-2 border-dashed border-orange-300 bg-orange-50/60 p-5 text-center">
-          <div className="text-2xl mb-1">🔥</div>
-          <div className="font-bold text-slate-900">
-            {activeEngagements.length === 0
-              ? "Be the first to spark something"
-              : "Your turn to spark something"}
-          </div>
-          <p className="mt-0.5 mb-3 text-sm text-slate-600">
-            Anyone can start an activity — a question, a challenge, a check-in.
-            Nobody sees the answers until everyone&apos;s in.
-          </p>
-          <div className="flex flex-wrap items-center gap-3">
-            <Link
-              href={`/campfirelive/group/${groupId}/engagement/new`}
-              className={`${CF_PRIMARY}`}
-            >
-              + Start an activity
-            </Link>
-            {isAdmin && (
-              <Link
-                href={`/campfirelive/group/${groupId}/birthdays`}
-                className="inline-flex items-center gap-2 rounded-full border border-orange-300 bg-white px-5 py-2.5 text-sm font-semibold text-orange-700 hover:bg-orange-50"
-              >
-                🎂 Bulk add birthdays
-              </Link>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Engagement Tabs — the Recurring tab only shows when there's something in it.
-          Scrolls sideways on a narrow phone instead of clipping the last tabs (the page
-          itself has overflow-x hidden, so a non-scrolling row would hide them). */}
-      <div
-        role="tablist"
-        className="input-mode-scroll mb-4 flex max-w-full gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1 sm:w-fit"
-      >
-        {(["active", "upcoming", "recurring", "revealed", "all"] as const)
-          .filter((t) => t !== "upcoming" || upcomingEngagements.length > 0)
-          .filter((t) => t !== "recurring" || recurringEngagements.length > 0)
-          .map((t) => (
-            <button
-              key={t}
-              role="tab"
-              aria-selected={tab === t}
-              onClick={() => setTab(t)}
-              className={`flex-shrink-0 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition ${
-                tab === t
-                  ? "bg-white text-slate-900 shadow-sm"
-                  : "text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              {t === "active"
-                ? `Active (${activeEngagements.length})`
-                : t === "upcoming"
-                ? `Upcoming (${upcomingEngagements.length})`
-                : t === "recurring"
-                ? `Recurring (${recurringEngagements.length})`
-                : t === "revealed"
-                ? `Revealed (${revealedEngagements.length})`
-                : `All (${engagements.length})`}
-            </button>
-          ))}
-      </div>
-
-      {/* Engagement List */}
-      {filteredEngagements.length === 0 ? (
-        <div className="text-center py-12 text-slate-500">
-          <div className="text-4xl mb-3">
-            {tab === "active"
-              ? "🔒"
-              : tab === "upcoming"
-              ? "📅"
-              : tab === "recurring"
-              ? "🔁"
-              : tab === "revealed"
-              ? "📭"
-              : "🏕️"}
-          </div>
-          <p>
-            {tab === "active"
-              ? "No active activities. Start one!"
-              : tab === "upcoming"
-              ? "Nothing scheduled to open yet."
-              : tab === "recurring"
-              ? "No recurring cards yet."
-              : tab === "revealed"
-              ? "No revealed activities yet."
-              : "No activities yet. Be the first to start one!"}
-          </p>
-        </div>
-      ) : (
-        <div
-          className={`grid gap-3 ${
-            filteredEngagements.length > 4 ? "lg:grid-cols-2" : ""
-          }`}
-        >
-          {(tab === "revealed" && !showAllRevealed
-            ? filteredEngagements.slice(0, REVEALED_PREVIEW)
-            : filteredEngagements
-          ).map((eng) => {
-            const meta = ENGAGEMENT_TYPES[eng.type];
-            const isDraft = !eng.launched_at; // creator-only until launched (RLS hides from others)
-            const isSealed = eng.status === "active" && eng.reveal === "sealed";
-            const isRevealed = eng.status === "revealed";
-            // In the Recurring tab a revealed tail is the FINISHED last run — show the
-            // series looking forward (next date) instead of its stale response status.
-            const recurringFinished = tab === "recurring" && isRevealed;
-            const nextRun = recurringFinished ? nextRecurrence(eng) : null;
-            const progress = eng.total_expected > 0
-              ? Math.round((eng.response_count / eng.total_expected) * 100)
-              : 0;
-
-            return (
-              <Link
-                key={eng.id}
-                href={`/campfirelive/group/${groupId}/engagement/${eng.id}`}
-                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md transition"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-start gap-3">
-                    <span className="text-2xl">{engagementIcon(eng)}</span>
-                    <div>
-                      <p className="text-xs font-semibold text-orange-600">
-                        {eng.creator_id === user?.id
-                          ? "Your"
-                          : `${nameOf(eng.creator_id, eng.creator?.display_name)}'s`}{" "}
-                        {meta?.label ?? eng.type}
-                      </p>
-                      <h3 className="font-bold text-slate-900">
-                        {resolveTitle(eng.title, eng.birth_year, eng.deadline)}
-                      </h3>
-                      <p className="text-sm text-slate-600 mt-0.5">
-                        {eng.description?.trim() || meta?.hook}
-                      </p>
-                      <p className="text-xs text-slate-500 mt-1">
-                        {new Date(eng.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Status + your-response badges */}
-                  <div className="flex flex-shrink-0 flex-col items-end gap-1.5">
-                    {isDraft &&
-                      (eng.scheduled_open_at &&
-                      new Date(eng.scheduled_open_at).getTime() > Date.now() ? (
-                        // Auto-scheduled (e.g. next year's recurring card) — it opens
-                        // itself; no manual launch needed.
-                        <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 border border-violet-300 px-2.5 py-1 text-xs font-semibold text-violet-800">
-                          🗓️ Opens{" "}
-                          {formatWhen(eng.scheduled_open_at, { time: false, weekday: false })}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 border border-orange-300 px-2.5 py-1 text-xs font-semibold text-orange-800">
-                          ✏️ Draft · tap to launch
-                        </span>
-                      ))}
-                    {!isDraft && isSealed && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-1 text-xs font-semibold text-amber-800">
-                        🔒 Sealed
-                      </span>
-                    )}
-                    {/* Recurring tab: the last run is done — point to the next one */}
-                    {recurringFinished && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 border border-violet-300 px-2.5 py-1 text-xs font-semibold text-violet-800">
-                        🗓️ Next
-                        {nextRun
-                          ? ` · ${nextRun.toLocaleDateString(undefined, {
-                              month: "short",
-                              day: "numeric",
-                            })}`
-                          : ""}
-                      </span>
-                    )}
-                    {isRevealed && !recurringFinished && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-green-50 border border-green-200 px-2.5 py-1 text-xs font-semibold text-green-700">
-                        ✓ Revealed
-                      </span>
-                    )}
-                    {/* Card opened by the recipient */}
-                    {isRevealed &&
-                      eng.type === "birthday" &&
-                      !!(eng.config as { cardViewedAt?: string } | null)
-                        ?.cardViewedAt && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                          ✓ Opened
-                        </span>
-                      )}
-                    {/* Have YOU responded? (skip drafts, the surprise recipient, and a
-                        finished recurring run — that badge describes the past instance) */}
-                    {!isDraft &&
-                      !recurringFinished &&
-                      !(user && (eng.excluded_user_ids ?? []).includes(user.id)) &&
-                      (respondedIds.has(eng.id) ? (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-green-100 border border-green-300 px-2.5 py-1 text-xs font-semibold text-green-800">
-                          ✓ You responded
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 border border-rose-200 px-2.5 py-1 text-xs font-semibold text-rose-700">
-                          ● Your turn
-                        </span>
-                      ))}
-                    {/* Recurring series indicator */}
-                    {eng.recurrence_rule && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 border border-violet-200 px-2.5 py-1 text-xs font-semibold text-violet-700">
-                        🔁{" "}
-                        {eng.recurrence_rule === "daily"
-                          ? "Daily"
-                          : eng.recurrence_rule === "weekly"
-                          ? "Weekly"
-                          : eng.recurrence_rule === "monthly"
-                          ? "Monthly"
-                          : "Yearly"}
-                      </span>
-                    )}
-                    {/* Group gift running total — everyone sees it by default (never
-                        the surprise recipient); the host can restrict via giftShowTotal */}
-                    {(eng.gift_enabled || !!raffleOf(eng.config)) &&
-                      (giftTotals[eng.id] ?? 0) > 0 &&
-                      !!user &&
-                      !(
-                        (eng.gift_hidden_from ?? []).includes(user.id) ||
-                        (eng.excluded_user_ids ?? []).includes(user.id)
-                      ) &&
-                      ((eng.config as { giftShowTotal?: boolean } | null)
-                        ?.giftShowTotal !== false ||
-                        eng.creator_id === user.id ||
-                        eng.gift_initiated_by === user.id) && (
-                      <span data-hide-on-android className="inline-flex items-center gap-1 rounded-full bg-cyan-50 border border-cyan-200 px-2.5 py-1 text-xs font-semibold text-cyan-700">
-                        {raffleOf(eng.config) ? "🏆" : "🎁"}{" "}
-                        {formatMoney(giftTotals[eng.id] ?? 0, eng.gift_currency)}{" "}
-                        {raffleOf(eng.config) ? "in the pot" : "chipped in"}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Progress bar */}
-                {eng.status === "active" && (
-                  <div className="mt-3">
-                    <div className="flex justify-between text-xs text-slate-500 mb-1">
-                      <span>{eng.response_count}/{eng.total_expected} responded</span>
-                      <span>{progress}%</span>
-                    </div>
-                    <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-orange-400 to-rose-400 transition-all"
-                        style={{ width: `${progress}%` }}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* Deadline */}
-                {eng.deadline && eng.status === "active" && (
-                  <p className="mt-2 text-xs text-slate-500">
-                    {eng.hold_until_deadline ? "⏳ Reveals" : "Deadline"}:{" "}
-                    {formatWhen(eng.deadline)}
-                  </p>
-                )}
-              </Link>
-            );
-          })}
-        </div>
-      )}
-      {tab === "revealed" &&
-        !showAllRevealed &&
-        filteredEngagements.length > REVEALED_PREVIEW && (
-          <button
-            onClick={() => setShowAllRevealed(true)}
-            className="mb-6 w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-500 hover:bg-slate-50"
-          >
-            Show {filteredEngagements.length - REVEALED_PREVIEW} older revealed
-          </button>
-        )}
-      {tab === "revealed" && emptyRevealedCount > 0 && (
-        <p className="mb-6 text-center text-xs text-slate-500">
-          {emptyRevealedCount} empty check-in{emptyRevealedCount === 1 ? "" : "s"} with no
-          responses {emptyRevealedCount === 1 ? "is" : "are"} hidden.
-        </p>
       )}
 
       {/* QR join code — show on a screen for others to scan */}
@@ -1648,9 +1721,13 @@ See you around the campfire! 🏕️`
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
           onClick={() => setQrUrl(null)}
+          onKeyDown={(e) => e.key === "Escape" && setQrUrl(null)}
         >
           <div
-            className="rounded-3xl bg-white p-6 text-center shadow-xl"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`QR code to join ${group.name}`}
+            className="w-full max-w-sm rounded-3xl bg-white p-6 text-center shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="text-lg font-bold text-slate-900">
@@ -1658,13 +1735,14 @@ See you around the campfire! 🏕️`
             </div>
             <p className="mb-3 text-sm text-slate-500">Scan to join the group</p>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={qrUrl} alt="Join QR code" width={300} height={300} className="mx-auto rounded-xl" />
+            <img src={qrUrl} alt="Join QR code" width={300} height={300} className="mx-auto h-auto w-full max-w-[300px] rounded-xl" />
             <p className="mt-3 break-all font-mono text-xs text-slate-500">
               {joinUrl.replace(/^https?:\/\//, "")}
             </p>
             <button
               onClick={() => setQrUrl(null)}
-              className="mt-4 rounded-full bg-slate-100 px-6 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200"
+              autoFocus
+              className={`${CF_SECONDARY} mt-4`}
             >
               Close
             </button>

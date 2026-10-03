@@ -10,7 +10,31 @@ import { cfAlert, cfConfirm } from "@/lib/campfire/dialogs";
 import { CF_PRIMARY } from "@/lib/campfire/ui";
 
 export default function SettingsPage() {
-  const { user, profile, isTrialActive, trialDaysLeft, refreshProfile, signOut } = useAuth();
+  const { user, profile, isGuest, isTrialActive, trialDaysLeft, refreshProfile, signOut } =
+    useAuth();
+  // In any school / organization group? Then adult content is off the table.
+  const [inSchoolGroup, setInSchoolGroup] = useState(true); // safe default until known
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    supabase
+      .from("group_members")
+      .select("groups(school)")
+      .eq("user_id", user.id)
+      .then(({ data, error }) => {
+        if (cancelled || error) return;
+        const rows = (data ?? []) as { groups: { school?: string | null } | { school?: string | null }[] | null }[];
+        setInSchoolGroup(
+          rows.some((r) => {
+            const g = Array.isArray(r.groups) ? r.groups[0] : r.groups;
+            return !!g?.school?.trim();
+          })
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
   const [displayName, setDisplayName] = useState(profile?.display_name ?? "");
   // Pre-fill the field once the profile loads (so it shows the current name).
   useEffect(() => {
@@ -213,6 +237,9 @@ export default function SettingsPage() {
           </div>
         </label>
 
+        {/* Adult packs: never for guests (often students on a shared link) or anyone
+            in a school/organization group. */}
+        {!isGuest && !inSchoolGroup && (
         <label className="flex items-center gap-3 cursor-pointer">
           <input
             type="checkbox"
@@ -234,6 +261,7 @@ export default function SettingsPage() {
             </div>
           </div>
         </label>
+        )}
       </div>
 
       {/* Sign out */}
