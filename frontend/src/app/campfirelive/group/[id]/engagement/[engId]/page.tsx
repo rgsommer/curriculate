@@ -19,6 +19,44 @@ import { supabase } from "@/lib/campfire/supabase";
 import { hasProfanity } from "@/lib/campfire/profanity";
 import { formatWhen } from "@/lib/campfire/dates";
 
+// Shrink a phone photo before upload: longest side ≤ 2000px, JPEG. Keeps a handwritten
+// note perfectly readable while cutting a 4 MB photo to a few hundred KB (school Wi-Fi).
+// Drawing via an <img> applies the photo's EXIF rotation in every modern browser, so
+// notes don't come out sideways. Any failure → upload the original untouched.
+async function downscaleImage(file: File, maxSide = 2000): Promise<File> {
+  if (!/^image\/(jpeg|png|webp|heic|heif)$/i.test(file.type)) return file; // skip GIFs etc.
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.decoding = "async";
+    img.src = url;
+    await img.decode();
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    if (!w || !h) return file;
+    const scale = Math.min(1, maxSide / Math.max(w, h));
+    if (scale === 1 && file.size < 1_500_000) return file; // already small
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(w * scale);
+    canvas.height = Math.round(h * scale);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.fillStyle = "#ffffff"; // transparent PNG areas → white, not black
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((res) =>
+      canvas.toBlob(res, "image/jpeg", 0.85)
+    );
+    if (!blob || blob.size >= file.size) return file;
+    const base = file.name.replace(/\.[^.]+$/, "") || "photo";
+    return new File([blob], `${base}.jpg`, { type: "image/jpeg" });
+  } catch {
+    return file;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 // ── Canvas helpers for the shareable results card ──
 function roundRectPath(
   ctx: CanvasRenderingContext2D,
@@ -532,6 +570,7 @@ export default function EngagementDetailPage() {
 
   // Media upload state
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null); // capture → opens the camera
   const [uploading, setUploading] = useState(false);
   // Photo challenge: up to 3 photos/videos per response.
   const [mediaItems, setMediaItems] = useState<{ url: string; type: string }[]>([]);
@@ -2346,14 +2385,15 @@ export default function EngagementDetailPage() {
     }
     if (c.mode === "truth" || c.mode === "dare") setTodMode(c.mode);
     setTodPhoto(typeof c.photo === "string" ? c.photo : null);
-    if (engagement.type === "photo_pose") {
-      const items = Array.isArray(c.media_items)
+    // Any type can carry photos now (cards, shares, challenges…) — re-load them so an
+    // edit doesn't silently drop a handwritten-note photo.
+    setMediaItems(
+      Array.isArray(c.media_items)
         ? (c.media_items as { url: string; type: string }[])
         : typeof c.media_url === "string" && c.media_url
         ? [{ url: c.media_url, type: (c.media_type as string) ?? "photo" }]
-        : [];
-      setMediaItems(items);
-    }
+        : []
+    );
     if (engagement.type === "most_likely" && c.answers)
       setMlVotes(c.answers as Record<number, string>);
     if (engagement.type === "hall_of_fame" && c.answers)
@@ -2456,16 +2496,29 @@ export default function EngagementDetailPage() {
     setSubmitting(false);
   };
 
+  // Generic response (cards, shares, advice…): text, photos, or both — e.g. a student's
+  // handwritten note photographed for a teacher-appreciation card.
   const handleTextSubmit = async () => {
-    if (!textInput.trim()) return;
-    if (hasProfanity(textInput)) {
+    const text = textInput.trim();
+    if (!text && mediaItems.length === 0) return;
+    if (text && hasProfanity(text)) {
       alert("Let's keep it kind — please reword your response.");
       return;
     }
     setSubmitting(true);
-    await saveResponse({ text: textInput.trim() });
+    await saveResponse({
+      ...(text ? { text } : {}),
+      ...(mediaItems.length
+        ? {
+            media_items: mediaItems,
+            media_url: mediaItems[0].url,
+            media_type: mediaItems[0].type,
+          }
+        : {}),
+    });
     setSubmitting(false);
     setTextInput("");
+    setMediaItems([]);
   };
 
   // Truth or Dare: upload an optional proof photo for the answer.
@@ -2775,7 +2828,9 @@ export default function EngagementDetailPage() {
     setUploading(true);
     const added: { url: string; type: string }[] = [];
     let idx = 0;
-    for (const file of files.slice(0, room)) {
+    for (const original of files.slice(0, room)) {
+      // Phone photos are 3–5 MB; shrink stills before upload (videos untouched).
+      const file = original.type.startsWith("image/") ? await downscaleImage(original) : original;
       const fileExt = file.name.split(".").pop();
       const filePath = `${user.id}/${engagementId}/${Date.now()}-${idx++}.${fileExt}`;
       const { error: uploadError } = await supabase.storage
@@ -3567,22 +3622,85 @@ export default function EngagementDetailPage() {
       }
 
       default:
-        // Generic text response (share, accountability, advice, etc.)
+        // Generic response (cards, share, advice, etc.): text and/or up to 3 photos.
+        // "Take a photo" opens the camera directly (capture); "Choose photos" opens the
+        // library / file picker (Chromebooks, laptops).
         return (
           <div className="space-y-3">
             <textarea
               value={textInput}
               onChange={(e) => setTextInput(e.target.value)}
-              placeholder="Type your response..."
+              placeholder={
+                isBirthdayCard
+                  ? "Write your message… (or add a photo of a handwritten note below)"
+                  : "Type your response..."
+              }
               rows={4}
               className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 outline-none resize-none"
             />
+            {mediaItems.length > 0 && (
+              <div className="grid grid-cols-3 gap-2">
+                {mediaItems.map((m, i) => (
+                  <div key={i} className="relative overflow-hidden rounded-lg">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={m.url} alt={`Your photo ${i + 1}`} className="h-24 w-full object-cover" />
+                    <button
+                      onClick={() => setMediaItems((prev) => prev.filter((_, j) => j !== i))}
+                      aria-label={`Remove photo ${i + 1}`}
+                      className="absolute right-1 top-1 flex h-8 w-8 items-center justify-center rounded-full bg-black/60 text-sm text-white"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handleMediaUpload}
+              className="hidden"
+            />
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleMediaUpload}
+              className="hidden"
+            />
+            {mediaItems.length < 3 && (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => cameraInputRef.current?.click()}
+                  disabled={uploading}
+                  className="rounded-xl border-2 border-dashed border-orange-300 bg-orange-50 px-3 py-3 text-sm font-bold text-orange-700 disabled:opacity-50"
+                >
+                  {uploading ? "Uploading…" : "📷 Take a photo"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  className="rounded-xl border-2 border-dashed border-orange-300 bg-orange-50 px-3 py-3 text-sm font-bold text-orange-700 disabled:opacity-50"
+                >
+                  {uploading
+                    ? "Uploading…"
+                    : mediaItems.length === 0
+                    ? "🖼️ Choose photos"
+                    : `🖼️ Add more (${mediaItems.length}/3)`}
+                </button>
+              </div>
+            )}
             <button
               onClick={handleTextSubmit}
-              disabled={!textInput.trim() || submitting}
+              disabled={(!textInput.trim() && mediaItems.length === 0) || submitting || uploading}
               className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
             >
-              {submitting ? "Submitting..." : "🔒 Submit Response"}
+              {submitting ? "Submitting..." : isBirthdayCard ? "✍️ Sign the card" : "🔒 Submit Response"}
             </button>
           </div>
         );
