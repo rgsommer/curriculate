@@ -28,7 +28,7 @@ import {
 import { TEMPLATE_PACKS, type EngagementTemplate } from "@/lib/campfire/templates";
 import { formatWhen } from "@/lib/campfire/dates";
 import { cfAlert } from "@/lib/campfire/dialogs";
-import { CF_PRIMARY } from "@/lib/campfire/ui";
+import { CF_PRIMARY, CF_SECONDARY_SM } from "@/lib/campfire/ui";
 
 // Plain-language "how it works" per type — { how it works, what each person sees }.
 const TYPE_HELP: Partial<Record<EngagementType, { how: string; sees: string }>> = {
@@ -120,6 +120,27 @@ export default function NewEngagementPage() {
   // Inline "add the recipient by email" in the hide-from picker (when they're not
   // already a member/invitee). They get the card at the reveal, nothing before.
   const [hideFromPaste, setHideFromPaste] = useState("");
+  // "Laura Sommer <laura@x.ca>" or a bare address → { email, name }.
+  const parseRecipient = (raw: string): { email: string; name: string | null } | null => {
+    const email = (raw.match(/[^\s<>,;"']+@[^\s<>,;"']+\.[^\s<>,;"']+/)?.[0] || "")
+      .trim()
+      .toLowerCase();
+    if (!email) return null;
+    const name = raw.includes("<") ? raw.split("<")[0].replace(/["']/g, "").trim() || null : null;
+    return { email, name };
+  };
+  // Turn whatever is typed in the "add by email" box into a recipient chip.
+  const addRecipientFromBox = (): boolean => {
+    const r = parseRecipient(hideFromPaste);
+    if (!r) return false;
+    setPendingInvitees((prev) =>
+      prev.some((p) => p.email.toLowerCase() === r.email) ? prev : [...prev, r]
+    );
+    setExcludedEmails((prev) => (prev.includes(r.email) ? prev : [...prev, r.email]));
+    setHideFromPaste("");
+    setRecipientErr(false);
+    return true;
+  };
   // Cover images (a pool — Campfire shows a random one)
   const [coverUrls, setCoverUrls] = useState<string[]>([]);
   const [coverPaste, setCoverPaste] = useState("");
@@ -826,12 +847,20 @@ export default function NewEngagementPage() {
     }
 
     const isBirthday = selectedType === "birthday";
+    // An address typed in the "add by email" box but never added (no Enter / Add) still
+    // counts — people reasonably expect what they typed to be used.
+    const typed = parseRecipient(hideFromPaste);
+    const recipientEmails =
+      typed && !excludedEmails.includes(typed.email)
+        ? [...excludedEmails, typed.email]
+        : excludedEmails;
+    if (typed) addRecipientFromBox();
     // A card must be addressed to someone — that's who receives it at the reveal.
     if (
       isBirthday &&
       !makingNewGroup &&
       excludedIds.length === 0 &&
-      excludedEmails.length === 0
+      recipientEmails.length === 0
     ) {
       setRecipientErr(true);
       setError(
@@ -1174,7 +1203,7 @@ export default function NewEngagementPage() {
       allow_member_invites: allowMemberInvites,
       // Surprise: hide it from these members / invitees until the reveal.
       excluded_user_ids: makingNewGroup ? [] : excludedIds,
-      excluded_emails: makingNewGroup ? [] : excludedEmails,
+      excluded_emails: makingNewGroup ? [] : recipientEmails,
       cover_image_urls: coverUrls,
       // Recurring: show a random one (fresh pick each cycle). Non-recurring: the one the
       // host featured (falls back to the first if they didn't pick).
@@ -2943,32 +2972,32 @@ export default function NewEngagementPage() {
                     );
                   })}
                 </div>
-                <div className="mt-2">
+                <div className="mt-2 flex gap-2">
                   <input
-                    type="email"
+                    type="text"
+                    inputMode="email"
+                    autoComplete="off"
                     value={hideFromPaste}
                     onChange={(e) => setHideFromPaste(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key !== "Enter") return;
                       e.preventDefault();
-                      // Accept "Name <email@x>" or a bare address — pull out the email.
-                      const em = (
-                        hideFromPaste.match(/[^\s<>,;"']+@[^\s<>,;"']+\.[^\s<>,;"']+/)?.[0] || ""
-                      )
-                        .trim()
-                        .toLowerCase();
-                      if (!em) return;
-                      setPendingInvitees((prev) =>
-                        prev.some((p) => p.email.toLowerCase() === em)
-                          ? prev
-                          : [...prev, { email: em, name: null }]
-                      );
-                      setExcludedEmails((prev) => (prev.includes(em) ? prev : [...prev, em]));
-                      setHideFromPaste("");
+                      addRecipientFromBox();
                     }}
-                    placeholder="➕ Not in the list? Add the recipient's email + Enter"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs focus:border-rose-400 outline-none"
+                    placeholder="Not in the list? Their email (or Name <email>)"
+                    aria-label="Recipient email"
+                    className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-rose-400 outline-none"
                   />
+                  <button
+                    type="button"
+                    onClick={addRecipientFromBox}
+                    disabled={!parseRecipient(hideFromPaste)}
+                    className={CF_SECONDARY_SM}
+                  >
+                    Add
+                  </button>
+                </div>
+                <div>
                   <p className="mt-1 text-xs text-slate-500">
                     They get nothing until the reveal — then their card arrives by email. No
                     account needed.
