@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/campfire/AuthProvider";
 import { supabase } from "@/lib/campfire/supabase";
 import { CHECKOUT_LIVE, PLUS_FEATURES, PLUS_PRICE_MONTHLY } from "@/lib/campfire/premium";
+import { cfAlert, cfConfirm } from "@/lib/campfire/dialogs";
 
 export default function SettingsPage() {
   const { user, profile, isTrialActive, trialDaysLeft, refreshProfile, signOut } = useAuth();
@@ -22,16 +23,15 @@ export default function SettingsPage() {
   const handleDeleteAccount = async () => {
     if (
       typeof window !== "undefined" &&
-      !window.confirm(
-        "Permanently delete your account and any groups you host? This cannot be undone."
-      )
+      !(await cfConfirm(
+        "Permanently delete your account and any groups you host? This cannot be undone.", { danger: true }))
     )
       return;
     setDeleting(true);
     const { error } = await supabase.rpc("campfire_delete_account");
     if (error) {
       setDeleting(false);
-      alert("Couldn't delete your account: " + error.message);
+      cfAlert("Couldn't delete your account: " + error.message);
       return;
     }
     await signOut();

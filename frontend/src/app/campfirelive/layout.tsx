@@ -3,6 +3,7 @@ import AppShell from "./AppShell";
 import PwaRegister from "./PwaRegister";
 import NativeBridge from "./NativeBridge";
 import CampfireFeedback from "./CampfireFeedback";
+import { DialogHost } from "@/lib/campfire/dialogs";
 
 export const metadata: Metadata = {
   title: {
@@ -110,6 +111,8 @@ export default function CampfireLiveLayout({
       <div className="campfire-app">
         <AppShell>{children}</AppShell>
         <CampfireFeedback />
+        {/* In-app alert/confirm/prompt (cfAlert etc.) — replaces the native dialogs. */}
+        <DialogHost />
       </div>
     </>
   );

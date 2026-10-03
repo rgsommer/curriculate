@@ -27,6 +27,7 @@ import {
 } from "@/lib/campfire/types";
 import { TEMPLATE_PACKS, type EngagementTemplate } from "@/lib/campfire/templates";
 import { formatWhen } from "@/lib/campfire/dates";
+import { cfAlert } from "@/lib/campfire/dialogs";
 
 // Plain-language "how it works" per type — { how it works, what each person sees }.
 const TYPE_HELP: Partial<Record<EngagementType, { how: string; sees: string }>> = {
@@ -585,6 +586,199 @@ export default function NewEngagementPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Step-2 check, run on "Next": catches what's missing on THIS step (the same rules
+  // handleSubmit enforces) so the host fixes it here, not at the bottom of step 3.
+  const [detailsErr, setDetailsErr] = useState("");
+  const detailsProblem = (): string | null => {
+    if (!title.trim()) return "Give it a title first.";
+    if (selectedType === "poll") {
+      const filled = pollOptions.map((o) => o.trim()).filter(Boolean);
+      if (pollFormat === "open" && filled.length < 1) return "Add at least one open question.";
+      if (pollFormat !== "open" && pollFormat !== "yes_no" && filled.length < 2)
+        return "Add at least 2 options for your poll.";
+    }
+    if (
+      (selectedType === "care" || selectedType === "accountability") &&
+      !careCategories.some((c) => c.prompts.some((p) => p.trim()))
+    )
+      return "Add at least one question for people to answer.";
+    if (
+      (selectedType === "most_likely" ||
+        selectedType === "hall_of_fame" ||
+        selectedType === "scavenger_hunt" ||
+        selectedType === "tournament") &&
+      !questions.some((q) => q.trim())
+    )
+      return selectedType === "scavenger_hunt"
+        ? "Add at least one item to find."
+        : selectedType === "tournament"
+        ? "Add at least one round to score."
+        : selectedType === "hall_of_fame"
+        ? "Pick at least one award (tap the bubbles)."
+        : "Add at least one award (a “Most likely to…” question).";
+    if (selectedType === "truth_or_dare" && (!truthPrompt.trim() || !darePrompt.trim()))
+      return "Write both a Truth prompt and a Dare prompt.";
+    if (selectedType === "signup") {
+      const kind = partyKind === "Other" ? partyKindOther.trim() : partyKind.trim();
+      if (!signupSlots.some((s) => s.label.trim()) && !kind)
+        return "Pick a party type so we can suggest what's needed — or add a slot yourself.";
+    }
+    return null;
+  };
+
+  // The ONE place the activity's dates and reveal behaviour are worked out from the
+  // form. handleSubmit saves exactly this, and the "When it happens" summary on the
+  // Options step shows exactly this — so what the host reads is what they get.
+  const computeSchedule = () => {
+    const isBirthday = selectedType === "birthday";
+    // Floating-date holiday cards (Mother's/Father's Day, custom) compute their date
+    // from an Nth-weekday pattern. Birthday / anniversary / one-time use a fixed date.
+    const isNthCard =
+      isBirthday &&
+      (occasion === "mothers_day" || occasion === "fathers_day" || occasion === "custom");
+    const isFixedDateCard =
+      isBirthday &&
+      (occasion === "birthday" ||
+        occasion === "anniversary" ||
+        occasion === "once" ||
+        occasion === "wedding");
+    // A floating "Nth weekday" pattern, from a holiday card OR a general yearly_nth pick.
+    const nthPattern: NthWeekday | null = isNthCard
+      ? occasion === "custom"
+        ? { week: nthWeek, weekday: nthDow, month: nthMonth }
+        : HOLIDAY_PRESETS[occasion as "mothers_day" | "fathers_day"].nth
+      : !isBirthday && recurrence === "yearly_nth"
+      ? { week: nthWeek, weekday: nthDow, month: nthMonth }
+      : null;
+
+    // Effective reveal date: a floating pattern resolves to its next occurrence.
+    const effectiveDeadline = nthPattern
+      ? nextNthWeekday(nthPattern)
+      : deadline
+      ? new Date(deadline)
+      : undefined;
+
+    // Types that are always sealed, whatever the reveal picker says.
+    const challengeRaffle =
+      (selectedType === "challenge" ||
+        selectedType === "scavenger_hunt" ||
+        selectedType === "tournament") &&
+      raffleOn;
+    const alwaysSealed =
+      challengeRaffle ||
+      selectedType === "two_truths" ||
+      selectedType === "baby_reveal" ||
+      selectedType === "most_likely" ||
+      selectedType === "hall_of_fame" ||
+      selectedType === "accountability" ||
+      selectedType === "scavenger_hunt" ||
+      selectedType === "tournament" ||
+      selectedType === "pledge_drive" ||
+      selectedType === "raffle_draw" ||
+      isBirthday;
+    const revealMode: RevealMode = alwaysSealed
+      ? "sealed"
+      : selectedType === "signup"
+      ? "as_they_come" // a sign-up is live — everyone sees what's claimed
+      : reveal;
+
+    // A sealed activity with no chosen date gets a gentle 7-day soft deadline, so
+    // stragglers still get nudged (final call at ~24h) and it can't hang unrevealed
+    // forever. Cards / baby reveals already carry their own date.
+    const sealedReveal = revealMode === "sealed";
+    // A recurring activity (e.g. a monthly check-in) needs a close date so it reveals
+    // and the cron spawns the next instance. Default it to the repeat interval.
+    const recurDays =
+      recurrence === "daily" ? 1 : recurrence === "weekly" ? 7 : recurrence === "monthly" ? 30 : 0;
+
+    const DAY = 86400000;
+    // Monthly Nth-weekday release (e.g. 2nd Sunday at 4pm): opens + emails the group at
+    // that moment, stays open for the chosen window, then closes.
+    const isMonthlyNth = recurrence === "monthly_nth";
+    const [recurHour, recurMin] = recurTime.split(":").map((n) => parseInt(n, 10));
+    const monthlyFirstOpen = isMonthlyNth
+      ? nextMonthlyNthWeekday(nthWeek, nthDow, recurHour || 16, recurMin || 0, new Date())
+      : null;
+
+    // Whether the close date was picked by the host or filled in for them.
+    let deadlineIsDefault = false;
+    const finalDeadline: Date | undefined = (() => {
+      if (isMonthlyNth && monthlyFirstOpen)
+        return new Date(monthlyFirstOpen.getTime() + (recurWindowDays || 3) * DAY);
+      if (effectiveDeadline) return effectiveDeadline;
+      if (recurDays > 0 && !isBirthday) {
+        deadlineIsDefault = true;
+        return new Date(Date.now() + recurDays * DAY);
+      }
+      if (sealedReveal && !isBirthday && selectedType !== "baby_reveal") {
+        deadlineIsDefault = true;
+        // 2 Truths plays faster, so give it a tighter default window.
+        return new Date(Date.now() + (selectedType === "two_truths" ? 3 : 7) * DAY);
+      }
+      return undefined;
+    })();
+
+    // Auto-open scheduling: cards + floating yearly events open a lead time before the
+    // date; a monthly Nth release opens at its scheduled time; and any sealed activity
+    // with a reveal date can opt to "release in advance" by N days.
+    const schedulesOpen =
+      isBirthday ||
+      recurrence === "yearly_nth" ||
+      isMonthlyNth ||
+      (releaseEarly && !!effectiveDeadline);
+    const scheduledOpenAt =
+      isMonthlyNth && monthlyFirstOpen
+        ? monthlyFirstOpen.toISOString()
+        : (isBirthday || recurrence === "yearly_nth" || releaseEarly) && effectiveDeadline
+        ? new Date(effectiveDeadline.getTime() - (leadDays || 14) * DAY).toISOString()
+        : null;
+
+    // Birthday + Baby Reveal always hold until the date; prize contests, thons and
+    // monthly releases do too. Others only when opted in.
+    const holds =
+      isBirthday ||
+      selectedType === "baby_reveal" ||
+      selectedType === "tournament" ||
+      selectedType === "pledge_drive" ||
+      selectedType === "raffle_draw" ||
+      isMonthlyNth ||
+      challengeRaffle
+        ? true
+        : revealMode === "sealed" && !!deadline && holdUntilDeadline;
+
+    // Every card occasion repeats yearly EXCEPT a one-time card.
+    const recurrenceRule: string | undefined = isBirthday
+      ? occasion === "once" || occasion === "wedding"
+        ? undefined
+        : "yearly"
+      : recurrence === "yearly_nth"
+      ? "yearly"
+      : recurrence === "monthly_nth"
+      ? "monthly" // the Nth-weekday detail lives in config.monthlyNth
+      : recurrence === "none"
+      ? undefined
+      : recurrence;
+
+    return {
+      isBirthday,
+      isNthCard,
+      isFixedDateCard,
+      nthPattern,
+      effectiveDeadline,
+      challengeRaffle,
+      revealMode,
+      isMonthlyNth,
+      recurHour,
+      recurMin,
+      finalDeadline,
+      deadlineIsDefault,
+      schedulesOpen,
+      scheduledOpenAt,
+      holds,
+      recurrenceRule,
+    };
+  };
+
   const handleSubmit = async () => {
     if (!selectedType || !title.trim()) return;
     setCreating(true);
@@ -652,27 +846,18 @@ export default function NewEngagementPage() {
       );
       return;
     }
-    // Floating-date holiday cards (Mother's/Father's Day, custom) compute their date
-    // from an Nth-weekday pattern. Birthday / anniversary / one-time use a fixed date.
-    const isNthCard =
-      isBirthday &&
-      (occasion === "mothers_day" ||
-        occasion === "fathers_day" ||
-        occasion === "custom");
-    const isFixedDateCard =
-      isBirthday &&
-      (occasion === "birthday" ||
-        occasion === "anniversary" ||
-        occasion === "once" ||
-        occasion === "wedding");
-    // A floating "Nth weekday" pattern, from a holiday card OR a general yearly_nth pick.
-    const nthPattern: NthWeekday | null = isNthCard
-      ? occasion === "custom"
-        ? { week: nthWeek, weekday: nthDow, month: nthMonth }
-        : HOLIDAY_PRESETS[occasion as "mothers_day" | "fathers_day"].nth
-      : !isBirthday && recurrence === "yearly_nth"
-      ? { week: nthWeek, weekday: nthDow, month: nthMonth }
-      : null;
+    const sched = computeSchedule();
+    const {
+      isNthCard,
+      isFixedDateCard,
+      nthPattern,
+      isMonthlyNth,
+      recurHour,
+      recurMin,
+      finalDeadline,
+      schedulesOpen,
+      scheduledOpenAt,
+    } = sched;
 
     // A fixed-date card (birthday/anniversary/one-time) needs its date; a holiday
     // computes its own.
@@ -689,74 +874,12 @@ export default function NewEngagementPage() {
       setCreating(false);
       return;
     }
-
-    // Effective reveal date: a floating pattern resolves to its next occurrence.
-    const effectiveDeadline = nthPattern
-      ? nextNthWeekday(nthPattern)
-      : deadline
-      ? new Date(deadline)
-      : undefined;
-
-    // A sealed engagement with no chosen date gets a gentle 7-day soft deadline, so
-    // stragglers still get nudged (final call at ~24h) and it can't hang unrevealed
-    // forever. Cards / baby reveals already carry their own date.
-    const sealedReveal =
-      selectedType === "two_truths" ||
-      selectedType === "most_likely" ||
-      selectedType === "hall_of_fame" ||
-      selectedType === "accountability" ||
-      selectedType === "scavenger_hunt" ||
-      selectedType === "tournament" ||
-      selectedType === "pledge_drive" ||
-      selectedType === "raffle_draw" ||
-      reveal === "sealed";
-    // A recurring engagement (e.g. a monthly check-in) needs a close date so it
-    // reveals and the cron spawns the next instance — otherwise it just stays open
-    // forever and never cycles. Default it to the repeat interval.
-    const recurDays =
-      recurrence === "daily"
-        ? 1
-        : recurrence === "weekly"
-        ? 7
-        : recurrence === "monthly"
-        ? 30
-        : 0;
-
-    const DAY = 86400000;
-    // Monthly Nth-weekday release (e.g. 2nd Sunday at 4pm): the engagement opens +
-    // emails the group at that moment, stays open for the chosen window, then closes.
-    const isMonthlyNth = recurrence === "monthly_nth";
-    const [recurHour, recurMin] = recurTime.split(":").map((n) => parseInt(n, 10));
-    const monthlyFirstOpen = isMonthlyNth
-      ? nextMonthlyNthWeekday(nthWeek, nthDow, recurHour || 16, recurMin || 0, new Date())
-      : null;
-
-    const finalDeadline =
-      isMonthlyNth && monthlyFirstOpen
-        ? new Date(monthlyFirstOpen.getTime() + (recurWindowDays || 3) * DAY)
-        : effectiveDeadline
-        ? effectiveDeadline
-        : recurDays > 0 && !isBirthday
-        ? new Date(Date.now() + recurDays * DAY)
-        : sealedReveal && !isBirthday && selectedType !== "baby_reveal"
-        ? // 2 Truths plays faster, so give it a tighter default window.
-          new Date(Date.now() + (selectedType === "two_truths" ? 3 : 7) * DAY)
-        : effectiveDeadline;
-
-    // Auto-open scheduling: cards + yearly events open a lead time before the date;
-    // a monthly Nth release opens at its scheduled time; and any sealed engagement
-    // with a reveal date can opt to "release in advance" by N days.
-    const schedulesOpen =
-      isBirthday ||
-      recurrence === "yearly_nth" ||
-      isMonthlyNth ||
-      (releaseEarly && !!effectiveDeadline);
-    const scheduledOpenAt =
-      isMonthlyNth && monthlyFirstOpen
-        ? monthlyFirstOpen.toISOString()
-        : (isBirthday || recurrence === "yearly_nth" || releaseEarly) && effectiveDeadline
-        ? new Date(effectiveDeadline.getTime() - (leadDays || 14) * DAY).toISOString()
-        : null;
+    // "Yearly on this date" repeats on the date picked above — so it needs one.
+    if (!isBirthday && recurrence === "yearly" && !deadline) {
+      setError("Pick the date above — it closes on that date, then repeats every year.");
+      setCreating(false);
+      return;
+    }
 
     if (selectedType === "care" || selectedType === "accountability") {
       // Categories of alternative questions + how many to ask each time. Store the
@@ -945,11 +1068,7 @@ export default function NewEngagementPage() {
     // winner; it needs a closing date (entries end + voting begins there) but no
     // preset recipient.
     const isTournament = selectedType === "tournament";
-    const challengeRaffle =
-      (selectedType === "challenge" ||
-        selectedType === "scavenger_hunt" ||
-        isTournament) &&
-      raffleOn;
+    const { challengeRaffle } = sched;
     if (challengeRaffle && !deadline) {
       setError(
         isTournament
@@ -999,53 +1118,19 @@ export default function NewEngagementPage() {
       description: description.trim() || undefined,
       config,
       deadline: finalDeadline,
-      reveal: challengeRaffle
-        ? "sealed" // entries stay sealed so voting on them is fair
-        : selectedType === "two_truths" ||
-          selectedType === "baby_reveal" ||
-          selectedType === "most_likely" ||
-          selectedType === "hall_of_fame" ||
-          selectedType === "accountability" ||
-          selectedType === "scavenger_hunt" ||
-          selectedType === "tournament" ||
-          selectedType === "pledge_drive" ||
-          selectedType === "raffle_draw" ||
-          isBirthday
-        ? "sealed"
-        : selectedType === "signup"
-        ? "as_they_come" // a sign-up is live — everyone sees what's claimed
-        : reveal,
+      reveal: sched.revealMode,
       is_blind: isBlind,
-      // Every card occasion repeats yearly (birthday, anniversary, Mother's/Father's
-      // Day, custom holiday) EXCEPT a one-time card, which never recurs.
-      recurrence_rule: isBirthday
-        ? occasion === "once" || occasion === "wedding"
-          ? undefined
-          : "yearly"
-        : recurrence === "yearly_nth"
-        ? "yearly"
-        : recurrence === "monthly_nth"
-        ? "monthly" // stored as monthly; the Nth-weekday detail lives in config.monthlyNth
-        : recurrence === "none"
-        ? undefined
-        : recurrence,
+      recurrence_rule: sched.recurrenceRule,
       notify: true, // launching always notifies the group
-      // Birthday + Baby Reveal always hold until the date; a raffle holds too (the
-      // cron reveals it on the date or once the participation gate is met). Others
-      // only when opted in.
-      hold_until_deadline:
-        isBirthday ||
-        selectedType === "baby_reveal" ||
-        selectedType === "tournament" ||
-        selectedType === "pledge_drive" ||
-        selectedType === "raffle_draw" ||
-        isMonthlyNth ||
-        challengeRaffle
-          ? true
-          : reveal === "sealed" && !!deadline && holdUntilDeadline,
+      hold_until_deadline: sched.holds,
       // Birthday: schedule the auto-open and store the age basis.
       scheduled_open_at: scheduledOpenAt,
-      lead_days: schedulesOpen ? leadDays || 14 : undefined,
+      // Also stored for a plain yearly repeat: next year's copy re-opens this many
+      // days before its date (the cron reads it).
+      lead_days:
+        schedulesOpen || (!sched.isBirthday && recurrence === "yearly")
+          ? leadDays || 14
+          : undefined,
       // The anchor year for {age}: a birthday's birth year, or an anniversary /
       // one-time card's start year. Floating holidays don't carry one.
       birth_year:
@@ -1298,7 +1383,7 @@ export default function NewEngagementPage() {
         <span>{groups.find((g) => g.id === groupId)?.name ?? "Back to group"}</span>
       </Link>
 
-      <h1 className="text-2xl font-extrabold text-slate-900 mb-1">New Engagement</h1>
+      <h1 className="text-2xl font-extrabold text-slate-900 mb-1">New Activity</h1>
       {groups.find((g) => g.id === groupId) && (
         <p className="text-sm text-slate-500 mb-6">
           in {groups.find((g) => g.id === groupId)?.avatar_emoji}{" "}
@@ -1509,7 +1594,7 @@ export default function NewEngagementPage() {
                     ? "e.g. What should we eat on Saturday?"
                     : selectedType === "challenge"
                     ? "e.g. Best sunset photo this week"
-                    : "Give your engagement a title"
+                    : "Give your activity a title"
                 }
                 className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
               />
@@ -2260,12 +2345,26 @@ export default function NewEngagementPage() {
               </div>
             )}
 
+            {detailsErr && (
+              <p role="alert" className="text-sm text-red-600 bg-red-50 rounded-xl px-4 py-2">
+                {detailsErr}
+              </p>
+            )}
+            {/* Never silently disabled: tapping Next checks this step and says what's
+                missing right here, instead of failing at the bottom of the next step. */}
             <button
-              onClick={() => setStep("options")}
-              disabled={!title.trim()}
-              className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+              onClick={() => {
+                const problem = detailsProblem();
+                setDetailsErr(problem ?? "");
+                if (!problem) {
+                  setError("");
+                  setStep("options");
+                  window.scrollTo({ top: 0 });
+                }
+              }}
+              className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:opacity-90"
             >
-              Next: Set Options
+              Next: when &amp; how →
             </button>
           </div>
         </div>
@@ -2281,49 +2380,63 @@ export default function NewEngagementPage() {
             ← Back to details
           </button>
 
-          <h2 className="text-lg font-bold text-slate-900 mb-4">Engagement Options</h2>
+          <h2 className="text-lg font-bold text-slate-900 mb-4">When &amp; how it happens</h2>
 
           <div className="space-y-5 max-w-lg">
-            {/* Reveal Mode — hidden for types that are always sealed */}
+            {/* One plain question instead of four "reveal modes". Hidden for types that
+                are always sealed (and sign-ups, which are a live list). "Instant" behaves
+                exactly like "as each person answers", so it shows as that choice. */}
             {selectedType !== "two_truths" &&
               selectedType !== "baby_reveal" &&
               selectedType !== "most_likely" &&
               selectedType !== "hall_of_fame" &&
               selectedType !== "accountability" &&
               selectedType !== "scavenger_hunt" &&
+              selectedType !== "signup" &&
               selectedType !== "birthday" && (
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-2">
-                Reveal Mode
-              </label>
-              <div className="grid grid-cols-2 gap-2">
+            <fieldset>
+              <legend className="block text-sm font-medium text-slate-700 mb-2">
+                When should everyone see the answers?
+              </legend>
+              <div className="space-y-2">
                 {[
-                  { value: "sealed" as const, label: "🔒 Sealed", desc: "Results hidden until everyone responds" },
-                  { value: "all_at_once" as const, label: "🎬 All at Once", desc: "Creator triggers the reveal" },
-                  { value: "as_they_come" as const, label: "📨 As They Come", desc: "See responses in real-time" },
-                  { value: "instant" as const, label: "⚡ Instant", desc: "Results visible immediately" },
-                ].map((r) => (
-                  <button
-                    key={r.value}
-                    onClick={() => setReveal(r.value)}
-                    className={`rounded-xl border p-3 text-left transition ${
-                      reveal === r.value
-                        ? "border-orange-500 bg-orange-50"
-                        : "border-slate-200 bg-white hover:border-slate-300"
-                    }`}
-                  >
-                    <div className="text-sm font-bold text-slate-900">{r.label}</div>
-                    <div className="text-xs text-slate-500 mt-0.5">{r.desc}</div>
-                  </button>
-                ))}
+                  {
+                    value: "sealed" as const,
+                    label: "🔒 Once everyone's answered",
+                    desc: "Answers stay hidden, then open all together — the Campfire moment.",
+                  },
+                  {
+                    value: "as_they_come" as const,
+                    label: "📨 As each person answers",
+                    desc: "Answers show up live as they come in.",
+                  },
+                  {
+                    value: "all_at_once" as const,
+                    label: "🎬 When I reveal them",
+                    desc: "Hidden until you tap Reveal.",
+                  },
+                ].map((r) => {
+                  const on =
+                    reveal === r.value || (r.value === "as_they_come" && reveal === "instant");
+                  return (
+                    <button
+                      key={r.value}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => setReveal(r.value)}
+                      className={`w-full rounded-xl border p-3 text-left transition ${
+                        on
+                          ? "border-orange-500 bg-orange-50"
+                          : "border-slate-200 bg-white hover:border-slate-300"
+                      }`}
+                    >
+                      <div className="text-sm font-bold text-slate-900">{r.label}</div>
+                      <div className="text-xs text-slate-600 mt-0.5">{r.desc}</div>
+                    </button>
+                  );
+                })}
               </div>
-              {reveal === "sealed" && (
-                <div className="mt-2 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
-                  🔒 This is the Campfire signature mechanic. Nobody sees results until the
-                  last person responds — turning every engagement into a shared reveal event.
-                </div>
-              )}
-            </div>
+            </fieldset>
             )}
 
             {/* Blind mode — Two Truths adds a "guess who wrote it" layer when on */}
@@ -2342,12 +2455,12 @@ export default function NewEngagementPage() {
                   />
                   <div>
                     <div className="text-sm font-medium text-slate-700">
-                      🙈 {selectedType === "two_truths" ? "Anonymous (guess who too!)" : "Blind Responses"}
+                      🙈 {selectedType === "two_truths" ? "Anonymous (guess who too!)" : "Anonymous answers"}
                     </div>
                     <div className="text-xs text-slate-500">
                       {selectedType === "two_truths"
                         ? "Hide who wrote each set — players guess the lie AND who wrote it. Names reveal at the end."
-                        : "Hide identities — no one knows whose response is whose"}
+                        : "Names are hidden — nobody can tell whose answer is whose."}
                     </div>
                   </div>
                 </label>
@@ -2383,22 +2496,51 @@ export default function NewEngagementPage() {
                       : "🎂 Birthday — reveals on this day"}{" "}
                     <span className="text-rose-500">(required)</span>
                   </>
+                ) : recurrence === "yearly" ? (
+                  <>
+                    📅 Closes on — and repeats on this date every year{" "}
+                    <span className="text-rose-500">(required)</span>
+                  </>
                 ) : (
                   <>
-                    Deadline <span className="text-slate-400">(optional)</span>
+                    Closes on <span className="text-slate-500">(optional)</span>
                   </>
                 )}
               </label>
-              <input
-                type="datetime-local"
-                value={deadline}
-                onChange={(e) => setDeadline(e.target.value)}
-                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
-              />
+              {/* A repeat pattern (e.g. "2nd Sunday of May", "2nd Sunday monthly at 4pm")
+                  decides the date by itself — a typed date would be ignored, so don't
+                  offer one. The summary below shows the date it works out. */}
+              {selectedType !== "birthday" &&
+              (recurrence === "yearly_nth" || recurrence === "monthly_nth") ? (
+                <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-600">
+                  Set by the repeat pattern you chose below.
+                </p>
+              ) : (
+                <input
+                  type="datetime-local"
+                  value={deadline}
+                  onChange={(e) => setDeadline(e.target.value)}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
+                />
+              )}
+              {selectedType !== "birthday" && recurrence === "yearly" && (
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+                  <span className="text-slate-600">Each year, open it</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={300}
+                    value={leadDays}
+                    onChange={(e) => setLeadDays(parseInt(e.target.value || "14", 10))}
+                    className="w-20 rounded-lg border border-slate-300 px-2 py-1 text-sm outline-none focus:border-orange-500"
+                  />
+                  <span className="text-slate-600">days before that date.</span>
+                </div>
+              )}
               {selectedType === "baby_reveal" && (
                 <p className="mt-1 text-xs text-slate-500">
                   Guesses stay sealed until this exact moment, then it auto-reveals with
-                  the winners. Set the real answer on the engagement before then.
+                  the winners. Set the real answer on the activity before then.
                 </p>
               )}
 
@@ -2567,11 +2709,22 @@ export default function NewEngagementPage() {
                 </div>
               )}
 
+              {/* Finer reveal controls — folded away so the common path stays short. */}
+              {(reveal === "sealed" || selectedType === "two_truths") &&
+                selectedType !== "baby_reveal" &&
+                selectedType !== "birthday" &&
+                selectedType !== "signup" && (
+              <details
+                className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2"
+                // Open whenever one of them is on, so nothing switched on is hidden.
+                open={holdUntilDeadline || waitForAllInvited}
+              >
+                <summary className="cursor-pointer py-1 text-sm font-medium text-slate-700">
+                  More reveal options
+                </summary>
               {/* Hold the reveal until the deadline — only for sealed mode (baby
                   reveal already always holds, so don't show the toggle there) */}
-              {reveal === "sealed" &&
-                selectedType !== "baby_reveal" &&
-                selectedType !== "birthday" && (
+              {reveal === "sealed" && (
                 <label
                   className={`mt-2 flex items-start gap-3 rounded-xl border p-3 ${
                     deadline
@@ -2591,21 +2744,19 @@ export default function NewEngagementPage() {
                   />
                   <div>
                     <div className="text-sm font-medium text-slate-700">
-                      ⏳ Reveal on the date — no matter who&apos;s responded (surprise mode)
+                      ⏳ Wait for the date, even if everyone answers early
                     </div>
                     <div className="text-xs text-slate-500">
                       {deadline
-                        ? "Opens at the deadline regardless — like a birthday gift on the day. Off = reveals as soon as everyone who's in has responded (or at the deadline, whichever comes first)."
-                        : "Set a deadline above to enable this."}
+                        ? "Opens on the date no matter what — like a gift on the day. Off: it opens as soon as everyone's answered, or on the date, whichever comes first."
+                        : "Pick a “Closes on” date above to use this."}
                     </div>
                   </div>
                 </label>
               )}
 
               {/* Wait for the whole invite list — only when NOT revealing on the date */}
-              {(reveal === "sealed" || selectedType === "two_truths") &&
-                selectedType !== "baby_reveal" &&
-                selectedType !== "birthday" && (
+              {(reveal === "sealed" || selectedType === "two_truths") && (
                 <label
                   className={`mt-2 flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 ${
                     holdUntilDeadline ? "opacity-50" : "cursor-pointer"
@@ -2637,16 +2788,18 @@ export default function NewEngagementPage() {
                                 joined yet.{" "}
                               </span>
                             )}
-                            Don&apos;t reveal just because the joined members answered —
-                            hold it until invited people join and respond too.{" "}
+                            Don&apos;t open it just because the people already in have
+                            answered — also wait for invited people to join and answer.{" "}
                             {deadline
-                              ? "The deadline still acts as a backstop."
-                              : "⚠️ Add a deadline as a backstop so it can't freeze if someone never joins."}
+                              ? "It still opens on the “Closes on” date at the latest."
+                              : "⚠️ Pick a “Closes on” date too, so it can't get stuck if someone never joins."}
                           </>
                         )}
                     </div>
                   </div>
                 </label>
+              )}
+              </details>
               )}
             </div>
 
@@ -2662,8 +2815,9 @@ export default function NewEngagementPage() {
                   { value: "daily" as const, label: "🔁 Daily" },
                   { value: "weekly" as const, label: "🔁 Weekly" },
                   { value: "monthly" as const, label: "🔁 Monthly" },
+                  { value: "yearly" as const, label: "🔁 Yearly (same date)" },
                   { value: "monthly_nth" as const, label: "🗓️ Monthly (e.g. 2nd Sun at 4pm)" },
-                  { value: "yearly_nth" as const, label: "🗓️ Yearly (a date like 2nd Sun May)" },
+                  { value: "yearly_nth" as const, label: "🗓️ Yearly (e.g. 2nd Sun of May)" },
                 ].map((r) => (
                   <button
                     key={r.value}
@@ -2693,9 +2847,11 @@ export default function NewEngagementPage() {
               ) : (
                 recurrence !== "none" && (
                   <p className="mt-1.5 text-xs text-slate-500">
-                    A fresh copy auto-posts to the group every{" "}
-                    {recurrence === "daily" ? "day" : recurrence === "weekly" ? "week" : "month"}{" "}
-                    after this one wraps.
+                    {recurrence === "yearly"
+                      ? "Next year's copy is made automatically when this one wraps, on the same date."
+                      : `A fresh copy auto-posts to the group every ${
+                          recurrence === "daily" ? "day" : recurrence === "weekly" ? "week" : "month"
+                        } after this one wraps.`}
                   </p>
                 )
               )}
@@ -2851,7 +3007,7 @@ export default function NewEngagementPage() {
                           .from("campfire-media")
                           .upload(path, file);
                         if (upErr) {
-                          alert("Upload failed: " + upErr.message);
+                          cfAlert("Upload failed: " + upErr.message);
                           continue;
                         }
                         const { data } = supabase.storage.from("campfire-media").getPublicUrl(path);
@@ -3419,8 +3575,70 @@ export default function NewEngagementPage() {
               </label>
             )}
 
+            {/* "When it happens" — the worked-out dates, from the same computeSchedule()
+                the save uses, so nothing is set silently (auto deadlines, lead times). */}
+            {(() => {
+              const s = computeSchedule();
+              const GRACE = 86400000; // the cron reveals ~a day past the date if not done
+              const close = s.finalDeadline;
+              const auto = s.deadlineIsDefault ? " (set automatically — pick a “Closes on” date to change it)" : "";
+              const opens = s.scheduledOpenAt
+                ? `${formatWhen(s.scheduledOpenAt)} — the group gets an email`
+                : "When you launch it (you'll review the draft first)";
+              const reveals =
+                selectedType === "signup"
+                  ? close
+                    ? `It's a live list — everyone sees what's claimed. Party: ${formatWhen(close)}`
+                    : "It's a live list — everyone sees what's claimed as it happens"
+                  : s.revealMode === "as_they_come" || s.revealMode === "instant"
+                  ? `Answers show as they come in${close ? `; closes ${formatWhen(close)}${auto}` : ""}`
+                  : s.revealMode === "all_at_once"
+                  ? `Hidden until you tap Reveal${
+                      close ? ` — or ${formatWhen(new Date(close.getTime() + GRACE))} at the latest${auto}` : ""
+                    }`
+                  : s.holds && close
+                  ? `Everyone sees them on ${formatWhen(close)}${auto}`
+                  : close
+                  ? `As soon as everyone's answered — or ${formatWhen(
+                      new Date(close.getTime() + GRACE)
+                    )} at the latest${auto}`
+                  : "As soon as everyone's answered";
+              const repeats = !s.recurrenceRule
+                ? "Just once"
+                : recurrence === "yearly_nth" && s.nthPattern
+                ? `Every year — ${describeNthWeekday(s.nthPattern)}`
+                : recurrence === "monthly_nth"
+                ? "Every month, on the same weekday and time"
+                : s.recurrenceRule === "yearly"
+                ? "Every year, on the same date"
+                : `Every ${
+                    s.recurrenceRule === "daily" ? "day" : s.recurrenceRule === "weekly" ? "week" : "month"
+                  }`;
+              return (
+                <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-4 text-sm">
+                  <div className="mb-2 font-semibold text-slate-900">📅 When it happens</div>
+                  <dl className="space-y-1.5 text-slate-700">
+                    <div className="flex gap-2">
+                      <dt className="w-24 flex-shrink-0 font-medium text-slate-500">Opens</dt>
+                      <dd>{opens}</dd>
+                    </div>
+                    <div className="flex gap-2">
+                      <dt className="w-24 flex-shrink-0 font-medium text-slate-500">
+                        {selectedType === "signup" ? "Answers" : "Results"}
+                      </dt>
+                      <dd>{reveals}</dd>
+                    </div>
+                    <div className="flex gap-2">
+                      <dt className="w-24 flex-shrink-0 font-medium text-slate-500">Repeats</dt>
+                      <dd>{repeats}</dd>
+                    </div>
+                  </dl>
+                </div>
+              );
+            })()}
+
             {error && (
-              <p className="text-sm text-red-600 bg-red-50 rounded-xl px-4 py-2">{error}</p>
+              <p role="alert" className="text-sm text-red-600 bg-red-50 rounded-xl px-4 py-2">{error}</p>
             )}
 
             {/* Submit */}

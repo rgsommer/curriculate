@@ -11,13 +11,14 @@ import {
   useCreateEngagement,
   type MonthlyNth,
 } from "@/lib/campfire/hooks";
-import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, parseCareQuestions, formatMoney, GIFT_CURRENCIES, localeGiftCurrency, raffleOf, tournamentOf, pledgeOf, babyRevealOf, parseBabyAnswer, selectPoolQuestions, describeMonthlyNth, nextMonthlyNthWeekday, campfireTeaserText, ORDINAL_WEEK, WEEKDAY_NAMES, type QuestionCategory } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, parseCareQuestions, formatMoney, GIFT_CURRENCIES, localeGiftCurrency, raffleOf, tournamentOf, pledgeOf, babyRevealOf, parseBabyAnswer, selectPoolQuestions, describeMonthlyNth, nextMonthlyNthWeekday, campfireTeaserText, ORDINAL_WEEK, WEEKDAY_NAMES, describeNthWeekday, type NthWeekday, type QuestionCategory } from "@/lib/campfire/types";
 import { readExifTakenAt } from "@/lib/campfire/exif";
 import QRCode from "qrcode";
 import type { CampfireGift } from "@/lib/campfire/types";
 import { supabase } from "@/lib/campfire/supabase";
 import { hasProfanity } from "@/lib/campfire/profanity";
 import { formatWhen } from "@/lib/campfire/dates";
+import { cfAlert, cfConfirm, cfPrompt } from "@/lib/campfire/dialogs";
 
 // Shrink a phone photo before upload: longest side ≤ 2000px, JPEG. Keeps a handwritten
 // note perfectly readable while cutting a 4 MB photo to a few hundred KB (school Wi-Fi).
@@ -580,7 +581,9 @@ export default function EngagementDetailPage() {
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editDesc, setEditDesc] = useState("");
-  const [editRecurrence, setEditRecurrence] = useState<"none" | "daily" | "weekly" | "monthly">("none");
+  const [editRecurrence, setEditRecurrence] = useState<
+    "none" | "daily" | "weekly" | "monthly" | "yearly"
+  >("none");
   const [editDeadline, setEditDeadline] = useState(""); // YYYY-MM-DD (birthday date)
   const [editBirthYear, setEditBirthYear] = useState("");
   const [editDeadlineTime, setEditDeadlineTime] = useState(""); // datetime-local (reveal/deadline)
@@ -723,7 +726,7 @@ export default function EngagementDetailPage() {
       _uid: uid,
     });
     if (error) {
-      alert("Couldn't add to the group: " + error.message);
+      cfAlert("Couldn't add to the group: " + error.message);
     } else {
       await loadGuests();
       refresh();
@@ -736,9 +739,8 @@ export default function EngagementDetailPage() {
   const removeGuest = async (uid: string, name: string) => {
     if (
       typeof window !== "undefined" &&
-      !window.confirm(
-        `Remove ${name} from this card? Their response/vote (if any) is also removed. This can't be undone.`
-      )
+      !(await cfConfirm(
+        `Remove ${name} from this card? Their response/vote (if any) is also removed. This can't be undone.`, { danger: true }))
     )
       return;
     setRemovingGuest(uid);
@@ -747,7 +749,7 @@ export default function EngagementDetailPage() {
       _uid: uid,
     });
     if (error) {
-      alert("Couldn't remove the guest: " + error.message);
+      cfAlert("Couldn't remove the guest: " + error.message);
     } else {
       await loadGuests();
       refresh();
@@ -814,7 +816,7 @@ export default function EngagementDetailPage() {
   if (!engagement) {
     return (
       <div className="text-center py-20">
-        <p className="text-slate-500">Engagement not found.</p>
+        <p className="text-slate-500">Activity not found.</p>
         <Link href={`/campfirelive/group/${groupId}`} className="text-orange-600 underline text-sm mt-2 inline-block">
           Back to group
         </Link>
@@ -1002,11 +1004,11 @@ export default function EngagementDetailPage() {
       if (data?.url) {
         window.location.href = data.url as string;
       } else {
-        alert(data?.error || "Couldn't start checkout.");
+        cfAlert(data?.error || "Couldn't start checkout.");
         setChippingIn(false);
       }
     } catch {
-      alert("Couldn't start checkout.");
+      cfAlert("Couldn't start checkout.");
       setChippingIn(false);
     }
   };
@@ -1026,7 +1028,7 @@ export default function EngagementDetailPage() {
         { onConflict: "engagement_id,voter_user_id" }
       );
       if (error) {
-        alert("Couldn't record your vote: " + error.message);
+        cfAlert("Couldn't record your vote: " + error.message);
       } else {
         // Optimistic tally update: move one vote from the old pick to the new.
         setVoteTallies((t) => {
@@ -1039,7 +1041,7 @@ export default function EngagementDetailPage() {
         setMyVote(responseId);
       }
     } catch {
-      alert("Couldn't record your vote.");
+      cfAlert("Couldn't record your vote.");
     }
     setVotingBusy(false);
   };
@@ -1055,7 +1057,7 @@ export default function EngagementDetailPage() {
     if (pledgeMode === "lump") {
       const lump = Math.round((parseFloat(pledgeLumpInput) || 0) * 100);
       if (lump < 100) {
-        alert("Enter a pledge of at least 1.");
+        cfAlert("Enter a pledge of at least 1.");
         return;
       }
       chipIn(lump, undefined, { perUnitCents: 0, maxCents: lump });
@@ -1064,7 +1066,7 @@ export default function EngagementDetailPage() {
     // Per-unit.
     const rateCents = Math.round((parseFloat(pledgeRateInput) || 0) * 100);
     if (rateCents <= 0) {
-      alert(`Enter an amount per ${p.unit}.`);
+      cfAlert(`Enter an amount per ${p.unit}.`);
       return;
     }
     const estimate = p.goalUnits * rateCents;
@@ -1073,7 +1075,7 @@ export default function EngagementDetailPage() {
       : estimate;
     const charged = Math.min(estimate, capCents > 0 ? capCents : estimate);
     if (charged < 100) {
-      alert("That pledge is below the 1 minimum — raise the rate or the cap.");
+      cfAlert("That pledge is below the 1 minimum — raise the rate or the cap.");
       return;
     }
     chipIn(charged, undefined, { perUnitCents: rateCents, maxCents: charged });
@@ -1088,16 +1090,15 @@ export default function EngagementDetailPage() {
     if (!p || settlingPledge || !session) return;
     const actual = Math.round(parseFloat(pledgeResultInput) || 0);
     if (!Number.isFinite(actual) || actual < 0) {
-      alert(`Enter the number of ${p.unit}s achieved.`);
+      cfAlert(`Enter the number of ${p.unit}s achieved.`);
       return;
     }
     if (
       typeof window !== "undefined" &&
-      !window.confirm(
+      !(await cfConfirm(
         `Post ${actual} ${p.unit}s as the result? Sponsors will be charged for what was achieved (shortfalls refunded) and the funds sent to ${
           engagement.gift_recipient_name || "the participant"
-        }. This can't be undone.`
-      )
+        }. This can't be undone.`, { danger: true }))
     )
       return;
     setSettlingPledge(true);
@@ -1111,13 +1112,13 @@ export default function EngagementDetailPage() {
         body: JSON.stringify({ engagementId, actualUnits: actual }),
       });
       const data = await res.json();
-      if (!res.ok) alert(data?.error || "Couldn't settle the drive.");
+      if (!res.ok) cfAlert(data?.error || "Couldn't settle the drive.");
       else {
         setConfirmTick((t) => t + 1);
         await refresh();
       }
     } catch {
-      alert("Couldn't settle the drive.");
+      cfAlert("Couldn't settle the drive.");
     }
     setSettlingPledge(false);
   };
@@ -1128,9 +1129,8 @@ export default function EngagementDetailPage() {
     if (drawingWinner || !session) return;
     if (
       typeof window !== "undefined" &&
-      !window.confirm(
-        "Draw the winner now? A random winner will be picked from everyone who chipped in and paid the pot. This can't be undone."
-      )
+      !(await cfConfirm(
+        "Draw the winner now? A random winner will be picked from everyone who chipped in and paid the pot. This can't be undone.", { danger: true }))
     )
       return;
     setDrawingWinner(true);
@@ -1144,13 +1144,13 @@ export default function EngagementDetailPage() {
         body: JSON.stringify({ engagementId }),
       });
       const data = await res.json();
-      if (!res.ok) alert(data?.error || "Couldn't draw the winner.");
+      if (!res.ok) cfAlert(data?.error || "Couldn't draw the winner.");
       else {
         setConfirmTick((t) => t + 1);
         await refresh();
       }
     } catch {
-      alert("Couldn't draw the winner.");
+      cfAlert("Couldn't draw the winner.");
     }
     setDrawingWinner(false);
   };
@@ -1164,7 +1164,7 @@ export default function EngagementDetailPage() {
       const dataUrl = await QRCode.toDataURL(url, { width: 600, margin: 2 });
       setQrDataUrl(dataUrl);
     } catch {
-      alert("Couldn't make the QR code.");
+      cfAlert("Couldn't make the QR code.");
     }
   };
   const printQr = () => {
@@ -1194,7 +1194,7 @@ export default function EngagementDetailPage() {
   const startGift = async () => {
     if (startingGift) return;
     if (!startGiftEmail.trim()) {
-      alert("Add the recipient's email — that's where the gift card is sent.");
+      cfAlert("Add the recipient's email — that's where the gift card is sent.");
       return;
     }
     setStartingGift(true);
@@ -1207,7 +1207,7 @@ export default function EngagementDetailPage() {
     });
     setStartingGift(false);
     if (error) {
-      alert("Couldn't start the chip-in: " + error.message);
+      cfAlert("Couldn't start the chip-in: " + error.message);
       return;
     }
     // Reset the form for the next one and reveal the new chip-in.
@@ -1223,7 +1223,7 @@ export default function EngagementDetailPage() {
     if (sendingGift || !session) return;
     if (
       typeof window !== "undefined" &&
-      !window.confirm("Send the gift card to the recipient now for the amount raised?")
+      !(await cfConfirm("Send the gift card to the recipient now for the amount raised?"))
     )
       return;
     setSendingGift(true);
@@ -1237,10 +1237,10 @@ export default function EngagementDetailPage() {
         body: JSON.stringify({ giftId }),
       });
       const data = await res.json();
-      if (!res.ok) alert(data?.error || "Couldn't send the gift.");
+      if (!res.ok) cfAlert(data?.error || "Couldn't send the gift.");
       else refreshGifts();
     } catch {
-      alert("Couldn't send the gift.");
+      cfAlert("Couldn't send the gift.");
     }
     setSendingGift(false);
   };
@@ -1304,7 +1304,7 @@ export default function EngagementDetailPage() {
     setEditTitle(engagement.title);
     setEditDesc(engagement.description ?? "");
     setEditRecurrence(
-      (engagement.recurrence_rule as "daily" | "weekly" | "monthly" | null) ?? "none"
+      (engagement.recurrence_rule as "daily" | "weekly" | "monthly" | "yearly" | null) ?? "none"
     );
     setEditAllowMemberInvites(!!engagement.allow_member_invites);
     setEditExcludedIds(engagement.excluded_user_ids ?? []);
@@ -1406,7 +1406,7 @@ export default function EngagementDetailPage() {
 
   const saveEdit = async () => {
     if (!editTitle.trim()) {
-      alert(
+      cfAlert(
         engagement.type === "birthday"
           ? "Add a card title / message at the top before saving."
           : "Add a prompt before saving."
@@ -1448,7 +1448,7 @@ export default function EngagementDetailPage() {
         }))
         .filter((c) => c.prompts.length > 0);
       if (pool.length < 1) {
-        alert("Keep at least one question.");
+        cfAlert("Keep at least one question.");
         setSavingEdit(false);
         return;
       }
@@ -1463,7 +1463,7 @@ export default function EngagementDetailPage() {
     if (engagement.type === "hall_of_fame" || engagement.type === "most_likely") {
       const qs = editHofAwards.map((q) => q.trim()).filter(Boolean);
       if (qs.length < 1) {
-        alert("Keep at least one award.");
+        cfAlert("Keep at least one award.");
         setSavingEdit(false);
         return;
       }
@@ -1482,7 +1482,7 @@ export default function EngagementDetailPage() {
       const tp = editTruthPrompt.trim();
       const dp = editDarePrompt.trim();
       if (!tp || !dp) {
-        alert("Keep both a Truth prompt and a Dare prompt.");
+        cfAlert("Keep both a Truth prompt and a Dare prompt.");
         setSavingEdit(false);
         return;
       }
@@ -1499,7 +1499,7 @@ export default function EngagementDetailPage() {
       if (editPollFormat === "open") {
         const qs = editPollOptions.map((o) => o.trim()).filter(Boolean);
         if (qs.length < 1) {
-          alert("Add at least one open question.");
+          cfAlert("Add at least one open question.");
           setSavingEdit(false);
           return;
         }
@@ -1509,7 +1509,7 @@ export default function EngagementDetailPage() {
       } else {
         const options = editPollOptions.map((o) => o.trim()).filter(Boolean);
         if (options.length < 2) {
-          alert("A multiple-choice poll needs at least 2 options.");
+          cfAlert("A multiple-choice poll needs at least 2 options.");
           setSavingEdit(false);
           return;
         }
@@ -1521,7 +1521,7 @@ export default function EngagementDetailPage() {
     // recipient (the winner is decided at the end), so skip the recipient check.
     const isRaffleEng = !!raffleOf(engagement.config);
     if (!isRaffleEng && editGiftEnabled && !editGiftRecipientEmail.trim()) {
-      alert("Add the recipient's email — that's where the gift card is sent.");
+      cfAlert("Add the recipient's email — that's where the gift card is sent.");
       setSavingEdit(false);
       return;
     }
@@ -1534,9 +1534,9 @@ export default function EngagementDetailPage() {
     ) {
       if (
         typeof window !== "undefined" &&
-        !window.confirm(
+        !(await cfConfirm(
           "Turning off the gift will refund everyone who chipped in. Continue?"
-        )
+        ))
       ) {
         setSavingEdit(false);
         return;
@@ -1551,7 +1551,7 @@ export default function EngagementDetailPage() {
           body: JSON.stringify({ engagementId }),
         });
       } catch {
-        alert("Couldn't refund the contributions — try again.");
+        cfAlert("Couldn't refund the contributions — try again.");
         setSavingEdit(false);
         return;
       }
@@ -1591,7 +1591,7 @@ export default function EngagementDetailPage() {
       .eq("id", engagementId);
     setSavingEdit(false);
     if (error) {
-      alert("Couldn't save your changes: " + error.message);
+      cfAlert("Couldn't save your changes: " + error.message);
       return;
     }
     setEditing(false);
@@ -1769,7 +1769,7 @@ export default function EngagementDetailPage() {
       setSharedEng(true);
       setTimeout(() => setSharedEng(false), 2500);
     } catch {
-      alert(msg); // clipboard blocked — show it so they can copy manually
+      cfAlert(msg); // clipboard blocked — show it so they can copy manually
     }
   };
 
@@ -1780,7 +1780,7 @@ export default function EngagementDetailPage() {
     setLaunching(true);
     const { error } = await launchEngagement();
     if (error) {
-      alert("Couldn't launch: " + error);
+      cfAlert("Couldn't launch: " + error);
       setLaunching(false);
       return;
     }
@@ -1840,7 +1840,7 @@ export default function EngagementDetailPage() {
     const { error } = await scheduleOpen(new Date(scheduleOpenInput).toISOString());
     setSavingSchedule(false);
     if (error) {
-      alert("Couldn't schedule: " + error);
+      cfAlert("Couldn't schedule: " + error);
       return;
     }
     setSchedulingOpen(false);
@@ -1849,7 +1849,7 @@ export default function EngagementDetailPage() {
   // Clear an existing schedule, returning the engagement to a manual draft.
   const clearSchedule = async () => {
     const { error } = await scheduleOpen(null);
-    if (error) alert("Couldn't clear the schedule: " + error);
+    if (error) cfAlert("Couldn't clear the schedule: " + error);
   };
 
   // Push the reveal deadline out by N days (from now or the current deadline,
@@ -1866,7 +1866,7 @@ export default function EngagementDetailPage() {
       .eq("id", engagement.id);
     setExtending(false);
     if (error) {
-      alert("Couldn't extend the deadline: " + error.message);
+      cfAlert("Couldn't extend the deadline: " + error.message);
       return;
     }
     refresh();
@@ -1876,15 +1876,15 @@ export default function EngagementDetailPage() {
   const stopRecurring = async () => {
     if (
       typeof window !== "undefined" &&
-      !window.confirm(
+      !(await cfConfirm(
         "Stop this from repeating?\n\nThis one and all past check-ins stay exactly as they are — Campfire just won't create any new ones."
-      )
+      ))
     )
       return;
     setStoppingRecur(true);
     const { error } = await stopRecurrence();
     setStoppingRecur(false);
-    if (error) alert("Couldn't stop the recurrence: " + error);
+    if (error) cfAlert("Couldn't stop the recurrence: " + error);
   };
 
   // The monthly release pattern (if this is a "monthly Nth-weekday" series).
@@ -1918,7 +1918,7 @@ export default function EngagementDetailPage() {
     });
     setSavingSched(false);
     if (error) {
-      alert("Couldn't save the schedule: " + error);
+      cfAlert("Couldn't save the schedule: " + error);
       return;
     }
     setSchedEditing(false);
@@ -1928,11 +1928,10 @@ export default function EngagementDetailPage() {
   const cancelEngagement = async () => {
     if (
       typeof window !== "undefined" &&
-      !window.confirm(
+      !(await cfConfirm(
         engagement.gift_enabled && !engagement.gift_issued_at
           ? "Cancel this card? Everyone's gift contributions will be refunded, and it'll be removed for everyone — this can't be undone."
-          : "Cancel this engagement? It will be removed for everyone — this can't be undone."
-      )
+          : "Cancel this engagement? It will be removed for everyone — this can't be undone.", { danger: true }))
     )
       return;
     // Refund gift contributions BEFORE deleting (delete cascades the rows away).
@@ -1947,13 +1946,13 @@ export default function EngagementDetailPage() {
           body: JSON.stringify({ engagementId }),
         });
       } catch {
-        alert("Couldn't refund contributions — cancel paused. Try again.");
+        cfAlert("Couldn't refund contributions — cancel paused. Try again.");
         return;
       }
     }
     const { error } = await deleteEngagement();
     if (error) {
-      alert("Couldn't cancel: " + error);
+      cfAlert("Couldn't cancel: " + error);
       return;
     }
     router.push(`/campfirelive/group/${groupId}`);
@@ -1991,7 +1990,7 @@ export default function EngagementDetailPage() {
     });
     setDuplicating(false);
     if (error || !copy) {
-      alert("Couldn't duplicate: " + (error ?? "unknown error"));
+      cfAlert("Couldn't duplicate: " + (error ?? "unknown error"));
       return;
     }
     router.push(`/campfirelive/group/${groupId}/engagement/${copy.id}`);
@@ -2002,7 +2001,7 @@ export default function EngagementDetailPage() {
     setPausing(true);
     const { error } = await setPaused(!engagement.paused);
     setPausing(false);
-    if (error) alert("Couldn't update: " + error);
+    if (error) cfAlert("Couldn't update: " + error);
   };
 
   // Host: re-send the reveal email (e.g. if a first send went out with a bad link).
@@ -2010,7 +2009,7 @@ export default function EngagementDetailPage() {
     if (resendingReveal || !session) return;
     if (
       typeof window !== "undefined" &&
-      !window.confirm("Re-send the reveal email to everyone in the group?")
+      !(await cfConfirm("Re-send the reveal email to everyone in the group?"))
     )
       return;
     setResendingReveal(true);
@@ -2029,7 +2028,7 @@ export default function EngagementDetailPage() {
       });
       const data = await res.json();
       if (!res.ok || data?.sendError) {
-        alert(data?.error || data?.sendError || "Couldn't re-send.");
+        cfAlert(data?.error || data?.sendError || "Couldn't re-send.");
       } else {
         const reached: string[] = data?.recipientsReached ?? [];
         const noEmail = data?.noEmailCount ?? 0;
@@ -2043,10 +2042,10 @@ export default function EngagementDetailPage() {
           lines.push(
             `⚠️ ${noEmail} recipient(s) have no email on file (guest accounts) — they'll see the card when they open Campfire, but can't be emailed.`
           );
-        alert(lines.join("\n\n"));
+        cfAlert(lines.join("\n\n"));
       }
     } catch {
-      alert("Couldn't re-send.");
+      cfAlert("Couldn't re-send.");
     }
     setResendingReveal(false);
   };
@@ -2065,13 +2064,13 @@ export default function EngagementDetailPage() {
         body: JSON.stringify({ engagementId, message: thanksMsg.trim() }),
       });
       const data = await res.json();
-      if (!res.ok) alert(data?.error || "Couldn't send thanks.");
+      if (!res.ok) cfAlert(data?.error || "Couldn't send thanks.");
       else {
         setShowThanks(false);
         refresh();
       }
     } catch {
-      alert("Couldn't send thanks.");
+      cfAlert("Couldn't send thanks.");
     }
     setThanksSending(false);
   };
@@ -2185,7 +2184,7 @@ export default function EngagementDetailPage() {
       .update({ config: { ...(engagement.config ?? {}), rsvp: next } })
       .eq("id", engagementId);
     if (error) {
-      alert("Couldn't update: " + error.message);
+      cfAlert("Couldn't update: " + error.message);
       return;
     }
     refresh();
@@ -2214,7 +2213,7 @@ export default function EngagementDetailPage() {
       .update({ config: { ...(engagement.config ?? {}), giftex } })
       .eq("id", engagementId);
     if (error) {
-      alert("Couldn't update: " + error.message);
+      cfAlert("Couldn't update: " + error.message);
       return;
     }
     refresh();
@@ -2225,9 +2224,9 @@ export default function EngagementDetailPage() {
     if (giftexBusy) return;
     if (
       typeof window !== "undefined" &&
-      !window.confirm(
+      !(await cfConfirm(
         "Randomly assign everyone who RSVP'd yes? This replaces any existing assignments."
-      )
+      ))
     )
       return;
     setGiftexBusy(true);
@@ -2237,10 +2236,10 @@ export default function EngagementDetailPage() {
     });
     setGiftexBusy(false);
     if (error) {
-      alert("Couldn't assign: " + error.message);
+      cfAlert("Couldn't assign: " + error.message);
       return;
     }
-    alert(`Assigned ${data} people. Each can now see only their own.`);
+    cfAlert(`Assigned ${data} people. Each can now see only their own.`);
     refreshMyAssignment();
     refresh();
   };
@@ -2248,7 +2247,7 @@ export default function EngagementDetailPage() {
     if (giftexBusy) return;
     if (
       typeof window !== "undefined" &&
-      !window.confirm("Reveal who bought for whom to everyone? This can't be undone.")
+      !(await cfConfirm("Reveal who bought for whom to everyone? This can't be undone.", { danger: true }))
     )
       return;
     setGiftexBusy(true);
@@ -2257,7 +2256,7 @@ export default function EngagementDetailPage() {
     });
     setGiftexBusy(false);
     if (error) {
-      alert("Couldn't reveal: " + error.message);
+      cfAlert("Couldn't reveal: " + error.message);
       return;
     }
     refresh();
@@ -2303,7 +2302,7 @@ export default function EngagementDetailPage() {
       const data = await res.json();
       const plan = (data?.plan ?? []) as { label: string; need: number; max: number }[];
       if (!res.ok || plan.length === 0) {
-        alert(data?.error || "Couldn't get a plan right now.");
+        cfAlert(data?.error || "Couldn't get a plan right now.");
         setSuggesting(false);
         return;
       }
@@ -2332,13 +2331,13 @@ export default function EngagementDetailPage() {
         .from("engagements")
         .update({ config: { ...(engagement.config ?? {}), slots: cur } })
         .eq("id", engagementId);
-      if (error) alert("Couldn't apply: " + error.message);
+      if (error) cfAlert("Couldn't apply: " + error.message);
       else {
-        alert(`AI balanced the list — ${added} added, ${adjusted} adjusted.`);
+        cfAlert(`AI balanced the list — ${added} added, ${adjusted} adjusted.`);
         refresh();
       }
     } catch {
-      alert("Couldn't get a plan right now.");
+      cfAlert("Couldn't get a plan right now.");
     }
     setSuggesting(false);
   };
@@ -2353,7 +2352,7 @@ export default function EngagementDetailPage() {
       .update({ config: { ...(engagement.config ?? {}), slots } })
       .eq("id", engagementId);
     if (error) {
-      alert("Couldn't add: " + error.message);
+      cfAlert("Couldn't add: " + error.message);
       return;
     }
     refresh();
@@ -2460,7 +2459,7 @@ export default function EngagementDetailPage() {
     const boy = babyBoyName.trim();
     const girl = babyGirlName.trim();
     if ([boy, girl].some((n) => n && hasProfanity(n))) {
-      alert("Let's keep it kind — please reword.");
+      cfAlert("Let's keep it kind — please reword.");
       return;
     }
     setSubmitting(true);
@@ -2471,7 +2470,7 @@ export default function EngagementDetailPage() {
       girlName: girl || undefined,
     });
     setSubmitting(false);
-    if (error) alert("Couldn't submit: " + error);
+    if (error) cfAlert("Couldn't submit: " + error);
   };
 
   // Open-ended poll: one free-text answer per question.
@@ -2482,12 +2481,12 @@ export default function EngagementDetailPage() {
       if (v) answers[i] = v;
     });
     if (Object.keys(answers).length === 0) {
-      alert("Answer at least one question.");
+      cfAlert("Answer at least one question.");
       return;
     }
     for (const v of Object.values(answers)) {
       if (hasProfanity(v)) {
-        alert("Let's keep it kind — please reword.");
+        cfAlert("Let's keep it kind — please reword.");
         return;
       }
     }
@@ -2502,7 +2501,7 @@ export default function EngagementDetailPage() {
     const text = textInput.trim();
     if (!text && mediaItems.length === 0) return;
     if (text && hasProfanity(text)) {
-      alert("Let's keep it kind — please reword your response.");
+      cfAlert("Let's keep it kind — please reword your response.");
       return;
     }
     setSubmitting(true);
@@ -2531,7 +2530,7 @@ export default function EngagementDetailPage() {
       .from("campfire-media")
       .upload(path, file);
     if (upErr) {
-      alert("Upload failed: " + upErr.message);
+      cfAlert("Upload failed: " + upErr.message);
       setTodUploading(false);
       return;
     }
@@ -2543,16 +2542,16 @@ export default function EngagementDetailPage() {
   // Truth or Dare: store which one they picked + their answer (text and/or photo).
   const handleTruthOrDareSubmit = async () => {
     if (!todMode) {
-      alert("Pick Truth or Dare first.");
+      cfAlert("Pick Truth or Dare first.");
       return;
     }
     const text = textInput.trim();
     if (!text && !todPhoto) {
-      alert("Add an answer or a photo.");
+      cfAlert("Add an answer or a photo.");
       return;
     }
     if (text && hasProfanity(text)) {
-      alert("Let's keep it kind — please reword your response.");
+      cfAlert("Let's keep it kind — please reword your response.");
       return;
     }
     setSubmitting(true);
@@ -2564,27 +2563,27 @@ export default function EngagementDetailPage() {
   const handleTwoTruthsSubmit = async () => {
     const cleaned = ttStatements.map((s) => s.trim());
     if (cleaned.some((s) => !s)) {
-      alert("Fill in all three statements.");
+      cfAlert("Fill in all three statements.");
       return;
     }
     if (ttLie === null) {
-      alert("Tap the circle next to the statement that's the lie.");
+      cfAlert("Tap the circle next to the statement that's the lie.");
       return;
     }
     if (cleaned.some((s) => hasProfanity(s))) {
-      alert("Let's keep it kind — please reword.");
+      cfAlert("Let's keep it kind — please reword.");
       return;
     }
     setSubmitting(true);
     const { error: ttErr } = await submitTwoTruths(cleaned, ttLie);
     setSubmitting(false);
-    if (ttErr) alert("Couldn't submit: " + ttErr);
+    if (ttErr) cfAlert("Couldn't submit: " + ttErr);
   };
 
   const handleMostLikelySubmit = async () => {
     const anyVote = Object.values(mlVotes).some(Boolean);
     if (!anyVote) {
-      alert("Vote for at least one award.");
+      cfAlert("Vote for at least one award.");
       return;
     }
     // Drop any blank picks before saving.
@@ -2595,13 +2594,13 @@ export default function EngagementDetailPage() {
     setSubmitting(true);
     const { error: mlErr } = await saveResponse({ answers });
     setSubmitting(false);
-    if (mlErr) alert("Couldn't submit: " + mlErr);
+    if (mlErr) cfAlert("Couldn't submit: " + mlErr);
   };
 
   const handleHallOfFameSubmit = async () => {
     const anyVote = Object.values(hofVotes).some(Boolean);
     if (!anyVote) {
-      alert("Vote a group-mate for at least one award.");
+      cfAlert("Vote a group-mate for at least one award.");
       return;
     }
     // answers[awardIndex] = the chosen person's name (blank picks dropped).
@@ -2612,18 +2611,18 @@ export default function EngagementDetailPage() {
     setSubmitting(true);
     const { error: hofErr } = await saveResponse({ answers });
     setSubmitting(false);
-    if (hofErr) alert("Couldn't submit: " + hofErr);
+    if (hofErr) cfAlert("Couldn't submit: " + hofErr);
   };
 
   const handleAccountabilitySubmit = async () => {
     const qs = (engagement.config?.questions as string[]) ?? [];
     if (qs.some((_, i) => !acRatings[i])) {
-      alert("Give each question a rating (1–5).");
+      cfAlert("Give each question a rating (1–5).");
       return;
     }
     const note = acNote.trim();
     if (note && hasProfanity(note)) {
-      alert("Let's keep it kind — please reword your note.");
+      cfAlert("Let's keep it kind — please reword your note.");
       return;
     }
     const answers: Record<string, number> = {};
@@ -2633,7 +2632,7 @@ export default function EngagementDetailPage() {
     setSubmitting(true);
     const { error: acErr } = await saveResponse({ answers, note: note || undefined });
     setSubmitting(false);
-    if (acErr) alert("Couldn't submit: " + acErr);
+    if (acErr) cfAlert("Couldn't submit: " + acErr);
   };
 
   const handleScavengerUpload = async (i: number, file: File | undefined) => {
@@ -2650,7 +2649,7 @@ export default function EngagementDetailPage() {
     const path = `${user.id}/${engagementId}/${i}-${Date.now()}.${ext}`;
     const { error: upErr } = await supabase.storage.from("campfire-media").upload(path, file);
     if (upErr) {
-      alert("Upload failed: " + upErr.message);
+      cfAlert("Upload failed: " + upErr.message);
       setShUploading(null);
       return;
     }
@@ -2672,7 +2671,7 @@ export default function EngagementDetailPage() {
       const it = shItems[i];
       const text = it?.text?.trim();
       if (text && hasProfanity(text)) {
-        alert("Let's keep it kind — please reword.");
+        cfAlert("Let's keep it kind — please reword.");
         return;
       }
       if (text || it?.photo) {
@@ -2689,13 +2688,13 @@ export default function EngagementDetailPage() {
       }
     }
     if (Object.keys(answers).length === 0) {
-      alert("Answer at least one item (a photo or some text).");
+      cfAlert("Answer at least one item (a photo or some text).");
       return;
     }
     setSubmitting(true);
     const { error: shErr } = await saveResponse({ answers });
     setSubmitting(false);
-    if (shErr) alert("Couldn't submit: " + shErr);
+    if (shErr) cfAlert("Couldn't submit: " + shErr);
   };
 
   // Tournament: upload the optional scorecard photo (with EXIF date flag).
@@ -2713,7 +2712,7 @@ export default function EngagementDetailPage() {
       .from("campfire-media")
       .upload(path, file);
     if (upErr) {
-      alert("Upload failed: " + upErr.message);
+      cfAlert("Upload failed: " + upErr.message);
       setTournCardUploading(false);
       return;
     }
@@ -2733,7 +2732,7 @@ export default function EngagementDetailPage() {
       if (raw === undefined || raw === "" || raw === null) continue;
       const n = Number(raw);
       if (!Number.isFinite(n)) {
-        alert(`"${rounds[i]}" needs a number.`);
+        cfAlert(`"${rounds[i]}" needs a number.`);
         return;
       }
       scores[i] = n;
@@ -2741,11 +2740,11 @@ export default function EngagementDetailPage() {
       any = true;
     }
     if (!any) {
-      alert("Enter a score for at least one round.");
+      cfAlert("Enter a score for at least one round.");
       return;
     }
     if (tcfg?.scorecard && !tournCard.photo) {
-      alert("A scorecard photo is required for this tournament.");
+      cfAlert("A scorecard photo is required for this tournament.");
       return;
     }
     setSubmitting(true);
@@ -2761,7 +2760,7 @@ export default function EngagementDetailPage() {
         : {}),
     });
     setSubmitting(false);
-    if (error) alert("Couldn't submit: " + error);
+    if (error) cfAlert("Couldn't submit: " + error);
   };
 
   const handleCareSubmit = async () => {
@@ -2784,7 +2783,7 @@ export default function EngagementDetailPage() {
       } else {
         const text = typeof v === "string" ? v.trim() : "";
         if (text && hasProfanity(text)) {
-          alert("Let's keep it kind — please reword.");
+          cfAlert("Let's keep it kind — please reword.");
           return;
         }
         value = text;
@@ -2799,7 +2798,7 @@ export default function EngagementDetailPage() {
       });
     }
     if (rows.length === 0) {
-      alert("Fill in at least one question.");
+      cfAlert("Fill in at least one question.");
       return;
     }
     setSubmitting(true);
@@ -2809,7 +2808,7 @@ export default function EngagementDetailPage() {
     );
     setSubmitting(false);
     if (cErr) {
-      alert("Couldn't submit: " + cErr);
+      cfAlert("Couldn't submit: " + cErr);
     } else {
       setEditingResponse(false);
     }
@@ -2821,7 +2820,7 @@ export default function EngagementDetailPage() {
     if (!files.length || !user) return;
     const room = Math.max(0, 3 - mediaItems.length);
     if (room === 0) {
-      alert("You can add up to 3.");
+      cfAlert("You can add up to 3.");
       e.target.value = "";
       return;
     }
@@ -2837,7 +2836,7 @@ export default function EngagementDetailPage() {
         .from("campfire-media")
         .upload(filePath, file);
       if (uploadError) {
-        alert("Upload failed: " + uploadError.message);
+        cfAlert("Upload failed: " + uploadError.message);
         continue;
       }
       const { data: urlData } = supabase.storage
@@ -2856,7 +2855,7 @@ export default function EngagementDetailPage() {
   // Submit the photo-challenge response (the collected photos + optional caption).
   const submitPhotos = async () => {
     if (mediaItems.length === 0 && !textInput.trim()) {
-      alert("Add a photo (or a caption).");
+      cfAlert("Add a photo (or a caption).");
       return;
     }
     setSubmitting(true);
@@ -2875,7 +2874,7 @@ export default function EngagementDetailPage() {
   const handleCommentSubmit = async () => {
     if (!commentText.trim()) return;
     if (hasProfanity(commentText)) {
-      alert("Let's keep it kind — please reword your comment.");
+      cfAlert("Let's keep it kind — please reword your comment.");
       return;
     }
     await addComment(commentText.trim(), undefined, engagement.allow_anon_replies && commentAnon);
@@ -4331,12 +4330,12 @@ export default function EngagementDetailPage() {
                           </button>
                         ))}
                         <button
-                          onClick={() => {
+                          onClick={async () => {
                             const cur = (g.currency || "usd").toUpperCase();
-                            const v = window.prompt(`Chip in how much? (${cur})`);
+                            const v = (await cfPrompt(`Chip in how much? (${cur})`, { inputMode: "decimal" }));
                             const n = v ? Math.round(parseFloat(v) * 100) : 0;
                             if (n >= 100) chipIn(n, g.id);
-                            else if (v) alert("Minimum is 1.");
+                            else if (v) cfAlert("Minimum is 1.");
                           }}
                           disabled={chippingIn}
                           className="rounded-full border border-slate-300 bg-white px-3.5 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
@@ -6005,8 +6004,8 @@ export default function EngagementDetailPage() {
                   ))}
                 {isCreator && (
                   <button
-                    onClick={() => {
-                      if (confirm("Remove this response from the group?")) removeResponse(r.id);
+                    onClick={async () => {
+                      if ((await cfConfirm("Remove this response from the group?", { danger: true }))) removeResponse(r.id);
                     }}
                     className="text-slate-400 hover:text-red-600"
                   >
@@ -6837,12 +6836,13 @@ export default function EngagementDetailPage() {
                     <label className="block text-xs font-medium text-slate-500 mb-1">
                       Repeat
                     </label>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
                       {([
                         { value: "none", label: "Once" },
                         { value: "daily", label: "🔁 Daily" },
                         { value: "weekly", label: "🔁 Weekly" },
                         { value: "monthly", label: "🔁 Monthly" },
+                        { value: "yearly", label: "🔁 Yearly" },
                       ] as const).map((r) => (
                         <button
                           key={r.value}
@@ -6860,13 +6860,19 @@ export default function EngagementDetailPage() {
                     </div>
                     {editRecurrence !== "none" && (
                       <p className="mt-1 text-xs text-slate-500">
-                        A fresh copy auto-posts every{" "}
-                        {editRecurrence === "daily"
-                          ? "day"
-                          : editRecurrence === "weekly"
-                          ? "week"
-                          : "month"}{" "}
-                        after this one wraps.
+                        {editRecurrence === "yearly"
+                          ? (engagement.config as { recurrence_nth?: NthWeekday } | null)?.recurrence_nth
+                            ? `Next year's copy is dated by its pattern — ${describeNthWeekday(
+                                (engagement.config as { recurrence_nth: NthWeekday }).recurrence_nth
+                              )} — not by the date above.`
+                            : "Next year's copy is made when this one wraps, on the same date."
+                          : `A fresh copy auto-posts every ${
+                              editRecurrence === "daily"
+                                ? "day"
+                                : editRecurrence === "weekly"
+                                ? "week"
+                                : "month"
+                            } after this one wraps.`}
                       </p>
                     )}
                   </div>
@@ -6884,7 +6890,7 @@ export default function EngagementDetailPage() {
                     👥 Let members invite others to this
                   </div>
                   <div className="text-xs text-slate-500">
-                    Anyone in the group can invite people to this engagement (not just you).
+                    Anyone in the group can invite people to this activity (not just you).
                   </div>
                 </div>
               </label>
@@ -7631,7 +7637,7 @@ export default function EngagementDetailPage() {
                 You started this — you control the reveal
               </div>
               <p className="text-xs text-slate-500">
-                {responseCount} of {engagement.total_expected} responded.
+                {responseCount} of {displayExpected} responded.
                 {engagement.reveal === "all_at_once"
                   ? " Reveal whenever you're ready."
                   : " Nudged everyone and some won't respond? End it early and reveal."}
@@ -7652,8 +7658,8 @@ export default function EngagementDetailPage() {
                 Reveal to everyone now?
               </p>
               <p className="mt-0.5 text-sm text-slate-600">
-                {Math.max(0, (engagement.total_expected ?? 0) - responseCount) > 0
-                  ? `${Math.max(0, (engagement.total_expected ?? 0) - responseCount)} still haven't answered. `
+                {Math.max(0, displayExpected - responseCount) > 0
+                  ? `${Math.max(0, displayExpected - responseCount)} still haven't answered. `
                   : ""}
                 Everyone gets an email and the results open — this can&apos;t be undone.
               </p>
@@ -7922,7 +7928,7 @@ export default function EngagementDetailPage() {
               onClick={async () => {
                 const { error: unErr } = await unrevealEngagement();
                 if (unErr) {
-                  alert("Couldn't un-reveal: " + unErr);
+                  cfAlert("Couldn't un-reveal: " + unErr);
                   return;
                 }
                 // If there's a future deadline, offer to hold it until then.
@@ -7930,7 +7936,7 @@ export default function EngagementDetailPage() {
                   engagement.deadline &&
                   new Date(engagement.deadline).getTime() > Date.now() &&
                   typeof window !== "undefined" &&
-                  window.confirm("Hold it sealed until the deadline so it can't re-reveal early?")
+                  (await cfConfirm("Hold it sealed until the deadline so it can't re-reveal early?"))
                 ) {
                   await setHoldUntilDeadline(true);
                 }
@@ -8068,7 +8074,7 @@ export default function EngagementDetailPage() {
             <div>
               <h2 className="font-bold text-amber-900">Waiting for the reveal</h2>
               <p className="text-sm text-amber-700">
-                {responseCount} of {engagement.total_expected} responded. The creator
+                {responseCount} of {displayExpected} responded. The creator
                 will reveal the results.
               </p>
             </div>
@@ -8447,12 +8453,12 @@ export default function EngagementDetailPage() {
                     </button>
                   ))}
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       const cur = (engagement.gift_currency || "usd").toUpperCase();
-                      const v = window.prompt(`Chip in how much? (${cur})`);
+                      const v = (await cfPrompt(`Chip in how much? (${cur})`, { inputMode: "decimal" }));
                       const n = v ? Math.round(parseFloat(v) * 100) : 0;
                       if (n >= 100) chipIn(n);
-                      else if (v) alert("Minimum is 1.");
+                      else if (v) cfAlert("Minimum is 1.");
                     }}
                     disabled={chippingIn}
                     className="rounded-full bg-white border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
@@ -8518,12 +8524,12 @@ export default function EngagementDetailPage() {
                   </button>
                 ))}
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     const cur = (engagement.gift_currency || "usd").toUpperCase();
-                    const v = window.prompt(`Chip in how much? (${cur})`);
+                    const v = (await cfPrompt(`Chip in how much? (${cur})`, { inputMode: "decimal" }));
                     const n = v ? Math.round(parseFloat(v) * 100) : 0;
                     if (n >= 100) chipIn(n);
-                    else if (v) alert("Minimum is 1.");
+                    else if (v) cfAlert("Minimum is 1.");
                   }}
                   disabled={chippingIn}
                   className="rounded-full bg-white border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
@@ -8614,10 +8620,10 @@ export default function EngagementDetailPage() {
                   </button>
                 ))}
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     const v =
                       typeof window !== "undefined"
-                        ? window.prompt(`Chip in how much? (${cur.toUpperCase()})`)
+                        ? (await cfPrompt(`Chip in how much? (${cur.toUpperCase()})`, { inputMode: "decimal" }))
                         : null;
                     const n = Math.round(parseFloat(v || "0") * 100);
                     if (n >= 100) chipIn(n);
@@ -9017,7 +9023,7 @@ export default function EngagementDetailPage() {
             onClick={cancelEngagement}
             className="text-xs text-slate-400 underline hover:text-red-600"
           >
-            Cancel this engagement
+            Cancel this activity
           </button>
         </div>
       )}

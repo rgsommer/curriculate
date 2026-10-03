@@ -798,7 +798,7 @@ export default function DashboardPage() {
         ) : (
           <div
             className="mb-6 inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50/70 px-3.5 py-1.5 text-xs font-medium text-orange-800"
-            title="The most-created engagement type across Campfire right now"
+            title="The most-created activity type across Campfire right now"
           >
             <span className="font-semibold">🔥 Trending now</span>
             <span className="text-orange-300">·</span>

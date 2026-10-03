@@ -10,6 +10,7 @@ import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, formatMoney, raffleOf, 
 import type { MonthlyNth } from "@/lib/campfire/hooks";
 import { parseInviteList } from "@/lib/campfire/parseInvites";
 import { formatWhen } from "@/lib/campfire/dates";
+import { cfAlert, cfConfirm } from "@/lib/campfire/dialogs";
 
 export default function GroupDetailPage() {
   const params = useParams();
@@ -229,7 +230,7 @@ See you around the campfire! 🏕️`
         const data = await res.json().catch(() => ({}));
         if (!res.ok) setInviteResult(data.error || "Couldn't send.");
         else {
-          setInviteResult(`✓ Emailed ${data.sent} — they'll land right in that engagement.`);
+          setInviteResult(`✓ Emailed ${data.sent} — they'll land right in that activity.`);
           setEmailInput("");
           await refresh();
         }
@@ -252,8 +253,8 @@ See you around the campfire! 🏕️`
             data.emailedNow > 0
               ? `✓ Added ${data.staged}. ${data.emailedNow} ${
                   data.emailedNow === 1 ? "was" : "were"
-                } emailed the live engagement right away; the rest get a friendly invite the moment you post one.`
-              : `✓ Added ${data.staged} to the invite list. They'll be emailed the moment you post an engagement.`
+                } emailed the live activity right away; the rest get a friendly invite the moment you post one.`
+              : `✓ Added ${data.staged} to the invite list. They'll be emailed the moment you post an activity.`
           );
           setEmailInput("");
           await refresh();
@@ -575,7 +576,7 @@ See you around the campfire! 🏕️`
                       const { error } = await renameGroup(nameInput, descInput);
                       setSavingName(false);
                       if (error) {
-                        alert("Couldn't save: " + error);
+                        cfAlert("Couldn't save: " + error);
                         return;
                       }
                       setRenaming(false);
@@ -641,7 +642,7 @@ See you around the campfire! 🏕️`
                   const { error } = await setMyGroupName(myNameInput);
                   setSavingMyName(false);
                   if (error) {
-                    alert("Couldn't save: " + error);
+                    cfAlert("Couldn't save: " + error);
                     return;
                   }
                   setEditingMyName(false);
@@ -712,7 +713,7 @@ See you around the campfire! 🏕️`
             </div>
             <div className="rounded-xl border border-orange-200 bg-white p-4">
               <div className="mb-1 text-sm font-bold text-slate-900">
-                <span className="text-orange-600">2.</span> Start your first engagement
+                <span className="text-orange-600">2.</span> Start your first activity
               </div>
               <p className="mb-2 text-xs text-slate-600">
                 Pose a question, poll, or challenge for the group to answer.
@@ -721,7 +722,7 @@ See you around the campfire! 🏕️`
                 href={`/campfirelive/group/${groupId}/engagement/new`}
                 className="inline-block rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-3 py-1.5 text-xs font-semibold text-white"
               >
-                + Start an engagement
+                + Start an activity
               </Link>
             </div>
           </div>
@@ -736,7 +737,7 @@ See you around the campfire! 🏕️`
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
           <div className="text-2xl font-bold text-slate-900">{engagements.length}</div>
-          <div className="text-xs text-slate-500">Engagements</div>
+          <div className="text-xs text-slate-500">Activities</div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4 text-center">
           <div className="text-2xl font-bold text-orange-500">{myStreak?.current_streak ?? 0} 🔥</div>
@@ -786,7 +787,7 @@ See you around the campfire! 🏕️`
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <button
             onClick={copyInvite}
-            title="Invite to this group — with a peek at all the active engagements"
+            title="Invite to this group — with a peek at everything that's live"
             className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90"
           >
             {copied ? "✓ Copied — paste it anywhere!" : "📋 Copy Invite"}
@@ -841,7 +842,7 @@ See you around the campfire! 🏕️`
               {/* Host can invite to the whole group; members only to engagements
                   whose creator turned on member invites. */}
               {isAdmin && (
-                <option value="">📋 The whole group (sees all engagements)</option>
+                <option value="">📋 The whole group (sees all activities)</option>
               )}
               {(isAdmin ? liveEngagements : memberInvitable).map((e) => (
                 <option key={e.id} value={e.id}>
@@ -855,8 +856,8 @@ See you around the campfire! 🏕️`
               Email addresses — commas or spaces; paste from contacts too (e.g.{" "}
               <span className="font-mono">Alex Lee &lt;alex@example.com&gt;</span>).
               {inviteTarget
-                ? " They get a link to sign just that one engagement as a guest — they won't join the group or see anything else."
-                : " They're added to the list and emailed the moment you post an engagement."}
+                ? " They get a link to sign just that one activity as a guest — they won't join the group or see anything else."
+                : " They're added to the list and emailed the moment you post an activity."}
             </label>
             <textarea
               value={emailInput}
@@ -913,7 +914,7 @@ See you around the campfire! 🏕️`
         </div>
 
         <p className="mt-2 text-[11px] text-orange-700/80">
-          💡 The invite list is emailed when you post an engagement (so the first
+          💡 The invite list is emailed when you post an activity (so the first
           email is something fun to do, not an empty group). For in-person joining,
           show the QR or share the link any time.
         </p>
@@ -1151,7 +1152,7 @@ See you around the campfire! 🏕️`
                           onClick={async () => {
                             const { error } = await setMemberName(m.user_id, memberNameInput);
                             if (error) {
-                              alert("Couldn't rename: " + error);
+                              cfAlert("Couldn't rename: " + error);
                               return;
                             }
                             setEditingMemberId(null);
@@ -1224,13 +1225,12 @@ See you around the campfire! 🏕️`
                       <button
                         onClick={async () => {
                           if (
-                            !confirm(
-                              `Remove ${nameOf(m.user_id)} from "${group.name}"? They lose access to this group — you can re-invite them later.`
-                            )
+                            !(await cfConfirm(
+                              `Remove ${nameOf(m.user_id)} from "${group.name}"? They lose access to this group — you can re-invite them later.`, { danger: true }))
                           )
                             return;
                           const { error } = await removeMember(m.user_id);
-                          if (error) alert("Couldn't remove: " + error);
+                          if (error) cfAlert("Couldn't remove: " + error);
                         }}
                         title="Remove from group"
                         className="text-xs font-semibold text-rose-500 hover:text-rose-700 hover:underline"
@@ -1319,7 +1319,7 @@ See you around the campfire! 🏕️`
               : "Your turn to spark something"}
           </div>
           <p className="mt-0.5 mb-3 text-sm text-slate-600">
-            Anyone can start an engagement — a question, a challenge, a check-in.
+            Anyone can start an activity — a question, a challenge, a check-in.
             Nobody sees the answers until everyone&apos;s in.
           </p>
           <div className="flex flex-wrap items-center gap-3">
@@ -1327,7 +1327,7 @@ See you around the campfire! 🏕️`
               href={`/campfirelive/group/${groupId}/engagement/new`}
               className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90"
             >
-              + Start an engagement
+              + Start an activity
             </Link>
             {isAdmin && (
               <Link
@@ -1392,14 +1392,14 @@ See you around the campfire! 🏕️`
           </div>
           <p>
             {tab === "active"
-              ? "No active engagements. Start one!"
+              ? "No active activities. Start one!"
               : tab === "upcoming"
               ? "Nothing scheduled to open yet."
               : tab === "recurring"
               ? "No recurring cards yet."
               : tab === "revealed"
-              ? "No revealed engagements yet."
-              : "No engagements yet. Be the first to start one!"}
+              ? "No revealed activities yet."
+              : "No activities yet. Be the first to start one!"}
           </p>
         </div>
       ) : (
@@ -1601,14 +1601,13 @@ See you around the campfire! 🏕️`
             <button
               onClick={async () => {
                 if (
-                  !window.confirm(
-                    `Leave "${group.name}"? You'll stop seeing its engagements. You can rejoin later with the invite link.`
-                  )
+                  !(await cfConfirm(
+                    `Leave "${group.name}"? You'll stop seeing its activities. You can rejoin later with the invite link.`, { danger: true }))
                 )
                   return;
                 const { error } = await leaveGroup();
                 if (error) {
-                  alert("Couldn't leave: " + error);
+                  cfAlert("Couldn't leave: " + error);
                   return;
                 }
                 router.push("/campfirelive");
@@ -1626,14 +1625,13 @@ See you around the campfire! 🏕️`
           <button
             onClick={async () => {
               if (
-                !window.confirm(
-                  `Delete "${group.name}"? This permanently removes the group and ALL its engagements, responses, and members. This can't be undone.`
-                )
+                !(await cfConfirm(
+                  `Delete "${group.name}"? This permanently removes the group and ALL its activities, responses, and members. This can't be undone.`, { danger: true }))
               )
                 return;
               const { error } = await deleteGroup();
               if (error) {
-                alert("Couldn't delete: " + error);
+                cfAlert("Couldn't delete: " + error);
                 return;
               }
               router.push("/campfirelive");

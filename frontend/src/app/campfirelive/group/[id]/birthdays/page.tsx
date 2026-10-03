@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/campfire/supabase";
 import { useCreateEngagement } from "@/lib/campfire/hooks";
+import { cfConfirm } from "@/lib/campfire/dialogs";
 
 // Pre-filled from the family list — REVIEW before creating. Format per line:
 //   Name, date[, recipient]
@@ -166,9 +167,9 @@ export default function BulkBirthdaysPage() {
     if (busy || parsed.length === 0) return;
     if (
       typeof window !== "undefined" &&
-      !window.confirm(
+      !(await cfConfirm(
         `Create ${parsed.length} recurring birthday cards? They'll be drafts that auto-open ~${LEAD_DAYS} days before each birthday.`
-      )
+      ))
     )
       return;
     setBusy(true);
@@ -241,7 +242,7 @@ export default function BulkBirthdaysPage() {
     if (undoing || createdIds.length === 0) return;
     if (
       typeof window !== "undefined" &&
-      !window.confirm(`Delete the ${createdIds.length} cards just created?`)
+      !(await cfConfirm(`Delete the ${createdIds.length} cards just created?`, { danger: true }))
     )
       return;
     setUndoing(true);
