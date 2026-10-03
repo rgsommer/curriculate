@@ -16,6 +16,7 @@ import {
   isHouseSchool,
   type EngagementType,
 } from "@/lib/campfire/types";
+import { CF_PRIMARY, CF_SECONDARY } from "@/lib/campfire/ui";
 
 const GROUP_EMOJIS = ["🔥", "🏕️", "⭐", "🌙", "🎯", "💪", "🙏", "🎉", "🎮", "📖", "💑", "🏠"];
 
@@ -565,7 +566,7 @@ export default function DashboardPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="text-slate-400 animate-pulse">Loading your groups...</div>
+        <div className="text-slate-500 animate-pulse">Loading your groups...</div>
       </div>
     );
   }
@@ -684,7 +685,7 @@ export default function DashboardPage() {
                       {g ? ` · ${g.avatar_emoji} ${g.name}` : ""}
                     </div>
                     {typeof e.total_expected === "number" && e.total_expected > 0 && (
-                      <div className="mt-0.5 text-[11px] font-medium text-orange-600">
+                      <div className="mt-0.5 text-xs font-medium text-orange-600">
                         {counts[e.id] ?? 0} of {e.total_expected} responded
                       </div>
                     )}
@@ -735,12 +736,12 @@ export default function DashboardPage() {
                       {g ? ` · ${g.avatar_emoji} ${g.name}` : ""}
                     </div>
                     {typeof e.total_expected === "number" && e.total_expected > 0 && (
-                      <div className="mt-0.5 text-[11px] font-medium text-emerald-600">
+                      <div className="mt-0.5 text-xs font-medium text-emerald-600">
                         {counts[e.id] ?? e.total_expected} of {e.total_expected} responded
                       </div>
                     )}
                   </div>
-                  <span className="flex-shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+                  <span className="flex-shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">
                     See it
                   </span>
                 </Link>
@@ -822,15 +823,13 @@ export default function DashboardPage() {
             setShowJoin(false);
             setError("");
           }}
-          className={`rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-3 text-sm font-semibold text-white shadow-sm hover:opacity-90 ${
-            canCreateGroup ? "" : "opacity-60"
-          }`}
+          className={`${CF_PRIMARY} ${canCreateGroup ? "" : "opacity-60"}`}
         >
           + New Group
         </button>
         <button
           onClick={() => { setShowJoin(true); setShowCreate(false); setGroupBlocked(false); setError(""); }}
-          className="rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+          className={`${CF_SECONDARY}`}
         >
           Join Group
         </button>
@@ -889,7 +888,7 @@ export default function DashboardPage() {
 
           <div className="mb-4">
             <label className="block text-sm font-medium text-slate-700 mb-1">
-              Description <span className="text-slate-400">(optional)</span>
+              Description <span className="text-slate-500">(optional)</span>
             </label>
             <input
               type="text"
@@ -935,7 +934,7 @@ export default function DashboardPage() {
             <button
               onClick={handleCreate}
               disabled={creating || !newName.trim()}
-              className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+              className={`${CF_PRIMARY}`}
             >
               {creating ? "Creating..." : "Create Group"}
             </button>
@@ -971,7 +970,7 @@ export default function DashboardPage() {
             <button
               onClick={handleJoin}
               disabled={creating || !joinCode.trim()}
-              className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+              className={`${CF_PRIMARY}`}
             >
               {creating ? "Joining..." : "Join Group"}
             </button>
@@ -987,7 +986,7 @@ export default function DashboardPage() {
 
       {/* Group List */}
       {groups.length === 0 ? (
-        <div className="text-center py-16 text-slate-400">
+        <div className="text-center py-16 text-slate-500">
           <div className="text-5xl mb-4">🏕️</div>
           <p>No groups yet. Create one or join with an invite code.</p>
         </div>
@@ -1021,7 +1020,7 @@ export default function DashboardPage() {
                       )}
                       {s && s.invited > 0 && <span>· {s.invited} pending</span>}
                       {s && (s.active > 0 || s.recurring > 0) && (
-                        <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                        <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-2 py-0.5 text-xs font-medium text-slate-600">
                           {s.active > 0 && <span>🔥 {s.active} active</span>}
                           {s.recurring > 0 && <span>🔁 {s.recurring} recurring</span>}
                         </span>

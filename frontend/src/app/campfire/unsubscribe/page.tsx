@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { CF_PRIMARY } from "@/lib/campfire/ui";
 
 // Public self-service unsubscribe. The List-Unsubscribe header + email footer link here
 // with ?e=<email> prefilled. A confirm click (not auto-on-load) avoids false unsubscribes
@@ -67,7 +68,7 @@ export default function CampfireUnsubscribePage() {
           <button
             onClick={submit}
             disabled={state === "sending" || !email}
-            className="w-full rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-3 text-sm font-bold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+            className={`${CF_PRIMARY} w-full`}
           >
             {state === "sending" ? "Unsubscribing…" : "Unsubscribe"}
           </button>

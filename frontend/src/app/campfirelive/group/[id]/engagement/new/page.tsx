@@ -28,6 +28,7 @@ import {
 import { TEMPLATE_PACKS, type EngagementTemplate } from "@/lib/campfire/templates";
 import { formatWhen } from "@/lib/campfire/dates";
 import { cfAlert } from "@/lib/campfire/dialogs";
+import { CF_PRIMARY } from "@/lib/campfire/ui";
 
 // Plain-language "how it works" per type — { how it works, what each person sees }.
 const TYPE_HELP: Partial<Record<EngagementType, { how: string; sees: string }>> = {
@@ -1415,7 +1416,7 @@ export default function NewEngagementPage() {
                       <span className="text-sm font-semibold text-slate-700">
                         {pack.emoji} {pack.name}
                       </span>
-                      <span className="flex items-center gap-2 text-xs text-slate-400">
+                      <span className="flex items-center gap-2 text-xs text-slate-500">
                         {pack.templates.length}
                         <span className={`transition-transform ${open ? "rotate-180" : ""}`}>⌄</span>
                       </span>
@@ -1603,7 +1604,7 @@ export default function NewEngagementPage() {
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
                 {selectedType === "birthday" ? "Note to signers" : "Description"}{" "}
-                <span className="text-slate-400">(optional)</span>
+                <span className="text-slate-500">(optional)</span>
               </label>
               <textarea
                 value={description}
@@ -1646,7 +1647,7 @@ export default function NewEngagementPage() {
                         }`}
                       >
                         <div className="font-semibold">{o.label}</div>
-                        <div className={on ? "text-orange-500" : "text-slate-400"}>
+                        <div className={on ? "text-orange-500" : "text-slate-500"}>
                           {o.sub}
                         </div>
                       </button>
@@ -1704,7 +1705,7 @@ export default function NewEngagementPage() {
                           onClick={() =>
                             setPollOptions(pollOptions.filter((_, j) => j !== i))
                           }
-                          className="text-slate-400 hover:text-red-500 px-2"
+                          className="text-slate-500 hover:text-red-500 px-2"
                         >
                           ✕
                         </button>
@@ -1727,7 +1728,7 @@ export default function NewEngagementPage() {
             {selectedType === "signup" && (
               <div className="rounded-xl border border-cyan-200 bg-cyan-50/50 p-3">
                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Party type <span className="text-slate-400">(optional)</span>
+                  Party type <span className="text-slate-500">(optional)</span>
                 </label>
                 <div className="flex flex-wrap gap-1.5 mb-2">
                   {["Snacks", "Full meal", "Dessert", "BBQ", "Drinks & apps", "Potluck", "Other"].map(
@@ -1813,7 +1814,7 @@ export default function NewEngagementPage() {
                     Ask who&apos;s coming (RSVP)
                   </label>
                 </div>
-                <p className="mt-2 text-[11px] text-cyan-700">
+                <p className="mt-2 text-xs text-cyan-700">
                   ✨ Once it&apos;s live, we&apos;ll suggest what&apos;s still needed as
                   people sign up.
                 </p>
@@ -1825,7 +1826,7 @@ export default function NewEngagementPage() {
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
                   Anything specific you want?{" "}
-                  <span className="text-slate-400">(optional)</span>
+                  <span className="text-slate-500">(optional)</span>
                 </label>
                 <p className="text-xs text-slate-500 mb-2">
                   No need to list everything — we&apos;ll suggest the rest as people sign
@@ -1884,7 +1885,7 @@ export default function NewEngagementPage() {
                             ? "Set a specific number"
                             : "Any number can bring this"
                         }
-                        className="rounded-lg px-1.5 py-1 text-sm font-bold text-slate-400 hover:text-cyan-600"
+                        className="rounded-lg px-1.5 py-1 text-sm font-bold text-slate-500 hover:text-cyan-600"
                       >
                         {s.capacity === 0 ? "#" : "∞"}
                       </button>
@@ -1894,7 +1895,7 @@ export default function NewEngagementPage() {
                         onClick={() =>
                           setSignupSlots(signupSlots.filter((_, j) => j !== i))
                         }
-                        className="text-slate-400 hover:text-red-500 px-2"
+                        className="text-slate-500 hover:text-red-500 px-2"
                       >
                         ✕
                       </button>
@@ -1911,7 +1912,7 @@ export default function NewEngagementPage() {
                     + Add slot
                   </button>
                 )}
-                <p className="mt-1 text-[11px] text-slate-400">
+                <p className="mt-1 text-xs text-slate-500">
                   The number is how many people can bring it. Tap{" "}
                   <span className="font-semibold">∞</span> for things where any number
                   is welcome (e.g. drinks, snacks).
@@ -1996,7 +1997,7 @@ export default function NewEngagementPage() {
                                 careCategories.filter((_, j) => j !== ci)
                               )
                             }
-                            className="text-xs text-slate-400 hover:text-red-500"
+                            className="text-xs text-slate-500 hover:text-red-500"
                           >
                             Remove category
                           </button>
@@ -2039,7 +2040,7 @@ export default function NewEngagementPage() {
                                   );
                                 })
                               }
-                              className="text-slate-400 hover:text-red-500 px-1 pt-1.5"
+                              className="text-slate-500 hover:text-red-500 px-1 pt-1.5"
                             >
                               ✕
                             </button>
@@ -2264,7 +2265,7 @@ export default function NewEngagementPage() {
                 </label>
                 {questions.map((q, i) => (
                   <div key={i} className="flex gap-2 mb-2 items-center">
-                    <span className="text-slate-400 text-sm">
+                    <span className="text-slate-500 text-sm">
                       {selectedType === "scavenger_hunt" ||
                       selectedType === "tournament"
                         ? `${i + 1}.`
@@ -2290,7 +2291,7 @@ export default function NewEngagementPage() {
                     {questions.length > 1 && (
                       <button
                         onClick={() => setQuestions(questions.filter((_, j) => j !== i))}
-                        className="text-slate-400 hover:text-red-500 px-2"
+                        className="text-slate-500 hover:text-red-500 px-2"
                       >
                         ✕
                       </button>
@@ -2362,7 +2363,7 @@ export default function NewEngagementPage() {
                   window.scrollTo({ top: 0 });
                 }
               }}
-              className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-3 text-sm font-semibold text-white shadow-sm hover:opacity-90"
+              className={`${CF_PRIMARY}`}
             >
               Next: when &amp; how →
             </button>
@@ -2692,7 +2693,7 @@ export default function NewEngagementPage() {
                       </div>
                       {title.includes("{age}") && (
                         <div className="rounded-lg bg-white border border-pink-200 px-3 py-1.5 text-sm">
-                          <span className="text-xs text-slate-400">Shows as: </span>
+                          <span className="text-xs text-slate-500">Shows as: </span>
                           <span className="font-semibold text-slate-800">
                             {deadline
                               ? resolveTitle(
@@ -2807,7 +2808,7 @@ export default function NewEngagementPage() {
             {selectedType !== "birthday" && (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">
-                Repeat <span className="text-slate-400">(optional)</span>
+                Repeat <span className="text-slate-500">(optional)</span>
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {[
@@ -2878,7 +2879,7 @@ export default function NewEngagementPage() {
                     className={
                       selectedType === "birthday"
                         ? "font-semibold text-rose-500"
-                        : "text-slate-400"
+                        : "text-slate-500"
                     }
                   >
                     {selectedType === "birthday" ? "(required)" : "(optional)"}
@@ -2937,7 +2938,7 @@ export default function NewEngagementPage() {
                       >
                         {on ? "🙈 " : ""}
                         {p.name || p.email}{" "}
-                        <span className={on ? "text-rose-100" : "text-slate-400"}>· not joined</span>
+                        <span className={on ? "text-rose-100" : "text-slate-500"}>· not joined</span>
                       </button>
                     );
                   })}
@@ -2968,7 +2969,7 @@ export default function NewEngagementPage() {
                     placeholder="➕ Not in the list? Add the recipient's email + Enter"
                     className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xs focus:border-rose-400 outline-none"
                   />
-                  <p className="mt-1 text-[11px] text-slate-400">
+                  <p className="mt-1 text-xs text-slate-500">
                     They get nothing until the reveal — then their card arrives by email. No
                     account needed.
                   </p>
@@ -2979,7 +2980,7 @@ export default function NewEngagementPage() {
             {/* Cover images — a pool; Campfire shows a random one */}
             <div className="rounded-xl border border-slate-200 bg-white p-3">
               <div className="text-sm font-medium text-slate-700">
-                🖼️ Cover image(s) <span className="text-slate-400">(optional)</span>
+                🖼️ Cover image(s) <span className="text-slate-500">(optional)</span>
               </div>
               <p className="text-xs text-slate-500 mb-2">
                 A banner at the top. Add as many as you like. For a recurring card a{" "}
@@ -3053,7 +3054,7 @@ export default function NewEngagementPage() {
                           } ${pickable ? "cursor-pointer" : ""}`}
                         />
                         {chosen && (
-                          <span className="absolute bottom-1 left-1 rounded-full bg-orange-500 px-1.5 py-0.5 text-[10px] font-bold text-white shadow">
+                          <span className="absolute bottom-1 left-1 rounded-full bg-orange-500 px-1.5 py-0.5 text-xs font-bold text-white shadow">
                             Shown
                           </span>
                         )}
@@ -3073,7 +3074,7 @@ export default function NewEngagementPage() {
                 </div>
               )}
               {coverUrls.length > 1 && (
-                <p className="mt-1 text-[11px] text-slate-400">
+                <p className="mt-1 text-xs text-slate-500">
                   {recurrence === "none"
                     ? "Tap an image to feature it — that one shows on the card."
                     : `${coverUrls.length} images — a fresh one shows each time.`}
@@ -3082,7 +3083,7 @@ export default function NewEngagementPage() {
               {/* Picture bank — reuse the host's previously uploaded covers. */}
               {coverBank.filter((u) => !coverUrls.includes(u)).length > 0 && (
                 <div className="mt-3 border-t border-slate-100 pt-2">
-                  <div className="mb-1.5 text-[11px] font-semibold text-slate-500">
+                  <div className="mb-1.5 text-xs font-semibold text-slate-500">
                     🗂️ From your uploads — tap to add
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -3209,7 +3210,7 @@ export default function NewEngagementPage() {
                           <option value={5}>5 days</option>
                           <option value={7}>7 days</option>
                         </select>
-                        <span className="text-[11px] text-slate-400">after entries close</span>
+                        <span className="text-xs text-slate-500">after entries close</span>
                       </div>
                     )}
                     <div className="flex items-center gap-2">
@@ -3254,12 +3255,12 @@ export default function NewEngagementPage() {
                             }
                             className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-amber-500"
                           />
-                          <span className="text-[11px] text-slate-400">to enter</span>
+                          <span className="text-xs text-slate-500">to enter</span>
                         </div>
                       )}
                     </div>
                     {raffleEntryFee > 0 && (
-                      <p className="text-[11px] text-amber-700">
+                      <p className="text-xs text-amber-700">
                         Players pay {giftCurrency.toUpperCase()} $
                         {(raffleEntryFee / 100).toFixed(2)} to submit an entry — it funds
                         the pot and isn&apos;t refundable.
@@ -3279,7 +3280,7 @@ export default function NewEngagementPage() {
                         ))}
                       </select>
                     </div>
-                    <p className="text-[11px] text-slate-400">
+                    <p className="text-xs text-slate-500">
                       Set a closing date below — entries end and voting begins there
                       {raffleGate > 0
                         ? ". The date is the hard backstop if the participation goal isn't met first."
@@ -3311,7 +3312,7 @@ export default function NewEngagementPage() {
                     placeholder="pages"
                     className="w-28 rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-rose-500"
                   />
-                  <span className="text-[11px] text-slate-400">(e.g. 100 pages, 10 km)</span>
+                  <span className="text-xs text-slate-500">(e.g. 100 pages, 10 km)</span>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <label className="text-xs text-slate-600">Suggested pledge</label>
@@ -3325,7 +3326,7 @@ export default function NewEngagementPage() {
                     placeholder="0.10"
                     className="w-24 rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-rose-500"
                   />
-                  <span className="text-[11px] text-slate-400">
+                  <span className="text-xs text-slate-500">
                     per {pledgeUnit || "unit"} (optional — sponsors can set their own)
                   </span>
                 </div>
@@ -3357,7 +3358,7 @@ export default function NewEngagementPage() {
                     ))}
                   </select>
                 </div>
-                <p className="text-[11px] text-slate-400">
+                <p className="text-xs text-slate-500">
                   Sponsors pledge a lump sum or a per-{pledgeUnit || "unit"} rate (with a
                   cap). They&apos;re charged the estimate upfront and auto-refunded the
                   shortfall once you post the result on the date. Set a date below.
@@ -3403,7 +3404,7 @@ export default function NewEngagementPage() {
                     <option value="manual">I&apos;ll draw it live at the event</option>
                   </select>
                 </div>
-                <p className="text-[11px] text-fuchsia-700">
+                <p className="text-xs text-fuchsia-700">
                   🔒 Either way the pick is 100% random — Campfire draws it, weighting by
                   how much each person chipped in (if you chose that). No one, not even
                   you, can influence who wins.
@@ -3422,7 +3423,7 @@ export default function NewEngagementPage() {
                     ))}
                   </select>
                 </div>
-                <p className="text-[11px] text-slate-400">
+                <p className="text-xs text-slate-500">
                   Everyone chips in to the pot. At the closing date (or when you draw at
                   the event), a random winner is picked and paid the pot.
                 </p>
@@ -3447,7 +3448,7 @@ export default function NewEngagementPage() {
                     </option>
                   ))}
                 </select>
-                <p className="mt-1.5 text-[11px] text-slate-500">
+                <p className="mt-1.5 text-xs text-slate-500">
                   Guests propose a boy name + a girl name and guess the gender. The person
                   above privately sets the real name &amp; gender, revealed on the big day.
                   Just for fun anticipating the arrival — it doesn&apos;t replace your own
@@ -3474,7 +3475,7 @@ export default function NewEngagementPage() {
                   placeholder="e.g. proceeds to the local food bank"
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500"
                 />
-                <p className="mt-1.5 text-[11px] text-slate-500">
+                <p className="mt-1.5 text-xs text-slate-500">
                   Shown to everyone who contributes. Campfire pays the funds to the
                   host/recipient — <b>you&apos;re responsible for passing them on to the
                   cause</b>. (Campfire isn&apos;t a charity and doesn&apos;t issue tax
@@ -3539,13 +3540,13 @@ export default function NewEngagementPage() {
                         </option>
                       ))}
                     </select>
-                    <span className="text-[11px] text-slate-400">
+                    <span className="text-xs text-slate-500">
                       e.g. {formatMoney(500, giftCurrency)} /{" "}
                       {formatMoney(1000, giftCurrency)} /{" "}
                       {formatMoney(2000, giftCurrency)}
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-xs text-slate-500">
                     Contributions are charged when someone chips in, and refunded if the
                     card is canceled before reveal.
                   </p>
@@ -3645,7 +3646,7 @@ export default function NewEngagementPage() {
             <button
               onClick={handleSubmit}
               disabled={creating}
-              className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-3 text-sm font-bold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+              className={`${CF_PRIMARY} w-full`}
             >
               {creating ? "Creating..." : "✏️ Create draft — review & launch next"}
             </button>

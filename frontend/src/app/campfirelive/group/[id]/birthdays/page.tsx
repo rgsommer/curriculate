@@ -6,6 +6,7 @@ import Link from "next/link";
 import { supabase } from "@/lib/campfire/supabase";
 import { useCreateEngagement } from "@/lib/campfire/hooks";
 import { cfConfirm } from "@/lib/campfire/dialogs";
+import { CF_PRIMARY } from "@/lib/campfire/ui";
 
 // Pre-filled from the family list — REVIEW before creating. Format per line:
 //   Name, date[, recipient]
@@ -316,7 +317,7 @@ export default function BulkBirthdaysPage() {
             ))}
           </select>
         ) : (
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-slate-500">
             No existing birthday card with pictures to copy from — cards will have no
             cover art (you can add it per card later).
           </p>
@@ -327,7 +328,7 @@ export default function BulkBirthdaysPage() {
         <button
           onClick={run}
           disabled={busy || parsed.length === 0}
-          className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-2.5 text-sm font-bold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+          className={`${CF_PRIMARY}`}
         >
           {busy ? "Creating…" : `Create ${parsed.length} recurring birthday cards`}
         </button>

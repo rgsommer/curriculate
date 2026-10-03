@@ -7,6 +7,7 @@ import {
   CAMPFIRE_ANDROID_URL,
   CAMPFIRE_ANDROID_LIVE,
 } from "@/lib/campfire/appLinks";
+import { CF_PRIMARY } from "@/lib/campfire/ui";
 
 // "Get the Campfire app" — the single landing page every email links to. Detects the
 // visitor's device and leads with the right option: iPhone → App Store, Android → the app
@@ -49,7 +50,7 @@ export default function GetCampfirePage() {
   const webBtn = (
     <Link
       href="/campfirelive"
-      className="block w-full rounded-2xl bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-4 text-center text-base font-bold text-white hover:opacity-90"
+      className={`${CF_PRIMARY} w-full text-center`}
     >
       Open Campfire in your browser
     </Link>

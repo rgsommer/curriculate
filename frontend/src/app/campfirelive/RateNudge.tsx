@@ -10,6 +10,7 @@
 
 import { useEffect, useState } from "react";
 import { CAMPFIRE_IOS_URL, CAMPFIRE_ANDROID_URL } from "@/lib/campfire/appLinks";
+import { CF_PRIMARY } from "@/lib/campfire/ui";
 
 const K = {
   rated: "campfire_rated",
@@ -102,7 +103,7 @@ export default function RateNudge({ active }: { active: boolean }) {
         <div className="mt-3 space-y-2">
           <button
             onClick={openStore}
-            className="w-full rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2.5 text-sm font-bold text-white hover:opacity-90"
+            className={`${CF_PRIMARY} w-full`}
           >
             Rate Campfire ⭐
           </button>

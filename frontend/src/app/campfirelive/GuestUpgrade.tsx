@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useAuth } from "@/lib/campfire/AuthProvider";
+import { CF_PRIMARY, CF_SECONDARY } from "@/lib/campfire/ui";
 
 // Prompts a guest (anonymous) member to save their account so they can sign in
 // from any device. Upgrading keeps the same account + group memberships.
@@ -86,12 +87,12 @@ export default function GuestUpgrade() {
             <button
               onClick={doGoogle}
               disabled={busy}
-              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              className={`${CF_SECONDARY} w-full`}
             >
               Continue with Google
             </button>
 
-            <div className="my-3 flex items-center gap-2 text-xs text-slate-400">
+            <div className="my-3 flex items-center gap-2 text-xs text-slate-500">
               <div className="h-px flex-1 bg-slate-200" /> or email <div className="h-px flex-1 bg-slate-200" />
             </div>
 
@@ -113,7 +114,7 @@ export default function GuestUpgrade() {
             <button
               onClick={doEmail}
               disabled={busy}
-              className="mt-3 w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"
+              className={`${CF_PRIMARY} mt-3 w-full`}
             >
               {busy ? "Saving…" : "Save account"}
             </button>
@@ -121,7 +122,7 @@ export default function GuestUpgrade() {
             <button
               onClick={() => setOpen(false)}
               disabled={busy}
-              className="mt-2 w-full text-xs text-slate-400 hover:text-slate-600"
+              className="mt-2 w-full text-xs text-slate-500 hover:text-slate-600"
             >
               Maybe later
             </button>

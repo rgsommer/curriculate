@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/campfire/AuthProvider";
 import { supabase } from "@/lib/campfire/supabase";
 import { CHECKOUT_LIVE, PLUS_FEATURES, PLUS_PRICE_MONTHLY } from "@/lib/campfire/premium";
 import { cfAlert, cfConfirm } from "@/lib/campfire/dialogs";
+import { CF_PRIMARY } from "@/lib/campfire/ui";
 
 export default function SettingsPage() {
   const { user, profile, isTrialActive, trialDaysLeft, refreshProfile, signOut } = useAuth();
@@ -99,7 +100,7 @@ export default function SettingsPage() {
           <button
             onClick={handleSave}
             disabled={saving || !displayName.trim()}
-            className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+            className={`${CF_PRIMARY}`}
           >
             {saving ? "Saving..." : saved ? "✓ Saved" : "Save Changes"}
           </button>
@@ -177,7 +178,7 @@ export default function SettingsPage() {
               {/* TODO: start the real Stripe Checkout session here before flipping
                   CHECKOUT_LIVE in premium.ts. */}
               <button
-                className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-3 text-sm font-bold text-white shadow-sm hover:opacity-90"
+                className={`${CF_PRIMARY} w-full`}
               >
                 Upgrade to Campfire Plus
               </button>

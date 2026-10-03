@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { usePathname } from "next/navigation";
+import { CF_PRIMARY } from "@/lib/campfire/ui";
 
 function anonId() {
   if (typeof window === "undefined") return "";
@@ -108,7 +109,7 @@ export default function CampfireFeedback() {
                   <h3 className="font-bold text-slate-900">💡 Feedback &amp; ideas</h3>
                   <button
                     onClick={() => setOpen(false)}
-                    className="text-slate-400 hover:text-slate-700"
+                    className="text-slate-500 hover:text-slate-700"
                   >
                     ✕
                   </button>
@@ -136,7 +137,7 @@ export default function CampfireFeedback() {
                 <button
                   onClick={send}
                   disabled={sending || !message.trim()}
-                  className="mt-3 w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"
+                  className={`${CF_PRIMARY} mt-3 w-full`}
                 >
                   {sending ? "Sending…" : "Send"}
                 </button>

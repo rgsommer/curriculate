@@ -99,25 +99,37 @@ export async function sendCampfireBatch(
   }
   if (!kept.length) return { error: null };
 
-  // 2. Re-stamp per-recipient one-click unsubscribe headers (wins over any set upstream),
-  //    and 3. add the visible footer (unsubscribe link + sender identity, required by
-  //    CASL / CAN-SPAM) to any message that doesn't already carry one.
-  const stamped = kept.map((m) => {
-    const out: Record<string, unknown> = {
-      ...m,
-      headers: { ...(m.headers || {}), ...unsubHeaders(recip(m)) },
-    };
-    const footer = emailFooter(unsubUrlFor(recip(m) || undefined));
-    if (typeof m.html === "string" && !m.html.includes("/campfire/unsubscribe")) {
-      out.html = m.html + footer.html;
-    }
-    if (typeof m.text === "string" && !m.text.includes("/campfire/unsubscribe")) {
-      out.text = m.text + footer.text;
-    }
-    return out;
-  });
+  // 2–4. Headers, footer and the shared document — see finalizeCampfireMessage.
+  const stamped = kept.map(finalizeCampfireMessage);
 
   return resend.batch.send(stamped as unknown as Parameters<typeof resend.batch.send>[0]);
+}
+
+// Everything every Campfire email gets on the way out, per recipient:
+//   2. one-click unsubscribe headers (win over any set upstream);
+//   3. the visible footer (unsubscribe link + sender identity — CASL / CAN-SPAM),
+//      unless the template already carries one;
+//   4. the shared email document (light-only, Outlook-safe 480px table, preview line).
+// Exported so the same output can be previewed without sending.
+export function finalizeCampfireMessage<
+  M extends { to: string[]; headers?: Record<string, string> } & Record<string, unknown>
+>(m: M): Record<string, unknown> {
+  const to = (m.to?.[0] || "").trim().toLowerCase();
+  const out: Record<string, unknown> = {
+    ...m,
+    headers: { ...(m.headers || {}), ...unsubHeaders(to) },
+  };
+  const footer = emailFooter(unsubUrlFor(to || undefined));
+  if (typeof m.html === "string" && !m.html.includes("/campfire/unsubscribe")) {
+    out.html = m.html + footer.html;
+  }
+  if (typeof m.text === "string" && !m.text.includes("/campfire/unsubscribe")) {
+    out.text = m.text + footer.text;
+  }
+  if (typeof out.html === "string" && !/^\s*(<!doctype|<html)/i.test(out.html)) {
+    out.html = emailDocument(out.html, preheaderFrom(typeof m.text === "string" ? m.text : ""));
+  }
+  return out;
 }
 
 // Visible footer for every Campfire email: who sent it, an unsubscribe link, and the
@@ -137,6 +149,43 @@ function emailFooter(unsubUrl: string): { html: string; text: string } {
   return { html, text };
 }
 
+// The shared shell every Campfire email is sent in: declares light-only (so dark-mode
+// mail apps don't invert the orange panels unpredictably), centres a 480px column
+// with tables (Outlook ignores max-width on a <div>), and puts a hidden preview line
+// first so the inbox shows a real sentence instead of the hero emoji.
+function emailDocument(innerHtml: string, preheader: string): string {
+  const pre = preheader
+    ? `<div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent; mso-hide:all;">${escapeHtml(
+        preheader
+      )}${"&#847; &zwnj; ".repeat(40)}</div>`
+    : "";
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light"><meta name="supported-color-schemes" content="light"><style>:root{color-scheme:light;}</style></head>
+<body style="margin:0; padding:0; background:#ffffff;">${pre}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff"><tr><td align="center" style="padding:24px 16px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:480px;"><tr><td style="font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif; font-size:16px; line-height:1.6; color:#0f172a;">
+${innerHtml}
+</td></tr></table>
+</td></tr></table>
+</body></html>`;
+}
+
+// Inbox preview text = the email's first real sentence (skips "Hi Sam," greetings).
+function preheaderFrom(text: string): string {
+  const line = text
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l.length > 20 && !/,$/.test(l) && !/^https?:/i.test(l));
+  if (!line) return "";
+  return line.length > 120 ? line.slice(0, 117).trimEnd() + "…" : line;
+}
+
+// One CTA button for every email: a table cell with a solid bgcolor (Outlook ignores
+// gradients and padding on <a>), gradient on top for clients that support it.
+function emailButton(url: string, labelHtml: string): string {
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:24px auto;"><tr><td align="center" bgcolor="#f97316" style="border-radius:9999px; background-color:#f97316; background-image:linear-gradient(to right,#f97316,#f43f5e);"><a href="${url}" style="display:inline-block; padding:14px 28px; color:#ffffff; font-weight:700; font-size:16px; text-decoration:none; border-radius:9999px;">${labelHtml}</a></td></tr></table>`;
+}
+
 // "Get the app" promo block for email footers. Derives the landing URL from the email's
 // own link origin, so no builder needs a new param. Returns both html + text fragments.
 export function appPromoBlock(fromUrl: string): { html: string; text: string } {
@@ -148,11 +197,7 @@ export function appPromoBlock(fromUrl: string): { html: string; text: string } {
   }
   const url = `${origin}/campfire/get`;
   const html = `
-  <div style="margin:20px 0 0; padding:14px 16px; background:#fff7ed; border:1px solid #fed7aa; border-radius:12px; text-align:center;">
-    <div style="font-size:14px; color:#9a3412; font-weight:700;">📲 Get the Campfire app</div>
-    <div style="font-size:13px; color:#9a3412; margin:2px 0 9px;">Faster notifications and one-tap open.</div>
-    <a href="${url}" style="display:inline-block; background:#0f172a; color:#ffffff; text-decoration:none; padding:9px 18px; border-radius:9999px; font-weight:700; font-size:13px;">Download the app &rarr;</a>
-  </div>`;
+  <p style="margin:20px 0 0; font-size:13px; color:#64748b; text-align:center;">📲 <a href="${url}" style="color:#c2410c; font-weight:600; text-decoration:underline;">Get the Campfire app</a> — faster nudges, one-tap open.</p>`;
   const text = `\n\n📲 Get the Campfire app (faster notifications, one-tap open): ${url}`;
   return { html, text };
 }
@@ -356,10 +401,8 @@ export function cardRevealEmail(opts: {
   <div style="font-size:40px;">${icon}</div>
   <h1 style="font-size:22px; margin:8px 0;">${escapeHtml(headline)}</h1>
   <p style="color:#475569; margin:0 0 12px;">${lead}</p>
-  <p style="text-align:center; margin:24px 0;">
-    <a href="${url}" style="background-color:#f97316; background-image:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">${cta}</a>
-  </p>
-  <p style="margin:0;"><a href="${url}" style="color:#ea580c; word-break:break-all;">${url}</a></p>
+  ${emailButton(url, `${cta}`)}
+  <p style="margin:0;"><a href="${url}" style="color:#64748b; font-size:12px; word-break:break-all;">${url}</a></p>
 </div>`.trim();
   return { subject, text, html };
 }
@@ -389,12 +432,13 @@ export function cardThanksEmail(opts: {
   <p style="color:#475569; margin:0 0 12px;">${lead}</p>
   ${
     note
-      ? `<div style="background:#fef2f2; border:1px solid #fecdd3; border-radius:12px; padding:14px; color:#9f1239; font-size:15px; margin:0 0 12px;">${escapeHtml(
+      ? `<div style="background:#fff7ed; border:1px solid #fed7aa; border-radius:12px; padding:14px; color:#7c2d12; font-size:15px; font-style:italic; margin:0 0 12px;">${escapeHtml(
           note
         )}</div>`
       : ""
   }
-  <p style="margin:0;"><a href="${url}" style="color:#ea580c; word-break:break-all;">${url}</a></p>
+  ${emailButton(url, "See the card")}
+  <p style="margin:0;"><a href="${url}" style="color:#64748b; font-size:12px; word-break:break-all;">${url}</a></p>
 </div>`.trim();
   return { subject, text, html };
 }
@@ -418,7 +462,7 @@ export function revealEmail(opts: {
   const headline = n > 0 ? `${answers} ${verb} waiting` : "The wait's over";
   const leadText =
     n > 0
-      ? `${answers} ${verb} in for "${title}" in ${groupName} — see how everyone's came together.`
+      ? `${answers} ${verb} in for "${title}" in ${groupName} — see how everyone's answers came together.`
       : `Every last person has answered, so "${title}" in ${groupName} just opened up — see how everyone's answers came together.`;
   const leadHtml =
     n > 0
@@ -426,7 +470,7 @@ export function revealEmail(opts: {
           title
         )}&rdquo;</strong> in <strong>${escapeHtml(
           groupName
-        )}</strong> — see how everyone&rsquo;s came together. 👀`
+        )}</strong> — see how everyone&rsquo;s answers came together. 👀`
       : `Every last person has answered — so <strong>&ldquo;${escapeHtml(
           title
         )}&rdquo;</strong> in <strong>${escapeHtml(
@@ -442,12 +486,10 @@ This is the good part.${appPromoBlock(url).text}`;
   <div style="font-size:40px;">🎉</div>
   <h1 style="font-size:22px; margin:8px 0;">${escapeHtml(headline)}</h1>
   <p style="color:#475569; margin:0 0 12px;">${leadHtml}</p>
-  <p style="text-align:center; margin:24px 0;">
-    <a href="${url}" style="background-color:#f97316; background-image:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">See what everyone said &rarr;</a>
-  </p>
+  ${emailButton(url, `See what everyone said &rarr;`)}
   <p style="color:#64748b; font-size:13px; margin:0 0 12px;">This is the good part. 💛</p>
   ${appPromoBlock(url).html}
-  <p style="margin:16px 0 0;"><a href="${url}" style="color:#ea580c; word-break:break-all;">${url}</a></p>
+  <p style="margin:16px 0 0;"><a href="${url}" style="color:#64748b; font-size:12px; word-break:break-all;">${url}</a></p>
 </div>`.trim();
   return { subject, text, html };
 }
@@ -544,9 +586,7 @@ export function newEngagementEmail(opts: {
 ${noteText}
 ${bits.map((b) => "• " + b).join("\n")}
 
-${cta}: ${url}
-
-${campfireTeaserText()}${appPromoBlock(url).text}`;
+${cta}: ${url}${appPromoBlock(url).text}`;
 
   const html = `
 <div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
@@ -557,12 +597,9 @@ ${campfireTeaserText()}${appPromoBlock(url).text}`;
   <ul style="color:#475569; margin:0 0 16px; padding-left:18px;">
     ${bits.map((b) => `<li style="margin-bottom:6px;">${escapeHtml(b)}</li>`).join("")}
   </ul>
-  <p style="text-align:center; margin:24px 0;">
-    <a href="${url}" style="background-color:#f97316; background-image:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">${escapeHtml(cta)}</a>
-  </p>
-  <p style="margin:0;"><a href="${url}" style="color:#ea580c; word-break:break-all;">${url}</a></p>
+  ${emailButton(url, `${escapeHtml(cta)}`)}
+  <p style="margin:0;"><a href="${url}" style="color:#64748b; font-size:12px; word-break:break-all;">${url}</a></p>
   ${appPromoBlock(url).html}
-  ${campfireTeaserHtml()}
 </div>`.trim();
 
   return { subject, text, html };
@@ -596,10 +633,8 @@ Open it: ${url}`;
   <h1 style="font-size:20px; margin:8px 0;">Your ${escapeHtml(typeLabel)} just opened</h1>
   <p style="color:#475569; margin:0 0 6px;">${escapeHtml(intro)}</p>
   <h2 style="font-size:18px; margin:8px 0 14px;">"${escapeHtml(title)}"</h2>
-  <p style="text-align:center; margin:24px 0;">
-    <a href="${url}" style="background-color:#f97316; background-image:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">Open it</a>
-  </p>
-  <p style="margin:0;"><a href="${url}" style="color:#ea580c; word-break:break-all;">${url}</a></p>
+  ${emailButton(url, `Open it`)}
+  <p style="margin:0;"><a href="${url}" style="color:#64748b; font-size:12px; word-break:break-all;">${url}</a></p>
 </div>`.trim();
   return { subject, text, html };
 }
@@ -686,10 +721,8 @@ ${isSignup ? "Sign up here" : "Respond here"}: ${url}${appPromoBlock(url).text}`
   <h1 style="font-size:20px; margin:8px 0;">${heading}</h1>
   <p style="color:#475569; margin:0 0 12px;">${introHtml} ${who} — ${closingHtml}</p>
   ${noteHtml}
-  <p style="text-align:center; margin:24px 0;">
-    <a href="${url}" style="background-color:#f97316; background-image:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">${cta}</a>
-  </p>
-  <p style="margin:0;"><a href="${url}" style="color:#ea580c; word-break:break-all;">${url}</a></p>
+  ${emailButton(url, `${cta}`)}
+  <p style="margin:0;"><a href="${url}" style="color:#64748b; font-size:12px; word-break:break-all;">${url}</a></p>
   ${appPromoBlock(url).html}
 </div>`.trim();
   return { subject, text, html };
@@ -712,30 +745,29 @@ export function activityDigestEmail(opts: {
 }) {
   const { recipientName, url, unsubUrl, groups } = opts;
   const hi = firstName(recipientName ?? undefined);
-  const events = groups.reduce(
-    (a, g) =>
-      a +
-      g.responses.reduce((b, r) => b + r.count, 0) +
-      g.newMembers.length +
-      g.newEngagements.length,
-    0
-  );
   // Enticing, varied subject — a curiosity hook, not a count. Rotates with the day's
   // activity so it doesn't read the same every morning.
   const single = groups.length === 1 ? groups[0].name : null;
-  const subjectPool = single
-    ? [
-        `🔥 Something's waiting for you in ${single}`,
-        `🔥 ${single} is coming alive`,
-        `🔥 Your ${single} circle just grew`,
-        `🔥 Don't leave ${single} hanging`,
-      ]
-    : [
-        `🔥 Your Campfire groups are lighting up`,
-        `🔥 Your people showed up today`,
-        `🔥 There's a lot waiting for you`,
-      ];
-  const subject = subjectPool[events % subjectPool.length];
+  const joined = groups.reduce((a, g) => a + g.newMembers.length, 0);
+  const fresh = groups.reduce((a, g) => a + g.newEngagements.length, 0);
+  const answered = groups.reduce((a, g) => a + g.responses.reduce((b, r) => b + r.count, 0), 0);
+  // The subject describes what really happened — a new activity beats new answers
+  // beats new members — so it's never a false claim.
+  const subject = single
+    ? fresh
+      ? `🔥 Something new is waiting in ${single}`
+      : answered
+      ? `🔥 ${single} is coming alive — ${answered} new ${answered === 1 ? "answer" : "answers"}`
+      : joined
+      ? `🔥 Your ${single} circle just grew`
+      : `🔥 Something's waiting for you in ${single}`
+    : fresh
+    ? `🔥 There's something new waiting for you`
+    : answered
+    ? `🔥 Your people showed up today`
+    : joined
+    ? `🔥 Your Campfire groups are growing`
+    : `🔥 Your Campfire groups are lighting up`;
 
   // Warm, curiosity-driven phrasing per item. Counts only — never leaks sealed content;
   // the 👀 does the pulling, not a spoiler.
@@ -800,9 +832,7 @@ Moments like these are best while they're fresh.${appPromoBlock(url).text}${
     hi ? `Hi ${escapeHtml(hi)} — your` : "Your"
   } people have been busy. Here's what's waiting:</p>
   ${groups.map(groupHtml).join("")}
-  <p style="text-align:center; margin:24px 0;">
-    <a href="${url}" style="background-color:#f97316; background-image:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">See what&rsquo;s waiting &rarr;</a>
-  </p>
+  ${emailButton(url, `See what&rsquo;s waiting &rarr;`)}
   <p style="color:#64748b; font-size:13px; margin:0 0 12px;">Moments like these are best while they&rsquo;re fresh. 💛</p>
   ${appPromoBlock(url).html}
   <p style="color:#94a3b8; font-size:12px; margin:16px 0 0;">You can turn these digests off in the group's settings${
@@ -1022,10 +1052,10 @@ ${campfireTeaserText()}${appPromoBlock(joinUrl).text}`;
   <p style="color:#475569; margin:0 0 12px;">${escapeHtml(lead)}</p>
   <p style="color:#475569; margin:0 0 12px;">Campfire is where your group plays together — polls, challenges, questions — with one twist: <strong>nobody sees anyone's answers until everyone has responded.</strong> Then it all unlocks at once. 🎉</p>
   <p style="text-align:center; margin:28px 0;">
-    <a href="${joinUrl}" style="background-color:#f97316; background-image:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">Join the group</a>
+    ${emailButton(joinUrl, `Join the group`)}
   </p>
   <p style="color:#64748b; font-size:14px; margin:0 0 4px;">Or paste this link into your browser:</p>
-  <p style="margin:0 0 16px;"><a href="${joinUrl}" style="color:#ea580c; word-break:break-all;">${joinUrl}</a></p>
+  <p style="margin:0 0 16px;"><a href="${joinUrl}" style="color:#64748b; font-size:12px; word-break:break-all;">${joinUrl}</a></p>
   <p style="color:#94a3b8; font-size:12px; margin:0;">Invite code: ${escapeHtml(inviteCode)}</p>
   ${appPromoBlock(joinUrl).html}
   ${campfireTeaserHtml()}

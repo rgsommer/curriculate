@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/campfire/AuthProvider";
 import Link from "next/link";
+import { CF_PRIMARY, CF_SECONDARY } from "@/lib/campfire/ui";
 
 export default function AuthPage() {
   const router = useRouter();
@@ -127,7 +128,7 @@ export default function AuthPage() {
         {/* Google sign in */}
         <button
           onClick={() => signInWithGoogle(next)}
-          className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 flex items-center justify-center gap-3 mb-3"
+          className={`${CF_SECONDARY} w-full mb-3`}
         >
           <svg className="w-5 h-5" viewBox="0 0 24 24">
             <path
@@ -182,12 +183,12 @@ export default function AuthPage() {
             <button
               onClick={handleGuest}
               disabled={guestLoading || !guestName.trim()}
-              className="rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              className={`${CF_PRIMARY}`}
             >
               {guestLoading ? "…" : "Join"}
             </button>
           </div>
-          <p className="mt-1.5 text-[11px] text-slate-500">
+          <p className="mt-1.5 text-xs text-slate-500">
             No account, no email — the quickest way in.
           </p>
         </div>
@@ -197,7 +198,7 @@ export default function AuthPage() {
             <div className="w-full border-t border-slate-200" />
           </div>
           <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-gradient-to-br from-orange-50 via-white to-rose-50 px-3 text-slate-400">
+            <span className="bg-gradient-to-br from-orange-50 via-white to-rose-50 px-3 text-slate-500">
               or
             </span>
           </div>
@@ -294,7 +295,7 @@ export default function AuthPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-3 text-sm font-bold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+            className={`${CF_PRIMARY} w-full`}
           >
             {loading
               ? "Please wait..."

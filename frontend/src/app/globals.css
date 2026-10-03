@@ -33,6 +33,28 @@ body.capacitor-native {
 body.capacitor-native header.sticky {
   padding-top: env(safe-area-inset-top, 0px);
 }
+/* Campfire is a light-only design: say so, so browsers and Android WebViews don't
+   auto-darken it into low-contrast mush. */
+.campfire-app {
+  color-scheme: light;
+}
+/* Used by result reveals; was referenced but never defined. */
+@keyframes cf-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.campfire-app .animate-fade-in {
+  animation: cf-fade-in 0.35s ease-out both;
+}
+/* Respect "reduce motion": no pulsing, bouncing or fading. */
+@media (prefers-reduced-motion: reduce) {
+  .campfire-app .animate-pulse,
+  .campfire-app .animate-bounce,
+  .campfire-app .animate-fade-in {
+    animation: none !important;
+  }
+}
+
 /* Campfire: iOS zooms the page whenever a field under 16px gets focus, and doesn't
    zoom back out. Force 16px form text on phones and anywhere in the native shell. */
 @media (max-width: 767px) {

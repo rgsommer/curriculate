@@ -11,6 +11,7 @@ import type { MonthlyNth } from "@/lib/campfire/hooks";
 import { parseInviteList } from "@/lib/campfire/parseInvites";
 import { formatWhen } from "@/lib/campfire/dates";
 import { cfAlert, cfConfirm } from "@/lib/campfire/dialogs";
+import { CF_PRIMARY, CF_PRIMARY_SM, CF_SECONDARY, CF_SECONDARY_SM } from "@/lib/campfire/ui";
 
 export default function GroupDetailPage() {
   const params = useParams();
@@ -328,7 +329,7 @@ See you around the campfire! 🏕️`
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="text-slate-400 animate-pulse">Loading group...</div>
+        <div className="text-slate-500 animate-pulse">Loading group...</div>
       </div>
     );
   }
@@ -581,7 +582,7 @@ See you around the campfire! 🏕️`
                       }
                       setRenaming(false);
                     }}
-                    className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                    className={`${CF_PRIMARY}`}
                   >
                     {savingName ? "Saving…" : "Save"}
                   </button>
@@ -605,7 +606,7 @@ See you around the campfire! 🏕️`
                         setRenaming(true);
                       }}
                       title="Edit name & description"
-                      className="text-slate-400 hover:text-orange-600"
+                      className="text-slate-500 hover:text-orange-600"
                     >
                       ✏️
                     </button>
@@ -647,13 +648,13 @@ See you around the campfire! 🏕️`
                   }
                   setEditingMyName(false);
                 }}
-                className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-3 py-1 text-xs font-semibold text-white disabled:opacity-50"
+                className={`${CF_PRIMARY_SM}`}
               >
                 {savingMyName ? "Saving…" : "Save"}
               </button>
               <button
                 onClick={() => setEditingMyName(false)}
-                className="text-slate-400 hover:text-slate-600"
+                className="text-slate-500 hover:text-slate-600"
               >
                 Cancel
               </button>
@@ -693,19 +694,19 @@ See you around the campfire! 🏕️`
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={copyInvite}
-                  className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-3 py-1.5 text-xs font-semibold text-white"
+                  className={`${CF_PRIMARY_SM}`}
                 >
                   {copied ? "✓ Copied!" : "Copy invite"}
                 </button>
                 <button
                   onClick={showQrCode}
-                  className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                  className={`${CF_SECONDARY_SM}`}
                 >
                   Show QR
                 </button>
                 <button
                   onClick={() => setShowEmailInvite(true)}
-                  className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                  className={`${CF_SECONDARY_SM}`}
                 >
                   Email
                 </button>
@@ -720,7 +721,7 @@ See you around the campfire! 🏕️`
               </p>
               <Link
                 href={`/campfirelive/group/${groupId}/engagement/new`}
-                className="inline-block rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-3 py-1.5 text-xs font-semibold text-white"
+                className={`${CF_PRIMARY_SM}`}
               >
                 + Start an activity
               </Link>
@@ -777,7 +778,7 @@ See you around the campfire! 🏕️`
               {invitesTotal > 0 ? ` · ${invitesJoined}/${invitesTotal} invited joined` : ""}
             </span>
           </span>
-          <span className="flex-shrink-0 text-slate-400">
+          <span className="flex-shrink-0 text-slate-500">
             {showInvitePanel ? "▲ Hide" : "▼ Manage"}
           </span>
         </button>
@@ -788,7 +789,7 @@ See you around the campfire! 🏕️`
           <button
             onClick={copyInvite}
             title="Invite to this group — with a peek at everything that's live"
-            className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90"
+            className={`${CF_PRIMARY}`}
           >
             {copied ? "✓ Copied — paste it anywhere!" : "📋 Copy Invite"}
           </button>
@@ -802,26 +803,26 @@ See you around the campfire! 🏕️`
                 }
                 setShowEmailInvite(opening);
               }}
-              className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              className={`${CF_SECONDARY}`}
             >
               ✉️ Add by email
             </button>
           )}
           <button
             onClick={showQrCode}
-            className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            className={`${CF_SECONDARY}`}
           >
             📱 Show QR
           </button>
           <button
             onClick={() => setShowMembers(!showMembers)}
-            className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            className={`${CF_SECONDARY}`}
           >
             {showMembers ? "Hide" : "Show"} Members
           </button>
         </div>
 
-        <p className="mt-2 text-[11px] text-slate-500">
+        <p className="mt-2 text-xs text-slate-500">
           <span className="font-semibold">📋 Copy Invite</span> — invite to this group,
           with a peek at all the active engagements.
         </p>
@@ -870,7 +871,7 @@ See you around the campfire! 🏕️`
               <button
                 onClick={sendEmailInvites}
                 disabled={sending || !emailInput.trim()}
-                className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
+                className={`${CF_PRIMARY}`}
               >
                 {sending
                   ? inviteTarget
@@ -890,7 +891,7 @@ See you around the campfire! 🏕️`
                 </span>
               )}
             </div>
-            <p className="mt-2 text-[11px] text-slate-400">Up to 50 at a time.</p>
+            <p className="mt-2 text-xs text-slate-500">Up to 50 at a time.</p>
           </div>
         )}
 
@@ -899,7 +900,7 @@ See you around the campfire! 🏕️`
           paste into email, iMessage, or WhatsApp.
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-          <span className="text-slate-400">Or share directly:</span>
+          <span className="text-slate-500">Or share directly:</span>
           <button
             onClick={copyLink}
             title="Copy join link"
@@ -913,7 +914,7 @@ See you around the campfire! 🏕️`
           </span>
         </div>
 
-        <p className="mt-2 text-[11px] text-orange-700/80">
+        <p className="mt-2 text-xs text-orange-700/80">
           💡 The invite list is emailed when you post an activity (so the first
           email is something fun to do, not an empty group). For in-person joining,
           show the QR or share the link any time.
@@ -972,7 +973,7 @@ See you around the campfire! 🏕️`
                       </button>
                       <button
                         onClick={() => setEditingInviteEmail(null)}
-                        className="flex-shrink-0 text-slate-400 hover:text-slate-600"
+                        className="flex-shrink-0 text-slate-500 hover:text-slate-600"
                       >
                         ✕
                       </button>
@@ -983,7 +984,7 @@ See you around the campfire! 🏕️`
                         <span
                           className={`min-w-0 truncate font-medium ${
                             inv.status === "revoked"
-                              ? "text-slate-400 line-through"
+                              ? "text-slate-500 line-through"
                               : "text-slate-800"
                           }`}
                         >
@@ -996,7 +997,7 @@ See you around the campfire! 🏕️`
                               setEditingInviteEmail(inv.email);
                             }}
                             title="Edit name"
-                            className="flex-shrink-0 text-slate-400 hover:text-orange-600"
+                            className="flex-shrink-0 text-slate-500 hover:text-orange-600"
                           >
                             ✏️
                           </button>
@@ -1012,7 +1013,7 @@ See you around the campfire! 🏕️`
                               <button
                                 onClick={() => unjoin(inv.email)}
                                 title="Marked the wrong person? Set this invite back to pending."
-                                className="text-[11px] font-medium text-slate-400 underline hover:text-amber-600"
+                                className="text-xs font-medium text-slate-500 underline hover:text-amber-600"
                               >
                                 ↩ un-join
                               </button>
@@ -1020,7 +1021,7 @@ See you around the campfire! 🏕️`
                           </>
                         )}
                         {inv.status === "revoked" && (
-                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-400">
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-500">
                             revoked
                           </span>
                         )}
@@ -1035,7 +1036,7 @@ See you around the campfire! 🏕️`
                   )}
 
                   {/* Email (only when a name is shown above) + who added them */}
-                  <div className="mt-0.5 truncate text-slate-400">
+                  <div className="mt-0.5 truncate text-slate-500">
                     {inv.name ? inv.email : null}
                     {inv.name && inv.invited_by ? " · " : ""}
                     {inv.invited_by
@@ -1047,7 +1048,7 @@ See you around the campfire! 🏕️`
 
                   {/* Whether the invite email has actually been sent yet */}
                   {inv.status === "pending" && (
-                    <div className="mt-0.5 text-[11px]">
+                    <div className="mt-0.5 text-xs">
                       {inv.last_emailed_at ? (
                         <span className="text-green-600">
                           ✉️ Emailed{" "}
@@ -1083,7 +1084,7 @@ See you around the campfire! 🏕️`
                       </button>
                       <button
                         onClick={() => revokeOne(inv.email)}
-                        className="text-slate-400 hover:text-red-600 hover:underline"
+                        className="text-slate-500 hover:text-red-600 hover:underline"
                       >
                         ✕ revoke
                       </button>
@@ -1163,7 +1164,7 @@ See you around the campfire! 🏕️`
                         </button>
                         <button
                           onClick={() => setEditingMemberId(null)}
-                          className="text-xs text-slate-400 hover:text-slate-600"
+                          className="text-xs text-slate-500 hover:text-slate-600"
                         >
                           ✕
                         </button>
@@ -1192,7 +1193,7 @@ See you around the campfire! 🏕️`
                               setEditingMemberId(m.user_id);
                             }}
                             title="Rename in this group"
-                            className="ml-1.5 text-slate-400 hover:text-orange-600"
+                            className="ml-1.5 text-slate-500 hover:text-orange-600"
                           >
                             ✏️
                           </button>
@@ -1203,7 +1204,7 @@ See you around the campfire! 🏕️`
                       <span className="ml-2 text-xs text-orange-600 font-semibold">Host</span>
                     )}
                     {m.role === "spectator" && (
-                      <span className="ml-2 text-xs text-slate-400">Spectator</span>
+                      <span className="ml-2 text-xs text-slate-500">Spectator</span>
                     )}
                   </div>
                 </div>
@@ -1325,7 +1326,7 @@ See you around the campfire! 🏕️`
           <div className="flex flex-wrap items-center gap-3">
             <Link
               href={`/campfirelive/group/${groupId}/engagement/new`}
-              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90"
+              className={`${CF_PRIMARY}`}
             >
               + Start an activity
             </Link>
@@ -1378,7 +1379,7 @@ See you around the campfire! 🏕️`
 
       {/* Engagement List */}
       {filteredEngagements.length === 0 ? (
-        <div className="text-center py-12 text-slate-400">
+        <div className="text-center py-12 text-slate-500">
           <div className="text-4xl mb-3">
             {tab === "active"
               ? "🔒"
@@ -1446,7 +1447,7 @@ See you around the campfire! 🏕️`
                       <p className="text-sm text-slate-600 mt-0.5">
                         {eng.description?.trim() || meta?.hook}
                       </p>
-                      <p className="text-xs text-slate-400 mt-1">
+                      <p className="text-xs text-slate-500 mt-1">
                         {new Date(eng.created_at).toLocaleDateString()}
                       </p>
                     </div>
@@ -1587,7 +1588,7 @@ See you around the campfire! 🏕️`
           </button>
         )}
       {tab === "revealed" && emptyRevealedCount > 0 && (
-        <p className="mb-6 text-center text-[11px] text-slate-400">
+        <p className="mb-6 text-center text-xs text-slate-500">
           {emptyRevealedCount} empty check-in{emptyRevealedCount === 1 ? "" : "s"} with no
           responses {emptyRevealedCount === 1 ? "is" : "are"} hidden.
         </p>
@@ -1612,7 +1613,7 @@ See you around the campfire! 🏕️`
                 }
                 router.push("/campfirelive");
               }}
-              className="text-xs text-slate-400 underline hover:text-red-600"
+              className="text-xs text-slate-500 underline hover:text-red-600"
             >
               Leave this group
             </button>
@@ -1636,7 +1637,7 @@ See you around the campfire! 🏕️`
               }
               router.push("/campfirelive");
             }}
-            className="text-xs text-slate-400 underline hover:text-red-600"
+            className="text-xs text-slate-500 underline hover:text-red-600"
           >
             Delete this group
           </button>

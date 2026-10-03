@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/campfire/supabase";
+import { CF_PRIMARY } from "@/lib/campfire/ui";
 
 // "Choose a new password" — the landing page for the reset email. The link signs the
 // user in with a short-lived recovery session (tokens in the URL fragment, picked up
@@ -78,7 +79,7 @@ export default function ResetPasswordPage() {
             </p>
             <Link
               href="/campfirelive/auth"
-              className="inline-block rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-3 text-sm font-semibold text-white"
+              className={`${CF_PRIMARY}`}
             >
               Back to sign in
             </Link>
@@ -124,7 +125,7 @@ export default function ResetPasswordPage() {
             <button
               onClick={save}
               disabled={busy || !pw || !pw2}
-              className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+              className={`${CF_PRIMARY} w-full`}
             >
               {busy ? "Saving…" : "Save new password"}
             </button>

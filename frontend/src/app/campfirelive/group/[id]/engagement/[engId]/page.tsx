@@ -19,6 +19,7 @@ import { supabase } from "@/lib/campfire/supabase";
 import { hasProfanity } from "@/lib/campfire/profanity";
 import { formatWhen } from "@/lib/campfire/dates";
 import { cfAlert, cfConfirm, cfPrompt } from "@/lib/campfire/dialogs";
+import { CF_PRIMARY, CF_PRIMARY_SM, CF_SECONDARY, CF_SECONDARY_SM } from "@/lib/campfire/ui";
 
 // Shrink a phone photo before upload: longest side ≤ 2000px, JPEG. Keeps a handwritten
 // note perfectly readable while cutting a 4 MB photo to a few hundred KB (school Wi-Fi).
@@ -808,7 +809,7 @@ export default function EngagementDetailPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="text-slate-400 animate-pulse">Loading engagement...</div>
+        <div className="text-slate-500 animate-pulse">Loading engagement...</div>
       </div>
     );
   }
@@ -2929,7 +2930,7 @@ export default function EngagementDetailPage() {
                       onClick={() =>
                         setShItems((prev) => ({ ...prev, [i]: { ...prev[i], photo: undefined } }))
                       }
-                      className="text-xs text-slate-400 hover:text-red-500"
+                      className="text-xs text-slate-500 hover:text-red-500"
                     >
                       remove
                     </button>
@@ -3055,7 +3056,7 @@ export default function EngagementDetailPage() {
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
                 Share with the group{" "}
-                <span className="text-slate-400">(optional)</span>
+                <span className="text-slate-500">(optional)</span>
               </label>
               <textarea
                 value={acNote}
@@ -3350,13 +3351,13 @@ export default function EngagementDetailPage() {
                 />
               </div>
             ))}
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-500">
               {ttLie === null ? "Tap a circle to mark your lie 🤥" : `Statement ${ttLie + 1} is your lie.`}
             </p>
             <button
               onClick={handleTwoTruthsSubmit}
               disabled={submitting}
-              className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+              className={`${CF_PRIMARY} w-full`}
             >
               {submitting ? "Submitting..." : "🔒 Lock In My Three"}
             </button>
@@ -3389,7 +3390,7 @@ export default function EngagementDetailPage() {
               <button
                 onClick={handleOpenPollSubmit}
                 disabled={submitting}
-                className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+                className={`${CF_PRIMARY} w-full`}
               >
                 {submitting ? "Submitting..." : "🔒 Submit My Answer"}
               </button>
@@ -3414,7 +3415,7 @@ export default function EngagementDetailPage() {
             <button
               onClick={handlePollSubmit}
               disabled={!selectedOption || submitting}
-              className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+              className={`${CF_PRIMARY} w-full`}
             >
               {submitting ? "Submitting..." : "🔒 Lock In My Vote"}
             </button>
@@ -3480,7 +3481,7 @@ export default function EngagementDetailPage() {
             <button
               onClick={submitPhotos}
               disabled={submitting || uploading || (mediaItems.length === 0 && !textInput.trim())}
-              className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+              className={`${CF_PRIMARY} w-full`}
             >
               {submitting ? "Submitting…" : "Submit"}
             </button>
@@ -3504,7 +3505,7 @@ export default function EngagementDetailPage() {
             <button
               onClick={handleTextSubmit}
               disabled={!textInput.trim() || submitting}
-              className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+              className={`${CF_PRIMARY} w-full`}
             >
               {submitting ? "Submitting..." : "Submit Response"}
             </button>
@@ -3562,7 +3563,7 @@ export default function EngagementDetailPage() {
               }`}
             >
               <div
-                className={`text-[11px] font-bold uppercase tracking-wide ${
+                className={`text-xs font-bold uppercase tracking-wide ${
                   isTruth ? "text-sky-700" : "text-rose-700"
                 }`}
               >
@@ -3612,7 +3613,7 @@ export default function EngagementDetailPage() {
             <button
               onClick={handleTruthOrDareSubmit}
               disabled={(!textInput.trim() && !todPhoto) || submitting || todUploading}
-              className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+              className={`${CF_PRIMARY} w-full`}
             >
               {submitting ? "Submitting..." : "🔒 Lock in my answer"}
             </button>
@@ -3697,7 +3698,7 @@ export default function EngagementDetailPage() {
             <button
               onClick={handleTextSubmit}
               disabled={(!textInput.trim() && mediaItems.length === 0) || submitting || uploading}
-              className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+              className={`${CF_PRIMARY} w-full`}
             >
               {submitting ? "Submitting..." : isBirthdayCard ? "✍️ Sign the card" : "🔒 Submit Response"}
             </button>
@@ -4007,7 +4008,7 @@ export default function EngagementDetailPage() {
                   </div>
                 )}
                 {cantCount > 0 && (
-                  <div className="mt-1 text-xs text-slate-400">
+                  <div className="mt-1 text-xs text-slate-500">
                     Can&apos;t make it: {cantCount}
                   </div>
                 )}
@@ -4020,7 +4021,7 @@ export default function EngagementDetailPage() {
         {isCreator && open && (
           <button
             onClick={toggleRsvp}
-            className="mb-3 text-[11px] font-medium text-slate-400 hover:text-slate-600"
+            className="mb-3 text-xs font-medium text-slate-500 hover:text-slate-600"
           >
             {rsvpOn ? "Don't ask who's coming" : "+ Ask who's coming (RSVP)"}
           </button>
@@ -4029,12 +4030,12 @@ export default function EngagementDetailPage() {
         <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
           {/* Committed — claimed slots + free-text brings */}
           <div>
-            <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-emerald-700">
               ✅ Committed ({committedRows.length})
             </div>
             <div className="space-y-1.5">
               {committedRows.length === 0 && (
-                <div className="text-xs text-slate-400">Nothing yet — be the first!</div>
+                <div className="text-xs text-slate-500">Nothing yet — be the first!</div>
               )}
               {committedRows.map((row) => (
                 <div
@@ -4056,7 +4057,7 @@ export default function EngagementDetailPage() {
                       }
                       disabled={signupBusy}
                       title="Remove"
-                      className="flex-shrink-0 text-slate-400 hover:text-rose-500 disabled:opacity-50"
+                      className="flex-shrink-0 text-slate-500 hover:text-rose-500 disabled:opacity-50"
                     >
                       ✕
                     </button>
@@ -4068,7 +4069,7 @@ export default function EngagementDetailPage() {
 
           {/* To bring — still-needed (amber), covered-but-welcome (green), any-number */}
           <div>
-            <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-amber-700">
               📝 To bring ({neededRows.length})
             </div>
             <div className="space-y-1.5">
@@ -4148,7 +4149,7 @@ export default function EngagementDetailPage() {
             </div>
             {essentialIdeas.length > 0 && (
               <div className="mb-2">
-                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-rose-500">
+                <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-rose-500">
                   Essentials
                 </div>
                 <div className="flex flex-wrap gap-1.5">
@@ -4167,7 +4168,7 @@ export default function EngagementDetailPage() {
             )}
             {niceIdeas.length > 0 && (
               <div>
-                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Nice to have
                 </div>
                 <div className="flex flex-wrap gap-1.5">
@@ -4223,7 +4224,7 @@ export default function EngagementDetailPage() {
             >
               {suggesting ? "Planning…" : "✨ AI: balance the list"}
             </button>
-            <p className="mt-1 text-[11px] text-slate-400">
+            <p className="mt-1 text-xs text-slate-500">
               Sets a target and a sensible limit on each item for your headcount, and
               fills any gaps — so a dinner doesn&apos;t end up all salads.
             </p>
@@ -4266,7 +4267,7 @@ export default function EngagementDetailPage() {
                 type="button"
                 onClick={() => setHostSlotCount(hostSlotCount === 0 ? 1 : 0)}
                 title={hostSlotCount === 0 ? "Set a number" : "Any number can bring this"}
-                className="px-1 text-sm font-bold text-slate-400 hover:text-cyan-600"
+                className="px-1 text-sm font-bold text-slate-500 hover:text-cyan-600"
               >
                 {hostSlotCount === 0 ? "#" : "∞"}
               </button>
@@ -4338,7 +4339,7 @@ export default function EngagementDetailPage() {
                             else if (v) cfAlert("Minimum is 1.");
                           }}
                           disabled={chippingIn}
-                          className="rounded-full border border-slate-300 bg-white px-3.5 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                          className={`${CF_SECONDARY}`}
                         >
                           Other…
                         </button>
@@ -4348,7 +4349,7 @@ export default function EngagementDetailPage() {
                           <button
                             onClick={() => sendGift(g.id)}
                             disabled={sendingGift}
-                            className="mt-3 w-full rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
+                            className={`${CF_PRIMARY} mt-3 w-full`}
                           >
                             {sendingGift
                               ? "Sending…"
@@ -4358,7 +4359,7 @@ export default function EngagementDetailPage() {
                                 )}) →`}
                           </button>
                         )}
-                      <p className="mt-2 text-[11px] text-slate-400">
+                      <p className="mt-2 text-xs text-slate-500">
                         Fees are added on top so {who} gets the full amount.
                       </p>
                     </>
@@ -4425,7 +4426,7 @@ export default function EngagementDetailPage() {
                         ))}
                     </select>
                     {startGiftSurpriseUid && (
-                      <p className="mt-1 text-[11px] text-orange-700">
+                      <p className="mt-1 text-xs text-orange-700">
                         🤫 They won&apos;t see the chip-in — but can still join the
                         sign-up.
                       </p>
@@ -4436,7 +4437,7 @@ export default function EngagementDetailPage() {
                   <button
                     onClick={startGift}
                     disabled={startingGift}
-                    className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+                    className={`${CF_PRIMARY_SM}`}
                   >
                     {startingGift ? "Starting…" : "Start chip-in"}
                   </button>
@@ -4575,7 +4576,7 @@ export default function EngagementDetailPage() {
               (gxAssign === "person" || gxAssign === "gender") &&
               myGiftexAssignment && (
                 <div className="mb-3 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2">
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-violet-600">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-violet-600">
                     🤫 Your secret assignment
                   </div>
                   <div className="text-sm font-bold text-slate-900">
@@ -4591,7 +4592,7 @@ export default function EngagementDetailPage() {
                             : "anyone"
                         }`}
                   </div>
-                  <div className="text-[11px] text-slate-400">Only you can see this.</div>
+                  <div className="text-xs text-slate-500">Only you can see this.</div>
                 </div>
               )}
 
@@ -4647,12 +4648,12 @@ export default function EngagementDetailPage() {
             <div key={i} className="rounded-xl border border-slate-200 bg-white p-4">
               <div className="mb-2 text-sm font-semibold text-slate-800">
                 {q}{" "}
-                <span className="text-xs font-normal text-slate-400">
+                <span className="text-xs font-normal text-slate-500">
                   ({rows.length})
                 </span>
               </div>
               {rows.length === 0 ? (
-                <p className="text-xs text-slate-400">No answers yet.</p>
+                <p className="text-xs text-slate-500">No answers yet.</p>
               ) : (
                 <div className="space-y-2.5">
                   {rows.map(({ r, v }) => (
@@ -4662,7 +4663,7 @@ export default function EngagementDetailPage() {
                           ? "Anonymous"
                           : memberNameOf(r.user_id, r.profile?.display_name)}
                         {(r.content as { _late?: boolean })._late && (
-                          <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">
+                          <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-xs font-semibold text-sky-700">
                             ✚ after reveal
                           </span>
                         )}
@@ -4705,13 +4706,13 @@ export default function EngagementDetailPage() {
                     <div className="text-sm font-medium text-slate-800">
                       {r.id === crownResponseId && "🏆 "}
                       {memberNameOf(r.user_id, r.profile?.display_name)}
-                      <span className="text-xs text-slate-400">
+                      <span className="text-xs text-slate-500">
                         {" "}· {finds} {finds === 1 ? "find" : "finds"}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
                       {r.user_id === user?.id ? (
-                        <span className="text-xs text-slate-400">Your hunt</span>
+                        <span className="text-xs text-slate-500">Your hunt</span>
                       ) : votingOpen ? (
                         <button
                           onClick={() => castVote(r.id)}
@@ -4758,7 +4759,7 @@ export default function EngagementDetailPage() {
             <div key={i} className="rounded-xl border border-slate-200 bg-white p-4">
               <div className="text-sm font-semibold text-slate-800 mb-2">
                 {i + 1}. {item}{" "}
-                <span className="text-xs font-normal text-slate-400">({ans.length})</span>
+                <span className="text-xs font-normal text-slate-500">({ans.length})</span>
               </div>
               <div className="space-y-2.5">
                 {ans.map(({ r, a }) => (
@@ -4778,15 +4779,15 @@ export default function EngagementDetailPage() {
                     />
                     {raffle &&
                       (a.photoEarly ? (
-                        <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                        <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
                           ⚠️ photo dated before the start
                         </div>
                       ) : a.photoTakenAt == null ? (
-                        <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
+                        <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
                           ⓘ no date on photo
                         </div>
                       ) : (
-                        <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">
+                        <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">
                           ✓ taken{" "}
                           {new Date(a.photoTakenAt).toLocaleDateString("en-US", {
                             month: "short",
@@ -4799,7 +4800,7 @@ export default function EngagementDetailPage() {
                   </div>
                 ))}
                 {ans.length === 0 && (
-                  <span className="text-xs text-slate-400">Nobody got this one.</span>
+                  <span className="text-xs text-slate-500">Nobody got this one.</span>
                 )}
               </div>
             </div>
@@ -4834,7 +4835,7 @@ export default function EngagementDetailPage() {
       }
     )?._late;
   const lateTag = (
-    <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">
+    <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-xs font-semibold text-sky-700">
       ✚ after reveal
     </span>
   );
@@ -4888,14 +4889,14 @@ export default function EngagementDetailPage() {
           >
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-                <span className="w-5 text-center text-slate-400">{idx + 1}</span>
+                <span className="w-5 text-center text-slate-500">{idx + 1}</span>
                 {idx === 0 && isRevealed && "🏆 "}
                 {memberNameOf(row.r.user_id, row.r.profile?.display_name)}
               </div>
               <div className="text-base font-extrabold text-slate-900">{row.total}</div>
             </div>
             {rounds.length > 0 && (
-              <div className="mt-1 ml-7 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
+              <div className="mt-1 ml-7 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-slate-500">
                 {rounds.map((rn, i) => (
                   <span key={i}>
                     {rn}:{" "}
@@ -4912,15 +4913,15 @@ export default function EngagementDetailPage() {
                   className="max-h-28 rounded-lg object-cover"
                 />
                 {row.early ? (
-                  <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                  <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
                     ⚠️ scorecard dated before the start
                   </div>
                 ) : row.takenAt == null ? (
-                  <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
+                  <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
                     ⓘ no date on scorecard
                   </div>
                 ) : (
-                  <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">
+                  <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">
                     ✓ taken{" "}
                     {new Date(row.takenAt).toLocaleDateString("en-US", {
                       month: "short",
@@ -4933,7 +4934,7 @@ export default function EngagementDetailPage() {
           </div>
         ))}
         {rows.length === 0 && (
-          <p className="text-xs text-slate-400">No scores posted yet.</p>
+          <p className="text-xs text-slate-500">No scores posted yet.</p>
         )}
       </div>
     );
@@ -4985,7 +4986,7 @@ export default function EngagementDetailPage() {
               <div className="flex items-center justify-between gap-2 mb-2">
                 <div className="text-sm font-semibold text-slate-800">
                   {q.prompt}{" "}
-                  <span className="text-xs font-normal text-slate-400">({rows.length})</span>
+                  <span className="text-xs font-normal text-slate-500">({rows.length})</span>
                 </div>
                 {stars && (
                   <span className="text-xs font-bold text-teal-700">{avg.toFixed(1)} avg</span>
@@ -4996,7 +4997,7 @@ export default function EngagementDetailPage() {
                   {rows.map(({ key, r, v }) => (
                     <span
                       key={key}
-                      className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-white px-2 py-0.5 text-[11px] text-slate-700"
+                      className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-white px-2 py-0.5 text-xs text-slate-700"
                     >
                       {careAuthorName(r)}
                       {isCreator && careHostOnly(r) && <span title="Private to you">🔒</span>}
@@ -5064,7 +5065,7 @@ export default function EngagementDetailPage() {
                 {rows.map(({ r, val }) => (
                   <span
                     key={r.id}
-                    className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-white px-2 py-0.5 text-[11px] text-slate-700"
+                    className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-white px-2 py-0.5 text-xs text-slate-700"
                   >
                     {engagement.is_blind
                       ? "Anonymous"
@@ -5073,7 +5074,7 @@ export default function EngagementDetailPage() {
                   </span>
                 ))}
                 {rows.length === 0 && (
-                  <span className="text-xs text-slate-400">No answers.</span>
+                  <span className="text-xs text-slate-500">No answers.</span>
                 )}
               </div>
             </div>
@@ -5138,14 +5139,14 @@ export default function EngagementDetailPage() {
                   </span>
                 </div>
               ) : (
-                <div className="text-sm text-slate-400">No votes for this one.</div>
+                <div className="text-sm text-slate-500">No votes for this one.</div>
               )}
               {runnersUp.length > 0 && (
                 <div className="mt-1.5 flex flex-wrap gap-1">
                   {runnersUp.slice(0, 5).map((e) => (
                     <span
                       key={e.label}
-                      className="text-[11px] rounded-full bg-white border border-slate-200 text-slate-600 px-2 py-0.5"
+                      className="text-xs rounded-full bg-white border border-slate-200 text-slate-600 px-2 py-0.5"
                     >
                       {e.label} · {e.n}
                     </span>
@@ -5200,7 +5201,7 @@ export default function EngagementDetailPage() {
               <div className="flex items-center justify-between mb-2">
                 <div className="text-sm font-semibold text-slate-700">🏅 {q}</div>
                 {isPrize && (
-                  <span className="text-[11px] font-bold text-fuchsia-700">
+                  <span className="text-xs font-bold text-fuchsia-700">
                     🎁 Prize award
                   </span>
                 )}
@@ -5271,7 +5272,7 @@ export default function EngagementDetailPage() {
                             );
                           })}
                           {entries.length > 10 && (
-                            <div className="pt-0.5 text-[11px] text-slate-400">
+                            <div className="pt-0.5 text-xs text-slate-500">
                               +{entries.length - 10} more not shown
                             </div>
                           )}
@@ -5288,7 +5289,7 @@ export default function EngagementDetailPage() {
                   )}
                 </>
               ) : (
-                <div className="text-sm text-slate-400">No votes for this one.</div>
+                <div className="text-sm text-slate-500">No votes for this one.</div>
               )}
             </div>
           );
@@ -5358,7 +5359,7 @@ export default function EngagementDetailPage() {
         {/* Name suggestions for the actual gender — just for fun */}
         {answer && suggestions.length > 0 && (
           <div className="rounded-xl border border-slate-200 bg-white p-3">
-            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
               Name ideas for a {answer.toLowerCase()}
             </div>
             <div className="flex flex-wrap gap-1.5">
@@ -5372,7 +5373,7 @@ export default function EngagementDetailPage() {
                   }`}
                 >
                   {s.name}
-                  <span className="text-slate-400"> · {s.who}</span>
+                  <span className="text-slate-500"> · {s.who}</span>
                 </span>
               ))}
             </div>
@@ -5415,7 +5416,7 @@ export default function EngagementDetailPage() {
                   .map((r) => (
                     <span
                       key={r.id}
-                      className={`text-[11px] rounded-full px-2 py-0.5 ${
+                      className={`text-xs rounded-full px-2 py-0.5 ${
                         isAnswer
                           ? "bg-sky-100 text-sky-800 font-medium"
                           : "bg-slate-100 text-slate-600"
@@ -5694,7 +5695,7 @@ export default function EngagementDetailPage() {
               </div>
 
               {!liesRevealed && !isMine && hasResponded && mg == null && (
-                <p className="mt-1.5 text-xs text-slate-400">Tap the one you think is the lie.</p>
+                <p className="mt-1.5 text-xs text-slate-500">Tap the one you think is the lie.</p>
               )}
               {liesRevealed && (
                 <p className="mt-2 text-xs text-slate-500">
@@ -5709,12 +5710,12 @@ export default function EngagementDetailPage() {
         })}
 
         {!liesRevealed && !hasResponded && (
-          <p className="text-xs text-slate-400">Only players who submitted can guess.</p>
+          <p className="text-xs text-slate-500">Only players who submitted can guess.</p>
         )}
         {!liesRevealed && isCreator && (
           <button
             onClick={revealLiesNow}
-            className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            className={`${CF_SECONDARY} w-full`}
           >
             🎬 Reveal the lies now (don&apos;t wait for stragglers)
           </button>
@@ -5782,7 +5783,7 @@ export default function EngagementDetailPage() {
                   </span>
                 )}
                 {(content as { _late?: boolean })._late && (
-                  <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-700">
+                  <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-700">
                     ✚ after reveal
                   </span>
                 )}
@@ -5938,7 +5939,7 @@ export default function EngagementDetailPage() {
               {raffle ? (
                 <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-2">
                   {r.user_id === user?.id ? (
-                    <span className="text-xs text-slate-400">Your entry — others vote for it</span>
+                    <span className="text-xs text-slate-500">Your entry — others vote for it</span>
                   ) : votingOpen ? (
                     <button
                       onClick={() => castVote(r.id)}
@@ -5960,7 +5961,7 @@ export default function EngagementDetailPage() {
               ) : (
               <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-2">
                 {r.user_id === user?.id ? (
-                  <span className="text-xs text-slate-400">Your entry — others rate it</span>
+                  <span className="text-xs text-slate-500">Your entry — others rate it</span>
                 ) : (
                   <div className="flex items-center gap-0.5">
                     {[1, 2, 3, 4, 5].map((n) => (
@@ -5987,17 +5988,17 @@ export default function EngagementDetailPage() {
                 })()}
               </div>
               )}
-              <div className="mt-2 flex items-center gap-3 text-[11px]">
+              <div className="mt-2 flex items-center gap-3 text-xs">
                 {r.user_id !== user?.id &&
                   (reportedIds.has(r.id) ? (
-                    <span className="text-slate-400">Reported ✓</span>
+                    <span className="text-slate-500">Reported ✓</span>
                   ) : (
                     <button
                       onClick={() => {
                         reportResponse(r.id);
                         setReportedIds((prev) => new Set(prev).add(r.id));
                       }}
-                      className="text-slate-400 hover:text-amber-600"
+                      className="text-slate-500 hover:text-amber-600"
                     >
                       Report
                     </button>
@@ -6007,7 +6008,7 @@ export default function EngagementDetailPage() {
                     onClick={async () => {
                       if ((await cfConfirm("Remove this response from the group?", { danger: true }))) removeResponse(r.id);
                     }}
-                    className="text-slate-400 hover:text-red-600"
+                    className="text-slate-500 hover:text-red-600"
                   >
                     Remove
                   </button>
@@ -6079,7 +6080,7 @@ export default function EngagementDetailPage() {
               {justLaunched ? (
                 <>
                   <div className="flex items-center gap-2 text-sm font-bold text-green-900">
-                    <span className="rounded-full bg-green-200 px-2 py-0.5 text-[11px] uppercase tracking-wide">
+                    <span className="rounded-full bg-green-200 px-2 py-0.5 text-xs uppercase tracking-wide">
                       Live
                     </span>
                     {justLaunchedQuiet
@@ -6095,7 +6096,7 @@ export default function EngagementDetailPage() {
               ) : isScheduledDraft ? (
                 <>
                   <div className="flex items-center gap-2 text-sm font-bold text-emerald-900">
-                    <span className="rounded-full bg-emerald-200 px-2 py-0.5 text-[11px] uppercase tracking-wide">
+                    <span className="rounded-full bg-emerald-200 px-2 py-0.5 text-xs uppercase tracking-wide">
                       {schedOpenPast ? "Open it" : "Scheduled"}
                     </span>
                     {schedOpenPast
@@ -6137,7 +6138,7 @@ export default function EngagementDetailPage() {
               ) : (
                 <>
                   <div className="flex items-center gap-2 text-sm font-bold text-orange-900">
-                    <span className="rounded-full bg-orange-200 px-2 py-0.5 text-[11px] uppercase tracking-wide">
+                    <span className="rounded-full bg-orange-200 px-2 py-0.5 text-xs uppercase tracking-wide">
                       Draft
                     </span>
                     Only you can see this right now
@@ -6174,7 +6175,7 @@ export default function EngagementDetailPage() {
                 <button
                   onClick={() => launch(true)}
                   disabled={launching}
-                  className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-2.5 text-sm font-bold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+                  className={`${CF_PRIMARY}`}
                 >
                   {launching ? "Launching…" : "🚀 Launch to the group"}
                 </button>
@@ -6208,14 +6209,14 @@ export default function EngagementDetailPage() {
               {!justLaunched && engagement.scheduled_open_at && !schedulingOpen && (
                 <button
                   onClick={clearSchedule}
-                  className="text-[11px] text-slate-400 underline hover:text-slate-600"
+                  className="text-xs text-slate-500 underline hover:text-slate-600"
                 >
                   Cancel schedule
                 </button>
               )}
               {!justLaunched && schedulingOpen && (
                 <div className="mt-1 flex flex-col items-end gap-1.5 rounded-xl border border-orange-200 bg-white/70 p-2.5">
-                  <label className="self-start text-[11px] font-medium text-slate-600">
+                  <label className="self-start text-xs font-medium text-slate-600">
                     Open &amp; email the group on:
                   </label>
                   <input
@@ -6225,7 +6226,7 @@ export default function EngagementDetailPage() {
                     className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-orange-500"
                   />
                   {engagement.deadline && (
-                    <p className="max-w-[16rem] self-start text-left text-[11px] text-slate-400">
+                    <p className="max-w-[16rem] self-start text-left text-xs text-slate-500">
                       Prefilled to 2 weeks before your{" "}
                       {formatWhen(engagement.deadline, { time: false, weekday: false })}{" "}
                       close date.
@@ -6347,7 +6348,7 @@ export default function EngagementDetailPage() {
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">
                   {isBirthdayCard ? "Note to signers" : "Details"}{" "}
-                  <span className="text-slate-400">(optional)</span>
+                  <span className="text-slate-500">(optional)</span>
                 </label>
                 <textarea
                   value={editDesc}
@@ -6433,7 +6434,7 @@ export default function EngagementDetailPage() {
                                       editPollOptions.filter((_, j) => j !== i)
                                     )
                                   }
-                                  className="px-2 text-slate-400 hover:text-red-500"
+                                  className="px-2 text-slate-500 hover:text-red-500"
                                 >
                                   ✕
                                 </button>
@@ -6466,7 +6467,7 @@ export default function EngagementDetailPage() {
                   </label>
                   {editHofAwards.map((award, i) => (
                     <div key={i} className="mb-2 flex items-center gap-2">
-                      <span className="text-slate-400 text-sm">🏅</span>
+                      <span className="text-slate-500 text-sm">🏅</span>
                       <input
                         type="text"
                         value={award}
@@ -6484,7 +6485,7 @@ export default function EngagementDetailPage() {
                           onClick={() =>
                             setEditHofAwards(editHofAwards.filter((_, j) => j !== i))
                           }
-                          className="px-1 text-slate-400 hover:text-red-500"
+                          className="px-1 text-slate-500 hover:text-red-500"
                         >
                           ✕
                         </button>
@@ -6500,7 +6501,7 @@ export default function EngagementDetailPage() {
                       + Add award
                     </button>
                   )}
-                  <p className="mt-1 text-[11px] text-slate-400">
+                  <p className="mt-1 text-xs text-slate-500">
                     Each award is one vote. Changing these before the reveal updates what
                     everyone votes on.
                   </p>
@@ -6533,7 +6534,7 @@ export default function EngagementDetailPage() {
                       className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-orange-500 outline-none resize-y"
                     />
                   </div>
-                  <p className="text-[11px] text-slate-400">
+                  <p className="text-xs text-slate-500">
                     Players commit to one before seeing it — keep them spicy but kind.
                   </p>
                 </div>
@@ -6545,7 +6546,7 @@ export default function EngagementDetailPage() {
                   <label className="block text-xs font-medium text-slate-500 mb-1">
                     Question categories
                   </label>
-                  <p className="mb-2 text-[11px] text-slate-400">
+                  <p className="mb-2 text-xs text-slate-500">
                     A random pick per category locks in for the whole group each
                     time — saving re-rolls the current pick.
                   </p>
@@ -6568,7 +6569,7 @@ export default function EngagementDetailPage() {
                         className="mb-2 rounded-lg border border-slate-200 p-2.5"
                       >
                         <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-[11px] font-semibold text-slate-500">
+                          <span className="text-xs font-semibold text-slate-500">
                             Category {ci + 1}
                           </span>
                           {editCareCategories.length > 1 && (
@@ -6579,7 +6580,7 @@ export default function EngagementDetailPage() {
                                   editCareCategories.filter((_, j) => j !== ci)
                                 )
                               }
-                              className="text-[11px] text-slate-400 hover:text-red-500"
+                              className="text-xs text-slate-500 hover:text-red-500"
                             >
                               Remove
                             </button>
@@ -6622,7 +6623,7 @@ export default function EngagementDetailPage() {
                                     );
                                   })
                                 }
-                                className="text-slate-400 hover:text-red-500 px-1 pt-1.5"
+                                className="text-slate-500 hover:text-red-500 px-1 pt-1.5"
                               >
                                 ✕
                               </button>
@@ -6746,7 +6747,7 @@ export default function EngagementDetailPage() {
                     <div>
                       <label className="block text-xs font-medium text-slate-500 mb-1">
                         {yearFieldLabel}{" "}
-                        <span className="text-slate-400">{yearFieldHint}</span>
+                        <span className="text-slate-500">{yearFieldHint}</span>
                       </label>
                       <input
                         type="number"
@@ -6804,7 +6805,7 @@ export default function EngagementDetailPage() {
                   <div>
                     <label className="block text-xs font-medium text-slate-500 mb-1">
                       {engagement.hold_until_deadline ? "Reveal date & time" : "Deadline"}{" "}
-                      <span className="text-slate-400">(optional)</span>
+                      <span className="text-slate-500">(optional)</span>
                     </label>
                     <div className="flex gap-2">
                       <input
@@ -6963,7 +6964,7 @@ export default function EngagementDetailPage() {
                 {engagement.gift_enabled &&
                   !editGiftEnabled &&
                   (giftSummary?.contributors ?? 0) > 0 && (
-                    <p className="mt-1 ml-7 text-[11px] text-amber-600">
+                    <p className="mt-1 ml-7 text-xs text-amber-600">
                       ⚠️ Turning this off will refund everyone who chipped in.
                     </p>
                   )}
@@ -7026,7 +7027,7 @@ export default function EngagementDetailPage() {
                         >
                           {on ? "🙈 " : ""}
                           {p.name || p.email}{" "}
-                          <span className={on ? "text-rose-100" : "text-slate-400"}>
+                          <span className={on ? "text-rose-100" : "text-slate-500"}>
                             · {p.joined ? "by email" : "not joined"}
                           </span>
                         </button>
@@ -7112,13 +7113,13 @@ export default function EngagementDetailPage() {
                 <button
                   onClick={saveEdit}
                   disabled={savingEdit}
-                  className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                  className={`${CF_PRIMARY_SM}`}
                 >
                   {savingEdit ? "Saving..." : "Save"}
                 </button>
                 <button
                   onClick={() => setEditing(false)}
-                  className="rounded-full border border-slate-300 bg-white px-4 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                  className={`${CF_SECONDARY_SM}`}
                 >
                   Cancel
                 </button>
@@ -7279,7 +7280,7 @@ export default function EngagementDetailPage() {
                   }`
                 : "";
             return (
-              <p className="text-xs text-slate-400 mt-2">
+              <p className="text-xs text-slate-500 mt-2">
                 👁️ {future ? "Opens for signing" : "Open to sign since"}: {dateStr}
                 {recurringNote}
               </p>
@@ -7452,7 +7453,7 @@ export default function EngagementDetailPage() {
               </button>
               <button
                 onClick={() => setQrDataUrl(null)}
-                className="flex-1 rounded-full border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                className={`${CF_SECONDARY} flex-1`}
               >
                 Close
               </button>
@@ -7523,7 +7524,7 @@ export default function EngagementDetailPage() {
                       📧 {g.email}
                     </span>
                   ) : (
-                    <span className="ml-1.5 font-normal text-slate-400">· no email</span>
+                    <span className="ml-1.5 font-normal text-slate-500">· no email</span>
                   )}
                 </span>
                 <div className="flex flex-shrink-0 items-center gap-1.5">
@@ -7646,7 +7647,7 @@ export default function EngagementDetailPage() {
             {!confirmReveal && (
               <button
                 onClick={() => setConfirmReveal(true)}
-                className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-3 text-sm font-semibold text-white hover:opacity-90"
+                className={`${CF_PRIMARY}`}
               >
                 🎬 Reveal now
               </button>
@@ -7675,14 +7676,14 @@ export default function EngagementDetailPage() {
                       setConfirmReveal(false);
                     }
                   }}
-                  className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
+                  className={`${CF_PRIMARY}`}
                 >
                   {revealing ? "Revealing…" : "Yes, reveal now"}
                 </button>
                 <button
                   disabled={revealing}
                   onClick={() => setConfirmReveal(false)}
-                  className="rounded-full border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  className={`${CF_SECONDARY}`}
                 >
                   Not yet
                 </button>
@@ -7691,7 +7692,7 @@ export default function EngagementDetailPage() {
           )}
 
           {engagement.reveal === "sealed" && (
-            <div className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-400">
+            <div className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">
               When does it open?
             </div>
           )}
@@ -7941,7 +7942,7 @@ export default function EngagementDetailPage() {
                   await setHoldUntilDeadline(true);
                 }
               }}
-              className="rounded-full border border-slate-300 bg-white px-5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              className={`${CF_SECONDARY}`}
             >
               ↩️ Un-reveal (re-seal)
             </button>
@@ -7954,7 +7955,7 @@ export default function EngagementDetailPage() {
             >
               {resendingReveal ? "Sending…" : "📨 Re-send the reveal email to everyone"}
             </button>
-            <p className="mt-0.5 text-[11px] text-slate-400">
+            <p className="mt-0.5 text-xs text-slate-500">
               Use this if an earlier email went out with a broken link.
             </p>
           </div>
@@ -8059,7 +8060,7 @@ export default function EngagementDetailPage() {
               <span className="text-xs font-medium text-amber-700">{nudgeMsg}</span>
             )}
           </div>
-          <p className="mt-1 text-[11px] text-slate-500">
+          <p className="mt-1 text-xs text-slate-500">
             Reminds anyone who hasn&apos;t joined or responded yet. Batched to one gentle
             reminder a day — Campfire also auto-reminds ~2 days before the reveal.
           </p>
@@ -8112,7 +8113,7 @@ export default function EngagementDetailPage() {
               <div className="text-xs font-semibold text-slate-600 mb-2">
                 👀 Who&apos;s responded ({responders.length}/{displayExpected})
               </div>
-              <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              <div className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">
                 Members ({members.filter((m) => m.responded).length}/{members.length})
               </div>
               {members.length > 0 ? (
@@ -8122,11 +8123,11 @@ export default function EngagementDetailPage() {
                   ))}
                 </div>
               ) : (
-                <p className="text-xs text-slate-400">No members yet.</p>
+                <p className="text-xs text-slate-500">No members yet.</p>
               )}
               {guests.length > 0 && (
                 <>
-                  <div className="mt-3 mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                  <div className="mt-3 mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">
                     Guests ({guests.filter((g) => g.responded).length}/{guests.length})
                   </div>
                   <div className="flex flex-wrap gap-1.5">
@@ -8225,7 +8226,7 @@ export default function EngagementDetailPage() {
                         className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-rose-500"
                       />
                       <span className="text-xs text-slate-600">per {pledge.unit}</span>
-                      <span className="text-xs text-slate-400">· cap (optional)</span>
+                      <span className="text-xs text-slate-500">· cap (optional)</span>
                       <input
                         type="number"
                         min={0}
@@ -8245,7 +8246,7 @@ export default function EngagementDetailPage() {
                         : est;
                       const charged = Math.min(est, cap > 0 ? cap : est);
                       return (
-                        <p className="text-[11px] text-slate-500">
+                        <p className="text-xs text-slate-500">
                           At the goal that&apos;s{" "}
                           <b>{formatMoney(est, engagement.gift_currency)}</b> — you&apos;re
                           charged{" "}
@@ -8269,7 +8270,7 @@ export default function EngagementDetailPage() {
                       placeholder="20"
                       className="w-24 rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-rose-500"
                     />
-                    <span className="text-[11px] text-slate-400">
+                    <span className="text-xs text-slate-500">
                       flat — charged now, regardless of the result
                     </span>
                   </div>
@@ -8328,7 +8329,7 @@ export default function EngagementDetailPage() {
           {/* Anonymized leaderboard */}
           {pledgeAmounts.length > 0 && (
             <div className="mt-3">
-              <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+              <div className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">
                 Pledges
               </div>
               <div className="flex flex-wrap gap-1.5">
@@ -8461,12 +8462,12 @@ export default function EngagementDetailPage() {
                       else if (v) cfAlert("Minimum is 1.");
                     }}
                     disabled={chippingIn}
-                    className="rounded-full bg-white border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                    className={`${CF_SECONDARY}`}
                   >
                     Other…
                   </button>
                 </div>
-                <p className="mt-2 text-[11px] text-slate-400">
+                <p className="mt-2 text-xs text-slate-500">
                   {chippingIn
                     ? "Opening secure checkout…"
                     : "A small card-processing fee is added on top so the winner gets the full pot. Charged now; refunded if the challenge is canceled."}
@@ -8481,7 +8482,7 @@ export default function EngagementDetailPage() {
                     >
                       {drawingWinner ? "Drawing…" : "🎲 Draw the winner now"}
                     </button>
-                    <p className="mt-1.5 text-center text-[11px] text-slate-400">
+                    <p className="mt-1.5 text-center text-xs text-slate-500">
                       {raffle.autoDraw !== false
                         ? `Or leave it — it draws automatically at the close${
                             deadlineStr ? ` (${deadlineStr})` : ""
@@ -8532,12 +8533,12 @@ export default function EngagementDetailPage() {
                     else if (v) cfAlert("Minimum is 1.");
                   }}
                   disabled={chippingIn}
-                  className="rounded-full bg-white border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                  className={`${CF_SECONDARY}`}
                 >
                   Other…
                 </button>
               </div>
-              <p className="mt-2 text-[11px] text-slate-400">
+              <p className="mt-2 text-xs text-slate-500">
                 {chippingIn
                   ? "Opening secure checkout…"
                   : "A small card-processing fee is added on top so the recipient gets the full amount. Charged now; refunded if the card is canceled before it opens."}
@@ -8658,7 +8659,7 @@ export default function EngagementDetailPage() {
             {editingResponse && (
               <button
                 onClick={() => setEditingResponse(false)}
-                className="text-xs font-medium text-slate-400 hover:text-slate-600"
+                className="text-xs font-medium text-slate-500 hover:text-slate-600"
               >
                 Cancel
               </button>
@@ -8821,7 +8822,7 @@ export default function EngagementDetailPage() {
             {isRevealed && (
               <button
                 onClick={shareResults}
-                className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                className={`${CF_SECONDARY_SM}`}
               >
                 📤 Share
               </button>
@@ -8840,7 +8841,7 @@ export default function EngagementDetailPage() {
             <p className="-mt-2 mb-4 text-xs text-slate-500">
               👀 Seen by {views.length} of {roster.length || views.length}
               {views.length > 0 && (
-                <span className="text-slate-400">
+                <span className="text-slate-500">
                   {" "}
                   ·{" "}
                   {views
@@ -8924,7 +8925,7 @@ export default function EngagementDetailPage() {
               <button
                 onClick={handleCommentSubmit}
                 disabled={!commentText.trim()}
-                className="rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                className={`${CF_PRIMARY}`}
               >
                 Send
               </button>
@@ -9021,7 +9022,7 @@ export default function EngagementDetailPage() {
           <span className="text-slate-300">·</span>
           <button
             onClick={cancelEngagement}
-            className="text-xs text-slate-400 underline hover:text-red-600"
+            className="text-xs text-slate-500 underline hover:text-red-600"
           >
             Cancel this activity
           </button>

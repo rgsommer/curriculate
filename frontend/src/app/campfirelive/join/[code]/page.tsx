@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/campfire/AuthProvider";
 import { useGroups } from "@/lib/campfire/hooks";
+import { CF_PRIMARY } from "@/lib/campfire/ui";
 
 export default function JoinGroupPage() {
   const params = useParams();
@@ -220,7 +221,7 @@ export default function JoinGroupPage() {
             </p>
             <Link
               href={user ? "/campfirelive" : "/campfirelive/auth"}
-              className="inline-block rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-3 text-sm font-semibold text-white"
+              className={`${CF_PRIMARY}`}
             >
               {user ? "Go to my groups" : "Open Campfire"}
             </Link>
@@ -284,7 +285,7 @@ export default function JoinGroupPage() {
                     maxLength={120}
                     className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 outline-none"
                   />
-                  <p className="mt-1 text-[11px] text-slate-400">
+                  <p className="mt-1 text-xs text-slate-500">
                     Add your email and we&apos;ll send you the results when they&apos;re in.
                     Skip it to stay anonymous.
                   </p>
@@ -294,7 +295,7 @@ export default function JoinGroupPage() {
               <button
                 onClick={handleGuest}
                 disabled={guestBusy || !guestName.trim()}
-                className="mt-2 w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"
+                className={`${CF_PRIMARY} mt-2 w-full`}
               >
                 {guestBusy ? "One sec…" : engId ? "✍️ Sign the card" : "🔥 Join as guest"}
               </button>
@@ -308,7 +309,7 @@ export default function JoinGroupPage() {
               >
                 {engId ? "Or sign in with email / Google" : "Or join with email / Google"}
               </button>
-              <p className="mt-1 text-xs text-slate-400">
+              <p className="mt-1 text-xs text-slate-500">
                 Keeps your spot on any device.
               </p>
             </div>

@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/campfire/supabase";
 import { CHECKOUT_LIVE } from "@/lib/campfire/premium";
 import GuestUpgrade from "./GuestUpgrade";
+import { CF_PRIMARY } from "@/lib/campfire/ui";
 
 // Header account menu: an always-visible avatar (44px) with Settings, Features and
 // Sign out — so phone users can reach Settings (incl. account deletion), and sign-out
@@ -61,7 +62,7 @@ function AccountMenu() {
         <span className="hidden max-w-[10rem] truncate text-sm font-medium text-slate-700 sm:inline">
           {name}
         </span>
-        <span aria-hidden className="text-xs text-slate-400">▾</span>
+        <span aria-hidden className="text-xs text-slate-500">▾</span>
       </button>
 
       {open && (
@@ -86,7 +87,7 @@ function AccountMenu() {
                   setConfirmGuest(false);
                   window.scrollTo({ top: 0, behavior: "smooth" });
                 }}
-                className="mt-3 block w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-3 text-center text-sm font-semibold text-white"
+                className={`${CF_PRIMARY} mt-3 w-full`}
               >
                 Save my account first
               </button>
@@ -203,7 +204,7 @@ function Shell({ children }: { children: React.ReactNode }) {
           </p>
           <Link
             href="/campfirelive/auth"
-            className="inline-block rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-8 py-3 text-sm font-bold text-white shadow-md hover:opacity-90"
+            className={`${CF_PRIMARY}`}
           >
             Sign In or Sign Up
           </Link>

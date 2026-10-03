@@ -74,6 +74,8 @@ export const viewport: Viewport = {
   // cover lets the page paint under the notch/home-indicator; the native shell
   // then uses env(safe-area-inset-*) so the header/footer clear them.
   viewportFit: "cover",
+  // Light-only design — stops Android WebView / browser auto-darkening.
+  colorScheme: "light",
 };
 
 export default function CampfireLiveLayout({
