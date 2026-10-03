@@ -487,8 +487,8 @@ function HousesCard({ canLog, isAdmin, portalCode, events = [] }: { canLog: bool
       {portalCode ? (
         <a href="/houses" target="_blank" rel="noreferrer" className="mb-3 flex items-center justify-between rounded-xl bg-slate-900 px-4 py-3 text-white">
           <div>
-            <div className="text-xs uppercase tracking-wide text-slate-500">Student leaderboard · curriculate.net/houses</div>
-            <div className="text-xs text-slate-500">Students enter this code once per device</div>
+            <div className="text-xs uppercase tracking-wide text-slate-300">Student leaderboard · curriculate.net/houses</div>
+            <div className="text-xs text-slate-400">Students enter this code once per device</div>
           </div>
           <div className="font-mono text-3xl font-bold tracking-[0.25em]">{portalCode}</div>
         </a>
