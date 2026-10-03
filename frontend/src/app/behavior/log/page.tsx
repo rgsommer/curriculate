@@ -45,23 +45,29 @@ function rowNameColor(count: number, trigger: number) {
   return "";
 }
 
-// Map each keyword to a chip colour key. "report" (green) when every behaviour
-// under it is report-only (INTERACTION mode); otherwise the dominant offence
-// category (preparedness / behaviour / uniform).
+// Map each keyword to a chip colour key. "positive" (green) when every behaviour
+// under it is Encouraging; "report" (orange "Interaction") when every behaviour is
+// a documentation-only interaction; otherwise the dominant offence category
+// (preparedness / behaviour / uniform).
 function keywordCategoryMap(list: Behavior[]): Record<string, string> {
   const cat: Record<string, Record<string, number>> = {};
   const total: Record<string, number> = {};
   const interaction: Record<string, number> = {};
+  const positive: Record<string, number> = {};
   for (const b of list) {
     if (!b.keyword) continue;
     total[b.keyword] = (total[b.keyword] || 0) + 1;
+    if (kindOf(b) === "positive") positive[b.keyword] = (positive[b.keyword] || 0) + 1;
     if (b.triggerMode === "INTERACTION") interaction[b.keyword] = (interaction[b.keyword] || 0) + 1;
     const cats: string[] = (b as any).categories?.length ? (b as any).categories : ((b as any).uniform ? ["uniform"] : []);
     for (const c of cats) { (cat[b.keyword] ||= {}); cat[b.keyword][c] = (cat[b.keyword][c] || 0) + 1; }
   }
   const m: Record<string, string> = {};
   for (const k of Object.keys(total)) {
-    if (interaction[k] === total[k]) { m[k] = "report"; continue; } // all report-only → green
+    // Encouraging behaviours are stored as INTERACTION (no strike), so check them
+    // first — otherwise they'd be painted as orange "Interaction".
+    if (positive[k] === total[k]) { m[k] = "positive"; continue; }
+    if (interaction[k] === total[k]) { m[k] = "report"; continue; } // documentation-only → orange
     const cc = cat[k];
     m[k] = cc ? Object.entries(cc).sort((a, b) => b[1] - a[1])[0][0] : "";
   }
@@ -101,6 +107,7 @@ function WeightPill({ value, onChange, kind }: { value: number; onChange: (n: nu
 function categoryChipClass(cat: string, selected: boolean) {
   if (selected) return "bg-slate-900 text-white";
   switch (cat) {
+    case "positive": return "border border-green-400 bg-green-100 text-green-900"; // encouraging
     case "report": return "border border-orange-400 bg-orange-200 text-orange-900"; // interaction / documentation-only (no strike)
     case "uniform": return "border border-indigo-400 bg-indigo-200 text-indigo-900";
     case "behaviour": return "border border-rose-400 bg-rose-200 text-rose-900";
@@ -1006,6 +1013,7 @@ function BatchLog({
             <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-rose-400" /> Behaviour</span>
             <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-indigo-400" /> Uniform (GUDD)</span>
             <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-orange-400" /> Interaction</span>
+            <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-green-400" /> Encouraging</span>
           </div>
         )}
         <select value={behaviorId} onChange={(e) => setBehaviorId(e.target.value)} className="w-full rounded-xl border border-slate-300 px-4 py-3 text-lg">

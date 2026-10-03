@@ -62,8 +62,8 @@ export default function BehavioursPage() {
         <Link href="/behavior/log" className="text-sm text-slate-500 underline">← back to logging</Link>
         <h1 className="mt-1 text-xl font-semibold">Behaviours</h1>
         <p className="text-sm text-slate-400">
-          Each behaviour is <span className="text-red-600 font-medium">✕ negative</span> (an offence) or{" "}
-          <span className="text-green-600 font-medium">✓ positive</span> (a reward — never counts as a strike).
+          Each behaviour is <span className="text-red-600 font-medium">✕ correcting</span> (something to address) or{" "}
+          <span className="text-green-600 font-medium">✓ encouraging</span> (recognition — never counts as a strike).
           {housesOn && " Set "}{housesOn && <span className="font-medium">house points</span>}{housesOn && " on any behaviour."}
         </p>
         {isAdmin && <SeedStandard onSeeded={load} />}
