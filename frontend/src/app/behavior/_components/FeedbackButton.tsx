@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { api, getToken } from "../_lib/api";
 
@@ -13,8 +13,13 @@ export default function FeedbackButton() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const pathname = usePathname();
+  // Decide visibility only after mount: the server can't see the sign-in token,
+  // so rendering it server-side then hiding it in the browser caused a
+  // hydration mismatch for signed-out visitors.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
-  if (typeof window !== "undefined" && !getToken()) return null;
+  if (!mounted || !getToken()) return null;
 
   async function send() {
     if (!message.trim()) return;
