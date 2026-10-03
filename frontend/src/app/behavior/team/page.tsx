@@ -163,7 +163,68 @@ export default function TeamPage() {
       {/* Members */}
       <section className={cardCls}>
         <h2 className="font-semibold">Members ({accepted.length})</h2>
-        <div className="mt-2 overflow-x-auto">
+
+        {/* Phone layout: a card per member (the wide table is unusable at 375px). */}
+        <div className="mt-2 space-y-3 sm:hidden">
+          {teachers.map((t) => (
+            <div key={t._id} className={`rounded-lg border border-slate-200 p-3 ${t.status === "pending" ? "opacity-70" : ""}`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="truncate font-medium">
+                    {t.name || <span className="italic text-slate-500">{t.email.split("@")[0]} (no name)</span>}
+                    {isAdmin && t.status !== "pending" && (
+                      <button onClick={() => renameMember(t.userId, t.name || "")} className="ml-2 text-xs font-normal text-slate-500 underline">edit</button>
+                    )}
+                  </div>
+                  <div className="truncate text-xs text-slate-500">{t.email}</div>
+                  <div className="mt-0.5 text-xs capitalize text-slate-500">{t.role}{t.status === "pending" ? " · invited, not joined" : ""}</div>
+                </div>
+                <div className="shrink-0 text-right text-xs text-slate-500">
+                  <div className="tabular-nums">{t.incidents} inc · {t.notices} notices</div>
+                  <div>{t.status === "pending" ? "—" : ago(t.lastActiveAt)}</div>
+                </div>
+              </div>
+              {isAdmin && t.status !== "pending" && (
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <label className="text-xs text-slate-500">Official name
+                    <input defaultValue={t.courtesyName || ""} onBlur={(e) => { if (e.target.value.trim() !== (t.courtesyName || "")) saveCourtesy(t.userId, e.target.value); }}
+                      placeholder="Mr. Sommer" className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-sm" />
+                  </label>
+                  <label className="text-xs text-slate-500">Homeroom
+                    <input defaultValue={t.homeroom || ""} onBlur={(e) => { if (e.target.value.trim() !== (t.homeroom || "")) saveHomeroomMember(t.userId, e.target.value); }}
+                      placeholder="e.g. 7A" className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-sm" />
+                  </label>
+                </div>
+              )}
+              {t.status !== "pending" && (
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-sm text-slate-700">
+                  {t.role !== "originator" && t.role !== "principal" && (
+                    <label className="flex items-center gap-2">
+                      <input type="checkbox" className="h-4 w-4 accent-slate-900 disabled:opacity-40" checked={t.role === "admin"}
+                        disabled={!isOriginator || savingSetup === t.userId} onChange={(e) => setSetupAccess(t.userId, e.target.checked)} />
+                      Edit setup
+                    </label>
+                  )}
+                  {t.role !== "principal" && t.role !== "originator" && t.role !== "admin" && (
+                    <label className="flex items-center gap-2">
+                      <input type="checkbox" className="h-4 w-4 accent-slate-900 disabled:opacity-40" checked={!!t.housesCommittee}
+                        disabled={!isAdmin} onChange={(e) => setCommittee(t.userId, e.target.checked)} />
+                      Houses cmte
+                    </label>
+                  )}
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" className="h-4 w-4 accent-slate-900 disabled:opacity-40" checked={t.monthlySummary !== false}
+                      disabled={!isAdmin} onChange={(e) => setMonthlySummary(t.userId, e.target.checked)} />
+                    Monthly email
+                  </label>
+                </div>
+              )}
+            </div>
+          ))}
+          {teachers.length === 0 && <p className="text-slate-500">No members yet.</p>}
+        </div>
+
+        <div className="mt-2 hidden overflow-x-auto sm:block">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-slate-400">

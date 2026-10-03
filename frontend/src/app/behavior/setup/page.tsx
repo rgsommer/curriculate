@@ -101,30 +101,84 @@ export default function SetupPage() {
   const isAdmin = me.membership.role === "originator" || me.membership.role === "admin";
   if (!isAdmin) return <ReadOnlySettings me={me} />;
 
+  const groups = [
+    { id: "grp-rules", label: "School rules" },
+    { id: "grp-behaviours", label: "Behaviours" },
+    { id: "grp-houses", label: "Houses" },
+    { id: "grp-homework", label: "Homework" },
+    { id: "grp-messages", label: "Parent messages & digests" },
+    { id: "grp-integrations", label: "Integrations" },
+    { id: "grp-people", label: "People & roster" },
+    { id: "grp-testing", label: "Testing" },
+  ];
+  const GroupHeading = ({ children }: { children: ReactNode }) => (
+    <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{children}</h2>
+  );
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {err && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
-      <ConfigSection config={me.config} />
-      <ParentTemplatesSection />
-      <Card>
-        <h2 className="font-semibold">Behaviours (division list)</h2>
-        <p className="mt-1 text-sm text-slate-500">Add/edit offenses, their trigger mode, consequence and follow-up.</p>
-        <Link href="/behavior/behaviours" className="mt-2 inline-block rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
-          Manage behaviours →
-        </Link>
-      </Card>
-      <HousesSection config={me.config} />
-      <HomeworkSettings config={me.config} />
-      <TeacherHomeworkPrefs config={me.config} prefs={me.membership?.homeworkPrefs} />
-      <RecommendedActionsSettings config={me.config} />
-      <GuddSettings config={me.config} />
-      <ConsequenceDigestSettings config={me.config} />
-      <AdminDigestSettings config={me.config} myEmail={me.membership?.email || ""} />
-      <EdsbySection edsby={me.config?.edsby} />
-      <InviteSection domain={me.school?.emailDomain || ""} isOriginator={me.membership.role === "originator"} />
-      <RosterSection />
-      <AddStudentSection />
-      <TestToolsSection email={me.membership.email} />
+
+      {/* Jump-to index so Setup isn't an undifferentiated wall of accordions. */}
+      <nav className="flex flex-wrap gap-2 rounded-xl border border-slate-200 bg-white p-3 text-sm shadow-sm">
+        <span className="self-center pr-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Jump to</span>
+        {groups.map((g) => (
+          <a key={g.id} href={`#${g.id}`} className="rounded-full border border-slate-300 px-3 py-1 text-slate-600 hover:bg-slate-50">{g.label}</a>
+        ))}
+      </nav>
+
+      <div id="grp-rules" className="scroll-mt-20 space-y-4">
+        <GroupHeading>School rules</GroupHeading>
+        <ConfigSection config={me.config} />
+        <RecommendedActionsSettings config={me.config} />
+        <GuddSettings config={me.config} />
+      </div>
+
+      <div id="grp-behaviours" className="scroll-mt-20 space-y-4">
+        <GroupHeading>Behaviours</GroupHeading>
+        <Card>
+          <h2 className="font-semibold">Behaviours (division list)</h2>
+          <p className="mt-1 text-sm text-slate-500">Add/edit offenses, their trigger mode, consequence and follow-up.</p>
+          <Link href="/behavior/behaviours" className="mt-2 inline-block rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
+            Manage behaviours →
+          </Link>
+        </Card>
+      </div>
+
+      <div id="grp-houses" className="scroll-mt-20 space-y-4">
+        <GroupHeading>Houses</GroupHeading>
+        <HousesSection config={me.config} />
+      </div>
+
+      <div id="grp-homework" className="scroll-mt-20 space-y-4">
+        <GroupHeading>Homework</GroupHeading>
+        <HomeworkSettings config={me.config} />
+        <TeacherHomeworkPrefs config={me.config} prefs={me.membership?.homeworkPrefs} />
+      </div>
+
+      <div id="grp-messages" className="scroll-mt-20 space-y-4">
+        <GroupHeading>Parent messages &amp; digests</GroupHeading>
+        <ParentTemplatesSection />
+        <ConsequenceDigestSettings config={me.config} />
+        <AdminDigestSettings config={me.config} myEmail={me.membership?.email || ""} />
+      </div>
+
+      <div id="grp-integrations" className="scroll-mt-20 space-y-4">
+        <GroupHeading>Integrations</GroupHeading>
+        <EdsbySection edsby={me.config?.edsby} />
+      </div>
+
+      <div id="grp-people" className="scroll-mt-20 space-y-4">
+        <GroupHeading>People &amp; roster</GroupHeading>
+        <InviteSection domain={me.school?.emailDomain || ""} isOriginator={me.membership.role === "originator"} />
+        <RosterSection />
+        <AddStudentSection />
+      </div>
+
+      <div id="grp-testing" className="scroll-mt-20 space-y-4">
+        <GroupHeading>Testing</GroupHeading>
+        <TestToolsSection email={me.membership.email} />
+      </div>
     </div>
   );
 }
