@@ -749,7 +749,7 @@ export default function LogIncidentPage() {
           disabled={!behaviorId || submitting}
           className={`w-full rounded-xl px-4 py-4 text-lg font-semibold text-white disabled:opacity-40 ${kindFilter === "positive" ? "bg-green-700" : "bg-slate-900"}`}
         >
-          {uploadingMedia ? "Uploading evidence…" : submitting ? "Submitting…" : kindFilter === "positive" ? "Log positive" : "Submit"}
+          {uploadingMedia ? "Uploading evidence…" : submitting ? "Submitting…" : kindFilter === "positive" ? "Log encouraging" : "Log correcting"}
         </button>
       </form>
     );

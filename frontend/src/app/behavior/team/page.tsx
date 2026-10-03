@@ -302,6 +302,7 @@ export default function TeamPage() {
                         className="h-4 w-4 cursor-pointer accent-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
                         checked={t.role === "admin"}
                         disabled={!isOriginator || t.status === "pending" || savingSetup === t.userId}
+                        aria-label={`Edit-setup access for ${t.name || t.email}`}
                         title={isOriginator ? "Allow this member to edit Setup" : "Only the originator can change this"}
                         onChange={(e) => setSetupAccess(t.userId, e.target.checked)}
                       />
@@ -318,6 +319,7 @@ export default function TeamPage() {
                         className="h-4 w-4 cursor-pointer accent-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
                         checked={!!t.housesCommittee}
                         disabled={!isAdmin || t.status === "pending"}
+                        aria-label={`Houses committee access for ${t.name || t.email}`}
                         title={isAdmin ? "Let this member manage Houses without full Setup access" : "Admins only"}
                         onChange={(e) => setCommittee(t.userId, e.target.checked)}
                       />
@@ -332,6 +334,7 @@ export default function TeamPage() {
                         className="h-4 w-4 cursor-pointer accent-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
                         checked={t.monthlySummary !== false}
                         disabled={!isAdmin}
+                        aria-label={`Monthly summary email for ${t.name || t.email}`}
                         title={isAdmin ? "Send this teacher a monthly recap of their own Compass activity" : "Admins only"}
                         onChange={(e) => setMonthlySummary(t.userId, e.target.checked)}
                       />

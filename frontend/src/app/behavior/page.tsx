@@ -631,12 +631,13 @@ function HrButton({ studentId, done }: { studentId: string; done?: boolean }) {
   return (
     <button type="button" disabled={state === "busy" || isDone}
       onClick={(e) => { e.preventDefault(); e.stopPropagation(); click(); }}
+      aria-label={isDone ? "Homeroom follow-up already logged this week" : "Log a homeroom follow-up (supportive check-in)"}
       title={isDone
         ? "Homeroom follow-up already logged this week. It resets each week."
         : "Homeroom follow-up: flag that the homeroom teacher will talk with this student to steer them in the right direction. Logged as a supportive check-in — not a strike, nothing sent home."}
-      className={`shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold ${isDone
+      className={`shrink-0 rounded-md px-2.5 py-1.5 text-xs font-semibold ${isDone
         ? "border border-green-300 bg-green-50 text-green-700"
-        : "bg-blue-600 text-white hover:bg-blue-700"}`}>
+        : "bg-slate-700 text-white hover:bg-slate-800"}`}>
       {isDone ? "HR ✓" : state === "busy" ? "…" : "HR"}
     </button>
   );
@@ -728,10 +729,10 @@ function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
               <span className="text-slate-500">Confirm the consequence given:</span>
               <button type="button" onClick={() => resolveSlip(s)}
-                className="rounded-md bg-amber-600 px-2 py-0.5 font-semibold text-white hover:bg-amber-700">Issued</button>
+                className="rounded-md bg-amber-600 px-3 py-1.5 font-semibold text-white hover:bg-amber-700">Issued</button>
               <button type="button"
                 onClick={() => { const t = window.prompt("What consequence was given instead of the white slip? (e.g. Work detention, Call home)"); if (t && t.trim()) resolveSlip(s, t.trim()); }}
-                className="rounded-md border border-slate-300 px-2 py-0.5 font-semibold text-slate-700 hover:bg-slate-50">Other…</button>
+                className="rounded-md border border-slate-300 px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-50">Other…</button>
             </div>
           )}
           {(s.pendingConsequences || []).map((c) => (
@@ -739,7 +740,7 @@ function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number
               <span className="text-slate-500">Consequence: <span className="font-medium text-slate-700">{c.type}</span></span>
               <button type="button" onClick={() => markDone(s, c.id)}
                 title="The student has carried this out (e.g. handed in the lines)"
-                className="rounded-md border border-green-300 px-2 py-0.5 font-semibold text-green-700 hover:bg-green-50">✓ Mark completed</button>
+                className="rounded-md border border-green-300 px-3 py-1.5 font-semibold text-green-700 hover:bg-green-50">✓ Mark completed</button>
             </div>
           ))}
         </li>
@@ -834,7 +835,7 @@ function StudentsToWatch({ fadeDays, myHomeroom }: { fadeDays?: number; myHomero
       )}
       <li className="flex items-center justify-between gap-2 py-2 text-sm">
         <span className="flex min-w-0 items-center gap-2">
-          <button onClick={() => toggleOcc(s._id)} title="Show the occurrences" className="shrink-0 text-slate-500 hover:text-slate-700">{openId === s._id ? "▾" : "▸"}</button>
+          <button onClick={() => toggleOcc(s._id)} aria-label={openId === s._id ? "Hide occurrences" : "Show occurrences"} aria-expanded={openId === s._id} className="-m-1 shrink-0 p-1 text-slate-500 hover:text-slate-700">{openId === s._id ? "▾" : "▸"}</button>
           <Link href={`/behavior/student/${s._id}`} className="min-w-0 truncate font-medium hover:text-slate-600">
             {s.lastName}, {s.firstName} <span className="text-slate-500">{s.classGroup}</span>
           </Link>
