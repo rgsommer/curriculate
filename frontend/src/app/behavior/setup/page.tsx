@@ -381,7 +381,7 @@ function ConfigSection({ config }: { config: any }) {
         <Field label="VP name">
           <input value={c.vpName} onChange={(e) => setC({ ...c, vpName: e.target.value })} className={inputCls} />
         </Field>
-        <Field label="VP name (CC on 2nd+ notice)">
+        <Field label="VP email (CC on 2nd+ notice)">
           <input value={c.vpEmail} onChange={(e) => setC({ ...c, vpEmail: e.target.value })} className={inputCls} placeholder="VP email (only used if email is enabled below)" />
         </Field>
         <Field label="VP Edsby id (so the CC reaches them on Edsby)">

@@ -244,7 +244,7 @@ function PositiveNudge() {
                     <li key={s._id}>
                       <button onClick={() => { setPicked(s); setQ(""); }} className="block w-full px-3 py-2 text-left text-sm hover:bg-green-50">
                         {s.preferredName || s.firstName} {s.lastName}
-                        {s.grade ? <span className="ml-1 text-xs text-slate-400">Gr {s.grade}</span> : null}
+                        {s.grade ? <span className="ml-1 text-xs text-slate-500">Gr {s.grade}</span> : null}
                       </button>
                     </li>
                   ))}
@@ -300,13 +300,13 @@ function SetMyName({ name: name0, courtesyName: courtesy0, onSaved }: { name?: s
       <div className="mt-3 space-y-3">
         <label className="block text-sm">
           <span className="font-medium text-slate-700">Your name</span>
-          <span className="block text-xs text-slate-400">How you&apos;re shown to staff in Compass (e.g. &ldquo;logged by …&rdquo;).</span>
+          <span className="block text-xs text-slate-500">How you&apos;re shown to staff in Compass (e.g. &ldquo;logged by …&rdquo;).</span>
           <input value={name} onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Richard Sommer" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" autoFocus />
         </label>
         <label className="block text-sm">
           <span className="font-medium text-slate-700">Your official (parent-facing) name</span>
-          <span className="block text-xs text-slate-400">Used in messages home and on notices (e.g. &ldquo;Mr. Sommer&rdquo;, &ldquo;Miss Lau&rdquo;).</span>
+          <span className="block text-xs text-slate-500">Used in messages home and on notices (e.g. &ldquo;Mr. Sommer&rdquo;, &ldquo;Miss Lau&rdquo;).</span>
           <input value={courtesyName} onChange={(e) => setCourtesyName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save()}
             placeholder="e.g. Mr. Sommer" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
         </label>
@@ -376,7 +376,7 @@ function ReferColleague({ canInviteAdmin = false, standalone = false }: { canInv
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
           <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Optional personal note…"
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-slate-500">
             {kind === "admin"
               ? "Sends a leadership-focused pitch (burnout, consistency, documentation, trends, coaching) with a link — no account created. You're cc'd."
               : "Sends an info email about Compass with a link to try it — no account created. You're cc'd."}
@@ -398,7 +398,7 @@ function DailyMovers({ housesOn }: { housesOn: boolean }) {
   return (
     <Card>
       <h2 className="font-semibold">Daily Movers</h2>
-      <p className="text-xs text-slate-400">Most behaviour movement today — points and logs since this morning.</p>
+      <p className="text-xs text-slate-500">Most behaviour movement today — points and logs since this morning.</p>
       <ul className="mt-2 divide-y divide-slate-100">
         {movers.map((m, i) => {
           const featured = i === 0 && housesOn && !!m.house;
@@ -408,7 +408,7 @@ function DailyMovers({ housesOn }: { housesOn: boolean }) {
               style={featured ? { borderColor: m.color, background: `${m.color}14` } : undefined}>
               {housesOn && m.house ? <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: m.color }} title={m.house} /> : null}
               <Link href={`/behavior/student/${m.studentId}`} className="truncate font-medium hover:underline">{m.name}</Link>
-              {featured ? <span className="shrink-0 rounded-full px-1.5 text-[10px] font-semibold" style={{ background: `${m.color}26`, color: m.color }}>⭐ {m.house}</span> : m.classGroup ? <span className="shrink-0 text-xs text-slate-400">{m.classGroup}</span> : null}
+              {featured ? <span className="shrink-0 rounded-full px-1.5 text-[10px] font-semibold" style={{ background: `${m.color}26`, color: m.color }}>⭐ {m.house}</span> : m.classGroup ? <span className="shrink-0 text-xs text-slate-500">{m.classGroup}</span> : null}
               <span className="ml-auto flex shrink-0 items-center gap-2">
                 {m.net ? <span className={`tabular-nums font-semibold ${m.net > 0 ? "text-green-600" : "text-red-600"}`}>{m.net > 0 ? `+${m.net}` : m.net} pts</span> : null}
                 {m.incidents ? <span className="text-xs text-slate-500">{m.incidents} log{m.incidents === 1 ? "" : "s"}</span> : null}
@@ -486,8 +486,8 @@ function HousesCard({ canLog, isAdmin, portalCode, events = [] }: { canLog: bool
       {portalCode ? (
         <a href="/houses" target="_blank" rel="noreferrer" className="mb-3 flex items-center justify-between rounded-xl bg-slate-900 px-4 py-3 text-white">
           <div>
-            <div className="text-xs uppercase tracking-wide text-slate-300">Student leaderboard · curriculate.net/houses</div>
-            <div className="text-xs text-slate-400">Students enter this code once per device</div>
+            <div className="text-xs uppercase tracking-wide text-slate-500">Student leaderboard · curriculate.net/houses</div>
+            <div className="text-xs text-slate-500">Students enter this code once per device</div>
           </div>
           <div className="font-mono text-3xl font-bold tracking-[0.25em]">{portalCode}</div>
         </a>
@@ -545,12 +545,12 @@ function HousesCard({ canLog, isAdmin, portalCode, events = [] }: { canLog: bool
                 <div className="h-full rounded-full" style={{ width: `${barPct(h.points)}%`, background: h.color || "#0f172a", opacity: (h.points || 0) < 0 ? 0.45 : 1 }} />
               </div>
               <span className="w-12 shrink-0 text-right text-sm tabular-nums font-semibold">{h.points || 0}</span>
-              <span className="w-3 shrink-0 text-xs text-slate-400">{isOpen ? "▾" : "▸"}</span>
+              <span className="w-3 shrink-0 text-xs text-slate-500">{isOpen ? "▾" : "▸"}</span>
             </button>
             {isOpen && (
               <div className="mt-1 ml-6 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
                 {!d ? (
-                  <p className="text-slate-400">{detailBusy ? "Loading…" : "No details."}</p>
+                  <p className="text-slate-500">{detailBusy ? "Loading…" : "No details."}</p>
                 ) : (
                   <>
                     {d.individual?.negative < 0 && (
@@ -558,12 +558,12 @@ function HousesCard({ canLog, isAdmin, portalCode, events = [] }: { canLog: bool
                     )}
                     <div className="grid grid-cols-2 gap-2">
                       <div className="rounded-lg bg-white p-2">
-                        <div className="text-xs text-slate-400">Individual Compass points</div>
+                        <div className="text-xs text-slate-500">Individual Compass points</div>
                         <div className="font-bold tabular-nums">{d.individual?.total > 0 ? `+${d.individual.total}` : d.individual?.total ?? 0}</div>
-                        <div className="text-[11px] text-slate-400">+{d.individual?.positive ?? 0} good{d.individual?.negative ? ` · ${d.individual.negative} conduct` : ""}</div>
+                        <div className="text-[11px] text-slate-500">+{d.individual?.positive ?? 0} good{d.individual?.negative ? ` · ${d.individual.negative} conduct` : ""}</div>
                       </div>
                       <div className="rounded-lg bg-white p-2">
-                        <div className="text-xs text-slate-400">Team &amp; house events</div>
+                        <div className="text-xs text-slate-500">Team &amp; house events</div>
                         <div className="font-bold tabular-nums">{d.team?.total > 0 ? `+${d.team.total}` : d.team?.total ?? 0}</div>
                       </div>
                     </div>
@@ -573,7 +573,7 @@ function HousesCard({ canLog, isAdmin, portalCode, events = [] }: { canLog: bool
                         <ul className="mt-1 divide-y divide-slate-100">
                           {d.individual.items.map((it: any, i: number) => (
                             <li key={i} className="flex items-center justify-between gap-2 py-1">
-                              <span className="min-w-0 truncate text-slate-600">{it.reason} <span className="text-slate-300">×{it.count}</span></span>
+                              <span className="min-w-0 truncate text-slate-600">{it.reason} <span className="text-slate-500">×{it.count}</span></span>
                               <span className={`shrink-0 tabular-nums font-medium ${it.points < 0 ? "text-red-600" : "text-green-600"}`}>{it.points > 0 ? `+${it.points}` : it.points}</span>
                             </li>
                           ))}
@@ -586,7 +586,7 @@ function HousesCard({ canLog, isAdmin, portalCode, events = [] }: { canLog: bool
                         <ul className="mt-1 divide-y divide-slate-100">
                           {d.team.items.map((it: any, i: number) => (
                             <li key={i} className="flex items-center justify-between gap-2 py-1">
-                              <span className="min-w-0 truncate text-slate-600">{it.reason} <span className="text-slate-300">×{it.count}</span></span>
+                              <span className="min-w-0 truncate text-slate-600">{it.reason} <span className="text-slate-500">×{it.count}</span></span>
                               <span className={`shrink-0 tabular-nums font-medium ${it.points < 0 ? "text-red-600" : "text-green-600"}`}>{it.points > 0 ? `+${it.points}` : it.points}</span>
                             </li>
                           ))}
@@ -594,7 +594,7 @@ function HousesCard({ canLog, isAdmin, portalCode, events = [] }: { canLog: bool
                       </div>
                     )}
                     {(d.individual?.items || []).length === 0 && (d.team?.items || []).length === 0 && (
-                      <p className="text-slate-400">No points yet.</p>
+                      <p className="text-slate-500">No points yet.</p>
                     )}
                   </>
                 )}
@@ -604,7 +604,7 @@ function HousesCard({ canLog, isAdmin, portalCode, events = [] }: { canLog: bool
           );
         })}
       </ul>
-      <p className="mt-2 text-xs text-slate-400">
+      <p className="mt-2 text-xs text-slate-500">
         {houses.reduce((n, h) => n + (h.members || 0), 0)} students assigned · positive = awards, negative = incident deductions ·{" "}
         <a href="/houses" target="_blank" rel="noreferrer" className="underline">student board ↗</a>
       </p>
@@ -703,13 +703,13 @@ function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number
     return (
       <Fragment key={s._id}>
         {showHeader && (
-          <li className="!border-t-0 pt-2 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-400">{s.classGroup || "No homeroom"}</li>
+          <li className="!border-t-0 pt-2 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-500">{s.classGroup || "No homeroom"}</li>
         )}
         <li className="py-2">
           <div className="flex items-center justify-between gap-2 text-sm">
             <span className="flex min-w-0 items-center gap-2">
               <Link href={`/behavior/student/${s._id}`} className="min-w-0 hover:text-slate-600">
-                <span className="font-medium">{s.lastName}, {s.firstName}</span> <span className="text-slate-400">{s.classGroup}</span>
+                <span className="font-medium">{s.lastName}, {s.firstName}</span> <span className="text-slate-500">{s.classGroup}</span>
                 {s.pendingWhiteSlipId
                   ? <span className="mt-0.5 block text-xs text-red-700">Next: White slip recommended</span>
                   : action && <span className="mt-0.5 block text-xs text-red-700">Next: {action}</span>}
@@ -717,7 +717,7 @@ function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number
               <HrButton studentId={s._id} done={s.hrFollowedUpThisWeek} />
             </span>
             <span className="flex shrink-0 items-center gap-3">
-              <span className="text-xs text-slate-400">{s.noticesHomeCount} notice{(s.noticesHomeCount || 0) === 1 ? "" : "s"}</span>
+              <span className="text-xs text-slate-500">{s.noticesHomeCount} notice{(s.noticesHomeCount || 0) === 1 ? "" : "s"}</span>
               <span className={`font-semibold tabular-nums ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
                 {s.activeCount}/{trigger} →
               </span>
@@ -763,7 +763,7 @@ function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number
           showOthers ? (
             <>
               {myHomeroom && mine.length > 0 && (
-                <li className="!border-t-0 pt-3 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Other homerooms</li>
+                <li className="!border-t-0 pt-3 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Other homerooms</li>
               )}
               {others.map((s, i) => renderRow(s, i === 0 || (others[i - 1].classGroup || "") !== (s.classGroup || "")))}
             </>
@@ -829,13 +829,13 @@ function StudentsToWatch({ fadeDays, myHomeroom }: { fadeDays?: number; myHomero
   const renderRow = (s: StudentSummary, showHeader: boolean) => (
     <Fragment key={s._id}>
       {showHeader && (
-        <li className="!border-t-0 pt-2 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-400">{s.classGroup || "No homeroom"}</li>
+        <li className="!border-t-0 pt-2 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-500">{s.classGroup || "No homeroom"}</li>
       )}
       <li className="flex items-center justify-between gap-2 py-2 text-sm">
         <span className="flex min-w-0 items-center gap-2">
-          <button onClick={() => toggleOcc(s._id)} title="Show the occurrences" className="shrink-0 text-slate-400 hover:text-slate-700">{openId === s._id ? "▾" : "▸"}</button>
+          <button onClick={() => toggleOcc(s._id)} title="Show the occurrences" className="shrink-0 text-slate-500 hover:text-slate-700">{openId === s._id ? "▾" : "▸"}</button>
           <Link href={`/behavior/student/${s._id}`} className="min-w-0 truncate font-medium hover:text-slate-600">
-            {s.lastName}, {s.firstName} <span className="text-slate-400">{s.classGroup}</span>
+            {s.lastName}, {s.firstName} <span className="text-slate-500">{s.classGroup}</span>
           </Link>
           <HrButton studentId={s._id} done={s.hrFollowedUpThisWeek} />
         </span>
@@ -846,20 +846,20 @@ function StudentsToWatch({ fadeDays, myHomeroom }: { fadeDays?: number; myHomero
       {openId === s._id && (
         <li className="!border-t-0 pb-2 pl-6 text-xs text-slate-600">
           {occById[s._id] === "loading" ? (
-            <span className="text-slate-400">Loading…</span>
+            <span className="text-slate-500">Loading…</span>
           ) : (occById[s._id] as Occ[])?.length ? (
             <ul className="space-y-0.5">
               {(occById[s._id] as Occ[]).map((o, k) => (
                 <li key={k}>
-                  <span className="text-slate-400">{new Date(o.date).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}</span>
+                  <span className="text-slate-500">{new Date(o.date).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}</span>
                   {" · "}<span className="font-medium">{o.name}</span>
                   {o.detail ? <span className="text-slate-500"> — {o.detail}</span> : null}
-                  {o.teacher ? <span className="text-slate-400"> ({o.teacher})</span> : null}
+                  {o.teacher ? <span className="text-slate-500"> ({o.teacher})</span> : null}
                 </li>
               ))}
             </ul>
           ) : (
-            <span className="text-slate-400">No recent occurrences.</span>
+            <span className="text-slate-500">No recent occurrences.</span>
           )}
         </li>
       )}
@@ -884,7 +884,7 @@ function StudentsToWatch({ fadeDays, myHomeroom }: { fadeDays?: number; myHomero
           showOthers ? (
             <>
               {myHomeroom && mine.length > 0 && (
-                <li className="!border-t-0 pt-3 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Other homerooms</li>
+                <li className="!border-t-0 pt-3 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Other homerooms</li>
               )}
               {others.map((s, i) => renderRow(s, i === 0 || (others[i - 1].classGroup || "") !== (s.classGroup || "")))}
             </>
@@ -1049,7 +1049,7 @@ function PendingDecisions({ autoSend, channelLabel }: { autoSend: boolean; chann
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <span className="font-medium">{n.studentName}</span>
-                <span className="ml-2 text-xs text-slate-400">
+                <span className="ml-2 text-xs text-slate-500">
                   {[n.classGroup, n.count ? `${n.count} strike${n.count === 1 ? "" : "s"}` : "", n.ccVp ? "VP CC" : ""].filter(Boolean).join(" · ")}
                 </span>
               </div>
@@ -1063,7 +1063,7 @@ function PendingDecisions({ autoSend, channelLabel }: { autoSend: boolean; chann
             {(n.sequenceNo || 1) >= 2 && (
               <label className="mt-2 flex items-center gap-2 text-xs text-slate-600">
                 <input type="checkbox" checked={!!meetingFor[n._id]} onChange={(e) => setMeetingFor((m) => ({ ...m, [n._id]: e.target.checked }))} />
-                Also request a meeting with the parents <span className="text-slate-400">(notice #{n.sequenceNo} — a note has already gone home)</span>
+                Also request a meeting with the parents <span className="text-slate-500">(notice #{n.sequenceNo} — a note has already gone home)</span>
               </label>
             )}
             <div className="mt-2 flex flex-wrap gap-2">
@@ -1125,9 +1125,9 @@ function ReminderToday({ firstName }: { firstName?: string }) {
   return (
     <Card>
       <h2 className="font-semibold">{firstName ? `Reminders for ${firstName} today` : "Reminder for today"}</h2>
-      <p className="mt-0.5 text-xs text-slate-400">Consequences from offences you logged — for you to follow up on.</p>
+      <p className="mt-0.5 text-xs text-slate-500">Consequences from offences you logged — for you to follow up on.</p>
       {msg && <p className="mt-1 text-sm text-amber-700">{msg}</p>}
-      {items === null && <p className="mt-1 text-sm text-slate-400">Loading…</p>}
+      {items === null && <p className="mt-1 text-sm text-slate-500">Loading…</p>}
       {items && items.length === 0 && <p className="mt-1 text-sm text-slate-500">Nothing due today 🎉</p>}
       <ul className="mt-2 space-y-2">
         {items?.map((f) => {
@@ -1136,10 +1136,10 @@ function ReminderToday({ firstName }: { firstName?: string }) {
           return (
             <li key={f._id} className="rounded-lg border border-slate-200 p-3">
               <p className="text-sm font-medium">
-                {name} <span className="text-slate-400">{s?.classGroup}</span>
+                {name} <span className="text-slate-500">{s?.classGroup}</span>
                 {f.multiplier > 1 && <span className="ml-2 text-xs text-red-600">×{f.multiplier}</span>}
                 {(f.incidentAt || f.createdAt) && (
-                  <span className="ml-2 text-xs font-normal text-slate-400">
+                  <span className="ml-2 text-xs font-normal text-slate-500">
                     · incident {new Date(f.incidentAt || f.createdAt).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}
                   </span>
                 )}
@@ -1147,7 +1147,7 @@ function ReminderToday({ firstName }: { firstName?: string }) {
               <p className="text-sm text-slate-600">
                 {f.behaviorName}: {f.consequenceText}
               </p>
-              <p className="mt-1 text-xs text-slate-400">Did the student complete this? (About the task itself — not the parent message.)</p>
+              <p className="mt-1 text-xs text-slate-500">Did the student complete this? (About the task itself — not the parent message.)</p>
               <div className="mt-2 flex gap-2">
                 <button onClick={() => resolve(f._id, "done")} title="The student completed the task (e.g. handed in the lines)" className="rounded-lg bg-green-600 px-3 py-1 text-xs font-medium text-white">
                   Completed

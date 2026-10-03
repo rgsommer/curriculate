@@ -218,7 +218,7 @@ export default function HousesPortal() {
       <Header />
       <div className="flex items-center justify-between">
         <p className="text-sm text-slate-500">{board?.schoolName || ""}</p>
-        <button onClick={changeCode} className="text-xs text-slate-400 underline">change code</button>
+        <button onClick={changeCode} className="text-xs text-slate-500 underline">change code</button>
       </div>
 
       {err && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
@@ -238,7 +238,7 @@ export default function HousesPortal() {
           </button>
         </form>
         {lookupErr && <p className="mt-2 text-sm text-red-600">{lookupErr}</p>}
-        {matches && matches.length === 0 && <p className="mt-2 text-sm text-slate-400">No match — check the spelling, or ask your teacher.</p>}
+        {matches && matches.length === 0 && <p className="mt-2 text-sm text-slate-500">No match — check the spelling, or ask your teacher.</p>}
         {matches && matches.length > 0 && (
           <ul className="mt-3 space-y-2">
             {matches.map((m, i) => (
@@ -246,7 +246,7 @@ export default function HousesPortal() {
                 <span className="inline-block h-8 w-8 shrink-0 rounded-full" style={{ background: m.color }} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline justify-between gap-2">
-                    <div className="font-semibold">{m.firstName}{m.grade ? <span className="ml-1 text-xs font-normal text-slate-400">Gr {m.grade}</span> : null}</div>
+                    <div className="font-semibold">{m.firstName}{m.grade ? <span className="ml-1 text-xs font-normal text-slate-500">Gr {m.grade}</span> : null}</div>
                     {typeof m.points === "number" && (
                       <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800" title="Your points to spend in the rewards store">⭐ {m.points} pts</span>
                     )}
@@ -257,10 +257,10 @@ export default function HousesPortal() {
                     {m.room ? <span className="text-slate-500"> → Room {m.room}</span> : null}
                   </div>
                   {m.teachers && m.teachers.length > 0 && (
-                    <div className="mt-0.5 text-xs text-slate-500"><span className="text-slate-400">Teacher{m.teachers.length > 1 ? "s" : ""}:</span> {m.teachers.join(", ")}</div>
+                    <div className="mt-0.5 text-xs text-slate-500"><span className="text-slate-500">Teacher{m.teachers.length > 1 ? "s" : ""}:</span> {m.teachers.join(", ")}</div>
                   )}
                   {m.captains && m.captains.length > 0 && (
-                    <div className="mt-0.5 text-xs text-slate-500"><span className="text-slate-400">Captain{m.captains.length > 1 ? "s" : ""}:</span> {m.captains.join(", ")}</div>
+                    <div className="mt-0.5 text-xs text-slate-500"><span className="text-slate-500">Captain{m.captains.length > 1 ? "s" : ""}:</span> {m.captains.join(", ")}</div>
                   )}
                 </div>
               </li>
@@ -278,7 +278,7 @@ export default function HousesPortal() {
                 <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">Top houses</div>
                 <ul className="mt-1 space-y-0.5 text-sm text-slate-700">
                   {board.eventResult.houses.map((h, i) => (
-                    <li key={i}>{["🥇","🥈","🥉"][h.place - 1] || `${h.place}.`} <span className="font-semibold">{h.name}</span> <span className="text-slate-400">— {h.items} items</span></li>
+                    <li key={i}>{["🥇","🥈","🥉"][h.place - 1] || `${h.place}.`} <span className="font-semibold">{h.name}</span> <span className="text-slate-500">— {h.items} items</span></li>
                   ))}
                 </ul>
               </div>
@@ -288,7 +288,7 @@ export default function HousesPortal() {
                 <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">Top contributors</div>
                 <ul className="mt-1 space-y-0.5 text-sm text-slate-700">
                   {board.eventResult.students.map((s, i) => (
-                    <li key={i}>{["🥇","🥈","🥉"][s.place - 1] || `${s.place}.`} <span className="font-semibold">{s.name}</span> <span className="text-slate-400">— {s.items} items</span></li>
+                    <li key={i}>{["🥇","🥈","🥉"][s.place - 1] || `${s.place}.`} <span className="font-semibold">{s.name}</span> <span className="text-slate-500">— {s.items} items</span></li>
                   ))}
                 </ul>
               </div>
@@ -301,9 +301,9 @@ export default function HousesPortal() {
       <section className="rounded-2xl border border-slate-200 bg-white p-5">
         <h2 className="font-semibold">Leaderboard</h2>
         {board === null ? (
-          <p className="mt-2 text-sm text-slate-400">Loading…</p>
+          <p className="mt-2 text-sm text-slate-500">Loading…</p>
         ) : board.houses.length === 0 ? (
-          <p className="mt-2 text-sm text-slate-400">No houses yet.</p>
+          <p className="mt-2 text-sm text-slate-500">No houses yet.</p>
         ) : (
           <ul className="mt-3 space-y-3">
             {board.houses.map((h) => {
@@ -313,7 +313,7 @@ export default function HousesPortal() {
               return (
               <li key={h.id}>
                 <button onClick={() => toggleHouse(h.id)} className="flex w-full items-center gap-3 text-left" aria-expanded={open}>
-                  <span className="w-6 text-center text-lg">{MEDAL[r - 1] || <span className="text-sm text-slate-400">{r}</span>}</span>
+                  <span className="w-6 text-center text-lg">{MEDAL[r - 1] || <span className="text-sm text-slate-500">{r}</span>}</span>
                   {h.image
                     ? <img src={h.image} alt="" className="h-7 w-7 shrink-0 rounded-md object-cover" />
                     : <span className="inline-block h-4 w-4 shrink-0 rounded-full" style={{ background: h.color }} />}
@@ -326,16 +326,16 @@ export default function HousesPortal() {
                       <div className="h-full rounded-full" style={{ width: `${barPct(h.points)}%`, background: h.color, opacity: (h.points || 0) < 0 ? 0.45 : 1 }} />
                     </div>
                     {h.captains && h.captains.length > 0 && (
-                      <div className="mt-1 text-xs text-slate-400">© {h.captains.join(", ")}</div>
+                      <div className="mt-1 text-xs text-slate-500">👑 {h.captains.join(", ")}</div>
                     )}
                   </div>
-                  <span className="ml-1 shrink-0 text-slate-300">{open ? "▾" : "▸"}</span>
+                  <span className="ml-1 shrink-0 text-slate-500">{open ? "▾" : "▸"}</span>
                 </button>
 
                 {open && (
                   <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
                     {detailBusy && !d ? (
-                      <p className="text-slate-400">Loading…</p>
+                      <p className="text-slate-500">Loading…</p>
                     ) : detailErr && !d ? (
                       <p className="text-red-600">{detailErr}</p>
                     ) : d ? (
@@ -347,12 +347,12 @@ export default function HousesPortal() {
                         )}
                         <div className="grid grid-cols-2 gap-2">
                           <div className="rounded-lg bg-white p-2">
-                            <div className="text-xs text-slate-400">Individual Compass points</div>
+                            <div className="text-xs text-slate-500">Individual Compass points</div>
                             <div className="font-bold tabular-nums">{d.individual.total > 0 ? `+${d.individual.total}` : d.individual.total}</div>
-                            <div className="text-[11px] text-slate-400">+{d.individual.positive} good{d.individual.negative ? ` · ${d.individual.negative} conduct` : ""}</div>
+                            <div className="text-[11px] text-slate-500">+{d.individual.positive} good{d.individual.negative ? ` · ${d.individual.negative} conduct` : ""}</div>
                           </div>
                           <div className="rounded-lg bg-white p-2">
-                            <div className="text-xs text-slate-400">Team &amp; house events</div>
+                            <div className="text-xs text-slate-500">Team &amp; house events</div>
                             <div className="font-bold tabular-nums">{d.team.total > 0 ? `+${d.team.total}` : d.team.total}</div>
                           </div>
                         </div>
@@ -363,7 +363,7 @@ export default function HousesPortal() {
                             <ul className="mt-1 divide-y divide-slate-100">
                               {d.individual.items.map((it, i) => (
                                 <li key={i} className="flex items-center justify-between gap-2 py-1">
-                                  <span className="min-w-0 truncate text-slate-600">{it.reason} <span className="text-slate-300">×{it.count}</span></span>
+                                  <span className="min-w-0 truncate text-slate-600">{it.reason} <span className="text-slate-500">×{it.count}</span></span>
                                   <span className={`shrink-0 tabular-nums font-medium ${it.points < 0 ? "text-red-600" : "text-green-600"}`}>{it.points > 0 ? `+${it.points}` : it.points}</span>
                                 </li>
                               ))}
@@ -377,7 +377,7 @@ export default function HousesPortal() {
                             <ul className="mt-1 divide-y divide-slate-100">
                               {d.team.items.map((it, i) => (
                                 <li key={i} className="flex items-center justify-between gap-2 py-1">
-                                  <span className="min-w-0 truncate text-slate-600">{it.reason} <span className="text-slate-300">×{it.count}</span></span>
+                                  <span className="min-w-0 truncate text-slate-600">{it.reason} <span className="text-slate-500">×{it.count}</span></span>
                                   <span className={`shrink-0 tabular-nums font-medium ${it.points < 0 ? "text-red-600" : "text-green-600"}`}>{it.points > 0 ? `+${it.points}` : it.points}</span>
                                 </li>
                               ))}
@@ -386,7 +386,7 @@ export default function HousesPortal() {
                         )}
 
                         {d.individual.items.length === 0 && d.team.items.length === 0 && (
-                          <p className="text-slate-400">No points yet.</p>
+                          <p className="text-slate-500">No points yet.</p>
                         )}
                       </>
                     ) : null}
@@ -421,13 +421,13 @@ export default function HousesPortal() {
           <ul className="mt-3 space-y-2">
             {board.topStudents.map((s) => (
               <li key={s.rank} className="flex items-center gap-3">
-                <span className="w-6 text-center text-lg">{MEDAL[s.rank - 1] || <span className="text-sm text-slate-400">{s.rank}</span>}</span>
+                <span className="w-6 text-center text-lg">{MEDAL[s.rank - 1] || <span className="text-sm text-slate-500">{s.rank}</span>}</span>
                 {s.photoUrl
                   ? <img src={s.photoUrl} alt="" className="h-9 w-9 rounded-lg object-cover ring-2" style={{ ["--tw-ring-color" as any]: s.color }} />
                   : <span className="inline-block h-4 w-4 shrink-0 rounded-full" style={{ background: s.color }} />}
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-semibold">{s.name}</div>
-                  {s.house ? <div className="text-xs text-slate-400">{s.house}</div> : null}
+                  {s.house ? <div className="text-xs text-slate-500">{s.house}</div> : null}
                 </div>
                 <span className="shrink-0 tabular-nums font-bold">{s.points}</span>
               </li>
@@ -444,7 +444,7 @@ export default function HousesPortal() {
               <li key={c.name} className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2 last:border-0 last:pb-0">
                 <div>
                   <div className="text-sm font-medium">{c.name}</div>
-                  <div className="text-xs text-slate-400">{c.monthLabel}</div>
+                  <div className="text-xs text-slate-500">{c.monthLabel}</div>
                 </div>
                 {c.scored ? (
                   <div className="flex flex-wrap justify-end gap-1.5">
@@ -457,7 +457,7 @@ export default function HousesPortal() {
                     ))}
                   </div>
                 ) : (
-                  <span className="text-xs text-slate-300">upcoming</span>
+                  <span className="text-xs text-slate-500">upcoming</span>
                 )}
               </li>
             ))}
@@ -481,14 +481,14 @@ export default function HousesPortal() {
                 <span className={`shrink-0 font-bold tabular-nums ${a.points < 0 ? "text-red-600" : "text-green-600"}`}>
                   {a.points > 0 ? `+${a.points}` : a.points}
                 </span>
-                {a.reason && <span className="truncate text-slate-400">· {a.reason}</span>}
+                {a.reason && <span className="truncate text-slate-500">· {a.reason}</span>}
               </li>
             ))}
           </ul>
         </section>
       )}
 
-      <p className="pb-6 text-center text-xs text-slate-400">Updates automatically · go {cheer}!</p>
+      <p className="pb-6 text-center text-xs text-slate-500">Updates automatically · go {cheer}!</p>
     </div>
   );
 }
@@ -499,7 +499,7 @@ function Header() {
       <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-lg">👀</span>
       <div>
         <h1 className="text-xl font-bold tracking-tight">House Standings</h1>
-        <p className="text-xs text-slate-400">Live points &amp; leaderboard</p>
+        <p className="text-xs text-slate-500">Live points &amp; leaderboard</p>
       </div>
     </div>
   );
