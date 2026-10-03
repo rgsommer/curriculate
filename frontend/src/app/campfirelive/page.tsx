@@ -380,14 +380,18 @@ export default function DashboardPage() {
   // A reveal stays in the box until you tap it — every reveal from the floor onward,
   // no time-based expiry. (Reveal time falls back to the deadline when revealed_at is
   // missing on older rows.)
+  // A reveal drops out of the "what's new" box after this long even if never tapped —
+  // it's no longer news, and it stays available forever in the group's Revealed tab.
+  const REVEAL_TTL_MS = 7 * 86400000;
   const seenRevealSeries = new Set<string>();
+  const revealWindowFloor = Math.max(revealFloor, Date.now() - REVEAL_TTL_MS);
   const newReveals = reveals
     .map((e) => {
       const rt = e.revealedAt ? new Date(e.revealedAt).getTime() : null;
       const ref = rt ?? (e.deadline ? new Date(e.deadline).getTime() : 0);
       return { e, ref };
     })
-    .filter(({ e, ref }) => !seenReveals.has(e.id) && ref >= revealFloor)
+    .filter(({ e, ref }) => !seenReveals.has(e.id) && ref >= revealWindowFloor)
     .sort((a, b) => b.ref - a.ref)
     // Collapse recurring series to the most recently revealed instance, so a stack of
     // old "Monthly care check-in" reveals doesn't bury the fresh ones.
