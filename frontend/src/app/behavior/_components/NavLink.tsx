@@ -13,7 +13,7 @@ export default function NavLink({ href, children }: { href: string; children: Re
     <Link
       href={href}
       aria-current={active ? "page" : undefined}
-      className={active ? "font-semibold text-slate-900 underline decoration-2 underline-offset-8" : "text-slate-600 hover:text-slate-900"}
+      className={active ? "font-semibold text-slate-900 underline decoration-2 underline-offset-4" : "text-slate-600 hover:text-slate-900"}
     >
       {children}
     </Link>
