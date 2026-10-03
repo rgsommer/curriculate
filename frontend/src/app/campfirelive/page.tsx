@@ -8,6 +8,7 @@ import { useGroups } from "@/lib/campfire/hooks";
 import { supabase } from "@/lib/campfire/supabase";
 import { seasonalCardPrompt } from "@/lib/campfire/templates";
 import { FREE_MAX_GROUPS } from "@/lib/campfire/premium";
+import PushPrompt from "./PushPrompt";
 import {
   ENGAGEMENT_TYPES,
   engagementIcon,
@@ -625,6 +626,9 @@ export default function DashboardPage() {
         )}
       </div>
 
+      {/* Native app only: the single, polite ask for notification permission. */}
+      <PushPrompt inAGroup={groups.length > 0} />
+
       {/* First-time orientation — dismissible, shown once, only when you're
           actually in a group (so it answers "ok, I'm in… now what?"). */}
       {showTip && groups.length > 0 && (
@@ -834,7 +838,7 @@ export default function DashboardPage() {
       {groupBlocked && (
         <div role="status" className="-mt-5 mb-8 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           The free plan includes {FREE_MAX_GROUPS === 1 ? "one group" : `${FREE_MAX_GROUPS} groups`} you
-          host, and you already have {hostedCount === 1 ? "yours" : "them"}. Your groups keep
+          host, and you already host {hostedCount === 1 ? "one" : hostedCount}. Your groups keep
           working, and you can still join any group with an invite.
         </div>
       )}

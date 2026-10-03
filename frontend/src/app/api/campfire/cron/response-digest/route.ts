@@ -8,7 +8,7 @@ import {
   campfireSiteUrl,
 } from "@/lib/campfire/serverInvites";
 import { resolveTitle, engagementIcon } from "@/lib/campfire/types";
-import { createPushSender } from "@/lib/campfire/push";
+import { pushToUsers } from "@/lib/campfire/push";
 import { sendCampfireBatch } from "@/lib/campfire/serverInvites";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -204,7 +204,6 @@ export async function GET(req: Request) {
   }
 
   // ── Send (email + native push) ──
-  const pushSend = await createPushSender(); // null when FCM isn't configured
   let pushed = 0;
   const entries = Array.from(perUser.entries()).filter(
     ([, byGroup]) => byGroup.size > 0
@@ -230,23 +229,14 @@ export async function GET(req: Request) {
         0
       );
 
-      // Native push to this user's devices (best-effort, only if FCM is set up).
-      if (pushSend) {
-        const { data: toks } = await admin
-          .from("campfire_push_tokens")
-          .select("token")
-          .eq("user_id", uid);
-        for (const t of toks ?? []) {
-          const ok = await pushSend(t.token as string, {
-            title: "🔥 Campfire",
-            body: `${events} new thing${events === 1 ? "" : "s"} in your group${
-              groupsPayload.length === 1 ? "" : "s"
-            }`,
-            link: `${base}/campfirelive`,
-          });
-          if (ok) pushed++;
-        }
-      }
+      // Native push to this user's devices (best-effort; no-op until APNs/FCM are set up).
+      pushed += await pushToUsers([uid], {
+        title: "🔥 Campfire",
+        body: `${events} new thing${events === 1 ? "" : "s"} in your group${
+          groupsPayload.length === 1 ? "" : "s"
+        }`,
+        link: `${base}/campfirelive`,
+      });
 
       const { data: u } = await admin.auth.admin.getUserById(uid);
       const email = u?.user?.email;

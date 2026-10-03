@@ -4,6 +4,10 @@ import { createContext, useContext, useEffect, useState, useCallback } from "rea
 import { supabase } from "./supabase";
 import type { Profile } from "./types";
 import type { User, Session } from "@supabase/supabase-js";
+import { isNative, openInSystemBrowser, stashOAuthNext } from "./native";
+
+// Deep link the system browser returns to after OAuth in the native shell.
+const NATIVE_CALLBACK = "campfire://auth-callback";
 
 interface AuthState {
   user: User | null;
@@ -22,6 +26,7 @@ interface AuthState {
   isGuest: boolean;
   linkGoogle: () => Promise<{ error: string | null }>;
   upgradeWithEmail: (email: string, password: string) => Promise<{ error: string | null }>;
+  resetPassword: (email: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -41,6 +46,7 @@ const AuthContext = createContext<AuthState>({
   isGuest: false,
   linkGoogle: async () => ({ error: null }),
   upgradeWithEmail: async () => ({ error: null }),
+  resetPassword: async () => ({ error: null }),
   signOut: async () => {},
   refreshProfile: async () => {},
 });
@@ -121,25 +127,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signInWithProvider = async (provider: "google" | "apple", next?: string) => {
     // In the Capacitor native shell, OAuth is blocked inside the embedded webview — open
     // the consent page in the SYSTEM browser and let it deep-link back via
-    // campfire://auth-callback (NativeBridge sets the session on return).
-    const w =
-      typeof window === "undefined"
-        ? null
-        : (window as unknown as {
-            Capacitor?: {
-              isNativePlatform?: () => boolean;
-              Plugins?: { Browser?: { open?: (o: { url: string }) => Promise<void> } };
-            };
-          }).Capacitor;
-    if (w?.isNativePlatform?.()) {
+    // campfire://auth-callback (NativeBridge sets the session on return). The system
+    // browser can't carry `next`, so park it for NativeBridge to pick up on return.
+    if (isNative()) {
+      stashOAuthNext(next);
       const { data } = await supabase.auth.signInWithOAuth({
         provider,
-        options: { redirectTo: "campfire://auth-callback", skipBrowserRedirect: true },
+        options: { redirectTo: NATIVE_CALLBACK, skipBrowserRedirect: true },
       });
-      if (data?.url) {
-        if (w.Plugins?.Browser?.open) await w.Plugins.Browser.open({ url: data.url });
-        else window.open(data.url, "_blank");
-      }
+      if (data?.url) await openInSystemBrowser(data.url);
       return;
     }
     await supabase.auth.signInWithOAuth({
@@ -171,9 +167,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Upgrade a guest to a permanent account — keeps the SAME user id, so all
   // group memberships and history carry over. They can then log in elsewhere.
   const linkGoogle = async () => {
+    // Native shell: Google refuses embedded webviews, so link through the system
+    // browser + deep link, exactly like sign-in, and come back to the current page.
+    if (isNative()) {
+      stashOAuthNext(window.location.pathname + window.location.search);
+      const { data, error } = await supabase.auth.linkIdentity({
+        provider: "google",
+        options: { redirectTo: NATIVE_CALLBACK, skipBrowserRedirect: true },
+      });
+      if (data?.url) await openInSystemBrowser(data.url);
+      return { error: error?.message ?? null };
+    }
     const { error } = await supabase.auth.linkIdentity({
       provider: "google",
       options: { redirectTo: callbackUrl() },
+    });
+    return { error: error?.message ?? null };
+  };
+
+  // Email + password reset. The link lands on the auth callback (already an allowed
+  // redirect), which signs the user in with a recovery session and forwards them to
+  // the "choose a new password" page.
+  const resetPassword = async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: callbackUrl("/campfirelive/auth/reset"),
     });
     return { error: error?.message ?? null };
   };
@@ -211,6 +228,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isGuest,
         linkGoogle,
         upgradeWithEmail,
+        resetPassword,
         signOut,
         refreshProfile,
       }}

@@ -7,7 +7,10 @@ import Link from "next/link";
 
 export default function AuthPage() {
   const router = useRouter();
-  const { signUp, signIn, signInWithGoogle, signInWithApple, signInAsGuest, user } = useAuth();
+  const { signUp, signIn, signInWithGoogle, signInWithApple, signInAsGuest, resetPassword, user } =
+    useAuth();
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
   const [guestName, setGuestName] = useState("");
   const [guestLoading, setGuestLoading] = useState(false);
   const [mode, setMode] = useState<"signin" | "signup">("signin");
@@ -227,6 +230,7 @@ export default function AuthPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
+              autoComplete="email"
               className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
               required
             />
@@ -241,10 +245,46 @@ export default function AuthPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder={mode === "signup" ? "At least 6 characters" : "Your password"}
+              autoComplete={mode === "signup" ? "new-password" : "current-password"}
               className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
               required
               minLength={6}
             />
+            {mode === "signin" && (
+              <div className="mt-1 text-right">
+                <button
+                  type="button"
+                  disabled={resetBusy}
+                  onClick={async () => {
+                    setError("");
+                    setResetSent(false);
+                    if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+                      setError("Type your email above first, then tap “Forgot password?”.");
+                      return;
+                    }
+                    setResetBusy(true);
+                    const { error: rErr } = await resetPassword(email.trim());
+                    setResetBusy(false);
+                    if (rErr && /rate|too many|seconds/i.test(rErr)) {
+                      setError("A reset email was just sent — wait a minute before asking again.");
+                      return;
+                    }
+                    // Same message whether or not the address has an account (don't
+                    // reveal which emails are registered).
+                    setResetSent(true);
+                  }}
+                  className="py-2 text-sm font-medium text-orange-700 hover:text-orange-800 disabled:opacity-50"
+                >
+                  {resetBusy ? "Sending…" : "Forgot password?"}
+                </button>
+              </div>
+            )}
+            {resetSent && (
+              <p role="status" className="mt-1 rounded-xl bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
+                If there&apos;s an account for {email.trim()}, a reset link is on its way.
+                Check your inbox (and spam).
+              </p>
+            )}
           </div>
 
           {error && (

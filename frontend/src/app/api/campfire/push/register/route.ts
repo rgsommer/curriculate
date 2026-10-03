@@ -7,7 +7,10 @@ export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => null);
     const token = typeof body?.token === "string" ? body.token : "";
-    const platform = typeof body?.platform === "string" ? body.platform : null;
+    // "ios" tokens are raw APNs device tokens (sent via APNs); "android" tokens are FCM
+    // registration tokens. push.ts routes on this, so it must be one of the two.
+    const platform =
+      body?.platform === "ios" || body?.platform === "android" ? body.platform : null;
     if (!token) {
       return NextResponse.json({ error: "Missing token" }, { status: 400 });
     }
