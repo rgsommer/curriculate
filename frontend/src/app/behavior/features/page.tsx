@@ -20,8 +20,8 @@ const TRACKING = [
     body: "Incidents pool per student, not per teacher. Two concerns with each of six teachers still add up. No more slipping through the cracks because everyone counted separately — and no teacher is left fighting a pattern alone.",
   },
   {
-    title: "Positives and negatives, side by side",
-    body: "Every log is ✓ Positive or ✕ Negative. Negatives accumulate toward a threshold; positives are recognised, earn house points, and can trigger a good-news note home — they never count against a student.",
+    title: "Encouraging and correcting, side by side",
+    body: "Every log is ✓ Encouraging or ✕ Correcting. Correcting behaviours accumulate toward a threshold; encouraging ones are recognised, earn house points, and can trigger a good-news note home — they never count against a student.",
   },
   {
     title: "Intensity weighting",
@@ -155,7 +155,7 @@ const ACTIONS = [
 const HOUSES = [
   {
     title: "Behaviour feeds house spirit",
-    body: "Positive behaviour earns house points; negatives can cost them (your choice per behaviour). The everyday work of citizenship becomes a shared, visible team effort rather than only a record of problems.",
+    body: "Encouraging behaviour earns house points; correcting behaviour can cost them (your choice per behaviour). The everyday work of citizenship becomes a shared, visible team effort rather than only a record of problems.",
   },
   {
     title: "A live, student-facing leaderboard",

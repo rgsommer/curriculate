@@ -750,7 +750,7 @@ function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number
 
   return (
     <Card>
-      <h2 className="font-semibold text-red-800">Recommended actions</h2>
+      <h2 className="font-semibold text-red-800">Needs a decision</h2>
       <p className="mt-0.5 text-xs text-slate-500">
         Already had a notice home and back at or near the {trigger}-strike trigger. The next notice carries the rule-based consequence below; open a student for AI coaching suggestions too.
       </p>

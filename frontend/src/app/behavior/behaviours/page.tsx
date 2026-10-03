@@ -78,11 +78,11 @@ export default function BehavioursPage() {
             <div className="flex gap-2">
               <button onClick={() => setView("negative")}
                 className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${view === "negative" ? "border-red-600 bg-red-600 text-white" : "border-red-200 bg-white text-red-600"}`}>
-                ✕ Negatives ({neg.length})
+                ✕ Correcting ({neg.length})
               </button>
               <button onClick={() => setView("positive")}
                 className={`rounded-lg border px-3 py-1.5 text-sm font-medium ${view === "positive" ? "border-green-600 bg-green-600 text-white" : "border-green-200 bg-white text-green-700"}`}>
-                ✓ Positives ({pos.length})
+                ✓ Encouraging ({pos.length})
               </button>
             </div>
             <div className="space-y-2">
@@ -249,9 +249,9 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
       {/* Positive or negative — sets the whole shape of the behaviour. */}
       <div className="mb-2 inline-flex gap-1.5 text-xs font-semibold">
         <button type="button" onClick={() => setKind("negative")}
-          className={`rounded-lg border px-3 py-1.5 ${!positive ? "border-red-600 bg-red-600 text-white" : "border-red-200 bg-white text-red-600"}`}>✕ Negative</button>
+          className={`rounded-lg border px-3 py-1.5 ${!positive ? "border-red-600 bg-red-600 text-white" : "border-red-200 bg-white text-red-600"}`}>✕ Correcting</button>
         <button type="button" onClick={() => { setKind("positive"); if (Number(points) <= 0) setPoints(1); }}
-          className={`rounded-lg border px-3 py-1.5 ${positive ? "border-green-600 bg-green-600 text-white" : "border-green-200 bg-white text-green-700"}`}>✓ Positive</button>
+          className={`rounded-lg border px-3 py-1.5 ${positive ? "border-green-600 bg-green-600 text-white" : "border-green-200 bg-white text-green-700"}`}>✓ Encouraging</button>
       </div>
       <div className="grid grid-cols-2 gap-2">
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder={add ? (positive ? "New positive behaviour…" : "New behaviour name…") : "Name"} className={`${inputCls} bg-slate-100 font-medium text-slate-900`} />
@@ -281,7 +281,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
             <input type="number" value={points} onChange={(e) => setPoints(e.target.value)} className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
             <span className="text-slate-400">
               {positive
-                ? "added to the student’s house when logged. Positive behaviours never count as a strike."
+                ? "added to the student’s house when logged. Encouraging behaviours never count as a strike."
                 : "negative deducts from the student’s house; leave 0 for no points."}
             </span>
           </label>

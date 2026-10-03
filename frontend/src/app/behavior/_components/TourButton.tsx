@@ -14,7 +14,7 @@ const STEPS: { title: string; body: string }[] = [
   },
   {
     title: "1 · Log an incident",
-    body: "Tap “Log” (top bar). Search any student in the school, choose ✓ Positive or ✕ Negative, pick the behaviour, add an optional note or photo, and submit. Works one-handed on a phone or at your desk. The behaviours you use most rise to the top.",
+    body: "Tap “Log” (top bar). Search any student in the school, choose ✓ Encouraging or ✕ Correcting, pick the behaviour, add an optional note or photo, and submit. Works one-handed on a phone or at your desk. The behaviours you use most rise to the top.",
   },
   {
     title: "2 · Log several students at once",
@@ -22,11 +22,11 @@ const STEPS: { title: string; body: string }[] = [
   },
   {
     title: "3 · Strikes & notices home",
-    body: "Negatives add to a shared count. At the threshold you’re shown a ready-to-send, tailored note — you review/edit it and press Send (or “Not this time”). It reaches families over Edsby by default, signed by you. You always get your own copy first.",
+    body: "Correcting behaviours add to a shared count. At the threshold you’re shown a ready-to-send, tailored note — you review/edit it and press Send (or “Not this time”). It reaches families over Edsby by default, signed by you. You always get your own copy first.",
   },
   {
     title: "4 · Catch the good too",
-    body: "Positives are recognised, earn house points, and enough of them sends a good-news note home. They never count against a student.",
+    body: "Encouraging behaviours are recognised, earn house points, and enough of them sends a good-news note home. They never count against a student.",
   },
   {
     title: "5 · Houses",
