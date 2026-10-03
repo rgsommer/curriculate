@@ -11,6 +11,7 @@ import {
 } from "@/lib/campfire/serverInvites";
 import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon } from "@/lib/campfire/types";
 import { sendCampfireBatch } from "@/lib/campfire/serverInvites";
+import { pushToUsers } from "@/lib/campfire/push";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -133,6 +134,25 @@ export async function POST(req: Request) {
           }))
         );
       }
+    }
+
+    // Native push (no-op until FCM configured) — members get a "your turn" nudge.
+    try {
+      const { data: gmP } = await admin
+        .from("group_members")
+        .select("user_id")
+        .eq("group_id", eng.group_id);
+      const excludedUids = new Set((eng.excluded_user_ids as string[] | null) ?? []);
+      const uids = ((gmP ?? []) as { user_id: string }[])
+        .map((m) => m.user_id)
+        .filter((uid) => uid !== eng.creator_id && !excludedUids.has(uid));
+      await pushToUsers(uids, {
+        title: `🔥 Your turn in ${group?.name || "your group"}`,
+        body: shared.title,
+        link: engUrl,
+      });
+    } catch {
+      /* push is best-effort */
     }
 
     // Still-pending invitees → this engagement IS their invite (join link, ?inv=…).

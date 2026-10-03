@@ -24,6 +24,7 @@ import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, nthWeekdayOfMonth, next
 import { runRaffleDraw } from "@/lib/campfire/raffleDraw";
 import { awardHallOfFameGift } from "@/lib/campfire/hallOfFame";
 import { sendCampfireBatch } from "@/lib/campfire/serverInvites";
+import { pushToUsers } from "@/lib/campfire/push";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -242,6 +243,34 @@ export async function GET(req: Request) {
           .update({ deadline_nudged_at: new Date(now).toISOString() })
           .eq("id", e.id);
         nudged++;
+        // Native push alongside the email nudge (no-op until FCM configured) — to the
+        // non-responders' devices.
+        try {
+          const { data: rP } = await admin
+            .from("responses")
+            .select("user_id")
+            .eq("engagement_id", e.id);
+          const did = new Set(((rP ?? []) as { user_id: string }[]).map((r) => r.user_id));
+          const { data: gmP } = await admin
+            .from("group_members")
+            .select("user_id")
+            .eq("group_id", e.group_id);
+          const uids = ((gmP ?? []) as { user_id: string }[])
+            .map((m) => m.user_id)
+            .filter((uid) => !did.has(uid));
+          const t = resolveTitle(
+            e.title as string,
+            e.birth_year as number | null,
+            e.deadline as string | null
+          );
+          await pushToUsers(uids, {
+            title: `⏰ ${group?.name || "Your group"}: your turn`,
+            body: `"${t}" is waiting — tap to add yours.`,
+            link: engUrl,
+          });
+        } catch {
+          /* push is best-effort */
+        }
       }
     }
   }
@@ -881,6 +910,34 @@ export async function GET(req: Request) {
             }))
           );
         }
+      }
+
+      // Native push (no-op until FCM configured) — mirror the reveal email to devices.
+      try {
+        const [{ data: gmP }, { data: egP }, { count: nResp }] = await Promise.all([
+          admin.from("group_members").select("user_id").eq("group_id", e.group_id),
+          admin.from("engagement_guests").select("user_id").eq("engagement_id", e.id),
+          admin
+            .from("responses")
+            .select("*", { count: "exact", head: true })
+            .eq("engagement_id", e.id),
+        ]);
+        const uids = [
+          ...((gmP ?? []) as { user_id: string }[]).map((m) => m.user_id),
+          ...((egP ?? []) as { user_id: string }[]).map((g) => g.user_id),
+        ];
+        await pushToUsers(uids, {
+          title: e.type === "birthday" ? "🎁 A card just opened" : "🎉 Results are in",
+          body:
+            e.type === "birthday"
+              ? `"${engTitle}" is ready to open.`
+              : `${nResp ?? 0} ${
+                  (nResp ?? 0) === 1 ? "answer is" : "answers are"
+                } in for "${engTitle}" — tap to see.`,
+          link: engUrl,
+        });
+      } catch {
+        /* push is best-effort */
       }
     }
     await admin

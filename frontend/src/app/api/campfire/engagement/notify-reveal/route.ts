@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { createClient } from "@supabase/supabase-js";
+import { pushToUsers } from "@/lib/campfire/push";
 import {
   authorizeGroupRequester,
   getGroupMemberEmails,
@@ -121,6 +122,34 @@ export async function POST(req: Request) {
       eng.birth_year as number | null,
       eng.deadline as string | null
     );
+
+    // Native push (no-op until FCM is configured) — nudge devices to open the reveal.
+    try {
+      const [{ data: gmP }, { data: egP }, { count: nResp }] = await Promise.all([
+        admin.from("group_members").select("user_id").eq("group_id", eng.group_id),
+        admin.from("engagement_guests").select("user_id").eq("engagement_id", engagementId),
+        admin
+          .from("responses")
+          .select("*", { count: "exact", head: true })
+          .eq("engagement_id", engagementId),
+      ]);
+      const uids = [
+        ...((gmP ?? []) as { user_id: string }[]).map((m) => m.user_id),
+        ...((egP ?? []) as { user_id: string }[]).map((g) => g.user_id),
+      ];
+      await pushToUsers(uids, {
+        title: eng.type === "birthday" ? "🎁 A card just opened" : "🎉 Results are in",
+        body:
+          eng.type === "birthday"
+            ? `"${engTitle}" is ready to open.`
+            : `${nResp ?? 0} ${
+                (nResp ?? 0) === 1 ? "answer is" : "answers are"
+              } in for "${engTitle}" — tap to see.`,
+        link: engUrl,
+      });
+    } catch {
+      /* push is best-effort */
+    }
 
     // Birthday card: the wishes are private to the recipient, but everyone learns
     // the card was delivered + how many wishes — recipient gets a tailored note.

@@ -140,6 +140,7 @@ export default function DashboardPage() {
     birth_year: number | null;
     total_expected: number | null;
     revealedAt?: string | null;
+    recurrenceRule?: string | null;
   };
   const [todo, setTodo] = useState<TodoEng[]>([]);
   // True response counts for the home rows ("X of Y"), keyed by engagement id. Fetched
@@ -215,6 +216,12 @@ export default function DashboardPage() {
         );
       if (cancelled) return;
       const responded = new Set((mine ?? []).map((r) => r.engagement_id as string));
+      // Collapse each recurring series to its newest still-open instance. Monthly
+      // check-ins etc. spawn a fresh engagement every cycle; the old unanswered ones
+      // stay "active" (no past deadline), so without this they stack up as a wall of
+      // identical rows. One-off engagements are never collapsed. Sorted newest-first,
+      // so the first row kept per series is the current cycle.
+      const seenSeries = new Set<string>();
       setTodo(
         open
           .filter((e) => !responded.has(e.id as string))
@@ -223,6 +230,13 @@ export default function DashboardPage() {
               new Date(b.created_at as string).getTime() -
               new Date(a.created_at as string).getTime()
           )
+          .filter((e) => {
+            if (!e.recurrence_rule) return true;
+            const key = `${e.group_id}|${e.type}|${e.title}`;
+            if (seenSeries.has(key)) return false;
+            seenSeries.add(key);
+            return true;
+          })
           .map((e) => ({
             id: e.id as string,
             group_id: e.group_id as string,
@@ -281,7 +295,7 @@ export default function DashboardPage() {
     let cancelled = false;
     (async () => {
       const cols =
-        "id, group_id, title, type, config, deadline, birth_year, total_expected, excluded_user_ids, revealed_at";
+        "id, group_id, title, type, config, deadline, birth_year, total_expected, excluded_user_ids, recurrence_rule, revealed_at";
       const sel = (c: string) =>
         supabase
           .from("engagements")
@@ -312,6 +326,7 @@ export default function DashboardPage() {
           total_expected: (e.total_expected as number | null) ?? null,
           revealedAt:
             (e as { revealed_at?: string | null }).revealed_at ?? null,
+          recurrenceRule: (e.recurrence_rule as string | null) ?? null,
         }));
       if (!cancelled) setReveals(list);
     })();
@@ -365,6 +380,7 @@ export default function DashboardPage() {
   // A reveal stays in the box until you tap it — every reveal from the floor onward,
   // no time-based expiry. (Reveal time falls back to the deadline when revealed_at is
   // missing on older rows.)
+  const seenRevealSeries = new Set<string>();
   const newReveals = reveals
     .map((e) => {
       const rt = e.revealedAt ? new Date(e.revealedAt).getTime() : null;
@@ -373,6 +389,15 @@ export default function DashboardPage() {
     })
     .filter(({ e, ref }) => !seenReveals.has(e.id) && ref >= revealFloor)
     .sort((a, b) => b.ref - a.ref)
+    // Collapse recurring series to the most recently revealed instance, so a stack of
+    // old "Monthly care check-in" reveals doesn't bury the fresh ones.
+    .filter(({ e }) => {
+      if (!e.recurrenceRule) return true;
+      const key = `${e.group_id}|${e.type}|${e.title}`;
+      if (seenRevealSeries.has(key)) return false;
+      seenRevealSeries.add(key);
+      return true;
+    })
     .slice(0, 20)
     .map(({ e }) => e);
   const markRevealSeen = (id: string) => {

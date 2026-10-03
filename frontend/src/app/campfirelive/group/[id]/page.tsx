@@ -371,9 +371,45 @@ See you around the campfire! 🏕️`
     !!e.launched_at &&
     (!e.scheduled_open_at || new Date(e.scheduled_open_at).getTime() <= nowMs);
 
+  // Collapse a recurring series to only its newest instance within a list. Monthly
+  // check-ins etc. spawn a fresh engagement each cycle; old unanswered ones stay
+  // around and would otherwise stack as identical rows. One-offs are never collapsed.
+  const collapseRecurring = <
+    T extends {
+      recurrence_rule?: string | null;
+      type: string;
+      title: string;
+      created_at: string;
+    }
+  >(
+    list: T[]
+  ): T[] => {
+    const newest = new Map<string, T>();
+    const out: T[] = [];
+    for (const e of list) {
+      if (!e.recurrence_rule) {
+        out.push(e);
+        continue;
+      }
+      const key = `${e.type}|${e.title}`;
+      const prev = newest.get(key);
+      if (!prev) {
+        newest.set(key, e);
+        out.push(e);
+      } else if (new Date(e.created_at).getTime() > new Date(prev.created_at).getTime()) {
+        const i = out.indexOf(prev);
+        if (i >= 0) out[i] = e;
+        newest.set(key, e);
+      }
+    }
+    return out;
+  };
+
   // "Active" = open to sign right now — including a recurring card whose signing
-  // window is currently open.
-  const activeEngagements = engagements.filter(isOpenToSign).sort(byNextReveal);
+  // window is currently open. Recurring series collapse to their newest open instance.
+  const activeEngagements = collapseRecurring(
+    engagements.filter(isOpenToSign).sort(byNextReveal)
+  );
   // "Upcoming" = active but not open to sign yet (a draft waiting to auto-open, or
   // launched with a future open date — e.g. a birthday card before its lead date).
   const upcomingEngagements = engagements
@@ -414,9 +450,11 @@ See you around the campfire! 🏕️`
   };
   // Revealed list: drop empty reveals (0 responses — noise, esp. recurring monthlies
   // nobody answered), newest first. Ones WITH responses are kept but collapsed below.
-  const revealedEngagements = engagements
-    .filter((e) => e.status === "revealed" && (e.response_count ?? 0) > 0)
-    .sort((a, b) => byNextReveal(b, a));
+  const revealedEngagements = collapseRecurring(
+    engagements
+      .filter((e) => e.status === "revealed" && (e.response_count ?? 0) > 0)
+      .sort((a, b) => byNextReveal(b, a))
+  );
   const emptyRevealedCount = engagements.filter(
     (e) => e.status === "revealed" && (e.response_count ?? 0) === 0
   ).length;
