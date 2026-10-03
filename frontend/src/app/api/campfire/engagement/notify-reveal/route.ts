@@ -184,10 +184,15 @@ export async function POST(req: Request) {
       });
     }
 
+    const { count: respCount } = await admin
+      .from("responses")
+      .select("*", { count: "exact", head: true })
+      .eq("engagement_id", engagementId);
     const m = revealEmail({
       groupName: group?.name ?? "your group",
       title: engTitle,
       url: engUrl,
+      responded: respCount ?? 0,
     });
     for (let i = 0; i < emails.length; i += 100) {
       await sendCampfireBatch(

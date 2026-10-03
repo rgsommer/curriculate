@@ -859,10 +859,15 @@ export async function GET(req: Request) {
           await sendCampfireBatch(msgs.slice(i, i + 100));
         }
       } else {
+        const { count: respCount } = await admin
+          .from("responses")
+          .select("*", { count: "exact", head: true })
+          .eq("engagement_id", e.id);
         const m = revealEmail({
           groupName: group?.name ?? "your group",
           title: engTitle,
           url: engUrl,
+          responded: respCount ?? 0,
         });
         for (let i = 0; i < emails.length; i += 100) {
           await sendCampfireBatch(

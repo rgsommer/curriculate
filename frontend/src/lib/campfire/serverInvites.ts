@@ -366,12 +366,40 @@ export function cardThanksEmail(opts: {
   return { subject, text, html };
 }
 
-export function revealEmail(opts: { groupName: string; title: string; url: string }) {
-  const { groupName, title, url } = opts;
-  // The reveal is the payoff — the moment everyone waited for. Make it feel like an
-  // event, and open a curiosity gap (the answers are now visible, together).
-  const subject = `👀 Everyone's in — "${title}" is revealed`;
-  const text = `The wait's over. Every last person has answered, so "${title}" in ${groupName} just opened up — see how everyone's answers came together.
+export function revealEmail(opts: {
+  groupName: string;
+  title: string;
+  url: string;
+  responded?: number;
+}) {
+  const { groupName, title, url, responded } = opts;
+  // The reveal is the payoff. Lead with the count — "8 answers are waiting" is concrete
+  // social proof + a curiosity gap, which lifts open rates over a generic "it's revealed".
+  const n = responded ?? 0;
+  const answers = `${n} ${n === 1 ? "answer" : "answers"}`;
+  const verb = n === 1 ? "is" : "are";
+  const subject =
+    n > 0
+      ? `👀 ${answers} waiting — "${title}" is revealed`
+      : `👀 "${title}" is revealed`;
+  const headline = n > 0 ? `${answers} ${verb} waiting` : "The wait's over";
+  const leadText =
+    n > 0
+      ? `${answers} ${verb} in for "${title}" in ${groupName} — see how everyone's came together.`
+      : `Every last person has answered, so "${title}" in ${groupName} just opened up — see how everyone's answers came together.`;
+  const leadHtml =
+    n > 0
+      ? `<strong>${answers}</strong> ${verb} in for <strong>&ldquo;${escapeHtml(
+          title
+        )}&rdquo;</strong> in <strong>${escapeHtml(
+          groupName
+        )}</strong> — see how everyone&rsquo;s came together. 👀`
+      : `Every last person has answered — so <strong>&ldquo;${escapeHtml(
+          title
+        )}&rdquo;</strong> in <strong>${escapeHtml(
+          groupName
+        )}</strong> just opened up. 👀`;
+  const text = `${leadText}
 
 See what everyone said: ${url}
 
@@ -379,8 +407,8 @@ This is the good part.${appPromoBlock(url).text}`;
   const html = `
 <div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
   <div style="font-size:40px;">🎉</div>
-  <h1 style="font-size:22px; margin:8px 0;">The wait&rsquo;s over</h1>
-  <p style="color:#475569; margin:0 0 12px;">Every last person has answered — so <strong>&ldquo;${escapeHtml(title)}&rdquo;</strong> in <strong>${escapeHtml(groupName)}</strong> just opened up. See how everyone&rsquo;s answers came together. 👀</p>
+  <h1 style="font-size:22px; margin:8px 0;">${escapeHtml(headline)}</h1>
+  <p style="color:#475569; margin:0 0 12px;">${leadHtml}</p>
   <p style="text-align:center; margin:24px 0;">
     <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">See what everyone said &rarr;</a>
   </p>
