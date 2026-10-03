@@ -30,6 +30,9 @@ export default function GroupDetailPage() {
   const [tab, setTab] = useState<
     "active" | "upcoming" | "recurring" | "revealed" | "all"
   >("active");
+  // Revealed list collapses to the most recent few so it doesn't pile up.
+  const [showAllRevealed, setShowAllRevealed] = useState(false);
+  const REVEALED_PREVIEW = 6;
   const [showEmailInvite, setShowEmailInvite] = useState(false);
   const [inviteTarget, setInviteTarget] = useState(""); // "" = whole group, else engagement id
   const [emailInput, setEmailInput] = useState("");
@@ -409,9 +412,14 @@ See you around the campfire! 🏕️`
     while (t < Date.now()) t += days * 86400000;
     return new Date(t);
   };
+  // Revealed list: drop empty reveals (0 responses — noise, esp. recurring monthlies
+  // nobody answered), newest first. Ones WITH responses are kept but collapsed below.
   const revealedEngagements = engagements
-    .filter((e) => e.status === "revealed")
+    .filter((e) => e.status === "revealed" && (e.response_count ?? 0) > 0)
     .sort((a, b) => byNextReveal(b, a));
+  const emptyRevealedCount = engagements.filter(
+    (e) => e.status === "revealed" && (e.response_count ?? 0) === 0
+  ).length;
   const filteredEngagements =
     tab === "active"
       ? activeEngagements
@@ -421,7 +429,10 @@ See you around the campfire! 🏕️`
       ? recurringEngagements
       : tab === "revealed"
       ? revealedEngagements
-      : [...engagements].sort(byNextReveal);
+      : [...engagements]
+          // Drop empty (0-response) reveals from the "all" view too — pure noise.
+          .filter((e) => !(e.status === "revealed" && (e.response_count ?? 0) === 0))
+          .sort(byNextReveal);
 
   const isAdmin = members.find((m) => m.user_id === user?.id)?.role === "admin";
   // Engagements a regular member is allowed to invite people to.
@@ -1351,7 +1362,10 @@ See you around the campfire! 🏕️`
             filteredEngagements.length > 4 ? "lg:grid-cols-2" : ""
           }`}
         >
-          {filteredEngagements.map((eng) => {
+          {(tab === "revealed" && !showAllRevealed
+            ? filteredEngagements.slice(0, REVEALED_PREVIEW)
+            : filteredEngagements
+          ).map((eng) => {
             const meta = ENGAGEMENT_TYPES[eng.type];
             const isDraft = !eng.launched_at; // creator-only until launched (RLS hides from others)
             const isSealed = eng.status === "active" && eng.reveal === "sealed";
@@ -1524,6 +1538,22 @@ See you around the campfire! 🏕️`
             );
           })}
         </div>
+      )}
+      {tab === "revealed" &&
+        !showAllRevealed &&
+        filteredEngagements.length > REVEALED_PREVIEW && (
+          <button
+            onClick={() => setShowAllRevealed(true)}
+            className="mb-6 w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-500 hover:bg-slate-50"
+          >
+            Show {filteredEngagements.length - REVEALED_PREVIEW} older revealed
+          </button>
+        )}
+      {tab === "revealed" && emptyRevealedCount > 0 && (
+        <p className="mb-6 text-center text-[11px] text-slate-400">
+          {emptyRevealedCount} empty check-in{emptyRevealedCount === 1 ? "" : "s"} with no
+          responses {emptyRevealedCount === 1 ? "is" : "are"} hidden.
+        </p>
       )}
 
       {/* QR join code — show on a screen for others to scan */}
