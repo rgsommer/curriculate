@@ -178,19 +178,27 @@ export default function DashboardPage() {
       const { data: engs } = await supabase
         .from("engagements")
         .select(
-          "id, group_id, title, type, config, deadline, birth_year, total_expected, launched_at, scheduled_open_at, paused, excluded_user_ids, created_at"
+          "id, group_id, title, type, config, deadline, birth_year, total_expected, launched_at, scheduled_open_at, paused, excluded_user_ids, recurrence_rule, created_at"
         )
         .in("group_id", ids)
         .eq("status", "active");
       if (cancelled) return;
       // Open to sign now, not paused, and not a card you're the surprise target of.
+      // A RECURRING instance past its deadline is a missed cycle — drop it from "Your
+      // turn" (the next one will come) instead of nagging for weeks. One-off engagements
+      // stay (late responses are still welcome).
       const open = (engs ?? []).filter(
         (e) =>
           e.launched_at &&
           !e.paused &&
           (!e.scheduled_open_at ||
             new Date(e.scheduled_open_at as string).getTime() <= nowMs) &&
-          !((e.excluded_user_ids as string[] | null) ?? []).includes(user.id)
+          !((e.excluded_user_ids as string[] | null) ?? []).includes(user.id) &&
+          !(
+            e.recurrence_rule &&
+            e.deadline &&
+            new Date(e.deadline as string).getTime() < nowMs
+          )
       );
       if (open.length === 0) {
         setTodo([]);
