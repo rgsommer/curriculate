@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api } from "../_lib/api";
+import { Button } from "../_components/ui";
 
 function FollowupInner() {
   const params = useSearchParams();
@@ -76,9 +77,9 @@ function FollowupInner() {
       <h1 className="text-xl font-semibold">Mark that you&apos;ve talked to {studentName}?</h1>
       <p className="mt-2 text-slate-600">This logs a supportive homeroom follow-up — a documented check-in that never counts as a strike and sends nothing home.</p>
       <div className="mt-4 flex gap-2">
-        <button onClick={log} disabled={state === "busy"} className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white disabled:opacity-50">
+        <Button onClick={log} disabled={state === "busy"}>
           {state === "busy" ? "Logging…" : "✓ I've talked to them"}
-        </button>
+        </Button>
         <Link href="/behavior" className="rounded-lg border border-slate-300 px-4 py-2 text-slate-600">Cancel</Link>
       </div>
     </Card>

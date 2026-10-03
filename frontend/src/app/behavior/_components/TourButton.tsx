@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { Button } from "./ui";
 
 // A lightweight guided tour of Compass for teachers — a step-through overlay,
 // no external library. Launched from the header; remembers nothing, so it can be
@@ -80,14 +81,14 @@ export default function TourButton({ className = "" }: { className?: string }) {
               ))}
             </div>
             <div className="mt-4 flex items-center justify-between gap-2">
-              <button onClick={() => setI((x) => Math.max(0, x - 1))} disabled={i === 0}
-                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">Back</button>
+              <Button onClick={() => setI((x) => Math.max(0, x - 1))} disabled={i === 0}
+                variant="secondary" size="sm">Back</Button>
               {last ? (
                 <Link href="/behavior/features" onClick={() => setOpen(false)}
                   className="rounded-lg bg-slate-900 px-4 py-1.5 text-sm font-medium text-white">Open the Guide</Link>
               ) : (
-                <button onClick={() => setI((x) => Math.min(STEPS.length - 1, x + 1))}
-                  className="rounded-lg bg-slate-900 px-4 py-1.5 text-sm font-medium text-white">Next</button>
+                <Button onClick={() => setI((x) => Math.min(STEPS.length - 1, x + 1))}
+                 >Next</Button>
               )}
             </div>
           </div>

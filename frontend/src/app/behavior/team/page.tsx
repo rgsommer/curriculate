@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, getToken, loginHref } from "../_lib/api";
-import { cardCls } from "../_components/ui";
+import { cardCls, Button } from "../_components/ui";
 import { toast } from "../_components/toast";
 
 type TeamRow = {
@@ -264,7 +264,7 @@ export default function TeamPage() {
                     <input defaultValue={p.homeroom || ""} onBlur={(e) => { if (e.target.value.trim() !== (p.homeroom || "")) saveHomeroomInvite(p.email, e.target.value); }}
                       placeholder="7A" className="w-14 rounded border border-slate-300 px-1.5 py-0.5 text-xs" />
                   </label>
-                  <button onClick={() => resendInvite(p.email)} className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs">Resend</button>
+                  <Button onClick={() => resendInvite(p.email)} variant="secondary" size="xs">Resend</Button>
                   <button onClick={() => revokeInvite(p.email)} className="rounded-lg border border-red-300 px-2.5 py-1 text-xs text-red-700">Revoke</button>
                 </span>
               </li>

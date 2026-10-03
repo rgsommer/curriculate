@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { api, getToken } from "../_lib/api";
+import { Button } from "./ui";
 
 // A floating "Feedback" button on every Compass page. Opens a small panel so
 // teachers can request revisions / report issues; it emails the school's admins
@@ -45,10 +46,10 @@ export default function FeedbackButton() {
             className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
           <div className="mt-2 flex items-center justify-between gap-2">
             {msg ? <span className={`text-xs ${msg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{msg}</span> : <span />}
-            <button onClick={send} disabled={busy || !message.trim()}
-              className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40">
+            <Button onClick={send} disabled={busy || !message.trim()}
+              size="sm">
               {busy ? "Sending…" : "Send"}
-            </button>
+            </Button>
           </div>
         </div>
       ) : (

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { api, getToken, loginHref, getMyTemplates, generateParentMessage, type Me, type GuddStatus, type ParentTemplate } from "../../_lib/api";
-import { cardCls } from "../../_components/ui";
+import { cardCls, Button } from "../../_components/ui";
 import GuddChip from "../../_components/GuddChip";
 import { Markdown } from "../../_lib/Markdown";
 import { Timeline, buildByMonth } from "../../_components/Timeline";
@@ -521,10 +521,10 @@ export default function StudentPage() {
           <h1 className="mt-1 text-xl font-semibold">{s.preferredName || s.firstName} {s.lastName}</h1>
           <p className="text-sm text-slate-400">{[s.classGroup, s.grade].filter(Boolean).join(" · ")}</p>
         </div>
-        <button onClick={() => window.print()}
-          className="no-print shrink-0 rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50">
+        <Button onClick={() => window.print()}
+          variant="secondary" size="sm" className="no-print shrink-0">
           Print / export ⎙
-        </button>
+        </Button>
       </div>
 
       {/* Strikes + admin summary */}
@@ -555,10 +555,10 @@ export default function StudentPage() {
         )}
         {data.whiteSlipEligible && (
           <div className="no-print mt-3">
-            <button onClick={recommendWhiteSlip} disabled={wsBusy}
-              className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
+            <Button onClick={recommendWhiteSlip} disabled={wsBusy}
+              size="sm">
               {wsBusy ? "Preparing…" : "Recommend a white slip"}
-            </button>
+            </Button>
             <p className="mt-1 text-xs text-slate-400">Copies a parent note to your clipboard and emails you a copy (CC the VP).</p>
           </div>
         )}
@@ -570,14 +570,14 @@ export default function StudentPage() {
           <p className="text-sm font-medium text-slate-700">Admin summary (AI) → clipboard</p>
           <p className="text-xs text-slate-400">Includes private teacher notes. For VP/principal — not sent to parents.</p>
           <div className="mt-2 flex flex-wrap gap-2">
-            <button onClick={() => adminSummary("all")} disabled={!!summaryBusy}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+            <Button onClick={() => adminSummary("all")} disabled={!!summaryBusy}
+              variant="secondary" size="sm">
               {summaryBusy === "all" ? "Generating…" : "Full history"}
-            </button>
-            <button onClick={() => adminSummary("current")} disabled={!!summaryBusy}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+            </Button>
+            <Button onClick={() => adminSummary("current")} disabled={!!summaryBusy}
+              variant="secondary" size="sm">
               {summaryBusy === "current" ? "Generating…" : "Current trigger only"}
-            </button>
+            </Button>
           </div>
           {summaryMsg && <p className="mt-2 text-sm text-green-700">{summaryMsg}</p>}
           {summary && (
@@ -597,10 +597,10 @@ export default function StudentPage() {
                   placeholder="also email to (optional), e.g. VP's address"
                   className="min-w-[14rem] flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
                 />
-                <button onClick={emailSummary} disabled={emailBusy}
-                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+                <Button onClick={emailSummary} disabled={emailBusy}
+                  variant="secondary" size="sm">
                   {emailBusy ? "Emailing…" : "Email to me"}
-                </button>
+                </Button>
               </div>
             </>
           )}
@@ -610,24 +610,24 @@ export default function StudentPage() {
           <p className="text-sm font-medium text-slate-700">Parent summary (AI) → clipboard</p>
           <p className="text-xs text-slate-400">A warm, honest note for parents that pulls the whole picture together, grouped by teacher. Review it, then paste into Edsby — nothing is sent automatically. No other student is named.</p>
           <div className="mt-2 flex flex-wrap gap-2">
-            <button onClick={() => parentSummaryGen("period")} disabled={!!parentBusy}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+            <Button onClick={() => parentSummaryGen("period")} disabled={!!parentBusy}
+              variant="secondary" size="sm">
               {parentBusy === "period" ? "Writing…" : "Since last reset"}
-            </button>
-            <button onClick={() => parentSummaryGen("all")} disabled={!!parentBusy}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+            </Button>
+            <Button onClick={() => parentSummaryGen("all")} disabled={!!parentBusy}
+              variant="secondary" size="sm">
               {parentBusy === "all" ? "Writing…" : "Full history"}
-            </button>
+            </Button>
           </div>
           {parentMsg && <p className="mt-2 text-sm text-green-700">{parentMsg}</p>}
 
           <div className="mt-3 border-t border-slate-100 pt-3">
             <p className="text-xs text-slate-400">Or send it straight to the student&apos;s <span className="font-medium text-slate-600">homeroom teacher</span> to post — the VP is copied, and it&apos;s logged as an intervention. Nothing reaches parents automatically.</p>
             <div className="mt-2 flex flex-wrap items-center gap-3">
-              <button onClick={sendHrNote} disabled={hrNoteBusy}
-                className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40">
+              <Button onClick={sendHrNote} disabled={hrNoteBusy}
+                size="sm">
                 {hrNoteBusy ? "Sending…" : hrNoteSentAt ? "✉ Re-send to homeroom teacher (cc VP)" : "✉ Send to homeroom teacher (cc VP)"}
-              </button>
+              </Button>
               {hrNoteSentAt && <span className="text-xs text-slate-400">Last sent {new Date(hrNoteSentAt).toLocaleString()}</span>}
             </div>
             {hrNoteMsg && <p className={`mt-2 text-sm ${hrNoteMsg.startsWith("Sent") ? "text-green-700" : "text-red-600"}`}>{hrNoteMsg}</p>}
@@ -681,9 +681,9 @@ export default function StudentPage() {
             </div>
             <div className="mt-3 border-t border-slate-100 pt-3">
               {!rec ? (
-                <button onClick={getRecommendations} disabled={recBusy} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+                <Button onClick={getRecommendations} disabled={recBusy} variant="secondary" size="sm">
                   {recBusy ? "Thinking…" : "Get coaching suggestions (AI)"}
-                </button>
+                </Button>
               ) : rec.ai.length === 0 ? (
                 <p className="text-sm text-slate-500">{rec.aiUsed ? "No suggestions." : "AI coaching unavailable (no key set), or no recent offences to assess."}</p>
               ) : (
@@ -725,10 +725,10 @@ export default function StudentPage() {
                 </optgroup>
               )}
             </select>
-            <button onClick={() => sendParentMessage()} disabled={pmBusy || !pmTpl}
-              className="rounded-lg bg-slate-900 px-3 py-1.5 font-semibold text-white disabled:opacity-40">
+            <Button onClick={() => sendParentMessage()} disabled={pmBusy || !pmTpl}
+              size="sm">
               {pmBusy ? "Generating…" : "✉ Generate, copy & log"}
-            </button>
+            </Button>
             <Link href="/behavior/setup#templates" className="text-xs text-slate-500 underline">edit templates</Link>
           </div>
           {pmMsg && <p className="mt-2 text-sm text-slate-700">{pmMsg}</p>}
@@ -753,10 +753,10 @@ export default function StudentPage() {
             placeholder="e.g. Called mum re: homework — agreed to check planner nightly"
             className="min-w-[16rem] flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
           />
-          <button onClick={logMeeting} disabled={meetingBusy || !meetingNote.trim()}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+          <Button onClick={logMeeting} disabled={meetingBusy || !meetingNote.trim()}
+            variant="secondary" size="sm">
             {meetingBusy ? "Logging…" : "Log meeting"}
-          </button>
+          </Button>
         </div>
         {meetingMsg && <p className="mt-2 text-sm text-green-700">{meetingMsg}</p>}
       </section>
@@ -777,10 +777,10 @@ export default function StudentPage() {
             onKeyDown={(e) => e.key === "Enter" && logConsequence()}
             placeholder="Optional note"
             className="min-w-[12rem] flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
-          <button onClick={logConsequence} disabled={consBusy || !consType.trim()}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+          <Button onClick={logConsequence} disabled={consBusy || !consType.trim()}
+            variant="secondary" size="sm">
             {consBusy ? "Saving…" : "Record"}
-          </button>
+          </Button>
         </div>
         {consMsg && <p className={`mt-2 text-sm ${consMsg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{consMsg}</p>}
         {(data.consequences || []).filter((c) => c.kind !== "encouraging").length > 0 && (
@@ -811,11 +811,11 @@ export default function StudentPage() {
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-2">
-                        <button onClick={() => copyConsequenceMessage(c._id)} disabled={cmBusy === c._id}
+                        <Button onClick={() => copyConsequenceMessage(c._id)} disabled={cmBusy === c._id}
                           title="Compose a message to the student/parents and copy it for Edsby — also marks it sent"
-                          className="rounded-lg border border-slate-300 px-2 py-0.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40">
+                          variant="secondary" size="xs">
                           {cmBusy === c._id ? "…" : "📋 Copy message & mark sent"}
-                        </button>
+                        </Button>
                         <button onClick={() => markConsequenceNotified(c._id, true)} className="text-xs text-slate-500 hover:underline">mark sent only</button>
                       </span>
                     )}
@@ -916,12 +916,12 @@ export default function StudentPage() {
                       )}
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         {(n.status === "queued" || n.status === "failed") && (
-                          <button onClick={() => openSend({ id: n._id, text: editText, edited: true, evidenceCount: evidenceCountForNotice(n) })} className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white">
+                          <Button onClick={() => openSend({ id: n._id, text: editText, edited: true, evidenceCount: evidenceCountForNotice(n) })} size="sm">
                             {n.status === "failed" ? "Save & retry send" : autoSend ? "Send now" : "Review & mark as sent"}
-                          </button>
+                          </Button>
                         )}
-                        <button onClick={() => saveNoticeEdit(n._id)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">{n.status === "sent" ? "Save changes" : "Save (keep queued)"}</button>
-                        <button onClick={() => setEditId(null)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">Cancel</button>
+                        <Button onClick={() => saveNoticeEdit(n._id)} variant="secondary" size="sm">{n.status === "sent" ? "Save changes" : "Save (keep queued)"}</Button>
+                        <Button onClick={() => setEditId(null)} variant="secondary" size="sm">Cancel</Button>
                       </div>
                       <p className="mt-1 text-xs text-slate-400">{n.status === "sent" ? "Editing a sent notice updates the on-file record only — it is not re-sent to the parent." : "Save keeps the note in the queue until you press Send."}</p>
                     </div>
@@ -935,17 +935,17 @@ export default function StudentPage() {
                             Also request a meeting with the parents
                           </label>
                           <div className="mt-2 flex flex-wrap gap-2">
-                            <button onClick={() => openSend({ id: n._id, text: n.renderedText, edited: false, evidenceCount: evidenceCountForNotice(n) })} className="rounded-lg bg-slate-900 px-3 py-1 text-xs text-white">
+                            <Button onClick={() => openSend({ id: n._id, text: n.renderedText, edited: false, evidenceCount: evidenceCountForNotice(n) })} size="xs">
                               {n.status === "failed" ? "Retry send" : autoSend ? "Send now" : "Review & mark as sent"}
-                            </button>
-                            <button onClick={() => dontSend(n._id)} className="rounded-lg border border-slate-300 px-3 py-1 text-xs">Don’t send</button>
-                            <button onClick={() => { setEditId(n._id); setEditText(n.renderedText); }} className="rounded-lg border border-slate-300 px-3 py-1 text-xs">Edit note</button>
+                            </Button>
+                            <Button onClick={() => dontSend(n._id)} variant="secondary" size="xs">Don’t send</Button>
+                            <Button onClick={() => { setEditId(n._id); setEditText(n.renderedText); }} variant="secondary" size="xs">Edit note</Button>
                           </div>
                         </>
                       )}
                       {n.status === "sent" && (
                         <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <button onClick={() => { setEditId(n._id); setEditText(n.renderedText); }} className="rounded-lg border border-slate-300 px-3 py-1 text-xs">Edit note</button>
+                          <Button onClick={() => { setEditId(n._id); setEditText(n.renderedText); }} variant="secondary" size="xs">Edit note</Button>
                           {n.editedAfterSendAt && <span className="text-xs text-slate-400">edited after sending</span>}
                           <span className="text-xs text-slate-400">Updates the record only — not re-sent.</span>
                         </div>
@@ -995,8 +995,8 @@ export default function StudentPage() {
                   <input value={editDetail} onChange={(e) => setEditDetail(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && saveIncidentEdit(inc._id)}
                     placeholder="Detail / comment…" className="flex-1 rounded-lg border border-slate-300 px-2 py-1 text-xs" autoFocus />
-                  <button onClick={() => saveIncidentEdit(inc._id)} className="rounded-lg bg-slate-900 px-2 py-1 text-xs text-white">Save</button>
-                  <button onClick={() => setEditIncId(null)} className="rounded-lg border border-slate-300 px-2 py-1 text-xs">Cancel</button>
+                  <Button onClick={() => saveIncidentEdit(inc._id)} size="xs">Save</Button>
+                  <Button onClick={() => setEditIncId(null)} variant="secondary" size="xs">Cancel</Button>
                 </div>
               )}
 
@@ -1037,9 +1037,9 @@ export default function StudentPage() {
                   placeholder="Add a private teacher note (not sent to parents)…"
                   className="flex-1 rounded-lg border border-slate-200 px-2 py-1 text-xs"
                 />
-                <button type="button" onClick={() => addNote(inc._id)} className="rounded-lg border border-slate-300 px-2 py-1 text-xs">
+                <Button type="button" onClick={() => addNote(inc._id)} variant="secondary" size="xs">
                   Add note
-                </button>
+                </Button>
               </div>
             </li>
           ))}
@@ -1076,8 +1076,8 @@ export default function StudentPage() {
             <p className="mt-1 text-xs text-slate-400">Review and paste it to the parent via Edsby. Nothing was sent to the parent automatically.</p>
             <textarea readOnly value={wsResult.note} rows={12} className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
             <div className="mt-3 flex justify-end gap-2">
-              <button onClick={() => copyText(wsResult.note)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">Copy again</button>
-              <button onClick={() => setWsResult(null)} className="rounded-lg bg-slate-900 px-4 py-1.5 text-sm font-medium text-white">Done</button>
+              <Button onClick={() => copyText(wsResult.note)} variant="secondary" size="sm">Copy again</Button>
+              <Button onClick={() => setWsResult(null)}>Done</Button>
             </div>
           </div>
         </div>

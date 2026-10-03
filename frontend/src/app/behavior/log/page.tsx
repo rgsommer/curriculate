@@ -5,6 +5,7 @@ import Link from "next/link";
 import { api, getToken, loginHref, type Behavior, type StudentSummary, type GuddStatus } from "../_lib/api";
 import SendNoticeModal from "../_components/SendNoticeModal";
 import GuddChip from "../_components/GuddChip";
+import { Button } from "../_components/ui";
 
 type NoticeResult = { _id: string; status: string; cancelUntil?: string; ccVp?: boolean; renderedText?: string; reason?: string; autoDispatch?: boolean } | null;
 
@@ -420,7 +421,7 @@ export default function LogIncidentPage() {
           <div className="flex items-center justify-between gap-2">
             <h1 className={`text-lg font-semibold ${undone ? "text-slate-700" : "text-green-800"}`}>{undone ? "Undone" : "Logged ✓"}</h1>
             {!undone && createdIds.length > 0 && (
-              <button onClick={undo} className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs text-slate-600">Undo</button>
+              <Button onClick={undo} variant="secondary" size="xs">Undo</Button>
             )}
           </div>
           <p className={`mt-1 text-sm ${undone ? "text-slate-500" : "text-green-700"}`}>
@@ -496,7 +497,7 @@ export default function LogIncidentPage() {
             <div className="mt-3 flex flex-wrap gap-2">
               {notice.status === "queued" && (
                 <>
-                  <button onClick={() => setShowSendModal(true)} className="rounded-lg bg-amber-600 px-4 py-2 font-semibold text-white">Send to parent</button>
+                  <Button onClick={() => setShowSendModal(true)} variant="warning">Send to parent</Button>
                   <button onClick={cancelNotice} className="rounded-lg border border-amber-400 bg-white px-4 py-2 text-amber-900">Not this time</button>
                   {student && (
                     <Link href={`/behavior/student/${student._id}`} className="rounded-lg border border-amber-400 bg-white px-4 py-2 text-amber-900">Review / edit first</Link>
@@ -509,7 +510,7 @@ export default function LogIncidentPage() {
             </div>
           </div>
         )}
-        <button onClick={reset} className="w-full rounded-xl bg-slate-900 px-4 py-3 text-white">Log another</button>
+        <Button onClick={reset} size="lg" className="w-full">Log another</Button>
 
         <SendNoticeModal
           open={showSendModal}
@@ -760,12 +761,12 @@ export default function LogIncidentPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Log an incident</h1>
-        <button
+        <Button
           onClick={() => setMode("batch")}
-          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600"
+          variant="secondary" size="sm"
         >
           Several students →
-        </button>
+        </Button>
       </div>
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
@@ -973,7 +974,7 @@ function BatchLog({
             </ul>
           </div>
         )}
-        <button onClick={onExit} className="w-full rounded-xl bg-slate-900 px-4 py-3 text-white">Done</button>
+        <Button onClick={onExit} size="lg" className="w-full">Done</Button>
       </div>
     );
   }
@@ -982,7 +983,7 @@ function BatchLog({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Log for several students</h1>
-        <button onClick={onExit} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600">← single</button>
+        <Button onClick={onExit} variant="secondary" size="sm">← single</Button>
       </div>
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
@@ -1076,10 +1077,10 @@ function BatchLog({
       </label>
       <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional note (applied to all)…" rows={2} className="w-full rounded-xl border border-slate-300 px-4 py-3" />
 
-      <button onClick={submit} disabled={!behaviorId || pickedIds.length === 0 || submitting}
-        className="w-full rounded-xl bg-slate-900 px-4 py-4 text-lg font-semibold text-white disabled:opacity-40">
+      <Button onClick={submit} disabled={!behaviorId || pickedIds.length === 0 || submitting}
+        size="xl" className="w-full">
         {submitting ? "Logging…" : `Log for ${pickedIds.length || ""} ${pickedIds.length === 1 ? "student" : "students"}`.trim()}
-      </button>
+      </Button>
     </div>
   );
 }

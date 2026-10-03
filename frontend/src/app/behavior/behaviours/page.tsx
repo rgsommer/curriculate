@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, getToken, loginHref, type Me } from "../_lib/api";
-import { inputCls } from "../_components/ui";
+import { inputCls, Button } from "../_components/ui";
 
 const FOLLOWUPS = [
   { v: "next_school_day", label: "Due next school day" },
@@ -184,8 +184,8 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
             ))}
             {b.immediateWhiteSlip ? <span className="ml-2 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">White slip</span> : null}
           </span>
-          <button type="button" onClick={() => { resetFields(); setExpanded(true); }}
-            className="shrink-0 rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50">Edit</button>
+          <Button type="button" onClick={() => { resetFields(); setExpanded(true); }}
+            variant="secondary" size="xs" className="shrink-0">Edit</Button>
         </div>
         {b.consequenceText && <p className="mt-1 text-xs text-slate-500">{b.consequenceText}</p>}
       </div>
@@ -314,7 +314,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
             </label>
           )}
           {add ? (
-            <button onClick={save} disabled={!name.trim() || busy || needsCategory} title={needsCategory ? "Pick at least one category first" : ""} className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white disabled:opacity-40">Add</button>
+            <Button onClick={save} disabled={!name.trim() || busy || needsCategory} title={needsCategory ? "Pick at least one category first" : ""} size="sm">Add</Button>
           ) : (
             <button onClick={save} disabled={busy || !dirty || needsCategory} title={needsCategory ? "Pick at least one category first" : ""}
               className={`rounded-lg px-3 py-1.5 text-sm font-medium text-white disabled:opacity-100 ${dirty ? "bg-amber-600" : "bg-green-600"}`}>
@@ -322,7 +322,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
             </button>
           )}
           {!add && <button onClick={remove} className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-700">Remove</button>}
-          {!add && <button type="button" onClick={() => { resetFields(); setExpanded(false); }} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600">Close</button>}
+          {!add && <Button type="button" onClick={() => { resetFields(); setExpanded(false); }} variant="secondary" size="sm">Close</Button>}
         </div>
       </div>
     </div>
@@ -347,9 +347,9 @@ function SeedStandard({ onSeeded }: { onSeeded: () => void }) {
   }
   return (
     <div className="mt-2 flex flex-wrap items-center gap-2">
-      <button onClick={seed} disabled={busy} className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs disabled:opacity-40">
+      <Button onClick={seed} disabled={busy} variant="secondary" size="xs">
         {busy ? "Adding…" : "Add standard behaviour set"}
-      </button>
+      </Button>
       {msg && <span className={`text-xs ${msg.startsWith("✓") ? "text-green-700" : "text-red-600"}`}>{msg}</span>}
     </div>
   );

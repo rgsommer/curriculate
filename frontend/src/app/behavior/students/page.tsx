@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { api, getToken, loginHref, issueWhiteSlip, getMyTemplates, generateParentMessage, bulkParentMessage, type StudentSummary, type Me, type ParentTemplate } from "../_lib/api";
+import { Button } from "../_components/ui";
 
 function rowNameColor(count: number, trigger: number) {
   if (count >= trigger - 1) return "text-orange-600";
@@ -186,9 +187,9 @@ export default function StudentsPage() {
         </div>
         {isAdmin && (
           <div className="text-right">
-            <button onClick={flagAcademics} disabled={acadBusy} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:opacity-40">
+            <Button onClick={flagAcademics} disabled={acadBusy} variant="secondary" size="sm">
               {acadBusy ? "Pulling…" : "🎓 Flag academics from Edsby"}
-            </button>
+            </Button>
             <p className="mt-1 max-w-xs text-xs text-slate-400">Uses the latest Edsby overall averages (refresh them in the Averages/Honour-roll panel first).</p>
           </div>
         )}
@@ -246,10 +247,10 @@ export default function StudentsPage() {
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
             Several students: tick the boxes, then
-            <button type="button" onClick={() => sendBulk()} disabled={bulkBusy || !tpl || selectedIds.length === 0}
-              className="rounded-lg bg-slate-900 px-2.5 py-1 font-semibold text-white disabled:opacity-40">
+            <Button type="button" onClick={() => sendBulk()} disabled={bulkBusy || !tpl || selectedIds.length === 0}
+              size="sm">
               {bulkBusy ? "Sending…" : `✉ Email me each & log (${selectedIds.length})`}
-            </button>
+            </Button>
             <span>— one personalised email per student, ready to forward.</span>
             {selectedIds.length > 0 && <button type="button" onClick={() => setSelected({})} className="underline">clear</button>}
             {(templates.find((t) => t.name === tpl)?.kind ?? "encouraging") !== "corrective" && (
@@ -288,16 +289,16 @@ export default function StudentsPage() {
             </Link>
 
             {templates.length > 0 && (
-              <button type="button" onClick={() => sendParentMessage(s)} disabled={!tpl}
+              <Button type="button" onClick={() => sendParentMessage(s)} disabled={!tpl}
                 title={tpl ? `Copy the “${tpl}” parent message for this student and log it` : "Pick a template above first"}
-                className="shrink-0 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-40">✉</button>
+                variant="secondary" size="xs" className="shrink-0">✉</Button>
             )}
 
             {s.pendingWhiteSlipId && (
               <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-800 ring-1 ring-amber-200" title="A white slip was recommended and the VP was emailed. Confirm once it's actually been issued.">
                 White slip — issued?
-                <button type="button" onClick={() => issueSlip(s)}
-                  className="rounded-md bg-amber-600 px-2 py-0.5 font-semibold text-white hover:bg-amber-700">Yes</button>
+                <Button type="button" onClick={() => issueSlip(s)}
+                  variant="warning" size="sm">Yes</Button>
               </span>
             )}
 

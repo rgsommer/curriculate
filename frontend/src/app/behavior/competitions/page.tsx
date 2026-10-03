@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, getToken, loginHref, type Me } from "../_lib/api";
+import { Button } from "../_components/ui";
 
 type Result = { place: number; houseId: string; houseName: string; houseColor: string; points: number };
 type Comp = {
@@ -68,9 +69,9 @@ export default function CompetitionsPage() {
         <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center">
           <p className="text-sm text-slate-500">No competitions yet.</p>
           {isAdmin && (
-            <button onClick={seed} disabled={busy} className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-40">
+            <Button onClick={seed} disabled={busy} className="mt-3">
               {busy ? "Adding…" : "Seed the Sept–June calendar"}
-            </button>
+            </Button>
           )}
         </div>
       ) : (
@@ -129,9 +130,9 @@ function CompRow({ c, houses, editable, onChanged }: { c: Comp; houses: House[];
           )}
         </div>
         {editable && (
-          <button onClick={() => setOpen((o) => !o)} className="shrink-0 rounded-lg border border-slate-300 px-3 py-1.5 text-xs">
+          <Button onClick={() => setOpen((o) => !o)} variant="secondary" size="xs" className="shrink-0">
             {open ? "Cancel" : c.results.length ? "Edit result" : "Score"}
-          </button>
+          </Button>
         )}
       </div>
 
@@ -152,9 +153,9 @@ function CompRow({ c, houses, editable, onChanged }: { c: Comp; houses: House[];
               </select>
             </div>
           ))}
-          <button onClick={save} disabled={busy} className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-40">
+          <Button onClick={save} disabled={busy}>
             {busy ? "Saving…" : "Award points"}
-          </button>
+          </Button>
         </div>
       )}
     </div>

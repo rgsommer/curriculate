@@ -5,7 +5,7 @@ import Link from "next/link";
 import { api, getToken, loginHref, issueWhiteSlip, completeConsequence, homeroomFollowup, type Me, type StudentSummary } from "./_lib/api";
 import { Markdown } from "./_lib/Markdown";
 import SendNoticeModal from "./_components/SendNoticeModal";
-import { Card } from "./_components/ui";
+import { Card, Button } from "./_components/ui";
 
 export default function BehaviorDashboard() {
   const [me, setMe] = useState<Me | null>(null);
@@ -312,9 +312,9 @@ function SetMyName({ name: name0, courtesyName: courtesy0, onSaved }: { name?: s
             placeholder="e.g. Mr. Sommer" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
         </label>
       </div>
-      <button onClick={save} disabled={busy || !name.trim()} className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">
+      <Button onClick={save} disabled={busy || !name.trim()} className="mt-3">
         {busy ? "Saving…" : "Save"}
-      </button>
+      </Button>
       {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
     </Card>
   );
@@ -382,9 +382,9 @@ function ReferColleague({ canInviteAdmin = false, standalone = false }: { canInv
               ? "Sends a leadership-focused pitch (burnout, consistency, documentation, trends, coaching) with a link — no account created. You're cc'd."
               : "Sends an info email about Compass with a link to try it — no account created. You're cc'd."}
           </p>
-          <button onClick={send} disabled={busy || !email.trim()} className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-40">
+          <Button onClick={send} disabled={busy || !email.trim()}>
             {busy ? "Sending…" : kind === "admin" ? "Send admin pitch" : "Send info email"}
-          </button>
+          </Button>
         </div>
       )}
       {msg && <p className={`mt-2 text-sm ${msg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{msg}</p>}
@@ -501,9 +501,9 @@ function HousesCard({ canLog, isAdmin, portalCode, events = [] }: { canLog: bool
       <div className="flex items-center justify-between">
         <h2 className="font-semibold">House points</h2>
         {canLog && (
-          <button onClick={() => { setOpen((o) => !o); setHouseId(houses[0]?._id || ""); }} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
+          <Button onClick={() => { setOpen((o) => !o); setHouseId(houses[0]?._id || ""); }} variant="secondary" size="sm">
             {open ? "Cancel" : "Give points"}
-          </button>
+          </Button>
         )}
       </div>
 
@@ -526,9 +526,9 @@ function HousesCard({ canLog, isAdmin, portalCode, events = [] }: { canLog: bool
             <input type="number" value={points} onChange={(e) => setPoints(e.target.value)} className="w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
             <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (optional)" className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
           </div>
-          <button onClick={award} disabled={busy || !houseId || !Number(points)} className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-40">
+          <Button onClick={award} disabled={busy || !houseId || !Number(points)}>
             {busy ? "Saving…" : "Award to house"}
-          </button>
+          </Button>
         </div>
       )}
       {msg && <p className="mt-2 text-sm text-green-700">{msg}</p>}
@@ -728,11 +728,11 @@ function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number
           {s.pendingWhiteSlipId && (
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
               <span className="text-slate-500">Confirm the consequence given:</span>
-              <button type="button" onClick={() => resolveSlip(s)}
-                className="rounded-md bg-amber-600 px-3 py-1.5 font-semibold text-white hover:bg-amber-700">Issued</button>
-              <button type="button"
+              <Button type="button" onClick={() => resolveSlip(s)}
+                variant="warning" size="sm">Issued</Button>
+              <Button type="button"
                 onClick={() => { const t = window.prompt("What consequence was given instead of the white slip? (e.g. Work detention, Call home)"); if (t && t.trim()) resolveSlip(s, t.trim()); }}
-                className="rounded-md border border-slate-300 px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-50">Other…</button>
+                variant="secondary" size="sm">Other…</Button>
             </div>
           )}
           {(s.pendingConsequences || []).map((c) => (
@@ -962,20 +962,20 @@ function ExecutiveSummaryCard() {
           <option value={6}>Last 6 months</option>
           <option value={12}>Last 12 months</option>
         </select>
-        <button onClick={() => gen("me")} disabled={!!busy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">
+        <Button onClick={() => gen("me")} disabled={!!busy} variant="secondary">
           {busy === "me" ? "Generating…" : "My interactions"}
-        </button>
-        <button onClick={() => gen("all")} disabled={!!busy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">
+        </Button>
+        <Button onClick={() => gen("all")} disabled={!!busy} variant="secondary">
           {busy === "all" ? "Generating…" : "Whole division"}
-        </button>
+        </Button>
       </div>
       {msg && <p className={`mt-2 text-sm ${msg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{msg}</p>}
       {summary && (
         <>
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <button onClick={emailIt} disabled={!!busy} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+            <Button onClick={emailIt} disabled={!!busy} variant="secondary" size="sm">
               {busy === "email" ? "Emailing…" : "Email it to me (with chart)"}
-            </button>
+            </Button>
             <input
               value={emailTo}
               onChange={(e) => setEmailTo(e.target.value)}
@@ -1069,12 +1069,12 @@ function PendingDecisions({ autoSend, channelLabel }: { autoSend: boolean; chann
               </label>
             )}
             <div className="mt-2 flex flex-wrap gap-2">
-              <button onClick={() => setConfirmRow(n)} disabled={!!busy} className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40">
+              <Button onClick={() => setConfirmRow(n)} disabled={!!busy} variant="warning" size="sm">
                 {busy === n._id ? "…" : autoSend ? "Send to parent" : "Mark as sent to parent"}
-              </button>
-              <button onClick={() => notNow(n._id)} disabled={!!busy} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+              </Button>
+              <Button onClick={() => notNow(n._id)} disabled={!!busy} variant="secondary" size="sm">
                 Not this time
-              </button>
+              </Button>
               <Link href={`/behavior/student/${n.studentId}`} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">Review / edit</Link>
             </div>
           </li>
@@ -1157,9 +1157,9 @@ function ReminderToday({ firstName }: { firstName?: string }) {
                 <button onClick={() => resolve(f._id, "not_done")} title="Not completed — re-issues/escalates" className="rounded-lg bg-red-600 px-3 py-1 text-xs font-medium text-white">
                   Not done
                 </button>
-                <button onClick={() => resolve(f._id, "waived")} title="Cancel this task — no penalty" className="rounded-lg border border-slate-300 px-3 py-1 text-xs">
+                <Button onClick={() => resolve(f._id, "waived")} title="Cancel this task — no penalty" variant="secondary" size="xs">
                   Waive
-                </button>
+                </Button>
               </div>
             </li>
           );

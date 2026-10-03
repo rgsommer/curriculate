@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api } from "../_lib/api";
+import { Button } from "../_components/ui";
 
 function ActionInner() {
   const params = useSearchParams();
@@ -88,9 +89,9 @@ function ActionInner() {
           : `This marks the consequence for ${studentName} as completed.`}
       </p>
       <div className="mt-4 flex gap-2">
-        <button onClick={log} disabled={state === "busy"} className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white disabled:opacity-50">
+        <Button onClick={log} disabled={state === "busy"}>
           {state === "busy" ? "Recording…" : cta}
-        </button>
+        </Button>
         <Link href="/behavior" className="rounded-lg border border-slate-300 px-4 py-2 text-slate-600">Cancel</Link>
       </div>
     </Card>

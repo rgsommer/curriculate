@@ -3,7 +3,7 @@
 import { Children, isValidElement, useEffect, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { api, getToken, loginHref, API_BASE, getMyTemplates, saveMyTemplates, type Me, type ParentTemplate } from "../_lib/api";
-import { inputCls } from "../_components/ui";
+import { inputCls, Button } from "../_components/ui";
 import { toast } from "../_components/toast";
 
 // School-approved consequences shown by default (admins can edit). The AI coach
@@ -282,7 +282,7 @@ function CreateSchool({ onCreated }: { onCreated: () => Promise<void> }) {
         placeholder="School / division name"
         className="mt-3 w-full rounded-lg border border-slate-300 px-4 py-2.5"
       />
-      <button
+      <Button
         disabled={!name.trim() || busy}
         onClick={async () => {
           setBusy(true);
@@ -296,10 +296,10 @@ function CreateSchool({ onCreated }: { onCreated: () => Promise<void> }) {
             setBusy(false);
           }
         }}
-        className="mt-3 rounded-lg bg-slate-900 px-4 py-2.5 text-white disabled:opacity-40"
+        className="mt-3"
       >
         {busy ? "Creating…" : "Create school"}
-      </button>
+      </Button>
     </Card>
   );
 }
@@ -380,7 +380,7 @@ function ParentTemplatesSection() {
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
-        <button type="button" onClick={add} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">+ Add template</button>
+        <Button type="button" onClick={add} variant="secondary" size="sm">+ Add template</Button>
         <SaveButton state={{ busy, saved, dirty }} onClick={save} label="Save templates" />
         {msg && <span className="text-sm text-red-600">{msg}</span>}
       </div>
@@ -560,9 +560,9 @@ function InviteSection({ domain, isOriginator }: { domain: string; isOriginator:
           <option value="principal">Principal (read-only)</option>
           {isOriginator && <option value="admin">Admin</option>}
         </select>
-        <button onClick={send} disabled={busy || !emails.trim()} className="rounded-lg bg-slate-900 px-4 py-2 text-white disabled:opacity-40">
+        <Button onClick={send} disabled={busy || !emails.trim()}>
           {busy ? "Sending…" : "Invite"}
-        </button>
+        </Button>
       </div>
       {result && (
         <div className="mt-2 text-sm">
@@ -634,13 +634,13 @@ function RosterSection() {
         Parent 1/2 name + email + Edsby ID. Only Last/First name are required; House matches or creates a
         house. The ethnicity field is dropped automatically.
       </p>
-      <button
+      <Button
         type="button"
         onClick={downloadTemplate}
-        className="mt-2 inline-block rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700"
+        variant="secondary" size="sm" className="mt-2"
       >
         ⬇ Download template (CSV)
-      </button>
+      </Button>
       {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
       <input
         type="file"
@@ -648,10 +648,10 @@ function RosterSection() {
         onChange={(e) => setFile(e.target.files?.[0] || null)}
         className="mt-2 block text-sm"
       />
-      <button onClick={upload} disabled={!file || busy}
-        className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-white disabled:opacity-40">
+      <Button onClick={upload} disabled={!file || busy}
+        className="mt-3">
         {busy ? "Importing…" : "Import"}
-      </button>
+      </Button>
       {result && (
         <div className="mt-3 text-sm">
           <p className="text-green-700">
@@ -773,9 +773,9 @@ function AdminDigestSettings({ config, myEmail }: { config: any; myEmail: string
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <input value={recipient} onChange={(e) => setRecipient(e.target.value)} onBlur={(e) => saveCfg({ recipientEmail: e.target.value })}
           placeholder={`Send to (defaults to admins${myEmail ? `, e.g. ${myEmail}` : ""})`} className={`${inputCls} flex-1`} />
-        <button onClick={sendNow} disabled={busy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">
+        <Button onClick={sendNow} disabled={busy} variant="secondary">
           {busy ? "Sending…" : "Send now"}
-        </button>
+        </Button>
       </div>
       {msg && <p className={`mt-2 text-sm ${msg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{msg}</p>}
     </Card>
@@ -824,9 +824,9 @@ function ConsequenceDigestSettings({ config }: { config: any }) {
             className="w-16 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
           day(s)
         </label>
-        <button onClick={sendNow} disabled={busy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">
+        <Button onClick={sendNow} disabled={busy} variant="secondary">
           {busy ? "Sending…" : "Send now"}
-        </button>
+        </Button>
       </div>
       {msg && <p className={`mt-2 text-sm ${msg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{msg}</p>}
     </Card>
@@ -904,7 +904,7 @@ function RecommendedActionsSettings({ config }: { config: any }) {
             <button onClick={() => setLadder((p) => p.filter((_, j) => j !== i))} className="text-xs text-red-600">remove</button>
           </div>
         ))}
-        <button onClick={() => setLadder((p) => [...p, { noticeNumber: (p[p.length - 1]?.noticeNumber || 1) + 1, action: "" }])} className="rounded-lg border border-slate-300 px-2 py-1 text-xs">+ add step</button>
+        <Button onClick={() => setLadder((p) => [...p, { noticeNumber: (p[p.length - 1]?.noticeNumber || 1) + 1, action: "" }])} variant="secondary" size="xs">+ add step</Button>
       </div>
 
       <div className="mt-4 flex items-center justify-between gap-2">
@@ -1049,9 +1049,9 @@ function GuddSettings({ config }: { config: any }) {
                 </p>
               </div>
               <div className="flex gap-2">
-                <button type="button" onClick={genReport} disabled={reportBusy} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+                <Button type="button" onClick={genReport} disabled={reportBusy} variant="secondary" size="sm">
                   {reportBusy ? "…" : "Generate report"}
-                </button>
+                </Button>
                 <button type="button" onClick={clearList} disabled={clearBusy} className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-800 disabled:opacity-40">
                   {clearBusy ? "…" : "Clear the list now"}
                 </button>
@@ -1088,7 +1088,7 @@ function GuddSettings({ config }: { config: any }) {
                     </ul>
                   </details>
                 )}
-                <button type="button" onClick={() => window.print()} className="no-print mt-2 rounded-lg border border-slate-300 px-3 py-1 text-xs">Print</button>
+                <Button type="button" onClick={() => window.print()} variant="secondary" size="xs" className="no-print mt-2">Print</Button>
               </div>
             )}
           </div>
@@ -1313,10 +1313,10 @@ function EdsbySection({ edsby }: { edsby: any }) {
         </Field>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <button type="button" onClick={refreshEdsby} disabled={detectBusy || !baseUrl.trim()}
-          className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs disabled:opacity-40">
+        <Button type="button" onClick={refreshEdsby} disabled={detectBusy || !baseUrl.trim()}
+          variant="secondary" size="xs">
           {detectBusy ? "Refreshing…" : "Refresh from Edsby (jver/cver + formkey)"}
-        </button>
+        </Button>
         {detectMsg && <span className={`text-xs ${detectMsg.startsWith("✓") ? "text-green-700" : detectMsg.startsWith("✗") ? "text-red-600" : "text-slate-500"}`}>{detectMsg}</span>}
       </div>
       <p className="mt-1 text-xs text-slate-400">
@@ -1351,10 +1351,10 @@ function EdsbySection({ edsby }: { edsby: any }) {
           no more DevTools, no expiry surprises. Works in Chrome, Edge, and Vivaldi.
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button type="button" onClick={genIngestToken} disabled={tokenBusy}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs disabled:opacity-40">
+          <Button type="button" onClick={genIngestToken} disabled={tokenBusy}
+            variant="secondary" size="xs">
             {tokenBusy ? "Generating…" : ingestTokenSet ? "Regenerate token" : "1. Generate token"}
-          </button>
+          </Button>
           {ingestToken && <code className="break-all rounded bg-slate-100 px-1.5 py-0.5 text-[11px]">{ingestToken}</code>}
           {!ingestToken && ingestTokenSet && <span className="text-slate-400">A token already exists (hidden) — regenerate to see a new one.</span>}
         </div>
@@ -1376,8 +1376,8 @@ function EdsbySection({ edsby }: { edsby: any }) {
           <>
             <p className="mt-2">Endpoint: <code className="rounded bg-slate-100 px-1">{API_BASE}/api/behavior/edsby/ingest</code></p>
             <pre className="mt-1 max-h-64 overflow-auto rounded-lg bg-slate-900 p-3 text-[11px] leading-relaxed text-slate-100">{ingestSnippet(API_BASE, ingestToken)}</pre>
-            <button type="button" onClick={() => navigator.clipboard?.writeText(ingestSnippet(API_BASE, ingestToken))}
-              className="mt-1 rounded-lg border border-slate-300 px-3 py-1 text-xs">Copy script</button>
+            <Button type="button" onClick={() => navigator.clipboard?.writeText(ingestSnippet(API_BASE, ingestToken))}
+              variant="secondary" size="xs" className="mt-1">Copy script</Button>
           </>
         )}
         <p className="mt-2 text-slate-400">
@@ -1394,12 +1394,12 @@ function EdsbySection({ edsby }: { edsby: any }) {
       </label>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <SaveButton state={saveState} onClick={save} label="Save Edsby connection" />
-        <button onClick={testEdsby} disabled={testBusy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">
+        <Button onClick={testEdsby} disabled={testBusy} variant="secondary">
           {testBusy ? "Testing…" : "Test connection"}
-        </button>
-        <button onClick={testEdsbySend} disabled={testBusy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">
+        </Button>
+        <Button onClick={testEdsbySend} disabled={testBusy} variant="secondary">
           {testBusy ? "…" : "Send test broadcast"}
-        </button>
+        </Button>
       </div>
       {testMsg && <p className={`mt-2 text-sm ${testMsg.startsWith("✓") ? "text-green-700" : "text-red-600"}`}>{testMsg}</p>}
       <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
@@ -1982,7 +1982,7 @@ function HousesSection({ config }: { config?: any }) {
       <div className="mt-3 flex items-center gap-2">
         <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-9 w-10 rounded border border-slate-300" />
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New house name…" className={`${inputCls} flex-1`} />
-        <button onClick={add} disabled={!name.trim()} className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-40">Add house</button>
+        <Button onClick={add} disabled={!name.trim()}>Add house</Button>
       </div>
 
       <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -1992,14 +1992,14 @@ function HousesSection({ config }: { config?: any }) {
           same-last-name students (siblings) together. Replaces current assignments — you can hand-tune after.
         </p>
         <div className="mt-2 flex flex-wrap gap-2">
-          <button onClick={() => backfill("full")} disabled={backfillBusy}
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm disabled:opacity-40">
+          <Button onClick={() => backfill("full")} disabled={backfillBusy}
+            variant="secondary">
             {backfillBusy ? "Working…" : "Auto-assign all students to 4 houses"}
-          </button>
-          <button onClick={() => backfill("unassigned")} disabled={backfillBusy}
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm disabled:opacity-40">
+          </Button>
+          <Button onClick={() => backfill("unassigned")} disabled={backfillBusy}
+            variant="secondary">
             Rebalance only unassigned
-          </button>
+          </Button>
         </div>
         <p className="mt-1 text-xs text-slate-400">Use “Rebalance only unassigned” after a mid-year roster import to slot new students into the existing houses without reshuffling everyone.</p>
         {backfillMsg && <p className={`mt-2 text-xs ${backfillMsg.startsWith("✓") ? "text-green-700" : "text-red-600"}`}>{backfillMsg}</p>}
@@ -2007,10 +2007,10 @@ function HousesSection({ config }: { config?: any }) {
         <div className="mt-4 border-t border-slate-100 pt-3">
           <p className="text-sm font-medium text-slate-700">Booster-event groups (#1 / #2)</p>
           <p className="text-xs text-slate-400">For events where a whole house won&apos;t fit one room, split each house into two groups — balanced by grade &amp; gender, siblings together. Set each group&apos;s room below; students see their group &amp; room in the House portal by typing their last name.</p>
-          <button onClick={splitGroups} disabled={splitBusy}
-            className="mt-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm disabled:opacity-40">
+          <Button onClick={splitGroups} disabled={splitBusy}
+            variant="secondary" className="mt-2">
             {splitBusy ? "Splitting…" : "Split houses into 2 balanced groups"}
-          </button>
+          </Button>
           {splitMsg && <p className={`mt-2 text-xs ${splitMsg.startsWith("✓") ? "text-green-700" : "text-red-600"}`}>{splitMsg}</p>}
           {houses && houses.length > 0 && (
             <div className="mt-3 space-y-1.5">
@@ -2026,9 +2026,9 @@ function HousesSection({ config }: { config?: any }) {
               ))}
             </div>
           )}
-          <button onClick={printHousesList} disabled={printBusy} className="mt-3 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm disabled:opacity-40">
+          <Button onClick={printHousesList} disabled={printBusy} variant="secondary" className="mt-3">
             {printBusy ? "Preparing…" : "Print houses list (House · Name · Room)"}
-          </button>
+          </Button>
         </div>
 
         {/* How houses earn points — three switches */}
@@ -2139,15 +2139,15 @@ function HousesSection({ config }: { config?: any }) {
           <p className="text-sm font-medium text-slate-700">Standard house points on behaviours</p>
           <p className="text-xs text-slate-400">Give every behaviour a recommended house-point value: −1 minor, −2 moderate, −3 serious/values-based, −5 immediate; +3 positive, +5 notable. Only fills behaviours still at 0 — your custom values are kept. You usually don&apos;t need this: positives are already set, and infractions only move house points if you&apos;ve turned on &ldquo;Deduct for negatives.&rdquo; Tune any value in the Behaviours list.</p>
           <div className="mt-2 flex flex-wrap items-center gap-3">
-            <button type="button" disabled={applyPtsBusy}
+            <Button type="button" disabled={applyPtsBusy}
               onClick={async () => {
                 setApplyPtsBusy(true); setApplyPtsMsg("");
                 try { const r = await api<{ ok: boolean; updated: number }>("/behaviors/apply-house-points", { body: {} }); setApplyPtsMsg(`✓ Set house points on ${r.updated} behaviour${r.updated === 1 ? "" : "s"}.`); }
                 catch (e: any) { setApplyPtsMsg(`✗ ${e.message}`); } finally { setApplyPtsBusy(false); }
               }}
-              className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
+             >
               {applyPtsBusy ? "Applying…" : "Apply recommended house points"}
-            </button>
+            </Button>
             {applyPtsMsg && <span className={`text-sm ${applyPtsMsg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{applyPtsMsg}</span>}
           </div>
         </div>
@@ -2175,7 +2175,7 @@ function HousesSection({ config }: { config?: any }) {
                 <button onClick={() => setEvents((p) => p.filter((_, j) => j !== i))} className="text-xs text-red-600">remove</button>
               </div>
             ))}
-            <button onClick={() => setEvents((p) => [...p, { name: "", points: 0 }])} className="rounded-lg border border-slate-300 px-2 py-1 text-xs">+ add event</button>
+            <Button onClick={() => setEvents((p) => [...p, { name: "", points: 0 }])} variant="secondary" size="xs">+ add event</Button>
           </div>
           <div className="mt-2"><SaveButton state={eventsSave} onClick={saveEvents} label="Save events" /></div>
         </div>
@@ -2204,7 +2204,7 @@ function HousesSection({ config }: { config?: any }) {
                 <button onClick={() => setRewards((p) => p.filter((_, j) => j !== i))} className="text-xs text-red-600">remove</button>
               </div>
             ))}
-            <button onClick={() => setRewards((p) => [...p, { points: 50, reward: "" }])} className="rounded-lg border border-slate-300 px-2 py-1 text-xs">+ add reward</button>
+            <Button onClick={() => setRewards((p) => [...p, { points: 50, reward: "" }])} variant="secondary" size="xs">+ add reward</Button>
           </div>
           <div className="mt-2"><SaveButton state={rewardsSave} onClick={saveRewards} label="Save rewards" /></div>
         </div>
@@ -2237,7 +2237,7 @@ function HousesSection({ config }: { config?: any }) {
                 <button onClick={() => setMerch((p) => p.filter((_, j) => j !== i))} className="text-xs text-red-600">remove</button>
               </div>
             ))}
-            <button onClick={() => setMerch((p) => [...p, { name: "", points: 100 }])} className="rounded-lg border border-slate-300 px-2 py-1 text-xs">+ add item</button>
+            <Button onClick={() => setMerch((p) => [...p, { name: "", points: 100 }])} variant="secondary" size="xs">+ add item</Button>
           </div>
           <div className="mt-2"><SaveButton state={merchSave} onClick={saveMerch} label="Save merch store" /></div>
         </div>
@@ -2252,18 +2252,18 @@ function HousesSection({ config }: { config?: any }) {
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           {portalCode && <span className="rounded-lg bg-white px-3 py-1.5 font-mono text-lg tracking-widest">{portalCode}</span>}
-          <button onClick={() => setPortalCodeTo()} disabled={portalBusy} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm disabled:opacity-40">
+          <Button onClick={() => setPortalCodeTo()} disabled={portalBusy} variant="secondary">
             {portalBusy ? "…" : portalCode ? "Random" : "Generate code"}
-          </button>
+          </Button>
           {portalCode && <a href={`/houses?code=${encodeURIComponent(portalCode)}`} target="_blank" rel="noreferrer" className="text-xs text-slate-500 underline">open the portal ↗</a>}
           {portalCode && <a href={`/houses/display?code=${encodeURIComponent(portalCode)}`} target="_blank" rel="noreferrer" className="text-xs text-slate-500 underline">open the wall display ↗</a>}
         </div>
         {portalCode && (
           <div className="mt-2">
-            <button onClick={copyInvite}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-100">
+            <Button onClick={copyInvite}
+              variant="secondary" size="sm">
               {inviteCopied ? "✓ Copied — paste into Edsby" : "📋 Copy invite message (for Edsby)"}
-            </button>
+            </Button>
             <p className="mt-1 text-xs text-slate-400">Rich, ready-to-paste message inviting students to the portal — with your code built into a one-click link.</p>
           </div>
         )}
@@ -2275,10 +2275,10 @@ function HousesSection({ config }: { config?: any }) {
             placeholder="set your own (e.g. 1977)"
             className="w-44 rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
           />
-          <button onClick={() => setPortalCodeTo(portalInput)} disabled={portalBusy || portalInput.length < 3}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:opacity-40">
+          <Button onClick={() => setPortalCodeTo(portalInput)} disabled={portalBusy || portalInput.length < 3}
+            variant="secondary" size="sm">
             Set code
-          </button>
+          </Button>
           {portalMsg && <span className="text-xs text-red-600">{portalMsg}</span>}
         </div>
       </div>
@@ -2364,23 +2364,23 @@ function HousesSection({ config }: { config?: any }) {
             : "All points since the start currently count toward the leaderboard."}
         </p>
         <div className="mt-2 flex flex-wrap gap-2">
-          <button onClick={startNewTerm} disabled={resetBusy}
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm disabled:opacity-40">
+          <Button onClick={startNewTerm} disabled={resetBusy}
+            variant="secondary">
             {resetBusy ? "…" : "Reset now (start a new term/year)"}
-          </button>
+          </Button>
           {resetAt && (
-            <button onClick={clearTermReset} disabled={resetBusy}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm disabled:opacity-40">
+            <Button onClick={clearTermReset} disabled={resetBusy}
+              variant="secondary" size="sm">
               Count all points again
-            </button>
+            </Button>
           )}
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
           <span className="text-slate-500">Or reset as of a date:</span>
           <input type="date" value={resetDate} onChange={(e) => setResetDate(e.target.value)}
             className="rounded-lg border border-slate-300 px-2 py-1" />
-          <button onClick={setResetToDate} disabled={resetBusy || !resetDate}
-            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:opacity-40">Set date</button>
+          <Button onClick={setResetToDate} disabled={resetBusy || !resetDate}
+            variant="secondary" size="sm">Set date</Button>
         </div>
 
         {/* Reset negatives only — keep positives, clear the conduct drag. */}
@@ -2391,15 +2391,15 @@ function HousesSection({ config }: { config?: any }) {
               : "You can also clear only the conduct (negative) points and keep every positive."}
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
-            <button onClick={resetNegatives} disabled={resetBusy}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:opacity-40">
+            <Button onClick={resetNegatives} disabled={resetBusy}
+              variant="secondary" size="sm">
               {resetBusy ? "…" : "Reset negative points only"}
-            </button>
+            </Button>
             {negResetAt && (
-              <button onClick={clearNegReset} disabled={resetBusy}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:opacity-40">
+              <Button onClick={clearNegReset} disabled={resetBusy}
+                variant="secondary" size="sm">
                 Count negatives again
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -2441,9 +2441,9 @@ function HousesSection({ config }: { config?: any }) {
               placeholder="Send to (defaults to you)"
               className={`${inputCls} flex-1`}
             />
-            <button onClick={sendReport} disabled={reportBusy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">
+            <Button onClick={sendReport} disabled={reportBusy} variant="secondary">
               {reportBusy ? "Sending…" : "Send report now"}
-            </button>
+            </Button>
           </div>
         )}
         {reportMsg && <p className="mt-2 text-sm text-green-700">{reportMsg}</p>}
@@ -2499,10 +2499,10 @@ function AddStudentSection() {
         <input value={f.p1} onChange={(e) => setF({ ...f, p1: e.target.value })} placeholder="Parent 1 email" className={inputCls} />
         <input value={f.p2} onChange={(e) => setF({ ...f, p2: e.target.value })} placeholder="Parent 2 email (optional)" className={inputCls} />
       </div>
-      <button onClick={add} disabled={busy || (!f.firstName.trim() && !f.lastName.trim())}
-        className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-white disabled:opacity-40">
+      <Button onClick={add} disabled={busy || (!f.firstName.trim() && !f.lastName.trim())}
+        className="mt-3">
         {busy ? "Adding…" : "Add student"}
-      </button>
+      </Button>
     </Card>
   );
 }
@@ -2640,9 +2640,9 @@ function TestToolsSection({ email, collapsed = false, canManageStudents = true }
       {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
 
       <div className="mt-3">
-        <button onClick={addTestStudent} disabled={busy} className="rounded-lg bg-slate-900 px-4 py-2 text-white disabled:opacity-40">
+        <Button onClick={addTestStudent} disabled={busy}>
           {busy ? "Adding…" : "Add test student"}
-        </button>
+        </Button>
         <p className="mt-1 text-xs text-slate-500">
           Creates “ZTEST Alpha” whose parent emails route to <span className="font-mono">{alias("mom")}</span> /{" "}
           <span className="font-mono">{alias("dad")}</span> — so test notices come to you, never a real parent.
@@ -2657,10 +2657,10 @@ function TestToolsSection({ email, collapsed = false, canManageStudents = true }
 
       <div className="mt-5 border-t border-slate-100 pt-4">
         <p className="text-sm font-medium text-slate-700">Email delivery</p>
-        <button onClick={sendTestEmail} disabled={testBusy}
-          className="mt-2 rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">
+        <Button onClick={sendTestEmail} disabled={testBusy}
+          variant="secondary" className="mt-2">
           {testBusy ? "Sending…" : `Send test email to ${email}`}
-        </button>
+        </Button>
         {testEmailMsg && <p className={`mt-2 text-sm ${testEmailMsg.startsWith("✓") ? "text-green-700" : "text-red-600"}`}>{testEmailMsg}</p>}
       </div>
 
@@ -2668,19 +2668,19 @@ function TestToolsSection({ email, collapsed = false, canManageStudents = true }
         <p className="text-sm font-medium text-slate-700">Preview a sample notice</p>
         <p className="mt-0.5 text-xs text-slate-500">See exactly what a family receives, with your branding &amp; signature. Nothing is logged or sent to a parent.</p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button onClick={() => previewSample("negative")} disabled={sampleBusy}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+          <Button onClick={() => previewSample("negative")} disabled={sampleBusy}
+            variant="secondary" size="sm">
             {sampleBusy && sampleKind === "negative" ? "…" : "Preview notice"}
-          </button>
+          </Button>
           <button onClick={() => previewSample("positive")} disabled={sampleBusy}
             className="rounded-lg border border-green-300 px-3 py-1.5 text-sm text-green-700 disabled:opacity-40">
             {sampleBusy && sampleKind === "positive" ? "…" : "Preview good-news note"}
           </button>
           {sampleHtml && (
-            <button onClick={() => previewSample(sampleKind, true)} disabled={sampleBusy}
-              className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white disabled:opacity-40">
+            <Button onClick={() => previewSample(sampleKind, true)} disabled={sampleBusy}
+              size="sm">
               Email this sample to me
-            </button>
+            </Button>
           )}
         </div>
         {sampleMsg && <p className={`mt-2 text-sm ${sampleMsg.startsWith("✓") ? "text-green-700" : "text-red-600"}`}>{sampleMsg}</p>}
@@ -2706,7 +2706,7 @@ function TestToolsSection({ email, collapsed = false, canManageStudents = true }
             placeholder="Search by name…"
             className={inputCls}
           />
-          <button onClick={search} className="rounded-lg border border-slate-300 px-4 py-2 text-sm">Search</button>
+          <Button onClick={search} variant="secondary">Search</Button>
         </div>
         <ul className="mt-2 divide-y divide-slate-100">
           {results.map((s) => (
@@ -2725,7 +2725,7 @@ function TestToolsSection({ email, collapsed = false, canManageStudents = true }
                 {s.active === false ? (
                   <button onClick={() => setActive(s, true)} className="rounded-lg border border-green-300 px-3 py-1 text-xs text-green-700">Reactivate</button>
                 ) : (
-                  <button onClick={() => setActive(s, false)} className="rounded-lg border border-slate-300 px-3 py-1 text-xs">Deactivate</button>
+                  <Button onClick={() => setActive(s, false)} variant="secondary" size="xs">Deactivate</Button>
                 )}
                 <button onClick={() => del(s)} className="rounded-lg border border-red-300 px-3 py-1 text-xs text-red-700">Delete</button>
               </span>
@@ -2931,9 +2931,9 @@ function MyEdsbyCard({ embedded = false }: { embedded?: boolean }) {
       <div className="mt-3 flex items-center gap-2">
         <SaveButton state={saveState} onClick={save} label="Save my Edsby" />
         {(state.userNid || state.hasCookie) && (
-          <button onClick={disconnect} disabled={busy} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600">
+          <Button onClick={disconnect} disabled={busy} variant="secondary" size="sm">
             {busy ? "…" : "Disconnect"}
-          </button>
+          </Button>
         )}
         {msg && <span className="text-xs text-slate-500">{msg}</span>}
       </div>

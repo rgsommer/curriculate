@@ -1,4 +1,5 @@
 "use client";
+import { Button } from "./ui";
 
 // A confirm-before-send pop-up that shows the EXACT note a parent will receive,
 // so a teacher always sees the final wording (greeting + signature) before it
@@ -61,12 +62,12 @@ export default function SendNoticeModal({
             </label>
           )}
           <div className="mt-3 flex flex-wrap justify-end gap-2">
-            <button onClick={onClose} disabled={busy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">
+            <Button onClick={onClose} disabled={busy} variant="secondary">
               Cancel
-            </button>
-            <button onClick={onConfirm} disabled={busy} className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">
+            </Button>
+            <Button onClick={onConfirm} disabled={busy} variant="warning">
               {busy ? "Saving…" : recordOnly ? "Confirm — I've sent it" : "Confirm & send"}
-            </button>
+            </Button>
           </div>
         </div>
       </div>

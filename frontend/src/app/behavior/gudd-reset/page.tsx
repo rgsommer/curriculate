@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { api } from "../_lib/api";
+import { Button } from "../_components/ui";
 
 function ResetInner() {
   const params = useSearchParams();
@@ -80,10 +81,10 @@ function ResetInner() {
         This starts a fresh {name} period{schoolName ? ` for ${schoolName}` : ""}. Earlier uniform infractions stay in the history but stop counting toward the {name}. This is what &ldquo;clearing the list&rdquo; does.
       </p>
       <div className="mt-4 flex gap-2">
-        <button onClick={doReset} disabled={state === "busy"}
-          className="rounded-lg bg-slate-900 px-4 py-2 font-semibold text-white disabled:opacity-50">
+        <Button onClick={doReset} disabled={state === "busy"}
+         >
           {state === "busy" ? "Resetting…" : `Reset the ${name} list`}
-        </button>
+        </Button>
         <Link href="/behavior" className="rounded-lg border border-slate-300 px-4 py-2 text-slate-600">Cancel</Link>
       </div>
     </Card>

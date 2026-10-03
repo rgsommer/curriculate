@@ -82,9 +82,9 @@ export default function FoodDrivePage() {
         <Link href="/behavior" className="text-sm text-slate-500 underline">← dashboard</Link>
         <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-xl font-semibold">Tally import</h1>
-          <button onClick={copyInstructions} className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
+          <Button onClick={copyInstructions} variant="secondary" size="xs">
             {copied ? "✓ Copied" : "📋 Copy instructions (for reps / future years)"}
-          </button>
+          </Button>
         </div>
         <p className="text-sm text-slate-400">For any counted event — food drive, garbage cleanup, read-a-thon, laps, etc. Upload the class sheets (typed names, a handwritten count beside each — photos, scans, or a PDF); Compass reads the counts, matches each name to a student &amp; house, then awards the top contributors and the top houses.</p>
       </div>

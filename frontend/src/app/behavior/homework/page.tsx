@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { api, API_BASE, getToken, loginHref, type Me, type StudentSummary } from "../_lib/api";
+import { Button } from "../_components/ui";
 
 const TYPES: { value: "homework" | "work" | "discussion"; label: string }[] = [
   { value: "homework", label: "Homework" },
@@ -93,9 +94,9 @@ function ClassSection({ classGroup, subjects, currentTerm, onSubjectsChange }: {
         </button>
         {open && (
           <div className="flex flex-wrap gap-1.5 text-xs">
-            <button onClick={() => setPanel(panel === "new" ? "" : "new")} className="rounded-lg bg-slate-900 px-2.5 py-1 text-white">+ Assignment</button>
-            <button onClick={() => setPanel(panel === "report" ? "" : "report")} className="rounded-lg border border-slate-300 px-2.5 py-1">Averages / report</button>
-            <button onClick={() => setPanel(panel === "outstanding" ? "" : "outstanding")} className="rounded-lg border border-slate-300 px-2.5 py-1">Outstanding</button>
+            <Button onClick={() => setPanel(panel === "new" ? "" : "new")} size="sm">+ Assignment</Button>
+            <Button onClick={() => setPanel(panel === "report" ? "" : "report")} variant="secondary" size="sm">Averages / report</Button>
+            <Button onClick={() => setPanel(panel === "outstanding" ? "" : "outstanding")} variant="secondary" size="sm">Outstanding</Button>
           </div>
         )}
       </div>
@@ -257,10 +258,10 @@ function NewAssignment({ classGroup, subjects, onSubjectsChange, onCreated }: { 
       <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder={type === "discussion" ? "Discussion topic" : "Description (e.g. p.42 #1–10)"} className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
       <div className="flex flex-wrap items-center gap-2">
         <input value={newSubject} onChange={(e) => setNewSubject(e.target.value)} placeholder="add a subject…" className="w-40 rounded-lg border border-slate-300 px-2 py-1 text-xs" />
-        <button onClick={addSubject} disabled={!newSubject.trim()} className="rounded-lg border border-slate-300 px-2 py-1 text-xs disabled:opacity-40">Add subject</button>
-        <button onClick={create} disabled={busy} className="ml-auto rounded-lg bg-slate-900 px-4 py-1.5 text-sm text-white disabled:opacity-40">
+        <Button onClick={addSubject} disabled={!newSubject.trim()} variant="secondary" size="xs">Add subject</Button>
+        <Button onClick={create} disabled={busy} className="ml-auto">
           {busy ? "Creating…" : "Create assignment"}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -307,7 +308,7 @@ function ReportPanel({ classGroup, subjects, currentTerm }: { classGroup: string
         <select value={type} onChange={(e) => setType(e.target.value as any)} className="rounded border border-slate-300 px-2 py-1 text-sm">
           {TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
         </select>
-        <button onClick={download} className="ml-auto rounded-lg border border-slate-300 bg-white px-3 py-1 text-sm">Export CSV (Edsby)</button>
+        <Button onClick={download} variant="secondary" size="sm" className="ml-auto">Export CSV (Edsby)</Button>
       </div>
 
       {loading || !data ? (
@@ -378,8 +379,8 @@ function OutstandingPanel({ classGroup, onPosted }: { classGroup: string; onPost
         ))}
       </ul>
       <div className="mt-2 flex flex-wrap gap-2">
-        <button onClick={() => post(false)} disabled={busy || !Object.values(picked).some(Boolean)} className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white disabled:opacity-40">Send to checked</button>
-        <button onClick={() => post(true)} disabled={busy} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">Send to whole class</button>
+        <Button onClick={() => post(false)} disabled={busy || !Object.values(picked).some(Boolean)} size="sm">Send to checked</Button>
+        <Button onClick={() => post(true)} disabled={busy} variant="secondary" size="sm">Send to whole class</Button>
       </div>
       <p className="mt-1 text-[11px] text-slate-400">Whole-class skips anyone messaged recently. Message says they’ve fallen behind and to show work in person; partial credit if shown within 7 days.</p>
     </div>
