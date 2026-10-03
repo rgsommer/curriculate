@@ -672,13 +672,31 @@ export async function GET(req: Request) {
     // differs from last time. Everyone in the group still gets the same set.
     const qPool = (e.config as { questionPool?: QuestionCategory[] } | null)
       ?.questionPool;
-    const spawnConfig =
+    const baseConfig =
       qPool && qPool.length
         ? {
             ...((e.config as Record<string, unknown>) ?? {}),
             questions: selectPoolQuestions(qPool, e.type as string),
           }
         : e.config;
+    // A recurring raffle's per-run state (vote window, winner) belongs to the run that
+    // just finished — never carry it into the next one, or next year's challenge would
+    // open with last year's winner and a long-past vote deadline.
+    const prevRaffle = raffleOf(baseConfig as Record<string, unknown> | null);
+    const spawnConfig = prevRaffle
+      ? (() => {
+          const {
+            voteClosesAt: _vc,
+            noVoteGraceUntil: _ng,
+            winnerUserId: _wu,
+            winnerName: _wn,
+            winnerUnpaid: _wp,
+            ...rest
+          } = prevRaffle;
+          void _vc; void _ng; void _wu; void _wn; void _wp;
+          return { ...((baseConfig as Record<string, unknown>) ?? {}), raffle: rest };
+        })()
+      : baseConfig;
 
     // Yearly (birthday/anniversary/holiday): re-open a lead time before next year's
     // date as a draft (the auto-open step above launches it). A fixed-date birthday

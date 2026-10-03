@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/campfire/AuthProvider";
 import { useGroups } from "@/lib/campfire/hooks";
 import { supabase } from "@/lib/campfire/supabase";
 import { seasonalCardPrompt } from "@/lib/campfire/templates";
+import { FREE_MAX_GROUPS } from "@/lib/campfire/premium";
 import {
   ENGAGEMENT_TYPES,
   engagementIcon,
@@ -36,6 +37,10 @@ export default function DashboardPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
   const [groupBlocked, setGroupBlocked] = useState(false);
+  // Free plan: anyone may host FREE_MAX_GROUPS group(s); more needs an active trial or
+  // Campfire Plus (see premium.ts). Members and guests are never gated on joining.
+  const hostedCount = groups.filter((g) => g.creator_id === user?.id).length;
+  const canCreateGroup = isTrialActive || hostedCount < FREE_MAX_GROUPS;
   // Deep link (?start=<template>): after this group is made, jump straight into a
   // new engagement with that template pre-loaded.
   const [startTemplate, setStartTemplate] = useState<string | null>(null);
@@ -507,6 +512,12 @@ export default function DashboardPage() {
 
   const handleCreate = async () => {
     if (!newName.trim()) return;
+    // The ?start= deep link opens this form directly — enforce the free-plan limit here too.
+    if (!canCreateGroup) {
+      setShowCreate(false);
+      setGroupBlocked(true);
+      return;
+    }
     setCreating(true);
     setError("");
     const { group, error: createError } = await createGroup(
@@ -799,7 +810,7 @@ export default function DashboardPage() {
         {/* Never silently disabled: when a new group isn't allowed, tapping says why. */}
         <button
           onClick={() => {
-            if (!isTrialActive) {
+            if (!canCreateGroup) {
               setGroupBlocked(true);
               return;
             }
@@ -808,7 +819,7 @@ export default function DashboardPage() {
             setError("");
           }}
           className={`rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-3 text-sm font-semibold text-white shadow-sm hover:opacity-90 ${
-            isTrialActive ? "" : "opacity-60"
+            canCreateGroup ? "" : "opacity-60"
           }`}
         >
           + New Group
@@ -822,8 +833,9 @@ export default function DashboardPage() {
       </div>
       {groupBlocked && (
         <div role="status" className="-mt-5 mb-8 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Starting another group isn&apos;t available on your account right now. Your
-          existing groups keep working, and you can still join any group with an invite.
+          The free plan includes {FREE_MAX_GROUPS === 1 ? "one group" : `${FREE_MAX_GROUPS} groups`} you
+          host, and you already have {hostedCount === 1 ? "yours" : "them"}. Your groups keep
+          working, and you can still join any group with an invite.
         </div>
       )}
 
