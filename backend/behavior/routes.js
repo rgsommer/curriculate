@@ -4818,16 +4818,26 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
     const fmtMonth = (k) => { const [y, m] = String(k).split("-"); return MONTH_NAMES[+m - 1] ? `${MONTH_NAMES[+m - 1]} ${y}` : k; };
     const listJoin = (arr) => arr.length <= 1 ? (arr[0] || "") : `${arr.slice(0, -1).join(", ")} and ${arr[arr.length - 1]}`;
     const monthsSorted = Object.keys(byMonth).sort();
-    const vols = monthsSorted.map((k) => byMonth[k]);
+    // The current calendar month is still in progress — its lower count must NOT
+    // be read as a trend/improvement (e.g. "great improvement in October" on Oct 2).
+    const nowDt = new Date();
+    const curMonthKey = `${nowDt.getFullYear()}-${String(nowDt.getMonth() + 1).padStart(2, "0")}`;
+    const curMonthInProgress = monthsSorted.includes(curMonthKey);
+    const dayOfMonth = nowDt.getDate();
+    // Trend uses COMPLETE months only, so the partial current month can't skew it.
+    const trendMonths = monthsSorted.filter((k) => k !== curMonthKey);
+    const trendVols = trendMonths.map((k) => byMonth[k]);
     let trendVerb = "held roughly steady";
-    if (vols.length >= 4) {
-      const mid = Math.floor(vols.length / 2);
-      const firstAvg = vols.slice(0, mid).reduce((a, b) => a + b, 0) / mid;
-      const lastAvg = vols.slice(mid).reduce((a, b) => a + b, 0) / (vols.length - mid);
+    if (trendVols.length >= 4) {
+      const mid = Math.floor(trendVols.length / 2);
+      const firstAvg = trendVols.slice(0, mid).reduce((a, b) => a + b, 0) / mid;
+      const lastAvg = trendVols.slice(mid).reduce((a, b) => a + b, 0) / (trendVols.length - mid);
       if (lastAvg > firstAvg * 1.2) trendVerb = "risen";
       else if (lastAvg < firstAvg * 0.8) trendVerb = "eased";
     }
-    const peakMonth = monthsSorted.length ? monthsSorted.reduce((a, b) => (byMonth[b] > byMonth[a] ? b : a)) : "";
+    // Peak over COMPLETE months (a partial current month shouldn't define the peak).
+    const peakPool = trendMonths.length ? trendMonths : monthsSorted;
+    const peakMonth = peakPool.length ? peakPool.reduce((a, b) => (byMonth[b] > byMonth[a] ? b : a)) : "";
     const peakVol = peakMonth ? byMonth[peakMonth] : 0;
     const topTypeNames = topTypes.slice(0, 3).map(([k]) => k);
     const subject = scope === "me" ? (req.membership.name || "This teacher") : "Across the division, staff";
@@ -4839,13 +4849,19 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
     const useWeekly = activeMonths <= 1;
     const weekKeysSorted = Object.keys(byWeek).sort();
     const weeklySeries = weekKeysSorted.map((k) => { const d = new Date(k); return `wk of ${MONTH_NAMES[d.getUTCMonth()].slice(0, 3)} ${d.getUTCDate()}: ${byWeek[k]}`; });
-    const volumeSeries = useWeekly ? weeklySeries : monthly;
+    // Tag the current month as in-progress so a partial count isn't misread.
+    const monthlyTagged = monthsSorted.map((k) => `${k}: ${byMonth[k]}${k === curMonthKey && curMonthInProgress ? " (month in progress)" : ""}`);
+    const volumeSeries = useWeekly ? weeklySeries : monthlyTagged;
     const volumeLabel = useWeekly ? "Weekly offence volume (this term)" : "Monthly offence volume";
+    const curMonthName = fmtMonth(curMonthKey);
+    const currentMonthNote = (!useWeekly && curMonthInProgress)
+      ? ` The most recent month, ${curMonthName}, is still in progress (only ${dayOfMonth} day(s) so far), so its lower count reflects an incomplete month — it is NOT an improvement or a downward trend, and must not be described as one.`
+      : "";
     const trendClause = useWeekly
       ? (weekKeysSorted.length >= 2
           ? `and week to week the offence load reads ${weeklySeries.join("; ")}`
           : `and it is early in the term (${totalOffences} offence(s) so far), so it is too soon to read a trend`)
-      : `and the monthly offence load has ${trendVerb} on average across the window${peakMonth ? `; the busiest month was ${fmtMonth(peakMonth)} (${peakVol})` : ""}`;
+      : `and the monthly offence load has ${trendVerb} on average across complete months${peakMonth ? `; the busiest month was ${fmtMonth(peakMonth)} (${peakVol})` : ""}${currentMonthNote}`;
     const overview =
       `Overall picture: over ${windowShort}, ${subject} engaged with ${students.size} student(s) — ` +
       `${totalOffences} offence(s), ${positiveCount} positive recognition(s) and ${interactionCount} documented interaction(s). ` +
@@ -4878,7 +4894,7 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
     const prompt =
       `You are writing a COMPREHENSIVE executive summary about a teacher's classroom-behaviour management over the period, addressed to school leadership for SUPPORTIVE purposes. ` +
       `Frame it as a supervisor would when championing and supporting a staff member: lead with what is going well and the diligence shown; present challenges (a heavy offence load, a difficult class, a rough month) as where the teacher may benefit from support, resources, mentoring or co-planning — never as a failing. Be encouraging, fair and constructive; this is for backing the teacher up, not evaluating or disciplining them. Give due weight to every form of engagement, not just discipline, and don't omit a thread because its number is small. ` +
-      `Cover, as distinct threads: (1) how things are going overall and the OFFENCE trend across the window (improving / worsening / steady, citing the ${useWeekly ? "weekly" : "monthly"} volumes — use the ${totalOffences} total offences, not just the logged-incident count)${useWeekly ? ". IMPORTANT: the data spans a single calendar month — do NOT describe a monthly trend; use the weekly volumes above, or simply state the total so far this term, and never imply a longer trend than the data supports" : ""}; ` +
+      `Cover, as distinct threads: (1) how things are going overall and the OFFENCE trend across the window (improving / worsening / steady, citing the ${useWeekly ? "weekly" : "monthly"} volumes — use the ${totalOffences} total offences, not just the logged-incident count)${useWeekly ? ". IMPORTANT: the data spans a single calendar month — do NOT describe a monthly trend; use the weekly volumes above, or simply state the total so far this term, and never imply a longer trend than the data supports" : ""}${currentMonthNote ? `. IMPORTANT:${currentMonthNote}` : ""}; ` +
       `(2) POSITIVE recognition — how positives are being used to reinforce good behaviour (${positiveCount} in the window); ` +
       `(3) documented INTERACTIONS (${interactionCount}) such as conversations and parent meetings logged for the record — proactive, relationship-building engagement that is NOT discipline; ` +
       `(4) thoroughness and follow-through — parent communication (${notices.length} notice(s) home), consequence follow-through (${fuResolvedPct}% of ${fuTotal} resolved), documentation via ${teacherNoteCount} private note(s), and steady engagement across ${activeMonths} month(s); ` +
