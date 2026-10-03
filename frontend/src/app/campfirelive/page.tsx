@@ -16,7 +16,7 @@ import {
   isHouseSchool,
   type EngagementType,
 } from "@/lib/campfire/types";
-import { CF_PRIMARY, CF_SECONDARY, CF_SECONDARY_SM } from "@/lib/campfire/ui";
+import { CF_PRIMARY, CF_SECONDARY, CF_SECONDARY_SM, chipClass } from "@/lib/campfire/ui";
 
 const GROUP_EMOJIS = ["🔥", "🏕️", "⭐", "🌙", "🎯", "💪", "🙏", "🎉", "🎮", "📖", "💑", "🏠"];
 
@@ -756,7 +756,7 @@ export default function DashboardPage() {
                       </div>
                     )}
                   </div>
-                  <span className="flex-shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">
+                  <span className={`${chipClass("success")} flex-shrink-0`}>
                     See it
                   </span>
                 </Link>

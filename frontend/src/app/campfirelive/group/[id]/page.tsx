@@ -1046,7 +1046,7 @@ See you around the campfire! 🏕️`
           {myBadges.map((b) => (
             <span
               key={b.t}
-              className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800"
+              className={chipClass("warn")}
             >
               {b.e} {b.t}
             </span>
@@ -1300,7 +1300,7 @@ See you around the campfire! 🏕️`
                       <span className="flex flex-shrink-0 items-center gap-2">
                         {inv.status === "joined" && (
                           <>
-                            <span className="rounded-full bg-green-100 px-2 py-0.5 font-semibold text-green-700">
+                            <span className={chipClass("success")}>
                               ✓ joined
                             </span>
                             {isAdmin && (
@@ -1323,12 +1323,12 @@ See you around the campfire! 🏕️`
                           </>
                         )}
                         {inv.status === "revoked" && (
-                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-500">
+                          <span className={chipClass("neutral")}>
                             revoked
                           </span>
                         )}
                         {inv.status === "pending" && (
-                          <span className="rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-700">
+                          <span className={chipClass("warn")}>
                             pending
                             {inv.nudge_count > 0 ? ` · ${inv.nudge_count}×` : ""}
                           </span>

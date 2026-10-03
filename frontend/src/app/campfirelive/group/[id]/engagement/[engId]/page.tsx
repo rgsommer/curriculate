@@ -19,7 +19,7 @@ import { supabase } from "@/lib/campfire/supabase";
 import { hasProfanity } from "@/lib/campfire/profanity";
 import { formatWhen } from "@/lib/campfire/dates";
 import { cfAlert, cfConfirm, cfPrompt } from "@/lib/campfire/dialogs";
-import { CF_PRIMARY, CF_PRIMARY_SM, CF_SECONDARY, CF_SECONDARY_SM } from "@/lib/campfire/ui";
+import { CF_PRIMARY, CF_PRIMARY_SM, CF_SECONDARY, CF_SECONDARY_SM, chipClass } from "@/lib/campfire/ui";
 
 // Shrink a phone photo before upload: longest side ≤ 2000px, JPEG. Keeps a handwritten
 // note perfectly readable while cutting a 4 MB photo to a few hundred KB (school Wi-Fi).
@@ -4663,7 +4663,7 @@ export default function EngagementDetailPage() {
                           ? "Anonymous"
                           : memberNameOf(r.user_id, r.profile?.display_name)}
                         {(r.content as { _late?: boolean })._late && (
-                          <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-xs font-semibold text-sky-700">
+                          <span className={chipClass("info")}>
                             ✚ after reveal
                           </span>
                         )}
@@ -4779,15 +4779,15 @@ export default function EngagementDetailPage() {
                     />
                     {raffle &&
                       (a.photoEarly ? (
-                        <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                        <div className={`${chipClass("warn")} mt-1`}>
                           ⚠️ photo dated before the start
                         </div>
                       ) : a.photoTakenAt == null ? (
-                        <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+                        <div className={`${chipClass("neutral")} mt-1`}>
                           ⓘ no date on photo
                         </div>
                       ) : (
-                        <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">
+                        <div className={`${chipClass("success")} mt-1`}>
                           ✓ taken{" "}
                           {new Date(a.photoTakenAt).toLocaleDateString("en-US", {
                             month: "short",
@@ -4835,7 +4835,7 @@ export default function EngagementDetailPage() {
       }
     )?._late;
   const lateTag = (
-    <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-xs font-semibold text-sky-700">
+    <span className={chipClass("info")}>
       ✚ after reveal
     </span>
   );
@@ -4913,15 +4913,15 @@ export default function EngagementDetailPage() {
                   className="max-h-28 rounded-lg object-cover"
                 />
                 {row.early ? (
-                  <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                  <div className={`${chipClass("warn")} mt-1`}>
                     ⚠️ scorecard dated before the start
                   </div>
                 ) : row.takenAt == null ? (
-                  <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+                  <div className={`${chipClass("neutral")} mt-1`}>
                     ⓘ no date on scorecard
                   </div>
                 ) : (
-                  <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700">
+                  <div className={`${chipClass("success")} mt-1`}>
                     ✓ taken{" "}
                     {new Date(row.takenAt).toLocaleDateString("en-US", {
                       month: "short",
@@ -5778,12 +5778,12 @@ export default function EngagementDetailPage() {
                   </span>
                 )}
                 {r.id === crownResponseId && (
-                  <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">
+                  <span className={`${chipClass("warn")} ml-auto`}>
                     🏆 Winner
                   </span>
                 )}
                 {(content as { _late?: boolean })._late && (
-                  <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-700">
+                  <span className={`${chipClass("info")} ml-auto`}>
                     ✚ after reveal
                   </span>
                 )}
@@ -6029,7 +6029,7 @@ export default function EngagementDetailPage() {
         // A card guest isn't a group member — no group to go "back" to. Give them
         // a gentle bit of context instead of a dead-end link into a group they
         // can't see.
-        <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-orange-50 px-3 py-1 text-xs font-medium text-orange-700">
+        <div className={`${chipClass("brand")} mb-4`}>
           🔥 You&apos;re invited to this {meta?.label?.toLowerCase() || "card"} — just sign below.
         </div>
       ) : (
@@ -7146,12 +7146,12 @@ export default function EngagementDetailPage() {
               </p>
               <div className="flex-shrink-0">
                 {isSealed && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-3 py-1.5 text-xs font-semibold text-amber-800">
+                  <span className={chipClass("warn")}>
                     🔒 Sealed
                   </span>
                 )}
                 {isRevealed && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-green-50 border border-green-200 px-3 py-1.5 text-xs font-semibold text-green-700">
+                  <span className={chipClass("success")}>
                     ✓ Revealed
                   </span>
                 )}
