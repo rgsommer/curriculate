@@ -251,22 +251,25 @@ export default function TeamPage() {
         ) : (
           <ul className="mt-2 divide-y divide-slate-100">
             {pending.map((p) => (
-              <li key={p.email} className="flex items-center justify-between gap-2 py-2 text-sm">
+              // Stacks on phones (details, then controls on their own row); side by
+              // side from sm up. The controls used to squeeze the details into a
+              // one-word-wide column on a phone.
+              <li key={p.email} className="flex flex-col gap-2 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
-                  <div className="truncate font-medium">{p.email}</div>
+                  <div className="break-all font-medium">{p.email}</div>
                   <div className="text-xs text-slate-500">
-                    {p.role} · invited {ago(p.invitedAt)}{p.lastSentAt && new Date(p.lastSentAt).getTime() - new Date(p.invitedAt).getTime() > 60000 ? `, resent ${ago(p.lastSentAt)}` : ""}{p.invitedBy ? ` by ${p.invitedBy}` : ""}
+                    <span className="capitalize">{p.role}</span> · invited {ago(p.invitedAt)}{p.lastSentAt && new Date(p.lastSentAt).getTime() - new Date(p.invitedAt).getTime() > 60000 ? `, resent ${ago(p.lastSentAt)}` : ""}{p.invitedBy ? ` by ${p.invitedBy.split("@")[0]}` : ""}
                     {noteByEmail[p.email] ? <span className="ml-2 text-green-700">{noteByEmail[p.email]}</span> : null}
                   </div>
                 </div>
-                <span className="flex shrink-0 items-center gap-1.5">
-                  <label className="flex items-center gap-1 text-xs text-slate-500">Homeroom
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  <label className="flex items-center gap-1.5 text-xs text-slate-500">Homeroom
                     <input defaultValue={p.homeroom || ""} onBlur={(e) => { if (e.target.value.trim() !== (p.homeroom || "")) saveHomeroomInvite(p.email, e.target.value); }}
-                      placeholder="7A" className="w-14 rounded border border-slate-300 px-1.5 py-0.5 text-xs" />
+                      placeholder="e.g. 7A" aria-label={`Homeroom for ${p.email}`} className="w-16 rounded border border-slate-300 px-2 py-1 text-sm" />
                   </label>
                   <Button onClick={() => resendInvite(p.email)} variant="secondary" size="xs">Resend</Button>
-                  <button onClick={() => revokeInvite(p.email)} className="rounded-lg border border-red-300 px-2.5 py-1 text-xs text-red-700">Revoke</button>
-                </span>
+                  <Button onClick={() => revokeInvite(p.email)} variant="secondary" size="xs" className="!border-red-300 !text-red-700 hover:!bg-red-50">Revoke</Button>
+                </div>
               </li>
             ))}
           </ul>
