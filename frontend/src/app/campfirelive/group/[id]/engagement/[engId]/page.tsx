@@ -11,7 +11,7 @@ import {
   useCreateEngagement,
   type MonthlyNth,
 } from "@/lib/campfire/hooks";
-import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, engagementLabel, parseCareQuestions, formatMoney, GIFT_CURRENCIES, localeGiftCurrency, raffleOf, tournamentOf, pledgeOf, babyRevealOf, parseBabyAnswer, selectPoolQuestions, describeMonthlyNth, nextMonthlyNthWeekday, campfireTeaserText, ORDINAL_WEEK, WEEKDAY_NAMES, describeNthWeekday, type NthWeekday, type QuestionCategory } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, engagementLabel, parseCareQuestions, formatMoney, GIFT_CURRENCIES, localeGiftCurrency, raffleOf, tournamentOf, pledgeOf, babyRevealOf, parseBabyAnswer, selectPoolQuestions, describeMonthlyNth, nextMonthlyNthWeekday, campfireTeaserText, campfireTeaserHtml, ORDINAL_WEEK, WEEKDAY_NAMES, describeNthWeekday, type NthWeekday, type QuestionCategory } from "@/lib/campfire/types";
 import { readExifTakenAt } from "@/lib/campfire/exif";
 import QRCode from "qrcode";
 import type { CampfireGift } from "@/lib/campfire/types";
@@ -22,6 +22,7 @@ import { cfAlert, cfConfirm, cfPrompt } from "@/lib/campfire/dialogs";
 import { CF_PRIMARY, CF_PRIMARY_SM, CF_SECONDARY, CF_SECONDARY_SM, chipClass } from "@/lib/campfire/ui";
 import { passItOnCard } from "@/lib/campfire/templates";
 import MoveActivity from "./MoveActivity";
+import { copyRich, inviteHtml } from "@/lib/campfire/richCopy";
 import { campfireAppLinksText } from "@/lib/campfire/appLinks";
 
 // Shrink a phone photo before upload: longest side ≤ 2000px, JPEG. Keeps a handwritten
@@ -1768,8 +1769,19 @@ export default function EngagementDetailPage() {
     const msg = `You're invited to "${title}" — ${what} on Campfire 🔥${
       blurb ? `\n\n${blurb}` : ""
     }${dateLine ? `\n\n${dateLine}` : ""}\n\n👉 Tap to add yours — no app or account needed, just your name:\n${url}\n\n(Already on Campfire? Use code ${groupInfo.invite_code}.)\n\n${campfireAppLinksText()}\n\n${teaser}`;
+    // Same invite, formatted — for pasting into email (a real button, linked apps).
+    const html = inviteHtml({
+      heading: `You're invited to "${title}"`,
+      subheading: `${what.charAt(0).toUpperCase()}${what.slice(1)} on Campfire 🔥`,
+      paragraphs: [blurb, dateLine],
+      ctaUrl: url,
+      ctaLabel: engagement.type === "birthday" ? "✍️ Sign the card" : "✍️ Add yours",
+      ctaHint: "No app or account needed — just your name.",
+      footnote: `Already on Campfire? Use code ${groupInfo.invite_code}.`,
+      extraHtml: campfireTeaserHtml(),
+    });
     try {
-      await navigator.clipboard.writeText(msg);
+      await copyRich(msg, html);
       setSharedEng(true);
       setTimeout(() => setSharedEng(false), 2500);
     } catch {

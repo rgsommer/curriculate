@@ -11,6 +11,7 @@ import type { MonthlyNth } from "@/lib/campfire/hooks";
 import { parseInviteList } from "@/lib/campfire/parseInvites";
 import { formatWhen } from "@/lib/campfire/dates";
 import { campfireAppLinksText } from "@/lib/campfire/appLinks";
+import { copyRich, inviteHtml } from "@/lib/campfire/richCopy";
 import { cfAlert, cfConfirm } from "@/lib/campfire/dialogs";
 import { CF_PRIMARY, CF_PRIMARY_SM, CF_SECONDARY, CF_SECONDARY_SM, chipClass } from "@/lib/campfire/ui";
 
@@ -181,10 +182,35 @@ ${campfireAppLinksText()}
 
 See you around the campfire! 🏕️`
     : "";
+  // Formatted twin of inviteMessage for pasting into email: a real Join button,
+  // linked app names, and what's happening right now.
+  const inviteMessageHtml = group
+    ? inviteHtml({
+        heading: `${group.avatar_emoji} You're invited to "${group.name}" on Campfire!`,
+        paragraphs: [
+          "Campfire is where our group plays together — polls, challenges, questions — with one twist: nobody sees anyone's answers until everyone has responded. Then it all unlocks at once. 🎉",
+          peekEngagements.length > 0
+            ? "Happening right now: " +
+              peekEngagements
+                .map(
+                  (e) =>
+                    `${engagementIcon(e)} ${resolveTitle(e.title, e.birth_year, e.deadline)}`
+                )
+                .join(" · ")
+            : null,
+        ],
+        ctaUrl: joinUrl,
+        ctaLabel: "🔥 Join the group",
+        ctaHint:
+          "Type your name to join as a guest — or Continue with Google to use it on any device.",
+        footnote: `Already signed in? Just enter invite code ${group.invite_code}.`,
+      })
+    : "";
 
-  const copyText = async (text: string, which: "invite" | "link") => {
+  const copyText = async (text: string, which: "invite" | "link", html?: string) => {
     try {
-      await navigator.clipboard.writeText(text);
+      if (html) await copyRich(text, html);
+      else await navigator.clipboard.writeText(text);
       setCopied(which);
       setTimeout(() => setCopied(""), 2000);
     } catch {
@@ -206,7 +232,7 @@ See you around the campfire! 🏕️`
         if ((e as Error)?.name === "AbortError") return; // they closed the sheet
       }
     }
-    copyText(inviteMessage, "invite");
+    copyText(inviteMessage, "invite", inviteMessageHtml);
   };
 
   const showQrCode = async () => {
@@ -1532,16 +1558,19 @@ See you around the campfire! 🏕️`
                 {/* Admins can promote/demote + remove (creator/host is locked as admin) */}
                 {isAdmin && m.user_id !== group.creator_id ? (
                   <div className="flex items-center gap-3 flex-shrink-0">
-                    <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer">
+                    <label
+                      title="Co-hosts can invite people, nudge, edit and reveal activities, and manage members."
+                      className="flex min-h-10 cursor-pointer items-center gap-1.5 rounded-full px-2 text-xs font-medium text-slate-600 hover:bg-orange-50"
+                    >
                       <input
                         type="checkbox"
                         checked={m.role === "admin"}
                         onChange={(e) =>
                           setMemberRole(m.user_id, e.target.checked ? "admin" : "member")
                         }
-                        className="w-3.5 h-3.5 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                        className="h-4 w-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
                       />
-                      Admin
+                      Co-host
                     </label>
                     {m.user_id !== user?.id && (
                       <button
@@ -1565,7 +1594,7 @@ See you around the campfire! 🏕️`
                   m.role === "admin" &&
                   m.user_id !== group.creator_id && (
                     <span className="text-xs text-orange-600 font-semibold flex-shrink-0">
-                      Admin
+                      Co-host
                     </span>
                   )
                 )}
