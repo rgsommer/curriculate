@@ -164,12 +164,13 @@ export default function DashboardPage() {
       description: quick.note,
       config: {
         occasion: quick.occasion,
-        recurrence_nth: quick.nth, // next year's copy lands on the same Nth weekday
+        // Next year's copy lands on the same Nth weekday.
+        ...(quick.repeats ? { recurrence_nth: quick.nth } : {}),
         ...(hostName ? { hostName } : {}),
       },
       deadline: nextNthWeekday(quick.nth), // 8:00 AM local
       reveal: "sealed",
-      recurrence_rule: "yearly",
+      recurrence_rule: quick.repeats ? "yearly" : undefined,
       notify: true,
       hold_until_deadline: true,
       lead_days: 14,
@@ -1140,6 +1141,9 @@ export default function DashboardPage() {
                     weekday: "long",
                     month: "long",
                     day: "numeric",
+                    ...(revealAt.getFullYear() !== new Date().getFullYear()
+                      ? { year: "numeric" as const }
+                      : {}),
                   })}{" "}
                   at 8:00 AM
                 </strong>{" "}
@@ -1147,7 +1151,11 @@ export default function DashboardPage() {
               </li>
               <li>✍️ People can sign as soon as you share it</li>
               <li>🔒 Notes are private — only you see them until the card opens</li>
-              <li>🔁 Comes back every year · no money or gift cards involved</li>
+              <li>
+                {quick.repeats
+                  ? "🔁 Comes back every year · no money or gift cards involved"
+                  : "💛 No money or gift cards involved — just notes of thanks"}
+              </li>
             </ul>
             {quickErr && <p className="mt-3 text-sm text-red-600">{quickErr}</p>}
             <button

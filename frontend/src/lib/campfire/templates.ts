@@ -95,7 +95,7 @@ const CARD_NOTES = {
   fathers_day: "Write your Father's Day wishes — they stay hidden until the card opens on the day. 👔",
   wedding: "Write your wishes for the couple — they stay hidden until the wedding day. 💒",
   teacher:
-    "Tell your teacher what you appreciate — a favourite lesson, something they helped you with, or simply thank you. It stays hidden until the card opens. 🍎",
+    "Tell your teacher what you appreciate — a favourite lesson, a time you got help, or simply thank you. It stays hidden until the card opens. 🍎",
   thanks: "Write a thank-you note — what you're grateful for this year. It stays hidden until the card opens. 💌",
   coach:
     "Thank your coach for the season — a favourite moment or something they taught you. It stays hidden until the card opens. 🏆",
@@ -179,6 +179,7 @@ export interface QuickStart {
   occasion: string; // config.occasion
   nth: NthWeekday; // reveals on the next one of these, at 8:00 AM
   dateLabel: string; // "the 2nd Sunday of October"
+  repeats: boolean; // comes back every year on the same Nth weekday
   title: (name: string) => string;
   note: string;
   ctaLabel: string;
@@ -198,10 +199,32 @@ export const QUICK_STARTS: Record<string, QuickStart> = {
     occasion: "Pastor Appreciation",
     nth: { week: 2, weekday: 0, month: 10 },
     dateLabel: "the 2nd Sunday of October",
+    repeats: true,
     title: (name) => `Thank you, ${name}! 🙏`,
     note:
       "Thank your pastor — a sermon that stayed with you, a time he was there for you, or simply what he means to the church. It stays hidden until the card opens. 🙏",
     ctaLabel: "🙏 Create the card",
+  },
+  // Teacher Appreciation Week = the first full week of May; the card greets the
+  // teacher on its Monday morning. One-time — the class moves on next year.
+  "teacher-appreciation": {
+    templateId: "teacher-appreciation",
+    emoji: "🍎",
+    heading: "Start a thank-you card for your teacher",
+    groupLabel: "Your class or school",
+    groupPlaceholder: "e.g. Mrs. Lee's Grade 4 class",
+    nameLabel: "Your teacher's name",
+    namePlaceholder: "e.g. Mrs. Lee",
+    emailLabel: "Teacher's email (optional)",
+    emailHint: "So the card arrives on the day. No email? Skip it — you can send the card link yourself.",
+    occasion: "Teacher Appreciation",
+    nth: { week: 1, weekday: 1, month: 5 },
+    dateLabel: "the Monday of Teacher Appreciation Week",
+    repeats: false,
+    title: (name) => `Thank you, ${name}! 🍎`,
+    note:
+      "Tell your teacher what you appreciate — a favourite lesson, a time you got help, or simply thank you. It stays hidden until the card opens. 🍎",
+    ctaLabel: "🍎 Create the card",
   },
 };
 
@@ -265,7 +288,7 @@ export function passItOnCard(
 const TEACHER_APPRECIATION_CARD: EngagementTemplate = {
   id: "teacher-appreciation",
   note:
-    "Tell your teacher what you appreciate — a favourite lesson, something they helped you with, or simply thank you. It stays hidden until the card opens. 🍎",
+    "Tell your teacher what you appreciate — a favourite lesson, a time you got help, or simply thank you. It stays hidden until the card opens. 🍎",
   name: "Teacher Appreciation 🍎",
   type: "birthday",
   title: "Thank you for all you do! 🍎",
