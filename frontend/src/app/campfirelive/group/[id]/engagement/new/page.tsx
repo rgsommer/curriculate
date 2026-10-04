@@ -1427,14 +1427,25 @@ export default function NewEngagementPage() {
 
   return (
     <div>
-      <Link
-        href={`/campfirelive/group/${groupId}`}
-        className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-600 hover:bg-slate-200"
-      >
-        <span aria-hidden>←</span>
-        <span>{groups.find((g) => g.id === groupId)?.avatar_emoji ?? "🔥"}</span>
-        <span>{groups.find((g) => g.id === groupId)?.name ?? "Back to group"}</span>
-      </Link>
+      {/* Way back: the main dashboard, or this group. */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <Link
+          href="/campfirelive"
+          aria-label="Home — all your groups"
+          className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200"
+        >
+          <span aria-hidden>🏠</span>
+          <span>Home</span>
+        </Link>
+        <Link
+          href={`/campfirelive/group/${groupId}`}
+          className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200"
+        >
+          <span aria-hidden>←</span>
+          <span>{groups.find((g) => g.id === groupId)?.avatar_emoji ?? "🔥"}</span>
+          <span>{groups.find((g) => g.id === groupId)?.name ?? "Back to group"}</span>
+        </Link>
+      </div>
 
       <h1 className="text-2xl font-extrabold text-slate-900 mb-1">New Activity</h1>
       {groups.find((g) => g.id === groupId) && (

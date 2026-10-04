@@ -6027,23 +6027,35 @@ export default function EngagementDetailPage() {
 
   return (
     <div>
-      {isGuest ? (
-        // A card guest isn't a group member — no group to go "back" to. Give them
-        // a gentle bit of context instead of a dead-end link into a group they
-        // can't see.
-        <div className={`${chipClass("brand")} mb-4`}>
-          🔥 You&apos;re invited to this {meta?.label?.toLowerCase() || "card"} — just sign below.
-        </div>
-      ) : (
+      {/* Way back: the main dashboard, plus this group (or, for a card-link guest, the
+          "you're invited" chip — they aren't in the group). */}
+      <div className="mb-4 flex flex-wrap items-center gap-2">
         <Link
-          href={`/campfirelive/group/${groupId}`}
-          className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-600 hover:bg-slate-200"
+          href="/campfirelive"
+          aria-label="Home — all your groups"
+          className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200"
         >
-          <span aria-hidden>←</span>
-          <span>{groupInfo?.avatar_emoji ?? "🔥"}</span>
-          <span>{groupInfo?.name ?? "Back to group"}</span>
+          <span aria-hidden>🏠</span>
+          <span>Home</span>
         </Link>
-      )}
+        {isGuest ? (
+          // A card guest isn't a group member — no group to go "back" to. Give them
+          // a gentle bit of context instead of a dead-end link into a group they
+          // can't see.
+          <div className={chipClass("brand")}>
+            🔥 You&apos;re invited to this {meta?.label?.toLowerCase() || "card"} — just sign below.
+          </div>
+        ) : (
+          <Link
+            href={`/campfirelive/group/${groupId}`}
+            className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-200"
+          >
+            <span aria-hidden>←</span>
+            <span>{groupInfo?.avatar_emoji ?? "🔥"}</span>
+            <span>{groupInfo?.name ?? "Back to group"}</span>
+          </Link>
+        )}
+      </div>
 
       {/* Cold-start ratings help: after a reveal (a genuine high point), gently ask. */}
       <RateNudge active={engagement?.status === "revealed" && !isGuest} />
