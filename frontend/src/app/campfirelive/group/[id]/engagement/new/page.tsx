@@ -206,7 +206,11 @@ export default function NewEngagementPage() {
   const [giftRecipientName, setGiftRecipientName] = useState("");
   const [giftCurrency, setGiftCurrency] = useState("usd");
   // Raffle Challenge: pot goes to the voted winner (challenge type only).
-  const [raffleOn, setRaffleOn] = useState(false);
+  const [raffleOn, setRaffleOn] = useState(false); // money prize pot (chip-ins / entry fee)
+  // A contest without money: the group votes (or best score wins), the winner is
+  // announced, and the host delivers whatever prize they describe.
+  const [voteContest, setVoteContest] = useState(false);
+  const [prizeText, setPrizeText] = useState("");
   const [raffleSplit, setRaffleSplit] = useState(0); // host's cut, %
   const [raffleVoteDays, setRaffleVoteDays] = useState(5); // voting window after close
   const [raffleGate, setRaffleGate] = useState(0); // hold reveal until this % entered
@@ -613,7 +617,10 @@ export default function NewEngagementPage() {
       if (t.partyKind) setPartyKind(t.partyKind);
       setPartyGiftex(t.giftExchange ?? null);
     }
-    if (t.raffle) setRaffleOn(true);
+    if (t.raffle) {
+      setRaffleOn(true);
+      setVoteContest(true);
+    }
     if (t.reveal) setReveal(t.reveal);
     setStep("details");
   };
@@ -712,7 +719,7 @@ export default function NewEngagementPage() {
       (selectedType === "challenge" ||
         selectedType === "scavenger_hunt" ||
         selectedType === "tournament") &&
-      raffleOn;
+      (raffleOn || voteContest);
     const alwaysSealed =
       challengeRaffle ||
       selectedType === "two_truths" ||
@@ -1138,12 +1145,15 @@ export default function NewEngagementPage() {
     if (challengeRaffle) {
       config.raffle = {
         on: true,
+        // false = vote-only contest: no chip-ins, the host delivers the prize.
+        pot: raffleOn,
         hostSplitPct: Math.min(90, Math.max(0, Math.round(raffleSplit) || 0)),
         // A tournament is decided by score, not votes → award at close (no window).
         voteDays: isTournament ? 0 : Math.min(30, Math.max(1, Math.round(raffleVoteDays) || 5)),
         participationGate: raffleGate || 0,
         entryFeeCents: Math.max(0, Math.round(raffleEntryFee) || 0),
       };
+      if (prizeText.trim()) config.prizeText = prizeText.trim().slice(0, 140);
     }
 
     // Optional declared cause (thons + raffles). Informational — Campfire pays the
@@ -1205,7 +1215,7 @@ export default function NewEngagementPage() {
       // also pools, but the recipient (winner) is resolved at award time → no email.
       gift_enabled:
         giftEnabled ||
-        challengeRaffle ||
+        (challengeRaffle && raffleOn) ||
         (selectedType === "hall_of_fame" && hofPrize) ||
         selectedType === "pledge_drive" ||
         selectedType === "raffle_draw",
@@ -3246,6 +3256,75 @@ export default function NewEngagementPage() {
               </div>
             </label>
 
+            {/* Contest — the group votes on a winner (or best score wins). No money: the
+                host describes a prize they'll deliver themselves. Shown on every platform. */}
+            {(selectedType === "challenge" ||
+              selectedType === "scavenger_hunt" ||
+              selectedType === "tournament") && (
+              <div className="rounded-xl border border-amber-200 bg-white p-3">
+                <label className="flex cursor-pointer items-start gap-3">
+                  <input
+                    type="checkbox"
+                    checked={voteContest || raffleOn}
+                    onChange={(e) => {
+                      setVoteContest(e.target.checked);
+                      if (!e.target.checked) setRaffleOn(false);
+                    }}
+                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-amber-500 focus:ring-amber-500"
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-slate-700">
+                      {selectedType === "tournament"
+                        ? "🏆 Crown a winner (best total score)"
+                        : "🏆 The group votes on a winner"}
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {selectedType === "tournament"
+                        ? "When scores lock on the closing date, the best total wins — and everyone hears who won."
+                        : "After entries close, everyone votes for their favourite (one vote each). When voting ends, the winner is celebrated and everyone hears who won."}
+                    </div>
+                  </div>
+                </label>
+                {(voteContest || raffleOn) && (
+                  <div className="ml-7 mt-3 space-y-3">
+                    {selectedType !== "tournament" && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <label className="text-xs text-slate-600">Voting lasts</label>
+                        <select
+                          value={raffleVoteDays}
+                          onChange={(e) => setRaffleVoteDays(Number(e.target.value))}
+                          className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-amber-500"
+                        >
+                          <option value={2}>2 days</option>
+                          <option value={3}>3 days</option>
+                          <option value={5}>5 days</option>
+                          <option value={7}>7 days</option>
+                        </select>
+                        <span className="text-xs text-slate-500">after entries close</span>
+                      </div>
+                    )}
+                    <div>
+                      <label htmlFor="prize-text" className="text-xs text-slate-600">
+                        🎁 Prize <span className="text-slate-500">(optional)</span>
+                      </label>
+                      <input
+                        id="prize-text"
+                        value={prizeText}
+                        onChange={(e) => setPrizeText(e.target.value)}
+                        maxLength={140}
+                        placeholder="e.g. $10 Tim Hortons card"
+                        className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-amber-500"
+                      />
+                      <p className="mt-1 text-xs text-slate-500">
+                        Shown to everyone and in the winner&apos;s email. You get it to the
+                        winner yourself — Campfire doesn&apos;t collect or send money for this.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Prize pot — goes to the winner (photo Challenge / Scavenger Hunt / Tournament) */}
             {(selectedType === "challenge" ||
               selectedType === "scavenger_hunt" ||
@@ -3255,17 +3334,15 @@ export default function NewEngagementPage() {
                   <input
                     type="checkbox"
                     checked={raffleOn}
-                    onChange={(e) => setRaffleOn(e.target.checked)}
+                    onChange={(e) => {
+                      setRaffleOn(e.target.checked);
+                      if (e.target.checked) setVoteContest(true);
+                    }}
                     className="mt-0.5 w-4 h-4 rounded border-slate-300 text-amber-500 focus:ring-amber-500"
                   />
                   <div>
                     <div className="text-sm font-medium text-slate-700">
-                      🏆 Make it a prize{" "}
-                      {selectedType === "scavenger_hunt"
-                        ? "hunt"
-                        : selectedType === "tournament"
-                        ? "tournament"
-                        : "challenge"}
+                      💰 Add a money prize pot
                     </div>
                     <div className="text-xs text-slate-500">
                       {selectedType === "tournament"
@@ -3289,22 +3366,6 @@ export default function NewEngagementPage() {
                         <option value={50}>50 / 50</option>
                       </select>
                     </div>
-                    {selectedType !== "tournament" && (
-                      <div className="flex items-center gap-2">
-                        <label className="w-36 text-xs text-slate-600">Voting window</label>
-                        <select
-                          value={raffleVoteDays}
-                          onChange={(e) => setRaffleVoteDays(Number(e.target.value))}
-                          className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-amber-500"
-                        >
-                          <option value={2}>2 days</option>
-                          <option value={3}>3 days</option>
-                          <option value={5}>5 days</option>
-                          <option value={7}>7 days</option>
-                        </select>
-                        <span className="text-xs text-slate-500">after entries close</span>
-                      </div>
-                    )}
                     <div className="flex items-center gap-2">
                       <label className="w-36 text-xs text-slate-600">Hold reveal until</label>
                       <select

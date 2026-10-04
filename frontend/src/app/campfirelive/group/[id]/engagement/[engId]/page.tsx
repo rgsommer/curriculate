@@ -633,6 +633,17 @@ export default function EngagementDetailPage() {
   const [extending, setExtending] = useState(false);
   // "Reveal now" is irreversible and emails everyone — ask once before doing it.
   const [confirmReveal, setConfirmReveal] = useState(false);
+  // Email / push links land on #vote — scroll to the voting banner once it renders.
+  const scrolledToVote = useRef(false);
+  useEffect(() => {
+    if (scrolledToVote.current || typeof window === "undefined") return;
+    if (window.location.hash !== "#vote") return;
+    const el = document.getElementById("vote");
+    if (el) {
+      scrolledToVote.current = true;
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  });
   const [revealing, setRevealing] = useState(false);
   const [stoppingRecur, setStoppingRecur] = useState(false);
   // Editing a monthly Nth-weekday release schedule (week/weekday/time/window).
@@ -1044,6 +1055,17 @@ export default function EngagementDetailPage() {
           return next;
         });
         setMyVote(responseId);
+        // A first vote (not a change of mind) → let the group know votes are coming in.
+        if (!prev && session?.access_token) {
+          fetch("/api/campfire/engagement/vote-notify", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ engagementId }),
+          }).catch(() => {});
+        }
       }
     } catch {
       cfAlert("Couldn't record your vote.");
@@ -4750,13 +4772,13 @@ export default function EngagementDetailPage() {
                         <button
                           onClick={() => castVote(r.id)}
                           disabled={votingBusy}
-                          className={`rounded-full px-3 py-1 text-xs font-bold transition disabled:opacity-50 ${
+                          className={`min-h-10 rounded-full px-4 py-2 text-sm font-bold transition disabled:opacity-50 ${
                             myVote === r.id
-                              ? "bg-amber-500 text-white"
-                              : "border border-amber-300 text-amber-700 hover:bg-amber-50"
+                              ? "bg-amber-500 text-white shadow-sm"
+                              : "border-2 border-amber-400 bg-white text-amber-800 hover:bg-amber-50"
                           }`}
                         >
-                          {myVote === r.id ? "✓ Your vote" : "🗳 Vote"}
+                          {myVote === r.id ? "✓ Your vote" : "🗳️ Vote for this"}
                         </button>
                       ) : null}
                       <span className="text-xs font-medium text-slate-600">
@@ -5977,13 +5999,13 @@ export default function EngagementDetailPage() {
                     <button
                       onClick={() => castVote(r.id)}
                       disabled={votingBusy}
-                      className={`rounded-full px-3 py-1 text-xs font-bold transition disabled:opacity-50 ${
+                      className={`min-h-10 rounded-full px-4 py-2 text-sm font-bold transition disabled:opacity-50 ${
                         myVote === r.id
-                          ? "bg-amber-500 text-white"
-                          : "border border-amber-300 text-amber-700 hover:bg-amber-50"
+                          ? "bg-amber-500 text-white shadow-sm"
+                          : "border-2 border-amber-400 bg-white text-amber-800 hover:bg-amber-50"
                       }`}
                     >
-                      {myVote === r.id ? "✓ Your vote" : "🗳 Vote"}
+                      {myVote === r.id ? "✓ Your vote" : "🗳️ Vote for this"}
                     </button>
                   ) : null}
                   <span className="text-xs font-medium text-slate-600">
@@ -7341,6 +7363,12 @@ export default function EngagementDetailPage() {
               " — held until then, even if everyone responds early."}
           </p>
         )}
+        {typeof engagement.config?.prizeText === "string" && engagement.config.prizeText && (
+          <p className="mt-2 text-sm font-semibold text-amber-800">
+            🎁 Prize: {engagement.config.prizeText as string}{" "}
+            <span className="font-normal text-amber-700">— from the host</span>
+          </p>
+        )}
         {/* Group-gift running total (in the engagement header too) */}
         {engagement.gift_enabled &&
           !isGiftHidden &&
@@ -8393,7 +8421,7 @@ export default function EngagementDetailPage() {
         </div>
       )}
 
-      {(engagement.gift_enabled || !!raffle) && !isGiftHidden && !pledge && (
+      {(engagement.gift_enabled || (!!raffle && raffle.pot !== false)) && !isGiftHidden && !pledge && (
         <div data-hide-on-android id="prizepot" className="mb-6 scroll-mt-4 rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 to-rose-50 p-5 shadow-sm">
           <div className="flex items-center justify-between gap-2 mb-1">
             <h2 className="font-bold text-slate-900">
@@ -8772,6 +8800,31 @@ export default function EngagementDetailPage() {
       {/* ── RESULTS (revealed, or live as-they-come / instant) ── */}
       {showResults && (
         <div className="mb-6">
+          {/* Contest voting — the #vote target of the "voting is open" emails/pushes. */}
+          {raffle && isRevealed && votingOpen && !tourn && (
+            <div
+              id="vote"
+              className="mb-4 scroll-mt-20 rounded-2xl border-2 border-amber-300 bg-amber-50 px-4 py-3"
+            >
+              <div className="font-bold text-amber-900">
+                🗳️ Voting is open
+                {voteClosesAt ? ` until ${formatWhen(new Date(voteClosesAt))}` : ""}
+              </div>
+              <p className="mt-0.5 text-sm text-amber-900">
+                {myVote
+                  ? "✓ You've voted — you can change it any time before voting closes."
+                  : "Pick your favourite entry below and tap 🗳️ Vote for this."}{" "}
+                <span className="text-amber-800">
+                  ❤️ and other reactions are just for fun — they don&apos;t count as votes.
+                </span>
+              </p>
+              {typeof engagement.config?.prizeText === "string" && engagement.config.prizeText && (
+                <p className="mt-1 text-sm font-semibold text-amber-900">
+                  🎁 The winner gets: {engagement.config.prizeText as string}
+                </p>
+              )}
+            </div>
+          )}
           {/* Birthday card: it's private to the recipient. The recipient sees all
               the wishes; a signer only ever sees their own. */}
           {isBirthdayCard && isRevealed && (

@@ -8,6 +8,8 @@ import {
   getCardRecipients,
   reminderEmail,
   revealEmail,
+  contestVoteEmail,
+  contestWinnerEmail,
   cardRevealEmail,
   newEngagementEmail,
   cardLiveEmail,
@@ -284,6 +286,52 @@ export async function GET(req: Request) {
     .select("id, group_id, creator_id, title, config, gift_currency, gift_enabled")
     .eq("status", "revealed")
     .is("gift_issued_at", null);
+  // Celebrate the winner + tell everyone else. Runs for every contest that closes —
+  // auto-paid or not — so the group always learns who won.
+  const announceWinner = async (
+    e: { id: string; group_id: string; title: string },
+    winnerUid: string,
+    winnerEmail: string | null,
+    winnerName: string | undefined,
+    prize: "paid" | "pending" | "none",
+    byScore: boolean,
+    prizeText: string | null = null
+  ) => {
+    try {
+      const engUrl = `${base}/campfirelive/group/${e.group_id}/engagement/${e.id}`;
+      const { data: g } = await admin.from("groups").select("name").eq("id", e.group_id).single();
+      const groupName = (g?.name as string) ?? "your group";
+      const who = winnerName || "The winner";
+      const shared = { groupName, title: e.title, url: engUrl, winnerName: who, byScore, prize, prizeText };
+      // Winner: the celebration.
+      if (winnerEmail) {
+        const w = contestWinnerEmail({ forWinner: true, ...shared });
+        await sendCampfireBatch([
+          { from, to: [winnerEmail], subject: w.subject, text: w.text, html: w.html, ...mailDefaults() },
+        ]);
+      }
+      // Everyone else: the announcement.
+      const others = (await getGroupMemberEmails(admin, e.group_id)).filter(
+        (x) => !winnerEmail || x.toLowerCase() !== winnerEmail.toLowerCase()
+      );
+      const a = contestWinnerEmail({ forWinner: false, ...shared });
+      for (let i = 0; i < others.length; i += 100) {
+        await sendCampfireBatch(
+          others.slice(i, i + 100).map((to) => ({
+            from, to: [to], subject: a.subject, text: a.text, html: a.html, ...mailDefaults(),
+          }))
+        );
+      }
+      // Phones too.
+      const { data: gm } = await admin.from("group_members").select("user_id").eq("group_id", e.group_id);
+      const rest = ((gm ?? []) as { user_id: string }[]).map((m) => m.user_id).filter((u) => u !== winnerUid);
+      await pushToUsers([winnerUid], { title: "🏆 You won!", body: `Your entry won "${e.title}" 🎉`, link: engUrl });
+      await pushToUsers(rest, { title: "🏆 We have a winner", body: `${who} won "${e.title}" — see the winning entry.`, link: engUrl });
+    } catch (err) {
+      console.error("Contest winner announce failed:", err);
+    }
+  };
+
   for (const e of raffleEngs ?? []) {
     const raffle = raffleOf(e.config as Record<string, unknown> | null);
     if (!raffle?.voteClosesAt) continue;
@@ -466,6 +514,15 @@ export async function GET(req: Request) {
           currency: (e.gift_currency as string | null) ?? "usd",
         });
       }
+      await announceWinner(
+        { id: e.id as string, group_id: e.group_id as string, title: e.title as string },
+        winnerUid,
+        winnerEmail,
+        winnerName,
+        totalCents > 0 ? "pending" : "none",
+        !!tcfg,
+        (e.config as { prizeText?: string } | null)?.prizeText ?? null
+      );
       continue;
     }
 
@@ -519,32 +576,16 @@ export async function GET(req: Request) {
       .eq("id", e.id);
     awarded++;
 
-    // Tell the group who won.
-    try {
-      const memberEmails = await getGroupMemberEmails(admin, e.group_id as string);
-      const engUrl = `${base}/campfirelive/group/${e.group_id}/engagement/${e.id}`;
-      const pot = `${currency.toUpperCase()} $${(winnerCents / 100).toFixed(2)}`;
-      const who = winnerName || "The winner";
-      const subject = `🏆 We have a winner — "${e.title}"`;
-      const text = `${who} won the ${pot} prize pot for "${e.title}". See the entry: ${engUrl}`;
-      const html = `<p>🏆 <b>${escapeHtml(who)}</b> won the ${pot} prize pot for "${escapeHtml(
-        e.title as string
-      )}".</p><p><a href="${engUrl}">See the winning entry →</a></p>`;
-      for (let i = 0; i < memberEmails.length; i += 100) {
-        await sendCampfireBatch(
-          memberEmails.slice(i, i + 100).map((to) => ({
-            from,
-            to: [to],
-            subject,
-            text,
-            html,
-            ...mailDefaults(),
-          }))
-        );
-      }
-    } catch (err) {
-      console.error("Raffle winner notify failed:", err);
-    }
+    // Celebrate the winner + tell the group.
+    await announceWinner(
+      { id: e.id as string, group_id: e.group_id as string, title: e.title as string },
+      winnerUid,
+      winnerEmail,
+      winnerName,
+      "paid",
+      !!tcfg,
+      (e.config as { prizeText?: string } | null)?.prizeText ?? null
+    );
   }
 
   // ── Auto-open scheduled drafts (e.g. a birthday opening 2 weeks before) ──
@@ -910,12 +951,26 @@ export async function GET(req: Request) {
           .from("responses")
           .select("*", { count: "exact", head: true })
           .eq("engagement_id", e.id);
-        const m = revealEmail({
-          groupName: group?.name ?? "your group",
-          title: engTitle,
-          url: engUrl,
-          responded: respCount ?? 0,
-        });
+        // A prize contest's reveal = voting opens: say so, with the deadline, and
+        // deep-link to the voting section — not the generic "answers are in".
+        const contest = raffleOf(e.config as Record<string, unknown> | null);
+        const m =
+          contest?.voteClosesAt && !contest.draw && !tournamentOf(e.config as Record<string, unknown> | null)
+            ? contestVoteEmail({
+                kind: "open",
+                groupName: group?.name ?? "your group",
+                title: engTitle,
+                url: engUrl,
+                closesAt: contest.voteClosesAt,
+                entries: respCount ?? 0,
+                prizeText: (e.config as { prizeText?: string } | null)?.prizeText ?? null,
+              })
+            : revealEmail({
+                groupName: group?.name ?? "your group",
+                title: engTitle,
+                url: engUrl,
+                responded: respCount ?? 0,
+              });
         for (let i = 0; i < emails.length; i += 100) {
           await sendCampfireBatch(
             emails.slice(i, i + 100).map((to) => ({
@@ -944,16 +999,28 @@ export async function GET(req: Request) {
           ...((gmP ?? []) as { user_id: string }[]).map((m) => m.user_id),
           ...((egP ?? []) as { user_id: string }[]).map((g) => g.user_id),
         ];
-        await pushToUsers(uids, {
-          title: e.type === "birthday" ? "🎁 A card just opened" : "🎉 Results are in",
-          body:
-            e.type === "birthday"
-              ? `"${engTitle}" is ready to open.`
-              : `${nResp ?? 0} ${
-                  (nResp ?? 0) === 1 ? "answer is" : "answers are"
-                } in for "${engTitle}" — tap to see.`,
-          link: engUrl,
-        });
+        const pc = raffleOf(e.config as Record<string, unknown> | null);
+        const voting =
+          !!pc?.voteClosesAt && !pc.draw && !tournamentOf(e.config as Record<string, unknown> | null);
+        await pushToUsers(
+          uids,
+          voting
+            ? {
+                title: "🗳️ Voting is open",
+                body: `${nResp ?? 0} ${(nResp ?? 0) === 1 ? "entry" : "entries"} in "${engTitle}" — pick your favourite.`,
+                link: `${engUrl}#vote`,
+              }
+            : {
+                title: e.type === "birthday" ? "🎁 A card just opened" : "🎉 Results are in",
+                body:
+                  e.type === "birthday"
+                    ? `"${engTitle}" is ready to open.`
+                    : `${nResp ?? 0} ${
+                        (nResp ?? 0) === 1 ? "answer is" : "answers are"
+                      } in for "${engTitle}" — tap to see.`,
+                link: engUrl,
+              }
+        );
       } catch {
         /* push is best-effort */
       }
@@ -963,6 +1030,74 @@ export async function GET(req: Request) {
       .update({ reveal_notified_at: new Date(now).toISOString() })
       .eq("id", e.id);
     notifiedReveals++;
+  }
+
+  // ── Contest last call: voting closes within a day → remind members who haven't
+  //    voted yet (email + push), once per contest (config.raffle.voteLastCallAt). ──
+  let lastCalls = 0;
+  {
+    const { data: contests } = await admin
+      .from("engagements")
+      .select("id, group_id, title, birth_year, deadline, config")
+      .eq("status", "revealed")
+      .eq("paused", false)
+      .is("gift_issued_at", null);
+    for (const e of contests ?? []) {
+      const cfg = (e.config as Record<string, unknown> | null) ?? {};
+      const r = raffleOf(cfg) as (ReturnType<typeof raffleOf> & { voteLastCallAt?: string }) | null;
+      if (!r?.voteClosesAt || r.draw || tournamentOf(cfg) || r.voteLastCallAt) continue;
+      const closes = new Date(r.voteClosesAt).getTime();
+      if (closes <= now || closes - now > 24 * 60 * 60 * 1000) continue;
+
+      // Claim it first so an overlapping run can't double-send.
+      await admin
+        .from("engagements")
+        .update({ config: { ...cfg, raffle: { ...r, voteLastCallAt: new Date(now).toISOString() } } })
+        .eq("id", e.id);
+
+      const [{ data: gm }, { data: votes }, { data: group }] = await Promise.all([
+        admin.from("group_members").select("user_id").eq("group_id", e.group_id),
+        admin.from("campfire_challenge_votes").select("voter_user_id").eq("engagement_id", e.id),
+        admin.from("groups").select("name").eq("id", e.group_id).single(),
+      ]);
+      const voted = new Set(((votes ?? []) as { voter_user_id: string }[]).map((v) => v.voter_user_id));
+      const nonVoters = ((gm ?? []) as { user_id: string }[])
+        .map((m) => m.user_id)
+        .filter((u) => !voted.has(u));
+      if (nonVoters.length === 0) continue;
+      const engUrl = `${base}/campfirelive/group/${e.group_id}/engagement/${e.id}`;
+      const engTitle = resolveTitle(e.title as string, e.birth_year as number | null, e.deadline as string | null);
+      const emails: string[] = [];
+      for (const uid of nonVoters) {
+        const { data: u } = await admin.auth.admin.getUserById(uid);
+        if (u?.user?.email) emails.push(u.user.email);
+      }
+      const m = contestVoteEmail({
+        kind: "lastcall",
+        groupName: group?.name ?? "your group",
+        title: engTitle,
+        url: engUrl,
+        closesAt: r.voteClosesAt,
+        prizeText: (cfg as { prizeText?: string }).prizeText ?? null,
+      });
+      for (let i = 0; i < emails.length; i += 100) {
+        await sendCampfireBatch(
+          emails.slice(i, i + 100).map((to) => ({
+            from, to: [to], subject: m.subject, text: m.text, html: m.html, ...mailDefaults(),
+          }))
+        );
+      }
+      try {
+        await pushToUsers(nonVoters, {
+          title: "⏰ Last chance to vote",
+          body: `Voting on "${engTitle}" closes soon — pick your favourite.`,
+          link: `${engUrl}#vote`,
+        });
+      } catch {
+        /* best-effort */
+      }
+      lastCalls++;
+    }
   }
 
   // ── Group gifts: issue the gift card for any revealed, gift-enabled engagement
@@ -1090,6 +1225,7 @@ export async function GET(req: Request) {
     opened,
     spawned,
     notifiedReveals,
+    lastCalls,
     giftsIssued,
     awarded,
     liesRevealed,

@@ -724,9 +724,37 @@ export function useEngagement(engagementId: string) {
   // Creator triggers the reveal (all_at_once mode, or forcing it early).
   const revealNow = async () => {
     if (!engagementId) return;
+    // A prize contest revealed by hand needs its voting window stamped, exactly like
+    // the cron does at the deadline — otherwise voting never closes and the winner is
+    // never awarded. (Score tournaments and raffle draws have no vote.)
+    const { data: cur } = await supabase
+      .from("engagements")
+      .select("config")
+      .eq("id", engagementId)
+      .maybeSingle();
+    const cfg = (cur?.config ?? {}) as Record<string, unknown>;
+    const r = cfg.raffle as
+      | { on?: boolean; draw?: boolean; voteDays?: number; voteClosesAt?: string | null }
+      | undefined;
+    const isVoteContest = !!r?.on && !r.draw && !cfg.tournament && !r.voteClosesAt;
     await supabase
       .from("engagements")
-      .update({ status: "revealed" })
+      .update(
+        isVoteContest
+          ? {
+              status: "revealed",
+              config: {
+                ...cfg,
+                raffle: {
+                  ...r,
+                  voteClosesAt: new Date(
+                    Date.now() + (r?.voteDays ?? 5) * 86400000
+                  ).toISOString(),
+                },
+              },
+            }
+          : { status: "revealed" }
+      )
       .eq("id", engagementId);
     await fetchEngagement();
   };

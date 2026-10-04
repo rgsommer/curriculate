@@ -477,6 +477,117 @@ export function cardThanksEmail(opts: {
   return { subject, text, html };
 }
 
+// Contest (prize challenge) voting emails. Three moments, one template:
+//   "open"     — entries just revealed: go vote (sent instead of the generic reveal email)
+//   "activity" — votes are coming in (throttled; non-voters only)
+//   "lastcall" — voting closes within a day (non-voters only)
+// The button deep-links to the voting section (#vote) of the activity page.
+export function contestVoteEmail(opts: {
+  kind: "open" | "activity" | "lastcall";
+  groupName: string;
+  title: string;
+  url: string; // the activity URL (without #vote)
+  closesAt: string | null;
+  entries?: number;
+  votes?: number;
+  prizeText?: string | null; // host-described prize ("$10 Tim Hortons card")
+}) {
+  const { kind, groupName, title, url, closesAt, entries, votes, prizeText } = opts;
+  const prizeLine = prizeText ? `🎁 The winner gets: ${prizeText}` : "";
+  const voteUrl = `${url}#vote`;
+  const when = closesAt ? formatRevealWhen(closesAt) : null;
+  const n = (x: number | undefined, one: string, many: string) =>
+    `${x ?? 0} ${(x ?? 0) === 1 ? one : many}`;
+  const subject =
+    kind === "open"
+      ? `🗳️ Voting is open — "${title}"`
+      : kind === "lastcall"
+      ? `⏰ Last chance to vote — "${title}"`
+      : `🗳️ Votes are coming in — "${title}"`;
+  const headline =
+    kind === "open"
+      ? "The entries are in — time to vote!"
+      : kind === "lastcall"
+      ? "Voting closes soon"
+      : `${n(votes, "vote", "votes")} so far — have you voted?`;
+  const lead =
+    kind === "open"
+      ? `${entries ? `${n(entries, "entry", "entries")} in` : "The entries for"} "${title}" in ${groupName} ${
+          entries ? "— see them all and" : "are revealed. See them all and"
+        } pick your favourite.`
+      : kind === "lastcall"
+      ? `Voting on "${title}" in ${groupName} closes${when ? ` ${when}` : " soon"}. You haven't voted yet — pick your favourite before it's decided.`
+      : `People in ${groupName} are voting on "${title}". You haven't picked yet — your vote could decide it.`;
+  const closeLine = when && kind !== "lastcall" ? `Voting closes ${when}.` : "";
+  const cta = kind === "open" ? "🗳️ See the entries & vote" : "🗳️ Vote now";
+  const text = `${headline}\n\n${lead}${closeLine ? `\n${closeLine}` : ""}${prizeLine ? `\n${prizeLine}` : ""}\n\n${cta}: ${voteUrl}\n\nTap 🗳 Vote on the one you like best — reactions like ❤️ don't count as votes.`;
+  const html = `
+<div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
+  <div style="font-size:40px;">${kind === "lastcall" ? "⏰" : "🗳️"}</div>
+  <h1 style="font-size:22px; margin:8px 0;">${escapeHtml(headline)}</h1>
+  <p style="color:#475569; margin:0 0 8px;">${escapeHtml(lead)}</p>
+  ${closeLine ? `<p style="color:#475569; margin:0 0 12px;"><strong>${escapeHtml(closeLine)}</strong></p>` : ""}
+  ${prizeLine ? `<p style="margin:0 0 12px; padding:10px 12px; background:#fffbeb; border:1px solid #fde68a; border-radius:12px; color:#92400e;">${escapeHtml(prizeLine)}</p>` : ""}
+  ${emailButton(voteUrl, escapeHtml(cta))}
+  <p style="color:#64748b; font-size:13px; margin:0 0 12px; text-align:center;">Tap 🗳 Vote on the one you like best — reactions like ❤️ don't count as votes.</p>
+  <p style="margin:0;"><a href="${voteUrl}" style="color:#64748b; font-size:12px; word-break:break-all;">${voteUrl}</a></p>
+</div>`.trim();
+  return { subject, text, html };
+}
+
+// Contest result. The winner gets a celebration; everyone else gets the announcement.
+// The prize line states only what actually happened (paid / host will follow up / no
+// prize) — never a promise — and the group announcement mentions no money at all.
+export function contestWinnerEmail(opts: {
+  forWinner: boolean;
+  groupName: string;
+  title: string;
+  url: string;
+  winnerName: string;
+  byScore: boolean; // score tournament (best total) vs a group vote
+  prize: "paid" | "pending" | "none";
+  prizeText?: string | null; // host-described prize the host delivers themselves
+}) {
+  const { forWinner, groupName, title, url, winnerName, byScore, prize, prizeText } = opts;
+  const why = byScore ? "posted the best total score" : "got the most votes from the group";
+  const subject = forWinner
+    ? `🏆 You won "${title}"!`
+    : `🏆 We have a winner — ${winnerName} won "${title}"`;
+  const headline = forWinner ? "You won! 🎉" : `${winnerName} won! 🏆`;
+  const lead = forWinner
+    ? `Congratulations — your entry in "${title}" (${groupName}) ${why}.`
+    : `The ${byScore ? "scores" : "votes"} are in for "${title}" in ${groupName} — ${winnerName}'s entry ${why}.${
+        prizeText ? ` They win: ${prizeText}.` : ""
+      } Go cheer them on!`;
+  const prizeLine = !forWinner
+    ? ""
+    : prizeText
+    ? `Your prize: ${prizeText} — the host will get it to you.${
+        prize === "paid" ? " Your gift card from the prize pot is on its way to your inbox too." : ""
+      }`
+    : prize === "paid"
+    ? "Your prize gift card is on its way to your inbox — keep an eye out for it."
+    : prize === "pending"
+    ? "The host will be in touch about your prize."
+    : "";
+  const cta = forWinner ? "🏆 See your winning entry" : "🏆 See the winning entry";
+  const text = `${headline}\n\n${lead}${prizeLine ? `\n\n${prizeLine}` : ""}\n\n${cta}: ${url}`;
+  const html = `
+<div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
+  <div style="font-size:44px;">🏆</div>
+  <h1 style="font-size:24px; margin:8px 0;">${escapeHtml(headline)}</h1>
+  <p style="color:#475569; margin:0 0 12px;">${escapeHtml(lead)}</p>
+  ${
+    prizeLine
+      ? `<p style="margin:0 0 12px; padding:12px 14px; background:#fffbeb; border:1px solid #fde68a; border-radius:12px; color:#92400e;">🎁 ${escapeHtml(prizeLine)}</p>`
+      : ""
+  }
+  ${emailButton(url, escapeHtml(cta))}
+  <p style="margin:0;"><a href="${url}" style="color:#64748b; font-size:12px; word-break:break-all;">${url}</a></p>
+</div>`.trim();
+  return { subject, text, html };
+}
+
 export function revealEmail(opts: {
   groupName: string;
   title: string;

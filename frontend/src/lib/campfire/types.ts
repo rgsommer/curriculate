@@ -242,6 +242,7 @@ export interface Engagement {
 // the winner's email is written to gift_recipient_* at award time.
 export interface RaffleConfig {
   on: boolean;
+  pot?: boolean; // false = vote-only contest (no chip-ins; the host delivers the prize)
   hostSplitPct?: number; // % of the pot the host keeps (0 = winner takes all)
   voteDays?: number; // voting window length, in days after the entries close
   participationGate?: number; // hold reveal until this % of the group has entered (0 = off)
