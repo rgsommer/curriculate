@@ -30,6 +30,13 @@ const START_TEMPLATE_LABELS: Record<string, string> = {
   "raffle-draw": "raffle 🎟️",
   "pledge-drive": "pledge drive 🎗️",
   "celebration-card": "celebration card 🎂",
+  "pastor-appreciation": "pastor appreciation card 🙏",
+  "admin-appreciation": "thank-you card for your office staff 💐",
+  "school-staff-appreciation": "school staff thank-you card 🙌",
+  "volunteer-appreciation": "volunteer thank-you card 🤝",
+  "get-well-card": "get-well card 🌻",
+  "farewell-card": "farewell card 👋",
+  "wedding-card": "wedding card 💒",
 };
 
 export default function DashboardPage() {

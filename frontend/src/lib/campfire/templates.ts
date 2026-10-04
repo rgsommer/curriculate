@@ -55,6 +55,18 @@ export function seasonalCardPrompt(
       emoji: "🎄",
       headline: "Christmas card season — sign one for someone special",
     };
+  if (m === 4 && d >= 15)
+    return {
+      templateId: "admin-appreciation",
+      emoji: "💐",
+      headline: "Administrative Professionals Day is coming — start a card for your office staff",
+    };
+  if (m === 10 && d <= 14)
+    return {
+      templateId: "pastor-appreciation",
+      emoji: "🙏",
+      headline: "It's Pastor Appreciation Month — start a card for your pastor",
+    };
   if (m === 5 && d <= 10)
     return {
       templateId: "teacher-appreciation",
@@ -89,6 +101,14 @@ const CARD_NOTES = {
     "Send your get-well wishes — they stay hidden until the card opens, then arrive all at once to lift their spirits. 🌻",
   farewell:
     "Write your goodbye — a favourite memory or a wish for what's next. It stays hidden until the card opens. 👋",
+  pastor:
+    "Thank your pastor — a sermon that stayed with you, a time they were there for you, or simply what they mean to the church. It stays hidden until the card opens. 🙏",
+  admin:
+    "Thank them for everything they keep running — a time they helped you out, or what they make easier every day. It stays hidden until the card opens. 💐",
+  staff:
+    "Say thank you for the work that keeps the school going — a kindness you noticed or something they do every day. It stays hidden until the card opens. 🙌",
+  volunteer:
+    "Thank them for giving their time — something they did that made a difference. It stays hidden until the card opens. 🤝",
   class:
     "Add your note to the card — a thank-you, a favourite memory, or a kind wish. Just your name, no account needed. Only they'll see it, when the card opens. 💌",
   general: "Write your note — it stays hidden until the card opens on the day. 🎉",
@@ -125,6 +145,11 @@ export function cardNoteFor(
   if (/mother'?s day/i.test(t)) return CARD_NOTES.mothers_day;
   if (/birthday/i.test(t)) return CARD_NOTES.birthday;
   if (/anniversar/i.test(t)) return CARD_NOTES.anniversary;
+  if (/pastor|clergy|minister|reverend|\bpriest/i.test(t)) return CARD_NOTES.pastor;
+  if (/secretar|administrative|\badmin\b|office (staff|manager|team)/i.test(t)) return CARD_NOTES.admin;
+  if (/custodian|caretaker|bus driver|lunch (staff|hero)|crossing guard|support staff|educational assistant|\bEAs?\b|librarian/i.test(t))
+    return CARD_NOTES.staff;
+  if (/volunteer/i.test(t)) return CARD_NOTES.volunteer;
   if (/teacher|\bmr\.?\s|\bmrs\.?\s|\bms\.?\s|\bmiss\s/i.test(t)) return CARD_NOTES.teacher;
   if (/coach|season/i.test(t)) return CARD_NOTES.coach;
   if (/christmas|holiday/i.test(t)) return CARD_NOTES.christmas;
@@ -147,6 +172,10 @@ export function passItOnCard(
   const season = seasonalCardPrompt(now);
   if (season) return { templateId: season.templateId, emoji: season.emoji, seasonLine: season.headline };
   if (/\bcoach/i.test(title)) return { templateId: "coach-gift", emoji: "🏆", seasonLine: null };
+  if (/pastor|clergy|minister|reverend/i.test(title))
+    return { templateId: "pastor-appreciation", emoji: "🙏", seasonLine: null };
+  if (/secretar|administrative|office staff/i.test(title))
+    return { templateId: "admin-appreciation", emoji: "💐", seasonLine: null };
   if (/\bteach|\bclass\b|\bmr\.?\s|\bmrs\.?\s|\bms\.?\s|\bmiss\s|\bmadame?\b|\bsir\b/i.test(title))
     return { templateId: "teacher-appreciation", emoji: "🍎", seasonLine: null };
   return { templateId: "thank-you-card", emoji: "💌", seasonLine: null };
@@ -165,6 +194,62 @@ const TEACHER_APPRECIATION_CARD: EngagementTemplate = {
     "A surprise thank-you card the class signs for a teacher. Paste the join link in Edsby — students add a note with just their name, and each one stays hidden until it opens. Add a group gift so everyone can chip in.",
   occasion: "once",
   onceLabel: "Teacher Appreciation",
+  reveal: "sealed",
+};
+
+const PASTOR_APPRECIATION_CARD: EngagementTemplate = {
+  id: "pastor-appreciation",
+  note:
+    "Thank your pastor — a sermon that stayed with you, a time they were there for you, or simply what they mean to the church. It stays hidden until the card opens. 🙏",
+  name: "Pastor Appreciation 🙏",
+  type: "birthday",
+  title: "Thank you, Pastor! 🙏",
+  description:
+    "A surprise card the congregation signs for your pastor — perfect for Pastor Appreciation Month (October). Share one link; each note stays hidden until it opens. Add a group gift so everyone can chip in.",
+  occasion: "once",
+  onceLabel: "Pastor Appreciation",
+  reveal: "sealed",
+};
+
+const ADMIN_APPRECIATION_CARD: EngagementTemplate = {
+  id: "admin-appreciation",
+  note:
+    "Thank them for everything they keep running — a time they helped you out, or what they make easier every day. It stays hidden until the card opens. 💐",
+  name: "Secretary & Office Staff 💐",
+  type: "birthday",
+  title: "Thank you for keeping it all running! 💐",
+  description:
+    "A surprise thank-you card for your school secretary or office staff — great for Administrative Professionals Day (late April). Staff and students sign from one link; notes stay hidden until it opens.",
+  occasion: "once",
+  onceLabel: "Office Staff Appreciation",
+  reveal: "sealed",
+};
+
+const SCHOOL_STAFF_CARD: EngagementTemplate = {
+  id: "school-staff-appreciation",
+  note:
+    "Say thank you for the work that keeps the school going — a kindness you noticed or something they do every day. It stays hidden until the card opens. 🙌",
+  name: "School Staff 🙌",
+  type: "birthday",
+  title: "Thank you for all you do for our school! 🙌",
+  description:
+    "A surprise thank-you card for the people who keep the school going — a custodian, bus driver, educational assistant or lunch staff. Paste the link in Edsby; notes stay hidden until it opens.",
+  occasion: "once",
+  onceLabel: "Staff Appreciation",
+  reveal: "sealed",
+};
+
+const VOLUNTEER_APPRECIATION_CARD: EngagementTemplate = {
+  id: "volunteer-appreciation",
+  note:
+    "Thank them for giving their time — something they did that made a difference. It stays hidden until the card opens. 🤝",
+  name: "Volunteer Appreciation 🤝",
+  type: "birthday",
+  title: "Thank you for giving your time! 🤝",
+  description:
+    "A surprise card the group signs for a volunteer — at church, school, a team or a club. Great for National Volunteer Week (April). Each note stays hidden until it opens.",
+  occasion: "once",
+  onceLabel: "Volunteer Appreciation",
   reveal: "sealed",
 };
 
@@ -253,6 +338,8 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
         description: "Leave a quick voice note instead of typing it out.",
       },
       TEACHER_APPRECIATION_CARD,
+      ADMIN_APPRECIATION_CARD,
+      SCHOOL_STAFF_CARD,
       {
         id: "class-card",
         note:
@@ -377,6 +464,7 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
         description:
           "Share something you're weighing — the group offers honest, caring input.",
       },
+      PASTOR_APPRECIATION_CARD,
     ],
   },
   {
@@ -423,6 +511,9 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
         reveal: "sealed",
       },
       TEACHER_APPRECIATION_CARD,
+      PASTOR_APPRECIATION_CARD,
+      ADMIN_APPRECIATION_CARD,
+      VOLUNTEER_APPRECIATION_CARD,
       {
         id: "celebration-card",
         note:
