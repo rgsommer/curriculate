@@ -21,6 +21,7 @@ import { formatWhen } from "@/lib/campfire/dates";
 import { cfAlert, cfConfirm, cfPrompt } from "@/lib/campfire/dialogs";
 import { CF_PRIMARY, CF_PRIMARY_SM, CF_SECONDARY, CF_SECONDARY_SM, chipClass } from "@/lib/campfire/ui";
 import { passItOnCard } from "@/lib/campfire/templates";
+import MoveActivity from "./MoveActivity";
 import { campfireAppLinksText } from "@/lib/campfire/appLinks";
 
 // Shrink a phone photo before upload: longest side ≤ 2000px, JPEG. Keeps a handwritten
@@ -9065,6 +9066,19 @@ export default function EngagementDetailPage() {
                   ? "▶️ Resume"
                   : "⏸️ Pause"}
               </button>
+              <span className="text-slate-300">·</span>
+            </>
+          )}
+          {!isRevealed && (
+            <>
+              <MoveActivity
+                engagementId={engagementId}
+                currentGroupId={groupId}
+                onMoved={(target) =>
+                  router.push(`/campfirelive/group/${target}/engagement/${engagementId}`)
+                }
+                disabledReason={responseCount > 0 ? "only before anyone responds" : null}
+              />
               <span className="text-slate-300">·</span>
             </>
           )}
