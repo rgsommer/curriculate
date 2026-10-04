@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useAuth } from "@/lib/campfire/AuthProvider";
 import { useGroup, useRealtimeGroup, usePresence } from "@/lib/campfire/hooks";
 import { supabase } from "@/lib/campfire/supabase";
-import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, formatMoney, raffleOf, nextMonthlyNthWeekday } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, engagementLabel, formatMoney, raffleOf, nextMonthlyNthWeekday } from "@/lib/campfire/types";
 import type { MonthlyNth } from "@/lib/campfire/hooks";
 import { parseInviteList } from "@/lib/campfire/parseInvites";
 import { formatWhen } from "@/lib/campfire/dates";
@@ -864,7 +864,7 @@ See you around the campfire! 🏕️`
                         {eng.creator_id === user?.id
                           ? "Your"
                           : `${nameOf(eng.creator_id, eng.creator?.display_name)}'s`}{" "}
-                        {meta?.label ?? eng.type}
+                        {engagementLabel(eng)}
                       </p>
                       <h3 className="font-bold text-slate-900">
                         {resolveTitle(eng.title, eng.birth_year, eng.deadline)}

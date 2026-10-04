@@ -12,6 +12,7 @@ import PushPrompt from "./PushPrompt";
 import {
   ENGAGEMENT_TYPES,
   engagementIcon,
+  engagementLabel,
   resolveTitle,
   isHouseSchool,
   type EngagementType,
@@ -718,7 +719,6 @@ export default function DashboardPage() {
           <div className="space-y-2">
             {todo.map((e) => {
               const g = groups.find((gr) => gr.id === e.group_id);
-              const meta = ENGAGEMENT_TYPES[e.type as EngagementType];
               return (
                 <Link
                   key={e.id}
@@ -731,7 +731,7 @@ export default function DashboardPage() {
                       {resolveTitle(e.title, e.birth_year, e.deadline)}
                     </div>
                     <div className="truncate text-xs text-slate-500">
-                      {meta?.label ?? "Activity"}
+                      {engagementLabel(e)}
                       {g ? ` · ${g.avatar_emoji} ${g.name}` : ""}
                     </div>
                     {typeof e.total_expected === "number" && e.total_expected > 0 && (
@@ -768,7 +768,6 @@ export default function DashboardPage() {
           <div className="space-y-2">
             {newReveals.map((e) => {
               const g = groups.find((gr) => gr.id === e.group_id);
-              const meta = ENGAGEMENT_TYPES[e.type as EngagementType];
               return (
                 <Link
                   key={e.id}
@@ -782,7 +781,7 @@ export default function DashboardPage() {
                       {resolveTitle(e.title, e.birth_year, e.deadline)}
                     </div>
                     <div className="truncate text-xs text-slate-500">
-                      {meta?.label ?? "Activity"}
+                      {engagementLabel(e)}
                       {g ? ` · ${g.avatar_emoji} ${g.name}` : ""}
                     </div>
                     {typeof e.total_expected === "number" && e.total_expected > 0 && (

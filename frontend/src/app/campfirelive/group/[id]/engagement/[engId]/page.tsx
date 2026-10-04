@@ -11,7 +11,7 @@ import {
   useCreateEngagement,
   type MonthlyNth,
 } from "@/lib/campfire/hooks";
-import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, parseCareQuestions, formatMoney, GIFT_CURRENCIES, localeGiftCurrency, raffleOf, tournamentOf, pledgeOf, babyRevealOf, parseBabyAnswer, selectPoolQuestions, describeMonthlyNth, nextMonthlyNthWeekday, campfireTeaserText, ORDINAL_WEEK, WEEKDAY_NAMES, describeNthWeekday, type NthWeekday, type QuestionCategory } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, engagementLabel, parseCareQuestions, formatMoney, GIFT_CURRENCIES, localeGiftCurrency, raffleOf, tournamentOf, pledgeOf, babyRevealOf, parseBabyAnswer, selectPoolQuestions, describeMonthlyNth, nextMonthlyNthWeekday, campfireTeaserText, ORDINAL_WEEK, WEEKDAY_NAMES, describeNthWeekday, type NthWeekday, type QuestionCategory } from "@/lib/campfire/types";
 import { readExifTakenAt } from "@/lib/campfire/exif";
 import QRCode from "qrcode";
 import type { CampfireGift } from "@/lib/campfire/types";
@@ -6043,7 +6043,7 @@ export default function EngagementDetailPage() {
           // a gentle bit of context instead of a dead-end link into a group they
           // can't see.
           <div className={chipClass("brand")}>
-            🔥 You&apos;re invited to this {meta?.label?.toLowerCase() || "card"} — just sign below.
+            🔥 You&apos;re invited to this {engagementLabel(engagement).toLowerCase()} — just sign below.
           </div>
         ) : (
           <Link
@@ -7156,7 +7156,7 @@ export default function EngagementDetailPage() {
                             engagement.creator?.display_name
                           )
                         }'s`
-                  } ${meta?.label ?? engagement.type}`}
+                  } ${engagementLabel(engagement)}`}
               </p>
               <div className="flex-shrink-0">
                 {isSealed && (
@@ -7394,7 +7394,7 @@ export default function EngagementDetailPage() {
               <div className="truncate text-xs text-slate-600">
                 {lateResponseAllowed
                   ? "Results are in — you can still add yours"
-                  : `${meta?.label ?? "Activity"} · add your response below`}
+                  : `${engagementLabel(engagement)} · add your response below`}
               </div>
             </div>
             <span className="flex-shrink-0 rounded-full bg-sky-600 px-4 py-2 text-sm font-bold text-white">

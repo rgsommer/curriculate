@@ -681,6 +681,21 @@ export function describeNthWeekday(p: NthWeekday): string {
 
 // The right emoji for an engagement: 🎂 only for an actual birthday; a holiday
 // celebration card uses its preset emoji (💐/👔) or a generic 🎉.
+// Human label for an activity. Every card is stored as type "birthday", so a card's
+// label comes from its occasion ("Teacher Appreciation card", "Class Card") — never
+// "Birthday" for a card that isn't one.
+export function engagementLabel(e: {
+  type: string;
+  config?: { occasion?: string } | null;
+}): string {
+  if (e.type === "birthday") {
+    const occ = e.config?.occasion?.trim();
+    if (!occ) return "Birthday card";
+    return /\bcard$/i.test(occ) ? occ : `${occ} card`;
+  }
+  return ENGAGEMENT_TYPES[e.type as EngagementType]?.label ?? "Activity";
+}
+
 export function engagementIcon(e: {
   type: string;
   config?: { occasion?: string } | null;
@@ -691,7 +706,20 @@ export function engagementIcon(e: {
     if (occ === "Anniversary") return "💍";
     if (occ === "Wedding") return "💒";
     const preset = Object.values(HOLIDAY_PRESETS).find((p) => p.label === occ);
-    return preset ? preset.emoji : "🎉"; // preset holiday, else a generic celebration
+    if (preset) return preset.emoji;
+    // One-time cards: pick the emoji from the occasion's own name.
+    const o = occ.toLowerCase();
+    if (/teacher/.test(o)) return "🍎";
+    if (/pastor|clergy/.test(o)) return "🙏";
+    if (/office|secretar|admin/.test(o)) return "💐";
+    if (/staff/.test(o)) return "🙌";
+    if (/volunteer/.test(o)) return "🤝";
+    if (/get well/.test(o)) return "🌻";
+    if (/farewell/.test(o)) return "👋";
+    if (/christmas/.test(o)) return "🎄";
+    if (/season|coach/.test(o)) return "🏆";
+    if (/class|year-?end|thank/.test(o)) return "💌";
+    return "🎉"; // any other celebration
   }
   return (
     (ENGAGEMENT_TYPES as Record<string, { icon: string }>)[e.type]?.icon ?? "🔥"
