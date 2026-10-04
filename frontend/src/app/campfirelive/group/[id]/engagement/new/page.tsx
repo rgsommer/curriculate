@@ -1628,30 +1628,42 @@ export default function NewEngagementPage() {
                   What&apos;s the occasion?
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {/* "Special occasion" and "One-time" are both a named occasion (stored as
+                      "once"); Special occasion comes back every year on the same date
+                      (Pastor / Teacher Appreciation), One-time never repeats (Retirement). */}
                   {(
                     [
-                      { value: "birthday", label: "🎂 Birthday" },
-                      { value: "anniversary", label: "💍 Anniversary" },
-                      { value: "wedding", label: "💒 Wedding" },
-                      { value: "once", label: "🎉 One-time" },
-                      { value: "mothers_day", label: "💐 Mother's Day" },
-                      { value: "fathers_day", label: "👔 Father's Day" },
-                      { value: "custom", label: "🗓️ Holiday" },
+                      { key: "birthday", value: "birthday", repeats: false, label: "🎂 Birthday" },
+                      { key: "anniversary", value: "anniversary", repeats: false, label: "💍 Anniversary" },
+                      { key: "wedding", value: "wedding", repeats: false, label: "💒 Wedding" },
+                      { key: "special", value: "once", repeats: true, label: "⭐ Special occasion" },
+                      { key: "once", value: "once", repeats: false, label: "🎉 One-time" },
+                      { key: "mothers_day", value: "mothers_day", repeats: false, label: "💐 Mother's Day" },
+                      { key: "fathers_day", value: "fathers_day", repeats: false, label: "👔 Father's Day" },
+                      { key: "custom", value: "custom", repeats: false, label: "🗓️ Holiday" },
                     ] as const
-                  ).map((o) => (
-                    <button
-                      key={o.value}
-                      type="button"
-                      onClick={() => applyOccasion(o.value)}
-                      className={`rounded-lg border px-2 py-2 text-sm font-medium transition ${
-                        occasion === o.value
-                          ? "border-orange-500 bg-orange-50 text-slate-900"
-                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-                      }`}
-                    >
-                      {o.label}
-                    </button>
-                  ))}
+                  ).map((o) => {
+                    const on =
+                      occasion === o.value && (o.value !== "once" || onceRepeats === o.repeats);
+                    return (
+                      <button
+                        key={o.key}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() => {
+                          applyOccasion(o.value);
+                          if (o.value === "once") setOnceRepeats(o.repeats);
+                        }}
+                        className={`rounded-lg border px-2 py-2 text-sm font-medium transition ${
+                          on
+                            ? "border-orange-500 bg-orange-50 text-slate-900"
+                            : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                        }`}
+                      >
+                        {o.label}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -2674,6 +2686,11 @@ export default function NewEngagementPage() {
                         A <span className="font-semibold">one-time</span> card — it
                         won&apos;t repeat.
                       </>
+                    ) : occasion === "once" ? (
+                      <>
+                        A <span className="font-semibold">special occasion</span> — it
+                        comes back every year on this date.
+                      </>
                     ) : (
                       <>
                         Runs <span className="font-semibold">every year</span>.
@@ -2691,25 +2708,11 @@ export default function NewEngagementPage() {
                         type="text"
                         value={onceLabel}
                         onChange={(e) => setOnceLabel(e.target.value)}
-                        placeholder="Retirement, Graduation, Welcome…"
+                        placeholder={onceRepeats ? "Pastor Appreciation, Teacher Appreciation…" : "Retirement, Graduation, Welcome…"}
                         className="flex-1 min-w-[160px] rounded-lg border border-slate-300 px-2 py-1 text-sm outline-none focus:border-orange-500"
                       />
                     </div>
                   )}
-                  {/* …and whether that occasion comes back every year (Pastor / Teacher
-                      Appreciation), instead of being a true one-off (Retirement). */}
-                  {occasion === "once" && (
-                    <label className="flex min-h-10 cursor-pointer items-center gap-2 text-sm text-slate-700">
-                      <input
-                        type="checkbox"
-                        checked={onceRepeats}
-                        onChange={(e) => setOnceRepeats(e.target.checked)}
-                        className="h-4 w-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
-                      />
-                      🔁 Repeat every year on this date
-                    </label>
-                  )}
-
                   {/* Holiday: show the floating date (preset summary or custom picker) */}
                   {occasion === "custom" && renderNthPicker()}
                   {(occasion === "mothers_day" || occasion === "fathers_day") && (
