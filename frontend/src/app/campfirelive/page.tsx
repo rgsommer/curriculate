@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/campfire/AuthProvider";
 import { useGroups, useCreateEngagement } from "@/lib/campfire/hooks";
 import { supabase } from "@/lib/campfire/supabase";
-import { seasonalCardPrompt, QUICK_STARTS } from "@/lib/campfire/templates";
+import { seasonalCardPrompt, QUICK_STARTS, quickStartDate } from "@/lib/campfire/templates";
 import { QUALIFYING_RESPONSES, freeGroupAllowance } from "@/lib/campfire/premium";
 import PushPrompt from "./PushPrompt";
 import {
@@ -15,7 +15,6 @@ import {
   engagementLabel,
   resolveTitle,
   isHouseSchool,
-  nextNthWeekday,
   type EngagementType,
 } from "@/lib/campfire/types";
 import { CF_PRIMARY, CF_SECONDARY, CF_SECONDARY_SM, chipClass } from "@/lib/campfire/ui";
@@ -110,6 +109,14 @@ export default function DashboardPage() {
   const [quickGroupName, setQuickGroupName] = useState("");
   const [quickHonoree, setQuickHonoree] = useState("");
   const [quickEmail, setQuickEmail] = useState("");
+  // Optional date override ("change" link) — datetime-local string, "" = the default.
+  const [quickDate, setQuickDate] = useState("");
+  const [quickDateOpen, setQuickDateOpen] = useState(false);
+  const quickReveal = quick
+    ? quickDate
+      ? new Date(quickDate)
+      : quickStartDate(quick)
+    : null;
   const [quickBusy, setQuickBusy] = useState(false);
   const [quickErr, setQuickErr] = useState("");
   const handleQuickStart = async () => {
@@ -126,6 +133,10 @@ export default function DashboardPage() {
     }
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       setQuickErr("That email doesn't look right — fix it or leave it blank.");
+      return;
+    }
+    if (!quickReveal || isNaN(quickReveal.getTime()) || quickReveal.getTime() <= Date.now()) {
+      setQuickErr("Pick a date in the future for the card to open.");
       return;
     }
     if (quickTarget === "new" && !canCreateGroup) {
@@ -164,11 +175,12 @@ export default function DashboardPage() {
       description: quick.note,
       config: {
         occasion: quick.occasion,
-        // Next year's copy lands on the same Nth weekday.
-        ...(quick.repeats ? { recurrence_nth: quick.nth } : {}),
+        // Next year's copy lands on the same Nth weekday (a custom date repeats on
+        // the same calendar day instead).
+        ...(quick.repeats && quick.nth && !quickDate ? { recurrence_nth: quick.nth } : {}),
         ...(hostName ? { hostName } : {}),
       },
-      deadline: nextNthWeekday(quick.nth), // 8:00 AM local
+      deadline: quickReveal,
       reveal: "sealed",
       recurrence_rule: quick.repeats ? "yearly" : undefined,
       notify: true,
@@ -1063,7 +1075,10 @@ export default function DashboardPage() {
 
       {/* One-tap card start (?start= with a QUICK_STARTS template) */}
       {showCreate && quick && (() => {
-        const revealAt = nextNthWeekday(quick.nth);
+        const revealAt = quickReveal ?? new Date();
+        const pad = (n: number) => String(n).padStart(2, "0");
+        const localInput = (d: Date) =>
+          `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
         return (
           <div
             id="quick-start"
@@ -1145,9 +1160,40 @@ export default function DashboardPage() {
                       ? { year: "numeric" as const }
                       : {}),
                   })}{" "}
-                  at 8:00 AM
+                  at{" "}
+                  {revealAt.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
                 </strong>{" "}
-                ({quick.dateLabel})
+                {!quickDate && <>({quick.dateLabel}) </>}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!quickDate) setQuickDate(localInput(revealAt));
+                    setQuickDateOpen((o) => !o);
+                  }}
+                  className="font-medium text-orange-700 underline hover:text-orange-800"
+                >
+                  change
+                </button>
+                {quickDateOpen && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <input
+                      type="datetime-local"
+                      value={quickDate}
+                      onChange={(e) => setQuickDate(e.target.value)}
+                      className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm outline-none focus:border-orange-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuickDate("");
+                        setQuickDateOpen(false);
+                      }}
+                      className="text-xs font-medium text-slate-500 underline hover:text-slate-700"
+                    >
+                      Use {quick.dateLabel}
+                    </button>
+                  </div>
+                )}
               </li>
               <li>✍️ People can sign as soon as you share it</li>
               <li>🔒 Notes are private — only you see them until the card opens</li>

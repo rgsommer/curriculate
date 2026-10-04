@@ -464,9 +464,9 @@ See you around the campfire! 🏕️`
   );
   // "Upcoming" = active but not open to sign yet (a draft waiting to auto-open, or
   // launched with a future open date — e.g. a birthday card before its lead date).
-  const upcomingEngagements = engagements
-    .filter((e) => e.status === "active" && !isOpenToSign(e))
-    .sort(byNextReveal);
+  const upcomingEngagements = collapseRecurring(
+    engagements.filter((e) => e.status === "active" && !isOpenToSign(e)).sort(byNextReveal)
+  );
   // "Recurring" = the repeating series (yearly/weekly/…), shown as their own group
   // whether they're open now, scheduled, or already revealed. We show only the LATEST
   // instance of each series (the chain tail — no child in the list) so the series is

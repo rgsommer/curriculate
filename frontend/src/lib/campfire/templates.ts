@@ -1,4 +1,5 @@
 import type { EngagementType, RevealMode, CareQuestion, NthWeekday } from "./types";
+import { nextNthWeekday as nextNthWeekdayAt8 } from "./types";
 
 // Ready-made engagements so a host can start one in a tap.
 export interface EngagementTemplate {
@@ -177,7 +178,10 @@ export interface QuickStart {
   emailLabel: string;
   emailHint: string;
   occasion: string; // config.occasion
-  nth: NthWeekday; // reveals on the next one of these, at 8:00 AM
+  // Default reveal: the next Nth weekday at 8:00 AM, or a custom rule (nextDate) for
+  // days an Nth weekday can't express. Only an nth rule can repeat yearly.
+  nth?: NthWeekday;
+  nextDate?: (from: Date) => Date;
   dateLabel: string; // "the 2nd Sunday of October"
   repeats: boolean; // comes back every year on the same Nth weekday
   title: (name: string) => string;
@@ -226,7 +230,65 @@ export const QUICK_STARTS: Record<string, QuickStart> = {
       "Tell your teacher what you appreciate — a favourite lesson, a time you got help, or simply thank you. It stays hidden until the card opens. 🍎",
     ctaLabel: "🍎 Create the card",
   },
+  // Administrative Professionals Day = Wednesday of the last full week of April.
+  "admin-appreciation": {
+    templateId: "admin-appreciation",
+    emoji: "💐",
+    heading: "Start a thank-you card for your school office",
+    groupLabel: "Your school or staff room",
+    groupPlaceholder: "e.g. Westside Elementary staff",
+    nameLabel: "Who's it for?",
+    namePlaceholder: "e.g. Mrs. Patel, or the Front Office Team",
+    emailLabel: "Email (optional)",
+    emailHint: "So the card arrives on the day. No email? Skip it — you can send the card link yourself.",
+    occasion: "Office Staff Appreciation",
+    nextDate: (from) => {
+      const forYear = (y: number) => {
+        const d = new Date(y, 3, 30, 8, 0, 0, 0); // Apr 30
+        d.setDate(d.getDate() - ((d.getDay() + 1) % 7)); // back to the last Saturday
+        d.setDate(d.getDate() - 3); // that week's Wednesday
+        return d;
+      };
+      const d = forYear(from.getFullYear());
+      return d.getTime() >= from.getTime() ? d : forYear(from.getFullYear() + 1);
+    },
+    dateLabel: "Administrative Professionals Day",
+    repeats: false,
+    title: (name) => `Thank you, ${name}! 💐`,
+    note:
+      "Thank them for everything they keep running — a time they helped you out, or what they make easier every day. It stays hidden until the card opens. 💐",
+    ctaLabel: "💐 Create the card",
+  },
+  // National Volunteer Week (Canada + US) runs the third full week of April.
+  "volunteer-appreciation": {
+    templateId: "volunteer-appreciation",
+    emoji: "🤝",
+    heading: "Start a thank-you card for a volunteer",
+    groupLabel: "Your team, club or church",
+    groupPlaceholder: "e.g. Grace Church Sunday School",
+    nameLabel: "Who's it for?",
+    namePlaceholder: "e.g. Mrs. Chen, or Our Volunteers",
+    emailLabel: "Email (optional)",
+    emailHint: "So the card arrives on the day. No email? Skip it — you can send the card link yourself.",
+    occasion: "Volunteer Appreciation",
+    nth: { week: 3, weekday: 1, month: 4 },
+    dateLabel: "the Monday of National Volunteer Week",
+    repeats: false,
+    title: (name) => `Thank you, ${name}! 🤝`,
+    note:
+      "Thank them for giving their time — something they did that made a difference. It stays hidden until the card opens. 🤝",
+    ctaLabel: "🤝 Create the card",
+  },
 };
+
+// The default reveal date for a quick start (8:00 AM local).
+export function quickStartDate(q: QuickStart, from: Date = new Date()): Date {
+  if (q.nextDate) return q.nextDate(from);
+  if (q.nth) return nextNthWeekdayAt8(q.nth, from);
+  const d = new Date(from.getTime() + 14 * 86400000);
+  d.setHours(8, 0, 0, 0);
+  return d;
+}
 
 // Wording for "invite others to start their OWN card" shares (a ?start=<template>
 // link), per card template — who it's for and what they'd name their group.
@@ -239,7 +301,7 @@ export function startShareCopy(templateId: string): {
   const m: Record<string, { what: string; forWhom: string; group: string; emoji: string }> = {
     "pastor-appreciation": { what: "a Pastor Appreciation card for your church", forWhom: "your pastor", group: "your church or small group", emoji: "🙏" },
     "teacher-appreciation": { what: "a Teacher Appreciation card for your class", forWhom: "your teacher", group: "your class", emoji: "🍎" },
-    "admin-appreciation": { what: "a thank-you card for your school office staff", forWhom: "your office staff", group: "your school or staff room", emoji: "💐" },
+    "admin-appreciation": { what: "a thank-you card for your school office staff", forWhom: "your school secretary", group: "your school or staff room", emoji: "💐" },
     "school-staff-appreciation": { what: "a thank-you card for your school staff", forWhom: "them", group: "your class or school", emoji: "🙌" },
     "volunteer-appreciation": { what: "a thank-you card for a volunteer", forWhom: "your volunteer", group: "your team, club or church", emoji: "🤝" },
     "coach-gift": { what: "a thank-you card for your coach", forWhom: "your coach", group: "your team", emoji: "🏆" },

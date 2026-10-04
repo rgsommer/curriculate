@@ -700,11 +700,14 @@ export async function GET(req: Request) {
 
   for (const e of recs ?? []) {
     // Only the tail of a chain spawns (skip if it already has a child).
-    const { count: childCount } = await admin
+    // Fail CLOSED: if the check errors (count comes back null), skip this run rather
+    // than spawn — treating "unknown" as "no child" once stacked up to 9 copies of the
+    // same next occurrence (Sep 2026).
+    const { count: childCount, error: childErr } = await admin
       .from("engagements")
-      .select("*", { count: "exact", head: true })
+      .select("id", { count: "exact", head: true })
       .eq("parent_id", e.id);
-    if (childCount && childCount > 0) continue;
+    if (childErr || childCount === null || childCount > 0) continue;
 
     const DAY = 24 * 60 * 60 * 1000;
 
