@@ -4,9 +4,9 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/campfire/AuthProvider";
-import { useGroups } from "@/lib/campfire/hooks";
+import { useGroups, useCreateEngagement } from "@/lib/campfire/hooks";
 import { supabase } from "@/lib/campfire/supabase";
-import { seasonalCardPrompt } from "@/lib/campfire/templates";
+import { seasonalCardPrompt, QUICK_STARTS } from "@/lib/campfire/templates";
 import { QUALIFYING_RESPONSES, freeGroupAllowance } from "@/lib/campfire/premium";
 import PushPrompt from "./PushPrompt";
 import {
@@ -15,6 +15,7 @@ import {
   engagementLabel,
   resolveTitle,
   isHouseSchool,
+  nextNthWeekday,
   type EngagementType,
 } from "@/lib/campfire/types";
 import { CF_PRIMARY, CF_SECONDARY, CF_SECONDARY_SM, chipClass } from "@/lib/campfire/ui";
@@ -96,6 +97,108 @@ export default function DashboardPage() {
       /* ignore */
     }
   }, []);
+  // One-tap start (QUICK_STARTS): a ?start= link for a card with everything preset —
+  // the person types their group + the honoree's name, and lands on a live card ready
+  // to share. "More options" drops back to the normal create-group → editor flow.
+  const { create: createEngagement } = useCreateEngagement();
+  const [quickOff, setQuickOff] = useState(false);
+  const quick = startTemplate && !quickOff ? QUICK_STARTS[startTemplate] ?? null : null;
+  const hostedGroups = groups.filter((g) => g.creator_id === user?.id);
+  const [quickGroupId, setQuickGroupId] = useState<string | null>(null);
+  const quickTarget =
+    quickGroupId ?? (canCreateGroup || hostedGroups.length === 0 ? "new" : hostedGroups[0].id);
+  const [quickGroupName, setQuickGroupName] = useState("");
+  const [quickHonoree, setQuickHonoree] = useState("");
+  const [quickEmail, setQuickEmail] = useState("");
+  const [quickBusy, setQuickBusy] = useState(false);
+  const [quickErr, setQuickErr] = useState("");
+  const handleQuickStart = async () => {
+    if (!quick || quickBusy) return;
+    const honoree = quickHonoree.trim();
+    const email = quickEmail.trim().toLowerCase();
+    if (quickTarget === "new" && !quickGroupName.trim()) {
+      setQuickErr(`Fill in “${quick.groupLabel}”.`);
+      return;
+    }
+    if (!honoree) {
+      setQuickErr(`Fill in “${quick.nameLabel}”.`);
+      return;
+    }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setQuickErr("That email doesn't look right — fix it or leave it blank.");
+      return;
+    }
+    if (quickTarget === "new" && !canCreateGroup) {
+      setShowCreate(false);
+      setGroupBlocked(true);
+      return;
+    }
+    setQuickBusy(true);
+    setQuickErr("");
+    let gid = quickTarget;
+    if (gid === "new") {
+      const { group, error: gErr } = await createGroup(quickGroupName.trim(), "", quick.emoji, null);
+      if (!group) {
+        setQuickErr(gErr ?? "Couldn't create the group. Try again.");
+        setQuickBusy(false);
+        return;
+      }
+      gid = group.id;
+    }
+    // Guests can't read the roster, so stamp the host's name for this group (their
+    // per-group name if they set one — keeps an incognito host incognito).
+    let hostName = profile?.display_name || "";
+    if (quickTarget !== "new" && user?.id) {
+      const { data: gm } = await supabase
+        .from("group_members")
+        .select("display_name")
+        .eq("group_id", gid)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (gm?.display_name) hostName = gm.display_name as string;
+    }
+    const { engagement, error: eErr } = await createEngagement({
+      groupId: gid,
+      type: "birthday",
+      title: quick.title(honoree),
+      description: quick.note,
+      config: {
+        occasion: quick.occasion,
+        recurrence_nth: quick.nth, // next year's copy lands on the same Nth weekday
+        ...(hostName ? { hostName } : {}),
+      },
+      deadline: nextNthWeekday(quick.nth), // 8:00 AM local
+      reveal: "sealed",
+      recurrence_rule: "yearly",
+      notify: true,
+      hold_until_deadline: true,
+      lead_days: 14,
+      scheduled_open_at: null,
+      launched_at: new Date().toISOString(), // live now — open to sign
+      private_to_host: true,
+      excluded_emails: email ? [email] : [],
+    });
+    if (!engagement) {
+      setQuickErr(eErr ?? "Couldn't create the card. Try again.");
+      setQuickBusy(false);
+      return;
+    }
+    try {
+      localStorage.removeItem("campfire_start");
+    } catch {
+      /* ignore */
+    }
+    router.push(`/campfirelive/group/${gid}/engagement/${engagement.id}?created=1`);
+  };
+  // Bring the quick form into view — it sits below the dashboard's other cards.
+  useEffect(() => {
+    if (!quick || loading) return;
+    const t = setTimeout(
+      () => document.getElementById("quick-start")?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      150
+    );
+    return () => clearTimeout(t);
+  }, [quick, loading]);
   const [newName, setNewName] = useState("");
   const [newDesc, setNewDesc] = useState("");
   const [newEmoji, setNewEmoji] = useState("🔥");
@@ -957,8 +1060,123 @@ export default function DashboardPage() {
           </p>
         )}
 
+      {/* One-tap card start (?start= with a QUICK_STARTS template) */}
+      {showCreate && quick && (() => {
+        const revealAt = nextNthWeekday(quick.nth);
+        return (
+          <div
+            id="quick-start"
+            className="mb-8 scroll-mt-4 rounded-2xl border-2 border-orange-200 bg-gradient-to-br from-orange-50 to-rose-50 p-6 shadow-sm"
+          >
+            <div className="text-3xl">{quick.emoji}</div>
+            <h2 className="mt-1 text-xl font-extrabold text-slate-900">{quick.heading}</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Everyone signs a surprise card from one link. Fill this in and it&apos;s ready
+              to share — everything else is set for you.
+            </p>
+            <div className="mt-4 space-y-3">
+              {hostedGroups.length > 0 && (
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">Put it in</label>
+                  <select
+                    value={quickTarget}
+                    onChange={(e) => setQuickGroupId(e.target.value)}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
+                  >
+                    {canCreateGroup && <option value="new">➕ A new group</option>}
+                    {hostedGroups.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.avatar_emoji} {g.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {quickTarget === "new" && (
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-slate-700">
+                    {quick.groupLabel}
+                  </label>
+                  <input
+                    type="text"
+                    value={quickGroupName}
+                    onChange={(e) => setQuickGroupName(e.target.value)}
+                    placeholder={quick.groupPlaceholder}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
+                  />
+                </div>
+              )}
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">
+                  {quick.nameLabel}
+                </label>
+                <input
+                  type="text"
+                  value={quickHonoree}
+                  onChange={(e) => setQuickHonoree(e.target.value)}
+                  placeholder={quick.namePlaceholder}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">
+                  {quick.emailLabel}
+                </label>
+                <input
+                  type="email"
+                  value={quickEmail}
+                  onChange={(e) => setQuickEmail(e.target.value)}
+                  placeholder="name@example.com"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
+                />
+                <p className="mt-1 text-xs text-slate-500">{quick.emailHint}</p>
+              </div>
+            </div>
+            <ul className="mt-4 space-y-1 rounded-xl bg-white/70 p-3 text-sm text-slate-700">
+              <li>
+                📅 Opens on{" "}
+                <strong>
+                  {revealAt.toLocaleDateString(undefined, {
+                    weekday: "long",
+                    month: "long",
+                    day: "numeric",
+                  })}{" "}
+                  at 8:00 AM
+                </strong>{" "}
+                ({quick.dateLabel})
+              </li>
+              <li>✍️ People can sign as soon as you share it</li>
+              <li>🔒 Notes are private — only you see them until the card opens</li>
+              <li>🔁 Comes back every year · no money or gift cards involved</li>
+            </ul>
+            {quickErr && <p className="mt-3 text-sm text-red-600">{quickErr}</p>}
+            <button
+              onClick={handleQuickStart}
+              disabled={quickBusy}
+              className={`${CF_PRIMARY} mt-4 w-full justify-center`}
+            >
+              {quickBusy ? "Creating…" : quick.ctaLabel}
+            </button>
+            <div className="mt-3 flex items-center justify-between text-xs">
+              <button
+                onClick={() => setQuickOff(true)}
+                className="font-medium text-slate-500 underline hover:text-slate-700"
+              >
+                More options (full editor)
+              </button>
+              <button
+                onClick={() => setShowCreate(false)}
+                className="font-medium text-slate-500 hover:text-slate-700"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Create Group Modal */}
-      {showCreate && (
+      {showCreate && !quick && (
         <div className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           {startTemplate && (
             <div className="mb-4 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900">

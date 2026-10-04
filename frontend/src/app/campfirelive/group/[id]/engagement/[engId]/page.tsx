@@ -20,7 +20,7 @@ import { hasProfanity } from "@/lib/campfire/profanity";
 import { formatWhen } from "@/lib/campfire/dates";
 import { cfAlert, cfConfirm, cfPrompt } from "@/lib/campfire/dialogs";
 import { CF_PRIMARY, CF_PRIMARY_SM, CF_SECONDARY, CF_SECONDARY_SM, chipClass } from "@/lib/campfire/ui";
-import { passItOnCard, startShareCopy } from "@/lib/campfire/templates";
+import { passItOnCard, startShareCopy, QUICK_STARTS } from "@/lib/campfire/templates";
 import MoveActivity from "./MoveActivity";
 import { copyRich, inviteHtml } from "@/lib/campfire/richCopy";
 import { campfireAppLinksText } from "@/lib/campfire/appLinks";
@@ -625,6 +625,25 @@ export default function EngagementDetailPage() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [justLaunched, setJustLaunched] = useState(false);
+  // Arrived from a one-tap start (?created=1): show the "now share it" next step.
+  const [justCreated, setJustCreated] = useState(false);
+  useEffect(() => {
+    try {
+      const qs = new URLSearchParams(window.location.search);
+      if (qs.get("created") === "1") {
+        setJustCreated(true);
+        qs.delete("created");
+        const rest = qs.toString();
+        window.history.replaceState(
+          null,
+          "",
+          `${window.location.pathname}${rest ? `?${rest}` : ""}${window.location.hash}`
+        );
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
   const [justLaunchedQuiet, setJustLaunchedQuiet] = useState(false);
   // Scheduling a draft to auto-open later (date input shown when host opts in).
   const [schedulingOpen, setSchedulingOpen] = useState(false);
@@ -1745,7 +1764,8 @@ export default function EngagementDetailPage() {
   // Creator launches the draft — makes it live for the group, then (optionally) emails.
   // Copy an invite that's about THIS engagement, with a join link that drops the
   // person straight into it after they join the group.
-  const shareEngagement = async () => {
+  // sheet=true: on a phone, open the native share sheet instead of copying.
+  const shareEngagement = async (sheet = false) => {
     if (!engagement || !groupInfo) return;
     const origin =
       typeof window !== "undefined" ? window.location.origin : "https://www.curriculate.net";
@@ -1822,6 +1842,18 @@ export default function EngagementDetailPage() {
       footnote: `Already on Campfire? Use code ${groupInfo.invite_code}.`,
       extraHtml: isCard ? "" : campfireTeaserHtml(),
     });
+    if (
+      sheet &&
+      typeof navigator.share === "function" &&
+      /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)
+    ) {
+      try {
+        await navigator.share({ title, text: msg });
+        return;
+      } catch (err) {
+        if ((err as Error)?.name === "AbortError") return;
+      }
+    }
     try {
       await copyRich(msg, html);
       setSharedEng(true);
@@ -6133,6 +6165,49 @@ export default function EngagementDetailPage() {
         </div>
       )}
 
+      {/* ── Just created via a one-tap start: the one next step is sharing it ── */}
+      {justCreated && isCreator && !isDraft && (
+        <div className="mb-6 rounded-2xl border-2 border-green-300 bg-gradient-to-br from-green-50 to-emerald-50 p-5 text-center shadow-sm">
+          <div className="text-3xl">🎉</div>
+          <div className="text-lg font-extrabold text-green-900">Your card is live!</div>
+          <p className="mx-auto mt-1 max-w-md text-sm text-green-900/80">
+            Next: share it with your {engagement.type === "birthday" ? "people" : "group"} —
+            everyone signs from one link
+            {engagement.deadline
+              ? `, and it opens ${new Date(engagement.deadline).toLocaleDateString(undefined, {
+                  weekday: "long",
+                  month: "long",
+                  day: "numeric",
+                })} at ${new Date(engagement.deadline).toLocaleTimeString(undefined, {
+                  hour: "numeric",
+                  minute: "2-digit",
+                })}`
+              : ""}
+            .
+          </p>
+          <button
+            type="button"
+            onClick={() => shareEngagement(true)}
+            className={`${CF_PRIMARY} mt-3`}
+          >
+            {sharedEng
+              ? "✓ Copied — paste it anywhere"
+              : `📤 Share with ${groupInfo?.name ?? "your group"}`}
+          </button>
+          <p className="mx-auto mt-2 max-w-md text-xs text-green-900/70">
+            Paste it in your church email, group chat or bulletin. Once it&apos;s shared,
+            there&apos;s nothing else to do — add your own note below too.
+          </p>
+          <button
+            type="button"
+            onClick={() => setJustCreated(false)}
+            className="mt-2 text-xs font-medium text-slate-500 underline hover:text-slate-700"
+          >
+            Got it
+          </button>
+        </div>
+      )}
+
       {/* ── DRAFT: not live yet — only the creator can see it until launch ── */}
       {(isDraft || justLaunched) && isCreator && (
         <div
@@ -7569,7 +7644,7 @@ export default function EngagementDetailPage() {
             engagement and won&apos;t join {groupInfo.name || "your group"}.
           </p>
           <button
-            onClick={shareEngagement}
+            onClick={() => shareEngagement()}
             title="Invite to just this card — they can sign it without joining your group"
             className="flex-shrink-0 rounded-full border border-orange-300 bg-orange-50 px-4 py-1.5 text-sm font-semibold text-orange-700 hover:bg-orange-100"
           >
@@ -9076,8 +9151,15 @@ export default function EngagementDetailPage() {
           const c = startShareCopy(pass.templateId);
           const steps = [
             "1. Tap the link and sign in — Google, Apple, email, or just your name.",
-            `2. Name your group (e.g. ${c.groupExample}).`,
-            `3. Add ${c.forWhom === "them" ? "their" : `${c.forWhom}'s`} name, then share the card's link so everyone can sign.`,
+            ...(QUICK_STARTS[pass.templateId]
+              ? [
+                  `2. Type the name of ${c.groupExample} and ${c.forWhom}'s name, then tap Create — the date and settings are all set for you.`,
+                  "3. Share the card's link with your people so everyone can sign.",
+                ]
+              : [
+                  `2. Name your group (e.g. ${c.groupExample}).`,
+                  `3. Add ${c.forWhom === "them" ? "their" : `${c.forWhom}'s`} name, then share the card's link so everyone can sign.`,
+                ]),
           ];
           const lead =
             "I just did one on Campfire — everyone signs a surprise thank-you card from one link, and it opens on the day. Free, about 2 minutes.";

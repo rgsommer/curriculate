@@ -1,4 +1,4 @@
-import type { EngagementType, RevealMode, CareQuestion } from "./types";
+import type { EngagementType, RevealMode, CareQuestion, NthWeekday } from "./types";
 
 // Ready-made engagements so a host can start one in a tap.
 export interface EngagementTemplate {
@@ -105,7 +105,7 @@ const CARD_NOTES = {
   farewell:
     "Write your goodbye — a favourite memory or a wish for what's next. It stays hidden until the card opens. 👋",
   pastor:
-    "Thank your pastor — a sermon that stayed with you, a time they were there for you, or simply what they mean to the church. It stays hidden until the card opens. 🙏",
+    "Thank your pastor — a sermon that stayed with you, a time he was there for you, or simply what he means to the church. It stays hidden until the card opens. 🙏",
   admin:
     "Thank them for everything they keep running — a time they helped you out, or what they make easier every day. It stays hidden until the card opens. 💐",
   staff:
@@ -162,6 +162,48 @@ export function cardNoteFor(
   if (/class/i.test(t)) return CARD_NOTES.class;
   return CARD_NOTES.general;
 }
+
+// One-tap starts for a ?start=<template> link. Everything is preset (date, privacy,
+// yearly repeat) — the person types only their group and the honoree's name, and the
+// card opens live, ready to share. "More options" falls back to the full editor.
+export interface QuickStart {
+  templateId: string;
+  emoji: string;
+  heading: string;
+  groupLabel: string;
+  groupPlaceholder: string;
+  nameLabel: string;
+  namePlaceholder: string;
+  emailLabel: string;
+  emailHint: string;
+  occasion: string; // config.occasion
+  nth: NthWeekday; // reveals on the next one of these, at 8:00 AM
+  dateLabel: string; // "the 2nd Sunday of October"
+  title: (name: string) => string;
+  note: string;
+  ctaLabel: string;
+}
+
+export const QUICK_STARTS: Record<string, QuickStart> = {
+  "pastor-appreciation": {
+    templateId: "pastor-appreciation",
+    emoji: "🙏",
+    heading: "Start a thank-you card for your pastor",
+    groupLabel: "Your church or small group",
+    groupPlaceholder: "e.g. Grace Community Church",
+    nameLabel: "Your pastor's name",
+    namePlaceholder: "e.g. Pastor Bill",
+    emailLabel: "His email (optional)",
+    emailHint: "So he gets the card on the day. No email? Skip it — you can send him the card link yourself.",
+    occasion: "Pastor Appreciation",
+    nth: { week: 2, weekday: 0, month: 10 },
+    dateLabel: "the 2nd Sunday of October",
+    title: (name) => `Thank you, ${name}! 🙏`,
+    note:
+      "Thank your pastor — a sermon that stayed with you, a time he was there for you, or simply what he means to the church. It stays hidden until the card opens. 🙏",
+    ctaLabel: "🙏 Create the card",
+  },
+};
 
 // Wording for "invite others to start their OWN card" shares (a ?start=<template>
 // link), per card template — who it's for and what they'd name their group.
@@ -237,7 +279,7 @@ const TEACHER_APPRECIATION_CARD: EngagementTemplate = {
 const PASTOR_APPRECIATION_CARD: EngagementTemplate = {
   id: "pastor-appreciation",
   note:
-    "Thank your pastor — a sermon that stayed with you, a time they were there for you, or simply what they mean to the church. It stays hidden until the card opens. 🙏",
+    "Thank your pastor — a sermon that stayed with you, a time he was there for you, or simply what he means to the church. It stays hidden until the card opens. 🙏",
   name: "Pastor Appreciation 🙏",
   type: "birthday",
   title: "Thank you, Pastor! 🙏",
