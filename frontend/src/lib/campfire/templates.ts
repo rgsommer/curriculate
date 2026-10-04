@@ -22,6 +22,9 @@ export interface EngagementTemplate {
     | "once"
     | "wedding";
   onceLabel?: string;
+  // A one-time-style card that should come back every year on the same date
+  // (e.g. Pastor Appreciation) — pre-ticks "Repeat every year".
+  repeatsYearly?: boolean;
   // The note SIGNERS see on the card ("Note to signers"). `description` is written for
   // the host picking a template (it can list uses + tips like "paste the link in
   // Edsby"); this is the short, card-specific instruction everyone else reads.
@@ -208,6 +211,7 @@ const PASTOR_APPRECIATION_CARD: EngagementTemplate = {
     "A surprise card the congregation signs for your pastor — perfect for Pastor Appreciation Month (October). Share one link; each note stays hidden until it opens. Add a group gift so everyone can chip in.",
   occasion: "once",
   onceLabel: "Pastor Appreciation",
+  repeatsYearly: true,
   reveal: "sealed",
 };
 

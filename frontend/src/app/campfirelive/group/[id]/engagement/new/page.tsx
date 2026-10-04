@@ -245,6 +245,9 @@ export default function NewEngagementPage() {
   >("birthday");
   // Free-text name for a one-off celebration (e.g. "Retirement").
   const [onceLabel, setOnceLabel] = useState("");
+  // A named one-off occasion that should still come back yearly (same date) —
+  // e.g. Pastor Appreciation, Teacher Appreciation.
+  const [onceRepeats, setOnceRepeats] = useState(false);
   // "Nth weekday of a month" pattern (Mother's Day = 2nd Sun May, etc.)
   const [nthWeek, setNthWeek] = useState(2); // 1-4, or 5 = last
   const [nthDow, setNthDow] = useState(0); // 0=Sun … 6=Sat
@@ -602,6 +605,7 @@ export default function NewEngagementPage() {
     if (t.type === "birthday" && t.occasion) {
       setOccasion(t.occasion);
       if (t.onceLabel) setOnceLabel(t.onceLabel);
+      setOnceRepeats(!!t.repeatsYearly);
     }
     // Sign-up templates pre-fill the claimable slots + party type.
     if (t.type === "signup") {
@@ -793,7 +797,7 @@ export default function NewEngagementPage() {
 
     // Every card occasion repeats yearly EXCEPT a one-time card.
     const recurrenceRule: string | undefined = isBirthday
-      ? occasion === "once" || occasion === "wedding"
+      ? occasion === "wedding" || (occasion === "once" && !onceRepeats)
         ? undefined
         : "yearly"
       : recurrence === "yearly_nth"
@@ -1414,7 +1418,8 @@ export default function NewEngagementPage() {
     : occasion === "once"
     ? "🎉"
     : "🎂";
-  const cardRecurs = isCardType && occasion !== "once" && occasion !== "wedding";
+  const cardRecurs =
+    isCardType && occasion !== "wedding" && (occasion !== "once" || onceRepeats);
   const cardRecipientNoun =
     occasion === "birthday"
       ? "the birthday person"
@@ -2664,7 +2669,7 @@ export default function NewEngagementPage() {
               {selectedType === "birthday" && (
                 <div className="mt-2 space-y-2 rounded-xl border border-pink-200 bg-pink-50/50 p-3">
                   <p className="text-xs text-slate-600">
-                    {occasion === "once" || occasion === "wedding" ? (
+                    {occasion === "wedding" || (occasion === "once" && !onceRepeats) ? (
                       <>
                         A <span className="font-semibold">one-time</span> card — it
                         won&apos;t repeat.
@@ -2690,6 +2695,19 @@ export default function NewEngagementPage() {
                         className="flex-1 min-w-[160px] rounded-lg border border-slate-300 px-2 py-1 text-sm outline-none focus:border-orange-500"
                       />
                     </div>
+                  )}
+                  {/* …and whether that occasion comes back every year (Pastor / Teacher
+                      Appreciation), instead of being a true one-off (Retirement). */}
+                  {occasion === "once" && (
+                    <label className="flex min-h-10 cursor-pointer items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={onceRepeats}
+                        onChange={(e) => setOnceRepeats(e.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                      />
+                      🔁 Repeat every year on this date
+                    </label>
                   )}
 
                   {/* Holiday: show the floating date (preset summary or custom picker) */}
