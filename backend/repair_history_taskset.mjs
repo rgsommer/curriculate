@@ -5,10 +5,15 @@
  * Run from backend/:  node repair_history_taskset.mjs
  */
 
+import "dotenv/config";
 import mongoose from "mongoose";
 import { writeFileSync } from "fs";
 
-const MONGO_URI = "mongodb+srv://AtlasDB:NpGOIFdzwWLB8w4H@curriculate.7s8bdye.mongodb.net/?appName=curriculate";
+const MONGO_URI = process.env.MONGO_URI;
+if (!MONGO_URI) {
+  console.error("MONGO_URI is not set — export it or put it in backend/.env");
+  process.exit(1);
+}
 const TASKSET_ID = "6970245f36d2258ace30b32c";
 
 await mongoose.connect(MONGO_URI);
