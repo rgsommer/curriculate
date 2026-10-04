@@ -7,7 +7,7 @@ import { useAuth } from "@/lib/campfire/AuthProvider";
 import { useGroups } from "@/lib/campfire/hooks";
 import { supabase } from "@/lib/campfire/supabase";
 import { seasonalCardPrompt } from "@/lib/campfire/templates";
-import { FREE_MAX_GROUPS } from "@/lib/campfire/premium";
+import { QUALIFYING_RESPONSES, freeGroupAllowance } from "@/lib/campfire/premium";
 import PushPrompt from "./PushPrompt";
 import {
   ENGAGEMENT_TYPES,
@@ -48,10 +48,38 @@ export default function DashboardPage() {
   const [groupBlocked, setGroupBlocked] = useState(false);
   // Shortcut waiting for a group choice ("?template=…" / "?type=…"), when in several.
   const [startPath, setStartPath] = useState<string | null>(null);
-  // Free plan: anyone may host FREE_MAX_GROUPS group(s); more needs an active trial or
-  // Campfire Plus (see premium.ts). Members and guests are never gated on joining.
+  // Free plan: one hosted group, plus earned groups — a 2nd after 5 activities with 3+
+  // responses, a 3rd after 15 (see premium.ts). More needs a trial or Campfire Plus.
+  // Members and guests are never gated on joining.
   const hostedCount = groups.filter((g) => g.creator_id === user?.id).length;
-  const canCreateGroup = isTrialActive || hostedCount < FREE_MAX_GROUPS;
+  // Activities this person launched that got QUALIFYING_RESPONSES+ answers (null = loading).
+  const [qualifying, setQualifying] = useState<number | null>(null);
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    (async () => {
+      const { data: mine } = await supabase
+        .from("engagements")
+        .select("id")
+        .eq("creator_id", user.id)
+        .not("launched_at", "is", null);
+      const ids = (mine ?? []).map((e) => e.id as string);
+      if (ids.length === 0) {
+        if (!cancelled) setQualifying(0);
+        return;
+      }
+      // SECURITY DEFINER count — sealed-response RLS would under-report otherwise.
+      const { data } = await supabase.rpc("engagement_response_counts", { _eids: ids });
+      if (cancelled) return;
+      const rows = (data as { engagement_id: string; n: number }[]) ?? [];
+      setQualifying(rows.filter((r) => Number(r.n) >= QUALIFYING_RESPONSES).length);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+  const allowance = freeGroupAllowance(qualifying ?? 0);
+  const canCreateGroup = isTrialActive || hostedCount < allowance.allowed;
   // Deep link (?start=<template>): after this group is made, jump straight into a
   // new engagement with that template pre-loaded.
   const [startTemplate, setStartTemplate] = useState<string | null>(null);
@@ -903,11 +931,32 @@ export default function DashboardPage() {
       </div>
       {groupBlocked && (
         <div role="status" className="-mt-5 mb-8 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          The free plan includes {FREE_MAX_GROUPS === 1 ? "one group" : `${FREE_MAX_GROUPS} groups`} you
-          host, and you already host {hostedCount === 1 ? "one" : hostedCount}. Your groups keep
-          working, and you can still join any group with an invite.
+          You host {hostedCount === 1 ? "one group" : `${hostedCount} groups`} — the free plan
+          allows {allowance.allowed === 1 ? "one" : allowance.allowed} right now.{" "}
+          {allowance.nextAt !== null ? (
+            <>
+              <strong>Earn another:</strong> run activities your group answers — you&apos;re at{" "}
+              {qualifying ?? 0} of {allowance.nextAt} (each needs {QUALIFYING_RESPONSES}+ responses).
+            </>
+          ) : (
+            <>You&apos;ve earned the most free groups.</>
+          )}{" "}
+          Your groups keep working, and you can still join any group with an invite.
         </div>
       )}
+      {/* Progress toward the next earned group — free hosts only, once they host one. */}
+      {!groupBlocked &&
+        !isTrialActive &&
+        hostedCount > 0 &&
+        qualifying !== null &&
+        allowance.nextAt !== null && (
+          <p className="-mt-5 mb-8 text-sm text-slate-600">
+            🔥 {qualifying} of {allowance.nextAt} activities toward your next free group{" "}
+            <span className="text-slate-500">
+              (activities with {QUALIFYING_RESPONSES}+ responses count)
+            </span>
+          </p>
+        )}
 
       {/* Create Group Modal */}
       {showCreate && (

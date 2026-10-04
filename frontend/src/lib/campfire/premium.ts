@@ -14,6 +14,22 @@ import type { Profile } from "./types";
 export const FREE_MAX_GROUPS = 1; // main conversion lever — teachers have several classes
 export const FREE_MAX_MEMBERS_PER_GROUP = 40; // covers a full class; big teams convert
 
+// Earned groups: free hosts unlock extra groups by running activities people actually
+// answer. An activity "qualifies" once it's launched and has QUALIFYING_RESPONSES+
+// responses (so empty activities can't be farmed). Each tier adds one group; capped at
+// FREE_MAX_GROUPS + EARNED_GROUP_TIERS.length (3) — beyond that it's Campfire Plus.
+export const QUALIFYING_RESPONSES = 3;
+export const EARNED_GROUP_TIERS = [5, 15]; // qualifying activities for the 2nd, 3rd group
+
+export function freeGroupAllowance(qualifying: number): {
+  allowed: number; // groups a free host may host right now
+  nextAt: number | null; // qualifying activities needed for the next one (null = maxed)
+} {
+  const earned = EARNED_GROUP_TIERS.filter((t) => qualifying >= t).length;
+  const next = EARNED_GROUP_TIERS.find((t) => qualifying < t) ?? null;
+  return { allowed: FREE_MAX_GROUPS + earned, nextAt: next };
+}
+
 // Flip to true once Campfire Plus checkout actually works. Until then every upgrade
 // surface (trial banners, the Settings upgrade card) stays hidden — showing an
 // "Upgrade" button that leads nowhere breaks trust.
