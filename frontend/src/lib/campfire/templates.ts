@@ -163,6 +163,34 @@ export function cardNoteFor(
   return CARD_NOTES.general;
 }
 
+// Wording for "invite others to start their OWN card" shares (a ?start=<template>
+// link), per card template — who it's for and what they'd name their group.
+export function startShareCopy(templateId: string): {
+  heading: string;
+  forWhom: string; // "your pastor"
+  groupExample: string; // "your church or small group"
+  emoji: string;
+} {
+  const m: Record<string, { what: string; forWhom: string; group: string; emoji: string }> = {
+    "pastor-appreciation": { what: "a Pastor Appreciation card for your church", forWhom: "your pastor", group: "your church or small group", emoji: "🙏" },
+    "teacher-appreciation": { what: "a Teacher Appreciation card for your class", forWhom: "your teacher", group: "your class", emoji: "🍎" },
+    "admin-appreciation": { what: "a thank-you card for your school office staff", forWhom: "your office staff", group: "your school or staff room", emoji: "💐" },
+    "school-staff-appreciation": { what: "a thank-you card for your school staff", forWhom: "them", group: "your class or school", emoji: "🙌" },
+    "volunteer-appreciation": { what: "a thank-you card for a volunteer", forWhom: "your volunteer", group: "your team, club or church", emoji: "🤝" },
+    "coach-gift": { what: "a thank-you card for your coach", forWhom: "your coach", group: "your team", emoji: "🏆" },
+    "get-well-card": { what: "a get-well card", forWhom: "them", group: "your family or friends", emoji: "🌻" },
+    "farewell-card": { what: "a farewell card", forWhom: "them", group: "your workplace or friends", emoji: "👋" },
+    "christmas-card": { what: "a Christmas card", forWhom: "them", group: "your family or friends", emoji: "🎄" },
+  };
+  const c = m[templateId] ?? { what: "a group thank-you card", forWhom: "them", group: "your group", emoji: "💌" };
+  return {
+    heading: `Start ${c.what} ${c.emoji}`,
+    forWhom: c.forWhom,
+    groupExample: c.group,
+    emoji: c.emoji,
+  };
+}
+
 // "Pass it on" — the card to suggest right after someone signs or receives one. In a
 // card season (Teacher Appreciation Week, year-end, December) it's that season's card,
 // with stronger copy; otherwise it matches what they just signed (teacher → teacher
@@ -172,16 +200,22 @@ export function passItOnCard(
   title: string,
   now: Date = new Date()
 ): { templateId: string; emoji: string; seasonLine: string | null } {
+  // Match the card they just signed first — a teacher card suggests a teacher card
+  // even in Pastor Appreciation season. The season line still shows when the matched
+  // card IS the seasonal one; unmatched cards fall back to the season's card.
   const season = seasonalCardPrompt(now);
-  if (season) return { templateId: season.templateId, emoji: season.emoji, seasonLine: season.headline };
-  if (/\bcoach/i.test(title)) return { templateId: "coach-gift", emoji: "🏆", seasonLine: null };
-  if (/pastor|clergy|minister|reverend/i.test(title))
-    return { templateId: "pastor-appreciation", emoji: "🙏", seasonLine: null };
-  if (/secretar|administrative|office staff/i.test(title))
-    return { templateId: "admin-appreciation", emoji: "💐", seasonLine: null };
+  const pick = (templateId: string, emoji: string) => ({
+    templateId,
+    emoji,
+    seasonLine: season && season.templateId === templateId ? season.headline : null,
+  });
+  if (/\bcoach/i.test(title)) return pick("coach-gift", "🏆");
+  if (/pastor|clergy|minister|reverend/i.test(title)) return pick("pastor-appreciation", "🙏");
+  if (/secretar|administrative|office staff/i.test(title)) return pick("admin-appreciation", "💐");
   if (/\bteach|\bclass\b|\bmr\.?\s|\bmrs\.?\s|\bms\.?\s|\bmiss\s|\bmadame?\b|\bsir\b/i.test(title))
-    return { templateId: "teacher-appreciation", emoji: "🍎", seasonLine: null };
-  return { templateId: "thank-you-card", emoji: "💌", seasonLine: null };
+    return pick("teacher-appreciation", "🍎");
+  if (season) return { templateId: season.templateId, emoji: season.emoji, seasonLine: season.headline };
+  return pick("thank-you-card", "💌");
 }
 
 // Teacher Appreciation card — listed in both the Classroom pack (where teachers look)

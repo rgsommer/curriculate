@@ -20,7 +20,7 @@ import { hasProfanity } from "@/lib/campfire/profanity";
 import { formatWhen } from "@/lib/campfire/dates";
 import { cfAlert, cfConfirm, cfPrompt } from "@/lib/campfire/dialogs";
 import { CF_PRIMARY, CF_PRIMARY_SM, CF_SECONDARY, CF_SECONDARY_SM, chipClass } from "@/lib/campfire/ui";
-import { passItOnCard } from "@/lib/campfire/templates";
+import { passItOnCard, startShareCopy } from "@/lib/campfire/templates";
 import MoveActivity from "./MoveActivity";
 import { copyRich, inviteHtml } from "@/lib/campfire/richCopy";
 import { campfireAppLinksText } from "@/lib/campfire/appLinks";
@@ -633,6 +633,8 @@ export default function EngagementDetailPage() {
   const [extending, setExtending] = useState(false);
   // "Reveal now" is irreversible and emails everyone — ask once before doing it.
   const [confirmReveal, setConfirmReveal] = useState(false);
+  // "Share with family & friends" (invite others to start their OWN card) feedback.
+  const [sharedStart, setSharedStart] = useState(false);
   // Email / push links land on #vote — scroll to the voting banner once it renders.
   const scrolledToVote = useRef(false);
   useEffect(() => {
@@ -9059,17 +9061,54 @@ export default function EngagementDetailPage() {
           the right template pre-filled. Group members start it in this group; guests
           (students who came in on a card link) and the recipient start their own group
           via ?start= — the group page itself would be a dead end for them. */}
-      {isBirthdayCard && (hasResponded || isRevealed) && (() => {
+      {isBirthdayCard && (hasResponded || isRevealed || isCreator) && (() => {
         const pass = passItOnCard(engagement.title);
         const inThisGroup = !isGuest && !isRecipient;
         const href = inThisGroup
           ? `/campfirelive/group/${groupId}/engagement/new?template=${pass.templateId}`
           : `/campfirelive?start=${pass.templateId}`;
+        // Share a "start your OWN card" invite — for family/friends in other churches,
+        // schools or teams. Their link creates their own group with this template.
+        const shareStart = async () => {
+          const origin =
+            typeof window !== "undefined" ? window.location.origin : "https://www.curriculate.net";
+          const link = `${origin}/campfirelive?start=${pass.templateId}`;
+          const c = startShareCopy(pass.templateId);
+          const steps = [
+            "1. Tap the link and sign in — Google, Apple, email, or just your name.",
+            `2. Name your group (e.g. ${c.groupExample}).`,
+            `3. Add ${c.forWhom === "them" ? "their" : `${c.forWhom}'s`} name, then share the card's link so everyone can sign.`,
+          ];
+          const lead =
+            "I just did one on Campfire — everyone signs a surprise thank-you card from one link, and it opens on the day. Free, about 2 minutes.";
+          const safe = "No money or gift cards involved — just notes of thanks.";
+          const text = `${c.heading}\n\n${lead}\n\n${steps.join("\n")}\n\n👉 ${link}\n\n🔒 ${safe}\n\n${campfireAppLinksText()}`;
+          const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
+          if (canShare && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
+            try {
+              await navigator.share({ title: c.heading, text });
+              return;
+            } catch (err) {
+              if ((err as Error)?.name === "AbortError") return;
+            }
+          }
+          const html = inviteHtml({
+            heading: c.heading,
+            paragraphs: [lead, ...steps],
+            ctaUrl: link,
+            ctaLabel: `${c.emoji} Start a card${c.forWhom === "them" ? "" : ` for ${c.forWhom}`}`,
+            reassurance: safe,
+          });
+          try {
+            await copyRich(text, html);
+            setSharedStart(true);
+            setTimeout(() => setSharedStart(false), 2500);
+          } catch {
+            cfAlert(text);
+          }
+        };
         return (
-          <Link
-            href={href}
-            className="mb-6 block rounded-2xl border-2 border-rose-200 bg-gradient-to-br from-rose-50 to-orange-50 p-5 text-center shadow-sm transition hover:border-rose-300"
-          >
+          <div className="mb-6 rounded-2xl border-2 border-rose-200 bg-gradient-to-br from-rose-50 to-orange-50 p-5 text-center shadow-sm">
             <div className="mb-1 text-3xl">{isRecipient ? "💛" : pass.emoji}</div>
             <div className="text-lg font-extrabold text-slate-900">
               {isRecipient
@@ -9082,12 +9121,17 @@ export default function EngagementDetailPage() {
             <p className="mt-1 text-sm text-slate-600">
               {isRecipient
                 ? "You know how this feels now. Start one for someone who's earned it — it takes 30 seconds, and everyone signs from one link."
-                : "Start a card for another teacher, coach or friend in 30 seconds — we'll fill it in, you just add their name and share the link."}
+                : "Start a card for another teacher, coach or friend in 30 seconds — or invite family and friends to start one in their own church, school or team."}
             </p>
-            <span className={`${CF_PRIMARY} mt-3`}>
-              {isRecipient ? "💌 Start a card" : "💌 Start a card for someone"}
-            </span>
-          </Link>
+            <div className="mt-3 flex flex-wrap justify-center gap-2">
+              <Link href={href} className={CF_PRIMARY}>
+                {isRecipient ? "💌 Start a card" : "💌 Start a card for someone"}
+              </Link>
+              <button type="button" onClick={shareStart} className={CF_SECONDARY}>
+                {sharedStart ? "✓ Copied — paste it anywhere" : "📤 Share with family & friends"}
+              </button>
+            </div>
+          </div>
         );
       })()}
 
