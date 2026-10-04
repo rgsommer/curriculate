@@ -151,6 +151,9 @@ function Shell({ children }: { children: React.ReactNode }) {
       // Deep link from a social post: pre-load a template once a group exists.
       const start = qs.get("start");
       if (start) localStorage.setItem("campfire_start", start.slice(0, 40));
+      // …and which group to put it in (a dormant-group nudge names the group).
+      const startGroup = qs.get("group");
+      if (start && startGroup) localStorage.setItem("campfire_start_group", startGroup.slice(0, 40));
     } catch {
       /* ignore */
     }

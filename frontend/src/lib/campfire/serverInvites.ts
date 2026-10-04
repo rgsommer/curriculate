@@ -1345,3 +1345,36 @@ export async function notifyHostOfAward(
     console.error("notifyHostOfAward (operator) failed:", e);
   }
 }
+
+// Dormant-group nudge: a member (not the host) of a group that's gone quiet is asked to
+// start one specific, seasonal thing, with a one-tap link. Warm, short, says why they
+// got it, and carries its own "stop these" link on top of the standard unsubscribe.
+export function dormantNudgeEmail(opts: {
+  firstName: string | null;
+  groupName: string;
+  emoji: string;
+  idea: string; // "a thank-you card for your pastor"
+  why: string;
+  cta: string;
+  url: string;
+  stopUrl: string;
+}) {
+  const { firstName, groupName, emoji, idea, why, cta, url, stopUrl } = opts;
+  const hi = firstName ? `Hi ${firstName},` : "Hi,";
+  const subject = `${emoji} An idea for ${groupName}`;
+  const lead = `${groupName} has been quiet lately — want to get something going? You don't have to be the host: anyone in the group can start ${idea}, and it takes about a minute.`;
+  const who = `You're one of a few people in ${groupName} we're asking this month.`;
+  const stop = "Don't want suggestions like this?";
+  const text = `${hi}\n\n${lead}\n\n${emoji} ${why}\n\n${cta}: ${url}\n\n${who}\n${stop} Stop them here: ${stopUrl}`;
+  const html = `
+<div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
+  <div style="font-size:40px;">${emoji}</div>
+  <p style="margin:8px 0 6px;">${escapeHtml(hi)}</p>
+  <p style="color:#334155; margin:0 0 12px;">${escapeHtml(lead)}</p>
+  <p style="margin:0 0 4px; padding:10px 12px; background:#fff7ed; border:1px solid #fed7aa; border-radius:12px; color:#9a3412;">${escapeHtml(why)}</p>
+  ${emailButton(url, escapeHtml(cta))}
+  <p style="color:#64748b; font-size:13px; margin:0 0 6px; text-align:center;">${escapeHtml(who)}</p>
+  <p style="color:#94a3b8; font-size:12px; margin:0; text-align:center;">${escapeHtml(stop)} <a href="${stopUrl}" style="color:#94a3b8; text-decoration:underline;">Stop them</a></p>
+</div>`.trim();
+  return { subject, text, html };
+}

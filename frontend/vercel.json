@@ -20,6 +20,10 @@
     {
       "path": "/api/campfire/cron/referral-promo",
       "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/campfire/cron/dormant-groups",
+      "schedule": "0 16 * * *"
     }
   ]
 }

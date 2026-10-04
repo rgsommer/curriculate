@@ -84,12 +84,15 @@ export default function DashboardPage() {
   // Deep link (?start=<template>): after this group is made, jump straight into a
   // new engagement with that template pre-loaded.
   const [startTemplate, setStartTemplate] = useState<string | null>(null);
+  // ?group=<id> alongside ?start= (dormant-group nudges): put it in that group.
+  const [startGroup, setStartGroup] = useState<string | null>(null);
   useEffect(() => {
     try {
       const qs = new URLSearchParams(window.location.search);
       const start = qs.get("start") || localStorage.getItem("campfire_start");
       if (start) {
         setStartTemplate(start);
+        setStartGroup(qs.get("group") || localStorage.getItem("campfire_start_group"));
         setShowCreate(true);
       }
     } catch {
@@ -102,10 +105,21 @@ export default function DashboardPage() {
   const { create: createEngagement } = useCreateEngagement();
   const [quickOff, setQuickOff] = useState(false);
   const quick = startTemplate && !quickOff ? QUICK_STARTS[startTemplate] ?? null : null;
-  const hostedGroups = groups.filter((g) => g.creator_id === user?.id);
+  // Groups the quick card can go in: ones you host, plus the group a nudge named
+  // (any member can start an activity in their group).
+  const namedGroup = startGroup ? groups.find((g) => g.id === startGroup) ?? null : null;
+  const hostedGroups = [
+    ...(namedGroup ? [namedGroup] : []),
+    ...groups.filter((g) => g.creator_id === user?.id && g.id !== namedGroup?.id),
+  ];
   const [quickGroupId, setQuickGroupId] = useState<string | null>(null);
   const quickTarget =
-    quickGroupId ?? (canCreateGroup || hostedGroups.length === 0 ? "new" : hostedGroups[0].id);
+    quickGroupId ??
+    (namedGroup
+      ? namedGroup.id
+      : canCreateGroup || hostedGroups.length === 0
+      ? "new"
+      : hostedGroups[0].id);
   const [quickGroupName, setQuickGroupName] = useState("");
   const [quickHonoree, setQuickHonoree] = useState("");
   const [quickEmail, setQuickEmail] = useState("");
@@ -198,6 +212,7 @@ export default function DashboardPage() {
     }
     try {
       localStorage.removeItem("campfire_start");
+      localStorage.removeItem("campfire_start_group");
     } catch {
       /* ignore */
     }
@@ -696,6 +711,7 @@ export default function DashboardPage() {
       // Deep link: drop straight into the pre-loaded thank-you card.
       try {
         localStorage.removeItem("campfire_start");
+        localStorage.removeItem("campfire_start_group");
       } catch {
         /* ignore */
       }

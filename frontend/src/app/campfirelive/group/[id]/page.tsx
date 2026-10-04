@@ -375,6 +375,35 @@ See you around the campfire! 🏕️`
     await refresh();
   };
 
+  // "Suggest ideas when the group goes quiet" (cron/dormant-groups) — on by default.
+  const [nudgesOn, setNudgesOn] = useState<boolean | null>(null);
+  const amAdmin = members.find((m) => m.user_id === user?.id)?.role === "admin";
+  useEffect(() => {
+    if (!amAdmin || !session?.access_token || !groupId) return;
+    let cancelled = false;
+    fetch(`/api/campfire/group/nudges?groupId=${encodeURIComponent(groupId)}`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled && d && typeof d.on === "boolean") setNudgesOn(d.on);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [amAdmin, session?.access_token, groupId]);
+  const setNudges = async (on: boolean) => {
+    if (!session?.access_token) return;
+    setNudgesOn(on); // optimistic
+    const r = await fetch("/api/campfire/group/nudges", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify({ groupId, on }),
+    }).catch(() => null);
+    if (!r?.ok) setNudgesOn(!on);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -1640,6 +1669,24 @@ See you around the campfire! 🏕️`
                         activities, even if the member digest above is off.
                       </span>
                     </label>
+                    {nudgesOn !== null && (
+                      <label className="flex items-start gap-2 cursor-pointer rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+                        <input
+                          type="checkbox"
+                          checked={nudgesOn}
+                          onChange={(e) => setNudges(e.target.checked)}
+                          className="mt-0.5 h-4 w-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                        />
+                        <span className="text-xs text-slate-600">
+                          <span className="font-medium text-slate-700">
+                            💡 Suggest ideas when it&apos;s quiet
+                          </span>{" "}
+                          — if nothing&apos;s happened for a month, Campfire invites a few
+                          members to start something (one seasonal idea, at most monthly).
+                          You don&apos;t have to carry the group alone.
+                        </span>
+                      </label>
+                    )}
           </div>
         </div>
       )}
