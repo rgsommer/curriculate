@@ -38,6 +38,9 @@ export function inviteHtml(opts: {
   ctaLabel: string;
   ctaHint?: string | null;
   footnote?: string | null;
+  // Trust line shown in a soft green box under the button (e.g. "no money or gift
+  // cards — just your name") — matters for church / school audiences wary of scams.
+  reassurance?: string | null;
   extraHtml?: string; // trusted, static HTML (e.g. the "Did you know?" teaser)
 }): string {
   const p = (t: string, style = "") =>
@@ -54,6 +57,7 @@ ${opts.subheading ? `<p style="margin:0 0 12px;color:#64748b;">${esc(opts.subhea
 ${(opts.paragraphs ?? []).filter((x): x is string => !!x && !!x.trim()).map((t) => p(t)).join("\n")}
 <p style="margin:16px 0 6px;"><a href="${opts.ctaUrl}" style="display:inline-block;background-color:#f97316;background-image:linear-gradient(to right,#f97316,#f43f5e);color:#ffffff;font-weight:700;text-decoration:none;padding:12px 24px;border-radius:9999px;">${esc(opts.ctaLabel)}</a></p>
 ${opts.ctaHint ? `<p style="margin:0 0 12px;font-size:13px;color:#64748b;">${esc(opts.ctaHint)}</p>` : ""}
+${opts.reassurance ? `<p style="margin:4px 0 12px;padding:10px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;font-size:14px;color:#166534;">🔒 ${esc(opts.reassurance)}</p>` : ""}
 ${opts.footnote ? `<p style="margin:0 0 12px;font-size:13px;color:#64748b;">${esc(opts.footnote)}</p>` : ""}
 <p style="margin:14px 0 0;font-size:13px;color:#64748b;">📲 Prefer the app? ${apps} <span style="color:#94a3b8;">(optional — the link works in any browser)</span></p>
 ${opts.extraHtml ?? ""}

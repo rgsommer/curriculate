@@ -1764,11 +1764,28 @@ export default function EngagementDetailPage() {
         : opensInFuture
         ? `${openLine}.`
         : "";
+    // Cards go to people who may be wary of scams (church, school), so they carry a
+    // plain trust line + who reads the notes, and skip the "did you know?" marketing.
+    const isCard = engagement.type === "birthday";
+    // Never leak an email address into the message — use a name or "the recipient".
+    const readerName =
+      recipientLabel && !recipientLabel.includes("@") ? recipientLabel : "the recipient";
+    const reassurance = isCard
+      ? `${
+          engagement.gift_enabled
+            ? "No account or password needed — and chipping in to the group gift is completely optional."
+            : "No account, no password, and no money or gift cards — nothing is asked of you except a note."
+        } Your note is private: only ${readerName} reads it, when the card opens. Completely optional.`
+      : null;
     // A "did you know?" teaser hinting at other Campfire features (shared with emails).
-    const teaser = campfireTeaserText();
+    const teaser = isCard ? "" : campfireTeaserText();
     const msg = `You're invited to "${title}" — ${what} on Campfire 🔥${
       blurb ? `\n\n${blurb}` : ""
-    }${dateLine ? `\n\n${dateLine}` : ""}\n\n👉 Tap to add yours — no app or account needed, just your name:\n${url}\n\n(Already on Campfire? Use code ${groupInfo.invite_code}.)\n\n${campfireAppLinksText()}\n\n${teaser}`;
+    }${dateLine ? `\n\n${dateLine}` : ""}\n\n👉 Tap to add yours — no app or account needed, just your name:\n${url}${
+      reassurance ? `\n\n🔒 ${reassurance}` : ""
+    }\n\n(Already on Campfire? Use code ${groupInfo.invite_code}.)\n\n${campfireAppLinksText()}${
+      teaser ? `\n\n${teaser}` : ""
+    }`;
     // Same invite, formatted — for pasting into email (a real button, linked apps).
     const html = inviteHtml({
       heading: `You're invited to "${title}"`,
@@ -1777,8 +1794,9 @@ export default function EngagementDetailPage() {
       ctaUrl: url,
       ctaLabel: engagement.type === "birthday" ? "✍️ Sign the card" : "✍️ Add yours",
       ctaHint: "No app or account needed — just your name.",
+      reassurance,
       footnote: `Already on Campfire? Use code ${groupInfo.invite_code}.`,
-      extraHtml: campfireTeaserHtml(),
+      extraHtml: isCard ? "" : campfireTeaserHtml(),
     });
     try {
       await copyRich(msg, html);
