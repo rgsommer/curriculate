@@ -530,17 +530,20 @@ export function resolveTitle(
 
 // ── "Did you know?" invite teaser — hints at other Campfire features. Shared by
 // the copy-invite text AND the invite emails so it appears on every invite. ──
+// What else a group can do — only things that work for everyone today. No money claims
+// (pots, payouts, gift cards): this text goes into copied invites and first-time invite
+// emails, including from the Android build, which presents no financial features.
 export const CAMPFIRE_TEASER_LINES = [
-  "Collect a group gift card together",
-  "Run a “Best Catch” competition (or any contest) with a prize for the winner",
-  "Send annual birthday cards everyone in your group signs",
-  "Hold a raffle or a read-a-thon fundraiser",
+  "Sign surprise cards — for a teacher, a coach, or a birthday",
+  "Run a “Best Catch” photo contest (or any challenge) and vote on the winner",
+  "Do quick polls, check-ins, and games like Two Truths & a Lie",
+  "Send yearly birthday cards everyone signs",
 ];
 export const CAMPFIRE_TEASER_FOOTER =
-  "Campfire handles the pot and pays the winner automatically.";
+  "Answers stay hidden until everyone's in — then they all open at once.";
 export function campfireTeaserText(): string {
   return [
-    "💡 Did you know? With Campfire you can also…",
+    "💡 Did you know? With Campfire your group can also…",
     ...CAMPFIRE_TEASER_LINES.map((l) => "• " + l),
     CAMPFIRE_TEASER_FOOTER,
   ].join("\n");
@@ -548,11 +551,11 @@ export function campfireTeaserText(): string {
 // Static, trusted content (no user input) → safe to embed as HTML directly.
 export function campfireTeaserHtml(): string {
   return `<div style="margin-top:20px;padding-top:14px;border-top:1px solid #e5e7eb;color:#475569;font-size:14px;line-height:1.5;">
-  <p style="margin:0 0 6px;"><strong>💡 Did you know?</strong> With Campfire you can also:</p>
+  <p style="margin:0 0 6px;"><strong>💡 Did you know?</strong> With Campfire your group can also:</p>
   <ul style="margin:0 0 8px;padding-left:18px;">${CAMPFIRE_TEASER_LINES.map(
-    (l) => `<li style="margin-bottom:4px;">${l}</li>`
+    (l) => `<li style="margin-bottom:4px;">${l.replace(/&/g, "&amp;")}</li>`
   ).join("")}</ul>
-  <p style="margin:0;">${CAMPFIRE_TEASER_FOOTER}</p>
+  <p style="margin:0;">${CAMPFIRE_TEASER_FOOTER.replace(/&/g, "&amp;")}</p>
 </div>`;
 }
 
