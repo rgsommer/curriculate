@@ -21,6 +21,7 @@ import { formatWhen } from "@/lib/campfire/dates";
 import { cfAlert, cfConfirm, cfPrompt } from "@/lib/campfire/dialogs";
 import { CF_PRIMARY, CF_PRIMARY_SM, CF_SECONDARY, CF_SECONDARY_SM, chipClass } from "@/lib/campfire/ui";
 import { passItOnCard } from "@/lib/campfire/templates";
+import { campfireAppLinksText } from "@/lib/campfire/appLinks";
 
 // Shrink a phone photo before upload: longest side ≤ 2000px, JPEG. Keeps a handwritten
 // note perfectly readable while cutting a 4 MB photo to a few hundred KB (school Wi-Fi).
@@ -1765,7 +1766,7 @@ export default function EngagementDetailPage() {
     const teaser = campfireTeaserText();
     const msg = `You're invited to "${title}" — ${what} on Campfire 🔥${
       blurb ? `\n\n${blurb}` : ""
-    }${dateLine ? `\n\n${dateLine}` : ""}\n\n👉 Tap to add yours — no app or account needed, just your name:\n${url}\n\n(Already on Campfire? Use code ${groupInfo.invite_code}.)\n\n${teaser}`;
+    }${dateLine ? `\n\n${dateLine}` : ""}\n\n👉 Tap to add yours — no app or account needed, just your name:\n${url}\n\n(Already on Campfire? Use code ${groupInfo.invite_code}.)\n\n${campfireAppLinksText()}\n\n${teaser}`;
     try {
       await navigator.clipboard.writeText(msg);
       setSharedEng(true);

@@ -20,3 +20,13 @@ export const CAMPFIRE_ANDROID_LIVE =
 export function campfireGetAppUrl(base: string): string {
   return `${base.replace(/\/+$/, "")}/campfire/get`;
 }
+
+// Plain-text app-store block for invites people copy & paste (texts, WhatsApp, Edsby).
+// Worded as optional — the join link works in any browser, no install needed.
+export function campfireAppLinksText(): string {
+  return [
+    "📲 Prefer the app? (optional — the link works in any browser)",
+    `iPhone: ${CAMPFIRE_IOS_URL}`,
+    ...(CAMPFIRE_ANDROID_LIVE ? [`Android: ${CAMPFIRE_ANDROID_URL}`] : []),
+  ].join("\n");
+}

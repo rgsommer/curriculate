@@ -10,6 +10,7 @@ import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, formatMoney, raffleOf, 
 import type { MonthlyNth } from "@/lib/campfire/hooks";
 import { parseInviteList } from "@/lib/campfire/parseInvites";
 import { formatWhen } from "@/lib/campfire/dates";
+import { campfireAppLinksText } from "@/lib/campfire/appLinks";
 import { cfAlert, cfConfirm } from "@/lib/campfire/dialogs";
 import { CF_PRIMARY, CF_PRIMARY_SM, CF_SECONDARY, CF_SECONDARY_SM, chipClass } from "@/lib/campfire/ui";
 
@@ -171,10 +172,12 @@ Campfire is where our group plays together — polls, challenges, questions — 
 
 How to jump in:
 1. Tap the link above
-2. Choose "Continue with Google" (takes about 5 seconds)
+2. Type your name to join as a guest — or "Continue with Google" to use it on any device
 3. You're in! Answer the first question, then wait for the big reveal 🔥
 
 (Already signed in? Just enter invite code ${group.invite_code}.)
+
+${campfireAppLinksText()}
 
 See you around the campfire! 🏕️`
     : "";
