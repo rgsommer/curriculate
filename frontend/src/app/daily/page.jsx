@@ -16,7 +16,7 @@
 // picture and any image the sheet puts in the feature cell E1).
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { EMPTY_SOURCES, churchSeason, dueAndComingUp, prayerForClass, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, evaluateNotice, firstClassStart, formalDiscussion, testWeekday, birthdaysToday, birthdaysForSection, joinNames, specialDays, calendarEvents, columnName, firstVerse, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
+import { EMPTY_SOURCES, churchSeason, dueAndComingUp, headphonesOn, prayerForClass, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, evaluateNotice, firstClassStart, formalDiscussion, testWeekday, birthdaysToday, birthdaysForSection, joinNames, specialDays, calendarEvents, columnName, firstVerse, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
 
 const CLASS_LABELS = ["7A", "7B", "7C", "8A", "8B", "8C"];
 // The Setup slot table's own columns, for ?debug=1.
@@ -283,6 +283,24 @@ function Chips({ period, left, setup, status, writing }) {
     ? undefined
     : { elapsed: period.elapsed, seatMin: setup.seatMin, laterMin: setup.graceMin });
   const style = statusStyle(said ? said.code : raw);
+  // The pass is not usable during the lesson at the top of the period — nobody
+  // walks out while the teaching is going on — nor in the last few minutes. The
+  // opening window is the same one the sheet's own status rule uses to force the
+  // pass off (Setup's grace minutes), so both move together. While it is shut at
+  // the top the chip says when it opens, which is what a student wants to know.
+  const opensIn = Math.max(0, Math.ceil(setup.graceMin - period.elapsed));
+  const washroomOn = opensIn <= 0 && left > setup.washroomBefore;
+  // Headphones ride along with the rewards rather than taking a chip of their
+  // own: a class holding the free pass or better may wear them while the room is
+  // working on its own, and the privilege code says nothing about it. The class's
+  // own material decides — not its reminders or its homework, which both point
+  // past this period. One 🎧 to a screen: after "Washroom" while the pass is open
+  // and that chip is naming it, and after the badge's words otherwise.
+  const headphones = headphonesOn(
+    raw,
+    [period.q, period.today, ...(period.plan || []), ...(period.assign || [])].join("\n")
+  );
+  const hp = <i className="hp" title="Headphones allowed while the room is working quietly">🎧</i>;
   const badge = said && said.words ? (
     <span
       key="badge"
@@ -292,17 +310,11 @@ function Chips({ period, left, setup, status, writing }) {
     >
       {said.letter ? <i className="grp">{said.letter}</i> : null}
       {said.words}
+      {headphones && !washroomOn ? hp : null}
     </span>
   ) : null;
   if (period.duty) return badge ? <div className="points">{badge}</div> : null;
   const items = [badge];
-  // The pass is not usable during the lesson at the top of the period — nobody
-  // walks out while the teaching is going on — nor in the last few minutes. The
-  // opening window is the same one the sheet's own status rule uses to force the
-  // pass off (Setup's grace minutes), so both move together. While it is shut at
-  // the top the chip says when it opens, which is what a student wants to know.
-  const opensIn = Math.max(0, Math.ceil(setup.graceMin - period.elapsed));
-  const washroomOn = opensIn <= 0 && left > setup.washroomBefore;
   items.push(
     <span
       key="w"
@@ -310,6 +322,7 @@ function Chips({ period, left, setup, status, writing }) {
       title={opensIn > 0 ? `The pass opens ${setup.graceMin} minutes into the class` : ""}
     >
       {opensIn > 0 ? `Washroom in ${opensIn} min` : "Washroom"}
+      {headphones && washroomOn ? hp : null}
     </span>
   );
   if (st && st.on && st.on[2] && !st.grace && period.elapsed <= setup.graceMin + setup.snacksB2Min) {

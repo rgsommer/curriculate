@@ -180,6 +180,27 @@ The bubble says **what the benefit is**, not the sheet's shorthand
 | all three | All 3 | the whole class, from the first minute — it is the class's own reward | the "both" column, orange |
 | trailing ` 4` | `+2` | with whatever else shows | the bonus of two for being perfect the whole class |
 
+### Headphones
+
+A class holding the **free pass (Benefit 2) or better** may wear headphones
+while the room is working on its own. Nothing in the privilege code says so and
+it does not deserve a chip of its own, so the board marks it where the rewards
+are already named: a small 🎧 after **Washroom** while the pass is open, and
+after the badge's words when it is not — a duty period, or the last minutes of a
+class once the pass has shut.
+
+It shows only where the class's **own material** says the room is working
+quietly (`quietWork` in `parse.ts`):
+
+- "Quiet Work Time", quiet / silent / independent work, reading or study
+- "Work on …", "working on …"
+- a work time or a work period
+
+The reminders cell and the homework are left out: both point past this period,
+and headphones are about the minutes in the room. The entitlement is read from
+the sheet's own status code as it stands at that minute, so during the grace
+minutes — when the sheet itself withholds the pass — there is no 🎧 either.
+
 ### The prayer before class
 
 `Poems` column Q, one prayer to a row from **Q2** (row 1 is the heading). For the
