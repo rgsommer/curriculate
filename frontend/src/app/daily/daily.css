@@ -544,6 +544,38 @@ a.subj.deck:hover { text-decoration-color: currentColor; }
 /* Picture above, video below, both filling the column. */
 .panel.mediaside { justify-content: center; gap: 1.6vh; }
 .panel.mediaside .picture { flex: 0 1 auto; min-height: 0; }
+/* The lesson's own picture and video, at the foot of the half for the whole
+   class — the bottom right quadrant of the projector. `margin-top: auto` is what
+   holds it down there however few blocks the panel carries above it. */
+.panel > .mediarail {
+  /* The one thing on the half that may shrink: the blocks above it hold their
+     size and clip when they are squeezed, while a picture only gets smaller. It
+     takes what is left under them, up to about a quadrant of the screen. */
+  flex: 1 1 auto;
+  margin-top: auto;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 1vw;
+  max-height: 34vh;
+  /* It may be squeezed to nothing on a crowded half rather than spilling off
+     the bottom of the screen: the blocks above hold their size, so this is the
+     one thing that can give. */
+  min-height: 0;
+}
+/* A video with no picture beside it is a poster in the corner, not a quadrant —
+   the header carries a tile for it as well. */
+.panel > .mediarail.videoonly { max-height: 20vh; }
+.panel > .mediarail .picture { flex: 1 1 auto; min-width: 0; height: 100%; }
+.panel > .mediarail .picture .capline { font-size: clamp(11px, 1.6vh, 16px); }
+.panel > .mediarail .vid {
+  align-self: flex-end;
+  flex: 0 0 auto;
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+  aspect-ratio: 16 / 9;
+}
 /* :not(.big) matters — this rule is more specific than .vid.big, so without it
    the panel's width and aspect ratio follow the tile into the expanded state
    and the overlay opens six pixels tall. */

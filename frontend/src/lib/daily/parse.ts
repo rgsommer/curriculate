@@ -65,7 +65,7 @@ export type Setup = {
   memoryMin: number; // how long the memory verse and the hymn hold the panel in CE
   verseMin: number; // how long the verse of the day holds the right-hand half before the work takes it
   prayerMin: number; // how long the Prayercast video holds the half after O Canada
-  mediaMin: number; // how long the lesson's own picture and video hold the half, after the verse
+  mediaMin: number; // kept for sheets that carry the row; the lesson's picture and video now hold the foot of the half for the whole class
   runOverMin: number; // how long a message window stays up past its time, for a class that runs over
   classPrayerMin: number; // how long the prayer before class leads the lesson column
   picSeconds: number;

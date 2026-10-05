@@ -1619,17 +1619,15 @@ export default function DailyPage() {
     })();
     const from = memClass ? setup.memoryMin : 0;
     const until = from + setup.verseMin;
-    const mediaEnd = until + setup.mediaMin;
     const media = hasPic || cur.video;
     const w = workOf(cur);
     const showing = cur.elapsed < from ? "the memory work"
       : cur.elapsed < until ? "the verse of the day"
-        : cur.elapsed < mediaEnd && media ? `the lesson's own ${hasPic && cur.video ? "picture and video" : hasPic ? "picture" : "video"}`
-          : w ? w.head.toLowerCase() : "the verse of the day (nothing set to turn over to)";
+        : w ? w.head.toLowerCase() : "the verse of the day (nothing set to turn over to)";
     return [
       memClass ? `memory work: ${setup.memoryMin} min` : "not the CE period",
       `verse: ${fmt(Math.round(cur.start + from))} to ${fmt(Math.round(cur.start + until))}`,
-      `lesson media: ${media ? `${fmt(Math.round(cur.start + until))} to ${fmt(Math.round(cur.start + mediaEnd))}` : "nothing in columns I to K for this row"}`
+      `lesson media: ${media ? "in the bottom corner of the half for the whole class" : "nothing in columns I to K for this row"}`
         + `  ·  picture ${cur.image ? (hasPic ? "found" : "found but it does not load") : "empty"}`
         + `, video ${cur.video ? "found" : "empty"}`,
       `work: ${w ? `${w.head} — ${w.items.join("; ").slice(0, 60)}` : "nothing set (no assignment, no homework on the Lessons row)"}`,
@@ -1728,7 +1726,7 @@ export default function DailyPage() {
                 return [1, 2, 3].map((r) => `${letter}${r}: ${(((sources.poemGridFormulas || [])[r - 1] || [])[col] || ((sources.poemGrid || [])[r - 1] || [])[col] || "—")}`).join("  ·  ");
               })())}
               {row("ranges the rules named", (sources.extraRanges || []).join(", ") || "none beyond the fixed reads")}
-              {row("lesson picture", cur ? `${cur.image || "—"}  ·  shows for the first ${Math.round(setup.picSeconds / 60)} min, ${Math.round(cur.elapsed)} min in${cur.image && badImages[cur.image] ? "  ·  DID NOT LOAD" : ""}` : "—")}
+              {row("lesson picture", cur ? `${cur.image || "—"}  ·  in the bottom corner of the half all class, ${Math.round(cur.elapsed)} min in${cur.image && badImages[cur.image] ? "  ·  DID NOT LOAD" : ""}` : "—")}
               {row("lesson video", (cur && cur.video) || "—")}
               {row("SchoolCalendar rows read",
                 (() => {
@@ -2142,37 +2140,34 @@ export default function DailyPage() {
     // while the class is still on the introduction.
     const verseFrom = memoryClass ? setup.memoryMin : 0;
     const verseUntil = verseFrom + setup.verseMin;
-    const mediaUntil = verseUntil + setup.mediaMin;
     const verseInPanel = elapsed < verseUntil;
-    const lessonPicOn = hasLessonPic && elapsed >= verseUntil && elapsed < mediaUntil;
-    const mediaOn = (hasLessonPic || hasLessonVideo) && elapsed >= verseUntil && elapsed < mediaUntil;
-    const picOn = !!featureImage || lessonPicOn;
-    // The lesson's own material, on the half: the picture, and the video as a
-    // poster that opens over the whole board. Column I and column J of the
-    // Lessons row, which is where the teacher puts them.
-    const lessonMedia = () => {
-      const left = Math.max(1, Math.ceil(mediaUntil - elapsed));
+    const picOn = !!featureImage;
+    // The lesson's own picture and video — columns I and J of the Lessons row —
+    // stay at the foot of the half for the whole class, which on a projector is
+    // the bottom right quadrant. They used to take the half for a quarter of an
+    // hour and then go away: a picture is something the room looks back at while
+    // it works rather than a slide shown once, and the lesson's video should be
+    // a press away at any point in the period, not only at the start of it. The
+    // panel's own blocks keep the top of the column; this takes the foot of it.
+    const mediaRail = () => {
+      if (!hasLessonPic && !hasLessonVideo) return null;
       const pic = hasLessonPic
-        ? bigPicture(lessonPic.url, `Lesson picture${cur.code ? ` · ${cur.code}` : ""}`, `${left} min left on screen`)
+        ? bigPicture(lessonPic.url, cur.code ? `Lesson · ${cur.code}` : "Lesson picture", "", "rail")
         : null;
       const video = hasLessonVideo ? (
-        <div className="block videoblock">
-          <h3>Video{cur.code ? ` · ${cur.code}` : ""}</h3>
-          <div
-            className="vid poster"
-            role="button"
-            tabIndex={0}
-            aria-label="Play the lesson video"
-            onClick={() => setVidBig(true)}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setVidBig(true); } }}
-          >
-            <div className="thumb">▶</div>
-          </div>
-          <p className="summary">Press to play</p>
+        <div
+          className="vid poster"
+          role="button"
+          tabIndex={0}
+          aria-label="Play the lesson video"
+          onClick={() => setVidBig(true)}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setVidBig(true); } }}
+        >
+          <div className="thumb">▶</div>
+          <div className="cap">Lesson video — press to play</div>
         </div>
       ) : null;
-      if (pic && !video) return pic;
-      return <div className="panel mediaside">{pic}{video}</div>;
+      return <div key="media" className={`mediarail${pic ? "" : " videoonly"}`}>{pic}{video}</div>;
     };
 
     // Handouts named in the lesson cell, so they can be opened and printed from
@@ -2252,8 +2247,6 @@ export default function DailyPage() {
       side = dismissalPanel(true, readyAt);
     } else if (featureImage) {
       side = bigPicture(featureImage, `On screen now · ${cur.code}`, "");
-    } else if (mediaOn) {
-      side = lessonMedia();
     } else {
       const blocks = [];
       if (phase === "open") {
@@ -2320,8 +2313,23 @@ export default function DailyPage() {
       if (f) blocks.push(<div key="f">{f}</div>);
       const d = dailyBlock();
       if (d) blocks.push(<div key="d">{d}</div>);
-      side = blocks.length
-        ? <div className="panel">{blocks.slice(0, MAX_PANEL_BLOCKS)}</div>
+      // The picture and the video hold the foot of the column, so the blocks
+      // above them give up places: the half does not shrink, and a block that
+      // does not fit is clipped rather than squeezed. A picture is given room
+      // for a quadrant — two blocks above it — while a video on its own is a
+      // poster in the corner and costs one, since the header carries a tile for
+      // it as well.
+      const rail = mediaRail();
+      const room = !rail
+        ? MAX_PANEL_BLOCKS
+        : hasLessonPic ? MAX_PANEL_BLOCKS - 2 : MAX_PANEL_BLOCKS - 1;
+      side = blocks.length || rail
+        ? (
+          <div className={`panel${rail ? " withmedia" : ""}`}>
+            {blocks.slice(0, room)}
+            {rail}
+          </div>
+        )
         : null;
     }
 
