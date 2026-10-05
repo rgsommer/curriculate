@@ -687,7 +687,42 @@ export default function DailyPage() {
     let cur = null;
     for (const p of kept) if (t >= p.start && t < p.end) { cur = p; break; }
     const nextClass = (after) => classes.find((c) => c.start >= after) || null;
-    if (cur) cur = { ...cur, elapsed: t - cur.start, left: cur.end - t };
+    if (cur) {
+      // A chapel inside the current period's remaining window is time the
+      // teacher is not teaching — a seventy-seven-minute period that runs
+      // through a half-hour chapel is forty-seven minutes of class, and
+      // "min left" should say so. Scan every period-shaped source for
+      // anything titled Chapel or Assembly whose span overlaps [t, cur.end]
+      // and take those minutes back off the clock. If chapel is already its
+      // own bell row — the usual case — cur.end lands at chapel.start and
+      // the subtraction is nil, which is the right outcome.
+      const rawLeft = cur.end - t;
+      const isChapelish = (p) => {
+        const s = String(p?.subj || p?.text || p?.today || p?.title || "").toLowerCase();
+        return /\b(chapel|assembly|assemblies)\b/.test(s);
+      };
+      const sources = [...kept, ...((data && (data.rows || [])) || [])];
+      const seen = new Set();
+      let chapelMinutes = 0;
+      for (const p of sources) {
+        if (!p || p === cur) continue;
+        const start = Number(p.start);
+        const end = Number(p.end ?? (start + 30));
+        if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
+        const key = `${start}-${end}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (!isChapelish(p)) continue;
+        const s = Math.max(start, t);
+        const e = Math.min(end, cur.end);
+        if (e > s) chapelMinutes += e - s;
+      }
+      cur = {
+        ...cur,
+        elapsed: t - cur.start,
+        left: Math.max(0, rawLeft - chapelMinutes),
+      };
+    }
     return { P: kept, classes, cur, nextClass };
   }, [data, t]);
 
