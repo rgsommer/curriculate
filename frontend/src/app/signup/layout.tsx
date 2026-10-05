@@ -3,10 +3,10 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Sign Up — Free Teacher Account",
   description:
-    "Create a free Curriculate teacher account. AI lesson planning, live station-based gameplay, and AI grading — no credit card required to start.",
+    "Create a free Curriculate teacher account. Lesson planning, live station-based gameplay, and a teacher feedback platform — no credit card required to start.",
   openGraph: {
     title: "Sign Up — Curriculate (Free Teacher Account)",
-    description: "Free teacher account. AI lesson planning + AI grading. No credit card.",
+    description: "Free teacher account. Lesson planning + teacher feedback platform. No credit card.",
     url: "https://curriculate.net/signup",
     images: [
       { url: "https://curriculate.net/images/og/og-home.png", width: 1200, height: 630 },

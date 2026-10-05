@@ -1,0 +1,339 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Qrewzi — business card</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&family=Unbounded:wght@400;700;800&display=swap">
+<style>
+  /* Standard US business card: 3.5" × 2". Includes a 0.125" bleed on each
+     side, so the artboard renders at 3.75" × 2.25" and the printer trims
+     back to 3.5" × 2". Critical content stays inside the 3.25" × 1.75"
+     safe area. */
+  @page { size: 3.75in 2.25in; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #cccccc; }
+  body {
+    font-family: "Nunito", -apple-system, system-ui, sans-serif;
+    font-size: 7pt;
+    line-height: 1.3;
+    color: #0B1F3A;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* ---------- Card shell: 3.75 × 2.25 (bleed), trim at 3.5 × 2 ---------- */
+  .card {
+    width: 3.75in;
+    height: 2.25in;
+    position: relative;
+    overflow: hidden;
+    page-break-after: always;
+  }
+  .card:last-child { page-break-after: auto; }
+
+  /* Inner safe area padding — 0.25" so content clears both bleed + trim */
+  .inner {
+    position: absolute;
+    inset: 0.25in;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  /* ===================================================================
+     FRONT
+     =================================================================== */
+  .front { background: #FEF9F0; }
+
+  .front-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10pt;
+  }
+  .wordmark { display: flex; align-items: center; gap: 6pt; }
+  .wordmark svg { display: block; }
+  .wordmark .word {
+    font-family: "Unbounded", sans-serif;
+    font-weight: 800;
+    font-size: 24pt;
+    letter-spacing: -0.6pt;
+    color: #0B1F3A;
+    line-height: 0.9;
+  }
+  .tagline {
+    font-family: "Unbounded", sans-serif;
+    font-weight: 700;
+    font-size: 9pt;
+    color: #4A5B7A;
+    letter-spacing: -0.1pt;
+    margin-top: 2pt;
+  }
+
+  /* Offer tile — coral band with code */
+  .offer {
+    display: flex;
+    align-items: center;
+    gap: 10pt;
+    padding: 7pt 10pt;
+    background: #FF4D5B;
+    color: #FEF9F0;
+    border-radius: 6pt;
+  }
+  .offer .headline {
+    font-family: "Unbounded", sans-serif;
+    font-weight: 800;
+    font-size: 10.5pt;
+    letter-spacing: 0.1pt;
+    line-height: 1.05;
+  }
+  .offer .headline small {
+    display: block;
+    font-weight: 400;
+    font-size: 7pt;
+    opacity: 0.9;
+    margin-top: 1pt;
+  }
+  .offer .code {
+    margin-left: auto;
+    text-align: center;
+  }
+  .offer .code .lbl {
+    font-family: "Nunito", sans-serif;
+    font-weight: 900;
+    font-size: 6pt;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    opacity: 0.85;
+    display: block;
+    margin-bottom: 1pt;
+  }
+  .offer .code .val {
+    display: inline-block;
+    font-family: "Unbounded", sans-serif;
+    font-weight: 800;
+    font-size: 13pt;
+    letter-spacing: 0.6pt;
+    padding: 2pt 7pt;
+    border-radius: 4pt;
+    background: #FFD147;
+    color: #0B1F3A;
+  }
+
+  .contact {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-family: "Nunito", sans-serif;
+    font-weight: 700;
+    font-size: 7.5pt;
+    color: #4A5B7A;
+  }
+  .contact .url { color: #FF4D5B; }
+
+  /* Decorative background QR-finder mark on the right side of the front */
+  .front-bg {
+    position: absolute;
+    right: -0.35in;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 1.8in;
+    height: 1.8in;
+    opacity: 0.06;
+    pointer-events: none;
+  }
+
+  /* ===================================================================
+     BACK
+     =================================================================== */
+  .back { background: #0B1F3A; color: #FEF9F0; }
+  .back .inner { color: #FEF9F0; }
+
+  .back-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .back .eyebrow {
+    font-family: "Nunito", sans-serif;
+    font-weight: 900;
+    font-size: 6.5pt;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #FFD147;
+  }
+  .back-top .mini-mark svg { display: block; }
+
+  .back h2 {
+    font-family: "Unbounded", sans-serif;
+    font-weight: 800;
+    font-size: 13pt;
+    letter-spacing: -0.2pt;
+    color: #FEF9F0;
+    margin-top: 2pt;
+    margin-bottom: 5pt;
+    line-height: 1.0;
+  }
+
+  .features {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: 10pt;
+    row-gap: 3pt;
+  }
+  .feat {
+    display: flex;
+    align-items: baseline;
+    gap: 4pt;
+    font-size: 7pt;
+    line-height: 1.2;
+  }
+  .feat .dot {
+    width: 4pt;
+    height: 4pt;
+    border-radius: 50%;
+    background: #FF4D5B;
+    display: inline-block;
+    flex: 0 0 auto;
+    transform: translateY(-1pt);
+  }
+  .feat b {
+    font-family: "Nunito", sans-serif;
+    font-weight: 900;
+    color: #FEF9F0;
+  }
+  .feat .desc { color: #94A3B8; }
+
+  .back-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-family: "Nunito", sans-serif;
+    font-weight: 700;
+    font-size: 7pt;
+    color: #94A3B8;
+    letter-spacing: 0.02em;
+  }
+  .back-footer .url {
+    color: #FFD147;
+    font-weight: 900;
+  }
+  .back-footer .mini-url::before {
+    content: "qrewzi.com";
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     FRONT
+     ============================================================ -->
+<div class="card front">
+  <!-- Decorative background finder-pattern mark (very low opacity) -->
+  <svg class="front-bg" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+    <rect x="0" y="0" width="200" height="200" rx="44" fill="#0B1F3A"/>
+    <rect x="30" y="30" width="140" height="140" rx="30" fill="#FEF9F0"/>
+    <rect x="65" y="65" width="70" height="70" rx="16" fill="#0B1F3A"/>
+  </svg>
+
+  <div class="inner">
+    <div class="front-top">
+      <div>
+        <div class="wordmark">
+          <!-- Mark: rounded QR finder + Q tail -->
+          <svg width="34" height="34" viewBox="0 0 120 120">
+            <defs>
+              <clipPath id="f-out"><rect x="10" y="10" width="100" height="100" rx="24"/></clipPath>
+            </defs>
+            <g transform="translate(10 10)">
+              <rect x="0" y="0" width="100" height="100" rx="24" fill="#FF4D5B"/>
+              <rect x="16" y="16" width="68" height="68" rx="14" fill="#FEF9F0"/>
+              <rect x="32" y="32" width="36" height="36" rx="8" fill="#FF4D5B"/>
+            </g>
+            <g clip-path="url(#f-out)">
+              <line x1="80" y1="80" x2="128" y2="128" stroke="#FF4D5B" stroke-width="14" stroke-linecap="round"/>
+            </g>
+            <line x1="100" y1="100" x2="122" y2="122" stroke="#FF4D5B" stroke-width="14" stroke-linecap="round"/>
+          </svg>
+          <div class="word">rewzi</div>
+        </div>
+        <div class="tagline">The classroom becomes the game.</div>
+      </div>
+    </div>
+
+    <div class="offer">
+      <div class="headline">
+        First month<br>on us.
+        <small>Try with your class. Tell us what you'd change.</small>
+      </div>
+      <div class="code">
+        <span class="lbl">Code</span>
+        <span class="val">QREWFREE</span>
+      </div>
+    </div>
+
+    <div class="contact">
+      <span>hello@qrewzi.com</span>
+      <span class="url">qrewzi.com/free</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     BACK
+     ============================================================ -->
+<div class="card back">
+  <div class="inner">
+    <div class="back-top">
+      <div>
+        <div class="eyebrow">What's inside</div>
+        <h2>A room-wide<br>team game, in minutes.</h2>
+      </div>
+      <!-- Small corner mark -->
+      <div class="mini-mark">
+        <svg width="22" height="22" viewBox="0 0 32 32">
+          <rect x="2" y="2" width="28" height="28" rx="6" fill="#FF4D5B"/>
+          <rect x="6" y="6" width="20" height="20" rx="4" fill="#FEF9F0"/>
+          <rect x="11" y="11" width="10" height="10" rx="2" fill="#FF4D5B"/>
+        </svg>
+      </div>
+    </div>
+
+    <div class="features">
+      <div class="feat">
+        <span class="dot"></span>
+        <span><b>Zero prep.</b> <span class="desc">Describe a lesson — AI builds the game.</span></span>
+      </div>
+      <div class="feat">
+        <span class="dot"></span>
+        <span><b>30+ task types.</b> <span class="desc">Sort, mind-map, speech, movement.</span></span>
+      </div>
+      <div class="feat">
+        <span class="dot"></span>
+        <span><b>GameMaster projector.</b> <span class="desc">Live leaderboard, heat map, celebrations.</span></span>
+      </div>
+      <div class="feat">
+        <span class="dot"></span>
+        <span><b>Grades + reports.</b> <span class="desc">Parent-ready recap when the bell rings.</span></span>
+      </div>
+      <div class="feat">
+        <span class="dot"></span>
+        <span><b>Any device.</b> <span class="desc">Phones, Chromebooks, tablets together.</span></span>
+      </div>
+      <div class="feat">
+        <span class="dot"></span>
+        <span><b>Standards-aligned.</b> <span class="desc">Ontario today, more jurisdictions soon.</span></span>
+      </div>
+    </div>
+
+    <div class="back-footer">
+      <span><span class="url">qrewzi.com/free</span> &nbsp;·&nbsp; Code: <b style="color:#FFD147">QREWFREE</b></span>
+      <span>Made in Canada 🇨🇦</span>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
