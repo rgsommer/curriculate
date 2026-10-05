@@ -307,21 +307,36 @@ The half beside the lesson is shared out by the clock, and the verse of the day
 is only ever in one place at a time.
 
 On a **class** it goes, in order: the memory work in CE for `memoryMin`
-(10 min), the **verse of the day for `verseMin`** (10 min), then **the lesson's
-own picture and video for `mediaMin`** (15 min) — columns I to K of the Lessons
-row, the picture filling the column and the video as a poster that opens over
-the whole board — and after that the half turns over to **the work**: the
-class's assignment, else its homework. Where the panel is already saying that
-(the Assign block, or "Write in your agenda") the verse simply steps aside;
-where there is nothing to turn over to it stays, because an empty half helps no
-one.
+(10 min), the **verse of the day for `verseMin`** (10 min), and after that the
+half turns over to **the work**: the class's assignment, else its homework.
+Where the panel is already saying that (the Assign block, or "Write in your
+agenda") the verse simply steps aside; where there is nothing to turn over to it
+stays, because an empty half helps no one.
 
 The verse leads because it is the same few lines every day and the room reads
-them while it settles; the lesson's own material follows, while the class is
-still on the introduction. `?debug=1`'s **right-hand half** line gives all four
-windows by the clock and says which is up, and whether the row's picture and
-video were found at all — a picture *inserted into* a cell is invisible to the
-Sheets API, so it reads "empty" there and needs the mirror script below.
+them while it settles. `?debug=1`'s **right-hand half** line gives the windows by
+the clock and says which is up, and whether the row's picture and video were
+found at all — a picture *inserted into* a cell is invisible to the Sheets API,
+so it reads "empty" there and needs the mirror script below.
+
+### The lesson's own picture and video
+
+Columns **I and J** of the Lessons row (anything in I to K, told apart by what it
+holds) sit at the **foot of that half for the whole class** — the bottom right
+quadrant of the projector — rather than taking the half for a quarter of an hour
+and then going away. A picture is something the room looks back at while it
+works, not a slide shown once, and the lesson's video should be a press away at
+any point in the period. The video also keeps its small tile beside the clock,
+as it always has, and both open over the whole board when pressed.
+
+The blocks above pay for the room: with a picture there the half keeps its two
+most important blocks, with a video on its own it keeps three, and the rest fall
+off the end as they always have (the riddle and the day's note first). The rail
+itself is the one thing on that half that may be squeezed — the blocks hold
+their size and clip when they are squeezed, a picture only gets smaller — so on
+a crowded half it shrinks rather than running off the bottom of the screen.
+`Setup`'s "Lesson picture for" row no longer gates any of this; it is still read
+so a sheet that carries it is not broken by its presence.
 
 On the **day's own screens** — before school, between classes — there is no
 beginning to measure from, so the two alternate on the board's own clock:
