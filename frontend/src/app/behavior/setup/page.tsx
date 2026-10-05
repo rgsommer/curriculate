@@ -1716,14 +1716,14 @@ function HousesSection({ config }: { config?: any }) {
         '<p style="margin:0 0 14px;color:#64748b;font-size:14px;">See where your house stands — and look up your own house anytime.</p>' +
         '<p style="margin:0 0 14px;">Hi everyone,</p>' +
         '<p style="margin:0 0 14px;">The house competition is heating up, and you can now follow it live! Every point your house earns for kindness, effort, honesty, and team events shows up on the board within seconds. Check where <strong>your</strong> house sits and cheer your teammates on. 🎉</p>' +
-        '<p style="margin:0 0 14px;padding:12px 16px;background:#eff6ff;border-left:4px solid #2563eb;border-radius:6px;"><strong>Not sure which house you’re in?</strong> Forgot your group or room, or missed the day it was announced? No problem — just type your last name and the site will tell you your house, group #, room, teachers, and captains.</p>' +
+        '<p style="margin:0 0 14px;padding:12px 16px;background:#eff6ff;border-left:4px solid #2563eb;border-radius:6px;"><strong>Not sure which house you’re in?</strong> Forgot your group or room, or missed the day it was announced? No problem — just type your first and last name and the site will tell you your house, group #, room, and teachers.</p>' +
         '<p style="margin:0 0 14px;text-align:center;"><a href="' + url + '" style="display:inline-block;background:#0f172a;color:#ffffff;text-decoration:none;padding:12px 26px;border-radius:10px;font-weight:bold;font-size:16px;">🏆 See the Standings &amp; Find Your House</a></p>' +
         '<p style="margin:0 0 8px;font-weight:bold;">How to use it:</p>' +
         '<ol style="margin:0 0 14px;padding-left:20px;">' +
           '<li style="margin-bottom:6px;">Open <a href="' + url + '" style="color:#2563eb;">curriculate.net/houses</a> (the link above fills in the code for you).</li>' +
           '<li style="margin-bottom:6px;">If asked, enter the House code <strong style="background:#fef9c3;padding:2px 8px;border-radius:6px;letter-spacing:2px;">' + code + '</strong> — you only do this once.</li>' +
-          '<li style="margin-bottom:6px;">Tap <strong>&ldquo;Find your house&rdquo;</strong> and type your last name to see your house, group #, room, teachers, and captains.</li>' +
-          '<li style="margin-bottom:6px;">Watch the <strong>leaderboard</strong>, <strong>top students</strong>, <strong>competitions</strong>, and <strong>latest points</strong> roll in.</li>' +
+          '<li style="margin-bottom:6px;">Tap <strong>&ldquo;Find your house&rdquo;</strong> and type your first and last name to see your house, group #, room, and teachers.</li>' +
+          '<li style="margin-bottom:6px;">Watch the <strong>leaderboard</strong>, <strong>competitions</strong>, and <strong>latest points</strong> roll in.</li>' +
         '</ol>' +
         '<p style="margin:0 0 14px;padding:12px 16px;background:#f8fafc;border-left:4px solid #0f172a;border-radius:6px;font-style:italic;color:#334155;">&ldquo;Whatever you do, work at it with all your heart.&rdquo; — Colossians 3:23</p>' +
         '<p style="margin:0;">Let’s make it a great season. Go teams! 💪</p>' +
@@ -1732,13 +1732,13 @@ function HousesSection({ config }: { config?: any }) {
       '👀 Your House Standings are LIVE!\n\n' +
       'Hi everyone,\n\n' +
       'The house competition is heating up, and you can now follow it live! Check where your house sits and cheer your teammates on.\n\n' +
-      'Not sure which house you’re in? Forgot your group or room, or missed the day it was announced? Just type your last name and the site will tell you your house, group #, room, teachers, and captains.\n\n' +
+      'Not sure which house you’re in? Forgot your group or room, or missed the day it was announced? Just type your first and last name and the site will tell you your house, group #, room, and teachers.\n\n' +
       'See the standings & find your house: ' + url + '\n\n' +
       'How to use it:\n' +
       '1. Open curriculate.net/houses (the link above fills in the code for you).\n' +
       '2. If asked, enter the House code ' + code + ' — you only do this once.\n' +
-      '3. Tap "Find your house" and type your last name to see your house, group #, room, teachers, and captains.\n' +
-      '4. Watch the leaderboard, top students, competitions, and latest points roll in.\n\n' +
+      '3. Tap "Find your house" and type your first and last name to see your house, group #, room, and teachers.\n' +
+      '4. Watch the leaderboard, competitions, and latest points roll in.\n\n' +
       '"Whatever you do, work at it with all your heart." — Colossians 3:23\n\n' +
       'Let’s make it a great season. Go teams!';
     try {
@@ -2248,7 +2248,7 @@ function HousesSection({ config }: { config?: any }) {
         <p className="text-sm font-medium text-slate-700">Student leaderboard portal</p>
         <p className="mt-0.5 text-xs text-slate-500">
           Students see live standings at <span className="font-mono">curriculate.net/houses</span> by entering this code (house
-          totals only — no student names). Share it; rotate it any time.
+          totals only — never any student names, initials or photos). Share it; rotate it any time.
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           {portalCode && <span className="rounded-lg bg-white px-3 py-1.5 font-mono text-lg tracking-widest">{portalCode}</span>}
@@ -2286,7 +2286,7 @@ function HousesSection({ config }: { config?: any }) {
       {/* House captains */}
       <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
         <p className="text-sm font-medium text-slate-700">House captains</p>
-        <p className="mt-0.5 text-xs text-slate-500">Mark a student leader for each house. Captains show on the standings report and the student portal (first name + last initial only).</p>
+        <p className="mt-0.5 text-xs text-slate-500">Mark a student leader for each house. Captains appear on the staff standings report only — never on the student portal or display.</p>
         {roster === null ? (
           <p className="mt-2 text-xs text-slate-500">Loading roster…</p>
         ) : (

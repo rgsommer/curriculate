@@ -7511,21 +7511,12 @@ router.get("/public/houses", async (req, res, next) => {
     const memberById = Object.fromEntries(members.map((m) => [String(m._id), m.n]));
     const houseById = Object.fromEntries(houses.map((h) => [String(h._id), h]));
 
-    // House captains (first name + last initial only — minimal PII for a wall board).
-    const captains = await BehaviorStudent.find({ schoolId, active: true, houseCaptain: true, houseId: { $ne: null } })
-      .select("firstName preferredName lastName houseId")
-      .lean();
-    const captainsByHouse = {};
-    for (const c of captains) {
-      const k = String(c.houseId);
-      (captainsByHouse[k] ||= []).push(`${c.preferredName || c.firstName} ${(c.lastName || "").charAt(0)}.`.trim());
-    }
-
+    // PUBLIC PAGE RULE: no student data of any kind — no names, initials or
+    // photos (captains, top students, contributors). Composite totals only.
     const houseOut = houses
       .map((h) => ({
         id: String(h._id), name: h.name, color: h.color || "#0f172a", image: h.image || "",
         points: totalById[String(h._id)] || 0, members: memberById[String(h._id)] || 0,
-        captains: captainsByHouse[String(h._id)] || [],
       }))
       .sort((a, b) => b.points - a.points);
 
@@ -7548,63 +7539,31 @@ router.get("/public/houses", async (req, res, next) => {
     const recentRaw = await HousePointEvent.find({ ...pointMatch, points: { $gt: 0 } })
       .sort({ at: -1 }).limit(40).select("houseId studentId points reason at").lean();
     const activity = [];
+    const scrub = await publicNameScrubber(sid);
     for (const e of recentRaw) {
       if (e.studentId && !activeIdSet.has(String(e.studentId))) continue; // not on the roster
       let hid = e.houseId && houseById[String(e.houseId)] ? String(e.houseId) : null;
       if (!hid && e.studentId) { const cur = houseByStudent[String(e.studentId)]; if (cur && houseById[cur]) hid = cur; }
       if (!hid) continue;
       const h = houseById[hid];
-      activity.push({ house: h.name, color: h.color || "#0f172a", points: e.points, reason: e.reason || "", at: e.at });
+      activity.push({ house: h.name, color: h.color || "#0f172a", points: e.points, reason: scrub(e.reason || ""), at: e.at });
       if (activity.length >= 12) break;
     }
 
-    // Daily winners (today): student who earned the most positive points, and the
-    // house that earned the most net points since local midnight.
+    // Daily winner (today): the house that earned the most net points since
+    // local midnight. (No "top student" — the public page shows no student data.)
     const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
-    const [topStuAgg, topHouseAgg] = await Promise.all([
-      HousePointEvent.aggregate([
-        { $match: { schoolId: sid, studentId: { $in: activeIds }, points: { $gt: 0 }, at: { $gt: dayStart } } },
-        { $group: { _id: "$studentId", pts: { $sum: "$points" } } },
-        { $sort: { pts: -1 } }, { $limit: 1 },
-      ]),
-      HousePointEvent.aggregate([
-        { $match: { schoolId: sid, at: { $gt: dayStart } } },
-        { $group: { _id: "$houseId", pts: { $sum: "$points" } } },
-        { $sort: { pts: -1 } }, { $limit: 1 },
-      ]),
+    const topHouseAgg = await HousePointEvent.aggregate([
+      { $match: { schoolId: sid, at: { $gt: dayStart } } },
+      { $group: { _id: "$houseId", pts: { $sum: "$points" } } },
+      { $sort: { pts: -1 } }, { $limit: 1 },
     ]);
-    let dailyTopStudent = null;
-    if (topStuAgg[0]) {
-      const stu = await BehaviorStudent.findById(topStuAgg[0]._id).select("firstName preferredName lastName photoUrl houseId").lean();
-      if (stu) {
-        const h = stu.houseId ? houseById[String(stu.houseId)] : null;
-        dailyTopStudent = { name: `${stu.preferredName || stu.firstName} ${stu.lastName}`.trim(), photoUrl: stu.photoUrl || "", house: h?.name || "", color: h?.color || "#0f172a", points: topStuAgg[0].pts };
-      }
-    }
     let dailyTopHouse = null;
     if (topHouseAgg[0] && houseById[String(topHouseAgg[0]._id)]) {
       const h = houseById[String(topHouseAgg[0]._id)];
       dailyTopHouse = { name: h.name, color: h.color || "#0f172a", image: h.image || "", points: topHouseAgg[0].pts };
     }
     const rewards = (config.houseRewards || []).slice().sort((a, b) => a.points - b.points);
-
-    // Top 3 students overall (positive points earned since the reset).
-    const topStuOverall = await HousePointEvent.aggregate([
-      { $match: { ...pointMatch, studentId: { $in: activeIds }, points: { $gt: 0 } } },
-      { $group: { _id: "$studentId", pts: { $sum: "$points" } } },
-      { $sort: { pts: -1 } }, { $limit: 3 },
-    ]);
-    let topStudents = [];
-    if (topStuOverall.length) {
-      const stus = await BehaviorStudent.find({ _id: { $in: topStuOverall.map((t) => t._id) } })
-        .select("firstName preferredName lastName photoUrl houseId").lean();
-      const byId = Object.fromEntries(stus.map((s) => [String(s._id), s]));
-      topStudents = topStuOverall.map((t, i) => {
-        const s = byId[String(t._id)]; if (!s) return null;
-        const h = s.houseId ? houseById[String(s.houseId)] : null;
-        return { rank: i + 1, name: `${s.preferredName || s.firstName} ${s.lastName}`.trim(), photoUrl: s.photoUrl || "", house: h?.name || "", color: h?.color || "#0f172a", points: t.pts };
-      }).filter(Boolean);
-    }
 
     const merch = config.merchStore?.enabled
       ? (config.merchStore.items || []).slice().sort((a, b) => (a.points || 0) - (b.points || 0)).map((i) => ({ name: i.name, points: i.points, image: i.image || "" }))
@@ -7613,31 +7572,38 @@ router.get("/public/houses", async (req, res, next) => {
     let eventResult = null;
     const er = config.houseEventResult;
     if (er?.at && Date.now() - new Date(er.at).getTime() < 14 * DAY_MS) {
-      eventResult = { label: er.label || "Results", at: er.at, houses: er.houses || [], students: er.students || [] };
+      // Houses only — top contributors' names stay staff-side (Tally import page).
+      eventResult = { label: er.label || "Results", at: er.at, houses: er.houses || [], students: [] };
     }
-    res.json({ ok: true, enabled: true, schoolName: school?.name || "", houses: houseOut, competitions: compOut, activity, dailyTopStudent, dailyTopHouse, topStudents, rewards, merch, eventResult });
+    res.json({ ok: true, enabled: true, schoolName: school?.name || "", houses: houseOut, competitions: compOut, activity, dailyTopStudent: null, dailyTopHouse, topStudents: [], rewards, merch, eventResult });
   } catch (err) {
     next(err);
   }
 });
 
-// Student self-lookup by last name (code-protected). Returns their house and
-// sub-group (#1/#2) + room, so a student can find where to go for a booster
-// event. Minimal PII: first name + grade only, to disambiguate same surnames.
+// Student self-lookup (code-protected). The student types their FIRST and LAST
+// name; an exact match returns their house, sub-group (#1/#2), room and house
+// teachers. Returns no student names at all, so it can't be used to browse the
+// roster (the old last-name-prefix search listed everyone with that surname).
 router.get("/public/houses/lookup", async (req, res, next) => {
   try {
     const code = String(req.query.code || "").trim();
     if (!/^\d{3,6}$/.test(code)) return res.status(400).json({ ok: false, error: "Enter your school code." });
     const lastName = String(req.query.lastName || "").trim();
-    if (lastName.length < 2) return res.status(400).json({ ok: false, error: "Type at least two letters of your last name." });
+    const firstName = String(req.query.firstName || "").trim();
+    if (!firstName || !lastName) return res.status(400).json({ ok: false, error: "Type your first and last name." });
     const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true }).select("schoolId merchStore").lean();
     if (!config) return res.status(404).json({ ok: false, error: "No school matches that code." });
 
-    const rx = new RegExp("^" + lastName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-    const students = await BehaviorStudent.find({ schoolId: config.schoolId, active: true, lastName: rx, houseId: { $ne: null } })
-      .select("firstName preferredName lastName grade houseId houseGroup")
-      .sort({ lastName: 1, firstName: 1 })
-      .limit(40)
+    const esc = (v) => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const exact = (v) => new RegExp("^\\s*" + esc(v) + "\\s*$", "i");
+    const students = await BehaviorStudent.find({
+      schoolId: config.schoolId, active: true, houseId: { $ne: null },
+      lastName: exact(lastName),
+      $or: [{ firstName: exact(firstName) }, { preferredName: exact(firstName) }],
+    })
+      .select("grade houseId houseGroup")
+      .limit(5)
       .lean();
     // Personal merch points balance (only surfaced when the store is enabled).
     const merchOn = !!config.merchStore?.enabled;
@@ -7645,31 +7611,18 @@ router.get("/public/houses/lookup", async (req, res, next) => {
     const houses = await BehaviorHouse.find({ schoolId: config.schoolId }).select("name color roomGroup1 roomGroup2 teacher1 teacher2").lean();
     const houseById = Object.fromEntries(houses.map((h) => [String(h._id), h]));
 
-    // House captains (first name + last initial only — minimal PII), keyed by house,
-    // so a student's look-up can show who leads their team.
-    const capStudents = await BehaviorStudent.find({ schoolId: config.schoolId, active: true, houseCaptain: true, houseId: { $ne: null } })
-      .select("firstName preferredName lastName houseId")
-      .lean();
-    const captainsByHouse = {};
-    for (const c of capStudents) {
-      const k = String(c.houseId);
-      (captainsByHouse[k] ||= []).push(`${c.preferredName || c.firstName} ${(c.lastName || "").charAt(0)}.`.trim());
-    }
-
     const matches = students.map((s) => {
       const h = houseById[String(s.houseId)] || {};
       const group = s.houseGroup === 1 || s.houseGroup === 2 ? s.houseGroup : null;
       const room = group === 1 ? (h.roomGroup1 || "") : group === 2 ? (h.roomGroup2 || "") : "";
       const teachers = [h.teacher1, h.teacher2].filter((t) => t && String(t).trim());
       return {
-        firstName: s.preferredName || s.firstName || "",
         grade: s.grade || "",
         house: h.name || "",
         color: h.color || "#0f172a",
         group,
         room,
         teachers,
-        captains: captainsByHouse[String(s.houseId)] || [],
         ...(merchOn ? { points: balances[String(s._id)] || 0 } : {}),
       };
     });
@@ -7703,10 +7656,42 @@ router.post("/public/houses/visit", async (req, res) => {
 // house events (whole-house awards, studentId null). NEVER returns any student
 // name — only summed totals and per-reason lines, mirroring the leaderboard's
 // active-student + reset-date scope.
+// Public pages show no student data. Point "reasons" can be free text typed by
+// a teacher (manual awards), so before a reason goes to a public page, replace
+// any roster name in it (first, preferred or last, plus a trailing initial like
+// "Mia A.") with "a student". Words that are also behaviour / keyword / house /
+// competition names (e.g. "Faith", "Joy") are left alone so reasons still read.
+async function publicNameScrubber(schoolId) {
+  const sid = new mongoose.Types.ObjectId(String(schoolId));
+  const [students, behaviours, houses, comps] = await Promise.all([
+    BehaviorStudent.find({ schoolId: sid }).select("firstName preferredName lastName").lean(),
+    Behavior.find({ schoolId: sid }).select("name keyword").lean(),
+    BehaviorHouse.find({ schoolId: sid }).select("name").lean(),
+    BehaviorCompetition.find({ schoolId: sid }).select("name").lean(),
+  ]);
+  const words = (v) => String(v || "").toLowerCase().split(/[^\p{L}'’-]+/u).filter(Boolean);
+  const keep = new Set();
+  for (const b of behaviours) { words(b.name).forEach((w) => keep.add(w)); words(b.keyword).forEach((w) => keep.add(w)); }
+  for (const h of houses) words(h.name).forEach((w) => keep.add(w));
+  for (const c of comps) words(c.name).forEach((w) => keep.add(w));
+  const names = new Set();
+  for (const st of students) {
+    for (const n of [st.firstName, st.preferredName, st.lastName]) {
+      for (const w of words(n)) if (w.length >= 2 && !keep.has(w)) names.add(w);
+    }
+  }
+  if (!names.size) return (r) => r;
+  const esc = (v) => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const alt = [...names].sort((a, b) => b.length - a.length).map(esc).join("|");
+  // A name, optionally followed by more name words and/or an initial ("A.").
+  const rx = new RegExp(`(?<![\\p{L}])(?:${alt})(?:\\s+(?:${alt}))*(?:\\s+\\p{L}\\.)?(?![\\p{L}])`, "giu");
+  return (reason) => String(reason || "").replace(rx, "a student");
+}
+
 // Composite breakdown of where a house's points came from (NEVER any names).
 // `includeNegatives`/`includePositives` gate what's returned: the public page
 // hides conduct (negatives) from students by default; a teacher sees it all.
-async function computeHouseDetail(sid, houseId, cfg, { includeNegatives = true, includePositives = true } = {}) {
+async function computeHouseDetail(sid, houseId, cfg, { includeNegatives = true, includePositives = true, scrubNames = false } = {}) {
   const house = await BehaviorHouse.findOne({ _id: houseId, schoolId: sid }).select("name color").lean();
   if (!house) return null;
   const activeIds = (await BehaviorStudent.find({ schoolId: sid, active: true }).select("_id").lean()).map((s) => s._id);
@@ -7728,8 +7713,9 @@ async function computeHouseDetail(sid, houseId, cfg, { includeNegatives = true, 
 
   const indMap = {}, teamMap = {};
   let indPos = 0, indNeg = 0, teamTotal = 0;
+  const scrub = scrubNames ? await publicNameScrubber(sid) : (x) => x;
   for (const r of rows) {
-    const reason = (r._id.reason || "").trim() || "Other";
+    const reason = scrub((r._id.reason || "").trim()) || "Other";
     if (r._id.team) {
       teamMap[reason] = (teamMap[reason] || { reason, points: 0, count: 0 });
       teamMap[reason].points += r.points; teamMap[reason].count += r.count;
@@ -7774,7 +7760,7 @@ router.get("/public/houses/detail", async (req, res, next) => {
     // Student-facing: conduct (negatives) hidden unless the school opts in.
     const includeNegatives = config.housesPublicShowNegatives === true;
     const includePositives = config.housesPublicShowPositives !== false;
-    const detail = await computeHouseDetail(sid, houseId, config, { includeNegatives, includePositives });
+    const detail = await computeHouseDetail(sid, houseId, config, { includeNegatives, includePositives, scrubNames: true });
     if (!detail) return res.status(404).json({ ok: false, error: "House not found." });
     res.json({ ok: true, ...detail, teacherView: false });
   } catch (err) {

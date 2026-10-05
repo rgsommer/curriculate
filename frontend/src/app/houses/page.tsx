@@ -3,13 +3,12 @@
 import { useEffect, useState } from "react";
 import { API_BASE, getToken } from "../behavior/_lib/api";
 
-type House = { id: string; name: string; color: string; image?: string; points: number; members: number; captains?: string[] };
+type House = { id: string; name: string; color: string; image?: string; points: number; members: number };
 type Comp = { name: string; monthLabel: string; scored: boolean; results: { place: number; houseName: string; houseColor: string }[] };
 type Activity = { house: string; color: string; points: number; reason: string; at: string };
-type TopStudent = { rank: number; name: string; photoUrl?: string; house: string; color: string; points: number };
 type MerchItem = { name: string; points: number; image?: string };
-type EventResult = { label: string; at: string; houses: { name: string; place: number; items: number; points: number }[]; students: { name: string; place: number; items: number }[] };
-type Board = { schoolName: string; houses: House[]; competitions: Comp[]; activity: Activity[]; topStudents: TopStudent[]; merch: MerchItem[]; eventResult?: EventResult | null };
+type EventResult = { label: string; at: string; houses: { name: string; place: number; items: number; points: number }[] };
+type Board = { schoolName: string; houses: House[]; competitions: Comp[]; activity: Activity[]; merch: MerchItem[]; eventResult?: EventResult | null };
 type DetailItem = { reason: string; points: number; count: number };
 type HouseDetail = {
   house: { id: string; name: string; color: string };
@@ -27,13 +26,13 @@ async function fetchBoard(code: string): Promise<{ ok: boolean; error?: string; 
     const r = await fetch(`${API_BASE}/api/behavior/public/houses?code=${encodeURIComponent(code)}`);
     const d = await r.json();
     if (!d.ok) return { ok: false, error: d.error || "Could not load standings" };
-    return { ok: true, board: { schoolName: d.schoolName || "", houses: d.houses || [], competitions: d.competitions || [], activity: d.activity || [], topStudents: d.topStudents || [], merch: d.merch || [], eventResult: d.eventResult || null } };
+    return { ok: true, board: { schoolName: d.schoolName || "", houses: d.houses || [], competitions: d.competitions || [], activity: d.activity || [], merch: d.merch || [], eventResult: d.eventResult || null } };
   } catch {
     return { ok: false, error: "Network error — try again" };
   }
 }
 
-type Match = { firstName: string; grade: string; house: string; color: string; group: number | null; room: string; teachers?: string[]; captains?: string[]; points?: number };
+type Match = { grade: string; house: string; color: string; group: number | null; room: string; teachers?: string[]; points?: number };
 
 export default function HousesPortal() {
   const [code, setCode] = useState<string>("");
@@ -42,7 +41,8 @@ export default function HousesPortal() {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // "Find your house" by last name
+  // "Find your house" by first + last name (exact match; no names come back)
+  const [lookupFirst, setLookupFirst] = useState("");
   const [lookupName, setLookupName] = useState("");
   const [matches, setMatches] = useState<Match[] | null>(null);
   const [lookupBusy, setLookupBusy] = useState(false);
@@ -81,11 +81,12 @@ export default function HousesPortal() {
 
   async function doLookup(e?: React.FormEvent) {
     e?.preventDefault();
+    const fn = lookupFirst.trim();
     const ln = lookupName.trim();
-    if (ln.length < 2) { setLookupErr("Type at least two letters of your last name."); return; }
+    if (!fn || !ln) { setLookupErr("Type your first and last name."); return; }
     setLookupBusy(true); setLookupErr(""); setMatches(null);
     try {
-      const r = await fetch(`${API_BASE}/api/behavior/public/houses/lookup?code=${encodeURIComponent(code)}&lastName=${encodeURIComponent(ln)}`);
+      const r = await fetch(`${API_BASE}/api/behavior/public/houses/lookup?code=${encodeURIComponent(code)}&firstName=${encodeURIComponent(fn)}&lastName=${encodeURIComponent(ln)}`);
       const d = await r.json();
       if (!d.ok) { setLookupErr(d.error || "Could not look that up."); return; }
       setMatches(d.matches || []);
@@ -225,13 +226,23 @@ export default function HousesPortal() {
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5">
         <h2 className="font-semibold">Find your house</h2>
-        <p className="mt-1 text-sm text-slate-500">Type your last name to see your house and group.</p>
-        <form onSubmit={doLookup} className="mt-2 flex gap-2">
+        <p className="mt-1 text-sm text-slate-500">Type your first and last name to see your house and group.</p>
+        <form onSubmit={doLookup} className="mt-2 flex flex-wrap gap-2">
+          <input
+            value={lookupFirst}
+            onChange={(e) => setLookupFirst(e.target.value)}
+            placeholder="First name"
+            aria-label="First name"
+            autoComplete="off"
+            className="min-w-[8rem] flex-1 rounded-xl border border-slate-300 px-4 py-2.5"
+          />
           <input
             value={lookupName}
             onChange={(e) => setLookupName(e.target.value)}
             placeholder="Last name"
-            className="flex-1 rounded-xl border border-slate-300 px-4 py-2.5"
+            aria-label="Last name"
+            autoComplete="off"
+            className="min-w-[8rem] flex-1 rounded-xl border border-slate-300 px-4 py-2.5"
           />
           <button type="submit" disabled={lookupBusy} className="rounded-xl bg-slate-900 px-4 py-2.5 font-semibold text-white disabled:opacity-40">
             {lookupBusy ? "…" : "Find"}
@@ -246,7 +257,7 @@ export default function HousesPortal() {
                 <span className="inline-block h-8 w-8 shrink-0 rounded-full" style={{ background: m.color }} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline justify-between gap-2">
-                    <div className="font-semibold">{m.firstName}{m.grade ? <span className="ml-1 text-xs font-normal text-slate-500">Gr {m.grade}</span> : null}</div>
+                    <div className="font-semibold">Your house{matches.length > 1 && m.grade ? <span className="ml-1 text-xs font-normal text-slate-500">Gr {m.grade}</span> : null}</div>
                     {typeof m.points === "number" && (
                       <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800" title="Your points to spend in the rewards store">⭐ {m.points} pts</span>
                     )}
@@ -259,9 +270,6 @@ export default function HousesPortal() {
                   {m.teachers && m.teachers.length > 0 && (
                     <div className="mt-0.5 text-xs text-slate-500"><span className="text-slate-500">Teacher{m.teachers.length > 1 ? "s" : ""}:</span> {m.teachers.join(", ")}</div>
                   )}
-                  {m.captains && m.captains.length > 0 && (
-                    <div className="mt-0.5 text-xs text-slate-500"><span className="text-slate-500">Captain{m.captains.length > 1 ? "s" : ""}:</span> {m.captains.join(", ")}</div>
-                  )}
                 </div>
               </li>
             ))}
@@ -269,7 +277,7 @@ export default function HousesPortal() {
         )}
       </section>
 
-      {board?.eventResult && (board.eventResult.houses.length > 0 || board.eventResult.students.length > 0) && (
+      {board?.eventResult && board.eventResult.houses.length > 0 && (
         <section className="rounded-2xl border border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 p-5">
           <h2 className="text-lg font-bold text-amber-900">🏆 {board.eventResult.label} results</h2>
           <div className="mt-3 grid gap-4 sm:grid-cols-2">
@@ -279,16 +287,6 @@ export default function HousesPortal() {
                 <ul className="mt-1 space-y-0.5 text-sm text-slate-700">
                   {board.eventResult.houses.map((h, i) => (
                     <li key={i}>{["🥇","🥈","🥉"][h.place - 1] || `${h.place}.`} <span className="font-semibold">{h.name}</span> <span className="text-slate-500">— {h.items} items</span></li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {board.eventResult.students.length > 0 && (
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">Top contributors</div>
-                <ul className="mt-1 space-y-0.5 text-sm text-slate-700">
-                  {board.eventResult.students.map((s, i) => (
-                    <li key={i}>{["🥇","🥈","🥉"][s.place - 1] || `${s.place}.`} <span className="font-semibold">{s.name}</span> <span className="text-slate-500">— {s.items} items</span></li>
                   ))}
                 </ul>
               </div>
@@ -325,9 +323,6 @@ export default function HousesPortal() {
                     <div className="mt-1 h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
                       <div className="h-full rounded-full" style={{ width: `${barPct(h.points)}%`, background: h.color, opacity: (h.points || 0) < 0 ? 0.45 : 1 }} />
                     </div>
-                    {h.captains && h.captains.length > 0 && (
-                      <div className="mt-1 text-xs text-slate-500">👑 {h.captains.join(", ")}</div>
-                    )}
                   </div>
                   <span className="ml-1 shrink-0 text-slate-500">{open ? "▾" : "▸"}</span>
                 </button>
@@ -409,27 +404,6 @@ export default function HousesPortal() {
                 {m.image ? <img src={m.image} alt="" className="mx-auto mb-2 h-16 w-16 rounded-lg object-cover" /> : <div className="mx-auto mb-2 flex h-16 w-16 items-center justify-center rounded-lg bg-slate-100 text-2xl">🎁</div>}
                 <div className="text-sm font-medium leading-tight">{m.name}</div>
                 <div className="mt-1 text-xs font-semibold text-amber-700">⭐ {m.points} pts</div>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {board && board.topStudents.length > 0 && (
-        <section className="rounded-2xl border border-slate-200 bg-white p-5">
-          <h2 className="font-semibold">Top students</h2>
-          <ul className="mt-3 space-y-2">
-            {board.topStudents.map((s) => (
-              <li key={s.rank} className="flex items-center gap-3">
-                <span className="w-6 text-center text-lg">{MEDAL[s.rank - 1] || <span className="text-sm text-slate-500">{s.rank}</span>}</span>
-                {s.photoUrl
-                  ? <img src={s.photoUrl} alt="" className="h-9 w-9 rounded-lg object-cover ring-2" style={{ ["--tw-ring-color" as any]: s.color }} />
-                  : <span className="inline-block h-4 w-4 shrink-0 rounded-full" style={{ background: s.color }} />}
-                <div className="min-w-0 flex-1">
-                  <div className="truncate font-semibold">{s.name}</div>
-                  {s.house ? <div className="text-xs text-slate-500">{s.house}</div> : null}
-                </div>
-                <span className="shrink-0 tabular-nums font-bold">{s.points}</span>
               </li>
             ))}
           </ul>
