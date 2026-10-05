@@ -690,24 +690,36 @@ export default function DailyPage() {
     if (cur) {
       // A chapel inside the current period's remaining window is time the
       // teacher is not teaching — a seventy-seven-minute period that runs
-      // through a half-hour chapel is forty-seven minutes of class, and
-      // "min left" should say so. Scan every period-shaped source for
-      // anything titled Chapel or Assembly whose span overlaps [t, cur.end]
-      // and take those minutes back off the clock. If chapel is already its
-      // own bell row — the usual case — cur.end lands at chapel.start and
-      // the subtraction is nil, which is the right outcome.
+      // through a forty-five-minute chapel is thirty-two minutes of class,
+      // and "min left" should say so. The chapel's start is not a bell in
+      // Vertical column A (the common case), so cur.end lands past it;
+      // scan every period-shaped source the board has — the raw periods
+      // (`data.periods`, the field the memo opens with), the merged plan,
+      // kept — for anything titled Chapel or Assembly whose span overlaps
+      // [t, cur.end], and take those minutes back off the clock. If chapel
+      // IS its own bell row then cur.end lands at chapel.start and the
+      // subtraction is nil.
       const rawLeft = cur.end - t;
       const isChapelish = (p) => {
-        const s = String(p?.subj || p?.text || p?.today || p?.title || "").toLowerCase();
-        return /\b(chapel|assembly|assemblies)\b/.test(s);
+        if (!p || p === cur) return false;
+        const fields = [p.subj, p.text, p.today, p.title, p.name, p.code, p.flag, p.sec]
+          .filter(Boolean).map((x) => String(x).toLowerCase()).join(" ");
+        return /\b(chapel|assembly|assemblies)\b/.test(fields);
       };
-      const sources = [...kept, ...((data && (data.rows || [])) || [])];
+      // Every place a chapel might live. `data.periods` is the raw row list
+      // the memo opened with; `data.dayPlan[wd]` is the day's merged plan.
+      const sources = [
+        ...kept,
+        ...((data && data.periods) || []),
+        ...plan,
+      ];
       const seen = new Set();
       let chapelMinutes = 0;
+      const chapelsHit = [];
       for (const p of sources) {
         if (!p || p === cur) continue;
         const start = Number(p.start);
-        const end = Number(p.end ?? (start + 30));
+        const end = Number(p.end ?? (start + 45));
         if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
         const key = `${start}-${end}`;
         if (seen.has(key)) continue;
@@ -715,13 +727,30 @@ export default function DailyPage() {
         if (!isChapelish(p)) continue;
         const s = Math.max(start, t);
         const e = Math.min(end, cur.end);
-        if (e > s) chapelMinutes += e - s;
+        if (e > s) {
+          const mins = e - s;
+          chapelMinutes += mins;
+          chapelsHit.push({ title: p.subj || p.text || p.title || "(no title)", start, end, overlap: mins });
+        }
       }
       cur = {
         ...cur,
         elapsed: t - cur.start,
         left: Math.max(0, rawLeft - chapelMinutes),
       };
+      // Debug trace — only visible with ?debug=1. Lets us confirm the
+      // subtraction fired and show which chapel source matched.
+      if (opts.debug) {
+        try {
+          // eslint-disable-next-line no-console
+          console.log("[daily chapel-subtract]", {
+            rawLeft, chapelMinutes, finalLeft: cur.left, chapelsHit,
+            allSources: sources.filter((p) => p && p !== cur).map((p) => ({
+              start: p.start, end: p.end, subj: p.subj, text: p.text, duty: p.duty,
+            })),
+          });
+        } catch { /* ignore */ }
+      }
     }
     return { P: kept, classes, cur, nextClass };
   }, [data, t]);
