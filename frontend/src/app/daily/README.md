@@ -188,9 +188,8 @@ room settles, says it together, and the lesson is underneath when they look up �
 in a light blue panel of its own, the title over a rule and the prayer in the
 serif.
 
-A cell is **title, then the prayer**, separated by a line break where the cell
-has one or by a **pipe**, which is what lets the whole column be pasted in at
-once:
+A cell is **title, then the prayer**, separated by a **pipe** — which is what
+lets the whole column be pasted in at once:
 
 ```
 Before study — Thomas Aquinas | Creator of all things, true source of light and wisdom…
@@ -206,6 +205,14 @@ for the season the day falls in (`churchSeason`, off `easterSunday`, the
 Gregorian computus). Where a tag matches, the pick is made from the tagged ones
 alone; otherwise from the untagged, so a Christmas prayer does not turn up in
 February.
+
+A **line break does not** separate them. The cells that carry line breaks are
+the ones that need them — a poem or a hymn set out in lines — and taking the
+first line as a title stole the opening line of the first one that arrived
+("O Lord renew in me today"), set it in small capitals as a heading and started
+the poem at its second line. A cell with no pipe is a prayer, lines and all,
+under the standing heading "Before we begin"; give it a `Title |` prefix to have
+a heading of its own.
 
 The pick is random but **not re-rolled every ten seconds**: a projector
 re-renders constantly, and a prayer that changes while the room is saying it is
