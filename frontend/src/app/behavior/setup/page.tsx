@@ -1713,16 +1713,15 @@ function HousesSection({ config }: { config?: any }) {
     const html =
       '<div style="font-family:Arial,Helvetica,sans-serif;color:#1e293b;line-height:1.5;">' +
         '<h2 style="margin:0 0 4px;font-size:20px;">👀 Your House Standings are LIVE!</h2>' +
-        '<p style="margin:0 0 14px;color:#64748b;font-size:14px;">See where your house stands — and look up your own house anytime.</p>' +
+        '<p style="margin:0 0 14px;color:#64748b;font-size:14px;">See where your house stands, anytime.</p>' +
         '<p style="margin:0 0 14px;">Hi everyone,</p>' +
         '<p style="margin:0 0 14px;">The house competition is heating up, and you can now follow it live! Every point your house earns for kindness, effort, honesty, and team events shows up on the board within seconds. Check where <strong>your</strong> house sits and cheer your teammates on. 🎉</p>' +
-        '<p style="margin:0 0 14px;padding:12px 16px;background:#eff6ff;border-left:4px solid #2563eb;border-radius:6px;"><strong>Not sure which house you’re in?</strong> Forgot your group or room, or missed the day it was announced? No problem — just type your first and last name and the site will tell you your house, group #, room, and teachers.</p>' +
-        '<p style="margin:0 0 14px;text-align:center;"><a href="' + url + '" style="display:inline-block;background:#0f172a;color:#ffffff;text-decoration:none;padding:12px 26px;border-radius:10px;font-weight:bold;font-size:16px;">🏆 See the Standings &amp; Find Your House</a></p>' +
+        '<p style="margin:0 0 14px;padding:12px 16px;background:#eff6ff;border-left:4px solid #2563eb;border-radius:6px;"><strong>Not sure which house you’re in?</strong> Ask your homeroom teacher.</p>' +
+        '<p style="margin:0 0 14px;text-align:center;"><a href="' + url + '" style="display:inline-block;background:#0f172a;color:#ffffff;text-decoration:none;padding:12px 26px;border-radius:10px;font-weight:bold;font-size:16px;">🏆 See the Standings</a></p>' +
         '<p style="margin:0 0 8px;font-weight:bold;">How to use it:</p>' +
         '<ol style="margin:0 0 14px;padding-left:20px;">' +
           '<li style="margin-bottom:6px;">Open <a href="' + url + '" style="color:#2563eb;">curriculate.net/houses</a> (the link above fills in the code for you).</li>' +
           '<li style="margin-bottom:6px;">If asked, enter the House code <strong style="background:#fef9c3;padding:2px 8px;border-radius:6px;letter-spacing:2px;">' + code + '</strong> — you only do this once.</li>' +
-          '<li style="margin-bottom:6px;">Tap <strong>&ldquo;Find your house&rdquo;</strong> and type your first and last name to see your house, group #, room, and teachers.</li>' +
           '<li style="margin-bottom:6px;">Watch the <strong>leaderboard</strong>, <strong>competitions</strong>, and <strong>latest points</strong> roll in.</li>' +
         '</ol>' +
         '<p style="margin:0 0 14px;padding:12px 16px;background:#f8fafc;border-left:4px solid #0f172a;border-radius:6px;font-style:italic;color:#334155;">&ldquo;Whatever you do, work at it with all your heart.&rdquo; — Colossians 3:23</p>' +
@@ -1732,13 +1731,12 @@ function HousesSection({ config }: { config?: any }) {
       '👀 Your House Standings are LIVE!\n\n' +
       'Hi everyone,\n\n' +
       'The house competition is heating up, and you can now follow it live! Check where your house sits and cheer your teammates on.\n\n' +
-      'Not sure which house you’re in? Forgot your group or room, or missed the day it was announced? Just type your first and last name and the site will tell you your house, group #, room, and teachers.\n\n' +
-      'See the standings & find your house: ' + url + '\n\n' +
+      'Not sure which house you’re in? Ask your homeroom teacher.\n\n' +
+      'See the standings: ' + url + '\n\n' +
       'How to use it:\n' +
       '1. Open curriculate.net/houses (the link above fills in the code for you).\n' +
       '2. If asked, enter the House code ' + code + ' — you only do this once.\n' +
-      '3. Tap "Find your house" and type your first and last name to see your house, group #, room, and teachers.\n' +
-      '4. Watch the leaderboard, competitions, and latest points roll in.\n\n' +
+      '3. Watch the leaderboard, competitions, and latest points roll in.\n\n' +
       '"Whatever you do, work at it with all your heart." — Colossians 3:23\n\n' +
       'Let’s make it a great season. Go teams!';
     try {

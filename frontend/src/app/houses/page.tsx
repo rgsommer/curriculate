@@ -32,7 +32,6 @@ async function fetchBoard(code: string): Promise<{ ok: boolean; error?: string; 
   }
 }
 
-type Match = { grade: string; house: string; color: string; group: number | null; room: string; teachers?: string[]; points?: number };
 
 export default function HousesPortal() {
   const [code, setCode] = useState<string>("");
@@ -40,13 +39,6 @@ export default function HousesPortal() {
   const [board, setBoard] = useState<Board | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
-
-  // "Find your house" by first + last name (exact match; no names come back)
-  const [lookupFirst, setLookupFirst] = useState("");
-  const [lookupName, setLookupName] = useState("");
-  const [matches, setMatches] = useState<Match[] | null>(null);
-  const [lookupBusy, setLookupBusy] = useState(false);
-  const [lookupErr, setLookupErr] = useState("");
 
   // Tap a house on the leaderboard → composite breakdown of where its points
   // came from (individual Compass points vs team/house events). Never any names.
@@ -76,24 +68,6 @@ export default function HousesPortal() {
       } finally {
         setDetailBusy(false);
       }
-    }
-  }
-
-  async function doLookup(e?: React.FormEvent) {
-    e?.preventDefault();
-    const fn = lookupFirst.trim();
-    const ln = lookupName.trim();
-    if (!fn || !ln) { setLookupErr("Type your first and last name."); return; }
-    setLookupBusy(true); setLookupErr(""); setMatches(null);
-    try {
-      const r = await fetch(`${API_BASE}/api/behavior/public/houses/lookup?code=${encodeURIComponent(code)}&firstName=${encodeURIComponent(fn)}&lastName=${encodeURIComponent(ln)}`);
-      const d = await r.json();
-      if (!d.ok) { setLookupErr(d.error || "Could not look that up."); return; }
-      setMatches(d.matches || []);
-    } catch {
-      setLookupErr("Network error — try again.");
-    } finally {
-      setLookupBusy(false);
     }
   }
 
@@ -224,59 +198,6 @@ export default function HousesPortal() {
 
       {err && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5">
-        <h2 className="font-semibold">Find your house</h2>
-        <p className="mt-1 text-sm text-slate-500">Type your first and last name to see your house and group.</p>
-        <form onSubmit={doLookup} className="mt-2 flex flex-wrap gap-2">
-          <input
-            value={lookupFirst}
-            onChange={(e) => setLookupFirst(e.target.value)}
-            placeholder="First name"
-            aria-label="First name"
-            autoComplete="off"
-            className="min-w-[8rem] flex-1 rounded-xl border border-slate-300 px-4 py-2.5"
-          />
-          <input
-            value={lookupName}
-            onChange={(e) => setLookupName(e.target.value)}
-            placeholder="Last name"
-            aria-label="Last name"
-            autoComplete="off"
-            className="min-w-[8rem] flex-1 rounded-xl border border-slate-300 px-4 py-2.5"
-          />
-          <button type="submit" disabled={lookupBusy} className="rounded-xl bg-slate-900 px-4 py-2.5 font-semibold text-white disabled:opacity-40">
-            {lookupBusy ? "…" : "Find"}
-          </button>
-        </form>
-        {lookupErr && <p className="mt-2 text-sm text-red-600">{lookupErr}</p>}
-        {matches && matches.length === 0 && <p className="mt-2 text-sm text-slate-500">No match — check the spelling, or ask your teacher.</p>}
-        {matches && matches.length > 0 && (
-          <ul className="mt-3 space-y-2">
-            {matches.map((m, i) => (
-              <li key={i} className="flex items-center gap-3 rounded-xl border border-slate-200 p-3">
-                <span className="inline-block h-8 w-8 shrink-0 rounded-full" style={{ background: m.color }} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <div className="font-semibold">Your house{matches.length > 1 && m.grade ? <span className="ml-1 text-xs font-normal text-slate-500">Gr {m.grade}</span> : null}</div>
-                    {typeof m.points === "number" && (
-                      <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800" title="Your points to spend in the rewards store">⭐ {m.points} pts</span>
-                    )}
-                  </div>
-                  <div className="text-sm text-slate-600">
-                    {m.house || "—"}
-                    {m.group ? <span className="font-medium"> · Group #{m.group}</span> : null}
-                    {m.room ? <span className="text-slate-500"> → Room {m.room}</span> : null}
-                  </div>
-                  {m.teachers && m.teachers.length > 0 && (
-                    <div className="mt-0.5 text-xs text-slate-500"><span className="text-slate-500">Teacher{m.teachers.length > 1 ? "s" : ""}:</span> {m.teachers.join(", ")}</div>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
       {board?.eventResult && board.eventResult.houses.length > 0 && (
         <section className="rounded-2xl border border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 p-5">
           <h2 className="text-lg font-bold text-amber-900">🏆 {board.eventResult.label} results</h2>
@@ -397,7 +318,7 @@ export default function HousesPortal() {
       {board && board.merch && board.merch.length > 0 && (
         <section className="rounded-2xl border border-slate-200 bg-white p-5">
           <h2 className="font-semibold">🎁 Rewards store</h2>
-          <p className="mt-1 text-sm text-slate-500">Spend the points you&apos;ve earned. Find your name above to see your balance, then see a teacher to redeem.</p>
+          <p className="mt-1 text-sm text-slate-500">Spend the points you&apos;ve earned — ask a teacher for your balance and to redeem.</p>
           <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
             {board.merch.map((m, i) => (
               <li key={i} className="rounded-xl border border-slate-200 p-3 text-center">

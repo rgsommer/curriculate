@@ -7581,55 +7581,12 @@ router.get("/public/houses", async (req, res, next) => {
   }
 });
 
-// Student self-lookup (code-protected). The student types their FIRST and LAST
-// name; an exact match returns their house, sub-group (#1/#2), room and house
-// teachers. Returns no student names at all, so it can't be used to browse the
-// roster (the old last-name-prefix search listed everyone with that surname).
-router.get("/public/houses/lookup", async (req, res, next) => {
-  try {
-    const code = String(req.query.code || "").trim();
-    if (!/^\d{3,6}$/.test(code)) return res.status(400).json({ ok: false, error: "Enter your school code." });
-    const lastName = String(req.query.lastName || "").trim();
-    const firstName = String(req.query.firstName || "").trim();
-    if (!firstName || !lastName) return res.status(400).json({ ok: false, error: "Type your first and last name." });
-    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true }).select("schoolId merchStore").lean();
-    if (!config) return res.status(404).json({ ok: false, error: "No school matches that code." });
-
-    const esc = (v) => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const exact = (v) => new RegExp("^\\s*" + esc(v) + "\\s*$", "i");
-    const students = await BehaviorStudent.find({
-      schoolId: config.schoolId, active: true, houseId: { $ne: null },
-      lastName: exact(lastName),
-      $or: [{ firstName: exact(firstName) }, { preferredName: exact(firstName) }],
-    })
-      .select("grade houseId houseGroup")
-      .limit(5)
-      .lean();
-    // Personal merch points balance (only surfaced when the store is enabled).
-    const merchOn = !!config.merchStore?.enabled;
-    const balances = merchOn ? await merchBalances(new mongoose.Types.ObjectId(config.schoolId), students.map((s) => s._id)) : {};
-    const houses = await BehaviorHouse.find({ schoolId: config.schoolId }).select("name color roomGroup1 roomGroup2 teacher1 teacher2").lean();
-    const houseById = Object.fromEntries(houses.map((h) => [String(h._id), h]));
-
-    const matches = students.map((s) => {
-      const h = houseById[String(s.houseId)] || {};
-      const group = s.houseGroup === 1 || s.houseGroup === 2 ? s.houseGroup : null;
-      const room = group === 1 ? (h.roomGroup1 || "") : group === 2 ? (h.roomGroup2 || "") : "";
-      const teachers = [h.teacher1, h.teacher2].filter((t) => t && String(t).trim());
-      return {
-        grade: s.grade || "",
-        house: h.name || "",
-        color: h.color || "#0f172a",
-        group,
-        room,
-        teachers,
-        ...(merchOn ? { points: balances[String(s._id)] || 0 } : {}),
-      };
-    });
-    res.json({ ok: true, merchEnabled: merchOn, matches });
-  } catch (err) {
-    next(err);
-  }
+// Student self-lookup ("Find your house") was REMOVED on purpose (2026-10-05):
+// even an exact-name lookup shows the public page holds student names. The
+// public portal takes no student input and returns no student data. Old clients
+// get a plain 410.
+router.get("/public/houses/lookup", (req, res) => {
+  res.status(410).json({ ok: false, error: "This feature has been removed. Ask your homeroom teacher which house you’re in." });
 });
 
 // Visit beacon for the House Standings portal. The public page fires this once
