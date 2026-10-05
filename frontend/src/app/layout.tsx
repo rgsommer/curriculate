@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   metadataBase: new URL("https://curriculate.net"),
   title: {
     template: "%s | Curriculate.net",
-    default: "Curriculate.net – AI Classroom Scavenger Hunts + AI Grading",
+    default: "Curriculate.net – Classroom Scavenger Hunts + Pulse Grading",
   },
   description:
     "Curriculate is a two-product platform for K-12 teachers: live classroom scavenger hunts (station-based team learning) plus Pulse Grading (fast rubric-matched feedback at curriculate.net/grading) — with native Edsby roster import and gradebook-ready reports.",
@@ -25,9 +25,9 @@ export const metadata: Metadata = {
     "classroom scavenger hunt",
     "scavenger hunt learning",
     "classroom activities",
-    "AI lesson planning",
-    "AI grading",
-    "AI grader for teachers",
+    "lesson planning",
+    "rubric grading",
+    "fast feedback for teachers",
     "Pulse Grading",
     "Edsby gradebook export",
     "Edsby class roster",
@@ -67,7 +67,7 @@ export const metadata: Metadata = {
         url: "https://curriculate.net/images/og/og-home.png",
         width: 1200,
         height: 630,
-        alt: "Curriculate — AI Classroom Scavenger Hunts + AI Grading",
+        alt: "Curriculate — Classroom Scavenger Hunts + Pulse Grading",
       },
     ],
   },
@@ -210,7 +210,7 @@ export default function RootLayout({
               url: "https://curriculate.net",
               logo: "https://curriculate.net/images/og/og-home.png",
               description:
-                "Curriculate builds AI tools for K-12 teachers — live classroom scavenger hunts and AI grading.",
+                "Curriculate builds classroom tools for K-12 teachers — live scavenger hunts and fast rubric-matched grading.",
               sameAs: [
                 "https://twitter.com/CurriculateNet",
               ],
