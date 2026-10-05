@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "How it Works — Curriculate",
     description:
-      "Plan → Run → Capture → Report. Station-based learning made simple with AI-powered task generation and real-time multiplayer.",
+      "Plan → Run → Capture → Report. Station-based team learning with instant task generation and real-time multiplayer.",
     url: "https://curriculate.net/how-it-works",
     siteName: "Curriculate",
     type: "website",

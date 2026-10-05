@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Corporate Event Games — AI-Powered Team Activities | Curriculate",
+  title: "Corporate Event Games — Interactive Team Activities | Curriculate",
   description:
     "Interactive team games for corporate events, conferences, and offsites. Paste your event content and AI generates custom activities in 60 seconds. Attendees join on phones — no app needed.",
   keywords: [
@@ -32,7 +32,7 @@ export const metadata: Metadata = {
     "professional icebreakers",
   ],
   openGraph: {
-    title: "Corporate Event Games — AI-Powered Team Activities",
+    title: "Corporate Event Games — Interactive Team Activities",
     description:
       "Paste your event content. AI builds interactive team games in 60 seconds. Attendees join on phones — no app needed.",
     type: "website",
@@ -49,7 +49,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Corporate Event Games — AI-Powered Team Activities | Curriculate",
+    title: "Corporate Event Games — Interactive Team Activities | Curriculate",
     description:
       "AI generates custom team games from your conference content, training material, or company vocabulary. Works on any phone.",
     images: ["https://curriculate.net/images/og/og-events.png"],

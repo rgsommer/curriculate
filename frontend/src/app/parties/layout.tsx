@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Birthday Party Games — AI-Powered Party Activities | Curriculate",
+  title: "Birthday Party Games — Interactive Party Activities | Curriculate",
   description:
     "Turn any birthday party into an epic game show with Curriculate. Pick a theme, add personal touches, and AI generates interactive team games that run on phones. No app needed — works for ages 5 to 15+.",
   keywords: [
@@ -35,7 +35,7 @@ export const metadata: Metadata = {
     "party games no download",
   ],
   openGraph: {
-    title: "Birthday Party Games — AI-Powered Party Activities",
+    title: "Birthday Party Games — Interactive Party Activities",
     description:
       "Pick a theme. Add the birthday kid's name. AI builds a full set of interactive party games in 60 seconds. Kids join on phones — no app needed.",
     type: "website",
@@ -52,7 +52,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Birthday Party Games — AI-Powered Party Activities | Curriculate",
+    title: "Birthday Party Games — Interactive Party Activities | Curriculate",
     description:
       "AI generates themed party games for birthdays. Flashcards Race, Musical Chairs, Speed Draw, Treasure Runner — all on phones, no app needed.",
     images: ["https://curriculate.net/images/og/og-parties.png"],

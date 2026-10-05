@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     default: "Curriculate.net – AI Classroom Scavenger Hunts + AI Grading",
   },
   description:
-    "Curriculate is a two-product platform for K-12 teachers: AI-powered classroom scavenger hunts (live station-based learning) plus Pulse Grading (AI grading at curriculate.net/grading) — with native Edsby roster import and gradebook-ready reports.",
+    "Curriculate is a two-product platform for K-12 teachers: live classroom scavenger hunts (station-based team learning) plus Pulse Grading (fast rubric-matched feedback at curriculate.net/grading) — with native Edsby roster import and gradebook-ready reports.",
   keywords: [
     "education",
     "classroom scavenger hunt",
@@ -191,7 +191,7 @@ export default function RootLayout({
               name: "Curriculate",
               url: "https://curriculate.net",
               description:
-                "AI-powered classroom scavenger hunt platform plus Pulse Grading — time-fit lesson planning, interactive team stations, AI grading, and gradebook-ready reporting with native Edsby integration.",
+                "Live classroom scavenger hunt platform plus Pulse Grading — time-fit lesson planning, interactive team stations, rubric-matched feedback, and gradebook-ready reporting with native Edsby integration.",
               potentialAction: {
                 "@type": "SearchAction",
                 target: "https://curriculate.net/search?q={search_term_string}",
@@ -237,7 +237,7 @@ export default function RootLayout({
               operatingSystem: "Web, Android",
               url: "https://curriculate.net",
               description:
-                "AI-powered classroom scavenger hunts plus AI grading. Edsby roster import, gradebook-ready CSV export, per-student improvement tracking.",
+                "Live classroom scavenger hunts plus rubric-matched grading. Edsby roster import, gradebook-ready CSV export, per-student improvement tracking.",
               offers: [
                 {
                   "@type": "Offer",

@@ -190,7 +190,7 @@ export default function EventsPage() {
           __html: JSON.stringify({
             "@context": "https://schema.org",
             "@type": "WebPage",
-            name: "Corporate Event Games — AI-Powered Team Activities",
+            name: "Corporate Event Games — Interactive Team Activities",
             description:
               "Interactive team games for conferences, offsites, and corporate events. AI generates custom activities from your event content.",
             url: "https://curriculate.net/events",

@@ -193,7 +193,7 @@ export default function PartiesPage() {
           __html: JSON.stringify({
             "@context": "https://schema.org",
             "@type": "WebPage",
-            name: "Birthday Party Games — AI-Powered Party Activities",
+            name: "Birthday Party Games — Interactive Party Activities",
             description:
               "Turn any birthday party into an epic game show. AI generates themed interactive team games that run on phones.",
             url: "https://curriculate.net/parties",
