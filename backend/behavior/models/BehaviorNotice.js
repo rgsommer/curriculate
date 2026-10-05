@@ -57,6 +57,11 @@ const BehaviorNoticeSchema = new mongoose.Schema(
     aiUsed: { type: Boolean, default: false }, // false => deterministic fallback was used
 
     status: { type: String, enum: ["queued", "sent", "failed", "cancelled"], default: "queued", index: true },
+    // Set when a SENT notice is voided because an offence that triggered it was
+    // deleted (a mis-log). Voided notices are status "cancelled", so they stop
+    // counting toward the notice sequence / escalation.
+    voidedAt: { type: Date, default: null },
+    voidReason: { type: String, default: "" },
     // Per-channel delivery outcome (for the email/Edsby failover audit).
     deliveries: {
       type: [

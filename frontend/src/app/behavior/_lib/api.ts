@@ -197,6 +197,12 @@ export function completeConsequence(consequenceId: string, completed = true) {
   return api(`/consequences/${consequenceId}/complete`, { method: "POST", body: { completed } });
 }
 
+// Resolve a consequence with a conversation instead: logs a "Discussed with
+// student" intervention and marks the consequence resolved that way.
+export function discussedConsequence(consequenceId: string) {
+  return api(`/consequences/${consequenceId}/discussed`, { method: "POST", body: {} });
+}
+
 // Log a homeroom follow-up (supportive relational check-in) for a student.
 export function homeroomFollowup(studentId: string) {
   return api(`/students/${studentId}/homeroom-followup`, { method: "POST", body: {} });

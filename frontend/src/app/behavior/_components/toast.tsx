@@ -21,7 +21,9 @@ export function Toaster() {
       const { message, kind } = (e as CustomEvent).detail || {};
       setT({ message, kind, id: Date.now() });
       if (timer) clearTimeout(timer);
-      timer = setTimeout(() => setT(null), kind === "error" ? 4000 : 1800);
+      // Longer messages (e.g. what a delete undid) stay up long enough to read.
+      const base = kind === "error" ? 4000 : 1800;
+      timer = setTimeout(() => setT(null), Math.min(12000, Math.max(base, String(message || "").length * 70)));
     }
     window.addEventListener(EVENT, onToast);
     return () => { window.removeEventListener(EVENT, onToast); if (timer) clearTimeout(timer); };

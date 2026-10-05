@@ -164,7 +164,7 @@ async function fireWhiteSlip({ req, student, config, behaviorName, detailText, a
     if (config?.houseWhiteSlipDeduct && !config?.houseNegativePoints && pen > 0 && student.houseId) {
       await HousePointEvent.create({
         schoolId: req.schoolId, houseId: student.houseId, studentId: student._id,
-        points: -Math.abs(pen), reason: `White slip — ${behaviorName}`,
+        points: -Math.abs(pen), reason: `White slip — ${behaviorName}`, incidentId: relatedIncidentId || null,
         awardedByTeacherId: req.membership?._id || null, at: when,
       });
     }
@@ -573,7 +573,8 @@ function escapeHtml(s) {
 // often IS the concern the teacher wants to raise), and from internal support/
 // meta records that should never be surfaced to parents.
 const PARENT_CONTACT_NAME = "Parent meeting / contact";
-const SUPPORT_INTERACTION_NAMES = new Set(["Homeroom follow-up", "Whole-picture note recommended"]);
+// "Offence withdrawn" is an internal record of a reversal — never framed to parents as a concern.
+const SUPPORT_INTERACTION_NAMES = new Set(["Homeroom follow-up", "Whole-picture note recommended", "Offence withdrawn"]);
 // A teacher↔student conversation worth telling parents about: INTERACTION mode,
 // not a parent-contact log, and not an internal support/meta record.
 function isConcernConversation(inc) {
@@ -3955,23 +3956,131 @@ router.put("/incidents/:id", authAny, loadMembership, canLog, async (req, res, n
   }
 });
 
-// Delete an incident (a mis-log). Removes any house points it awarded. Strikes
-// recompute automatically since they're derived from the incident rows.
+// Delete an incident (a mis-log) and BACKPEDAL everything it set in motion, so
+// the escalation steps back as if it never happened:
+//  - house points it awarded/deducted (incl. a white-slip penalty)
+//  - consequences tied to it that weren't carried out yet (incl. a recommended
+//    white slip); ones already completed stay on record (they really happened)
+//  - open follow-ups created from it
+//  - notices it triggered: a queued one is cancelled; a sent one is VOIDED and
+//    the other offences it had spent go back to being active strikes
+// Strikes recompute automatically since they're derived from the incident rows.
+//
+// Two reasons to remove one (body/query `mode`):
+//  - "error" (default): logged in error (wrong student / behaviour) — removed
+//    completely, no trace beyond the audit log.
+//  - "withdrawn": the teacher's judgment to reverse it. Same backpedal, but an
+//    "Offence withdrawn" interaction is logged so the record shows what was
+//    withdrawn, by whom, when and why (documentation only — never a strike).
 router.delete("/incidents/:id", authAny, loadMembership, canLog, async (req, res, next) => {
   try {
     const inc = await BehaviorIncident.findOne({ _id: req.params.id, schoolId: req.schoolId });
     if (!inc) return res.status(404).json({ ok: false, error: "Incident not found" });
     if (!canEditIncident(req.membership, inc)) return res.status(403).json({ ok: false, error: "Only the teacher who logged it (or an admin) can delete it." });
+    const mode = String(req.body?.mode || req.query.mode || "error") === "withdrawn" ? "withdrawn" : "error";
+    const why = String(req.body?.reason || req.query.reason || "").trim().slice(0, 500);
     await HousePointEvent.deleteMany({ schoolId: req.schoolId, incidentId: inc._id });
+    const reversed = await backpedalIncident(req.schoolId, inc);
+    if (mode === "withdrawn") {
+      try { await logOffenceWithdrawn({ schoolId: req.schoolId, inc, teacherId: req.membership._id, byName: actorName(req), why, reversed }); }
+      catch (e) { console.warn("[behavior] withdrawn log failed:", e?.message || e); }
+    }
     // Remove any stored photo/video evidence so it doesn't outlive the incident.
     for (const a of inc.attachments || []) await deleteEvidenceKey(a.key);
     await BehaviorIncident.deleteOne({ _id: inc._id });
-    await audit(req.schoolId, "incident.deleted", req, { studentId: inc.studentId, meta: { behavior: inc.behaviorSnapshot?.name } });
-    res.json({ ok: true });
+    await audit(req.schoolId, mode === "withdrawn" ? "incident.withdrawn" : "incident.deleted", req, { studentId: inc.studentId, meta: { behavior: inc.behaviorSnapshot?.name, reversed, mode, why } });
+    res.json({ ok: true, mode, reversed });
   } catch (err) {
     next(err);
   }
 });
+
+// Undo what an incident triggered (see the DELETE route above). Returns a summary
+// so the UI can tell the teacher what was reversed.
+async function backpedalIncident(schoolId, inc) {
+  const out = { consequences: 0, whiteSlip: false, keptCompleted: 0, followups: 0, noticesCancelled: 0, noticesVoided: 0, voidedSentNotice: false };
+  const cons = await BehaviorConsequence.find({ schoolId, relatedIncidentId: inc._id });
+  for (const c of cons) {
+    if (c.completed) {
+      out.keptCompleted += 1;
+      if (!/offence later deleted/i.test(c.detail || "")) { c.detail = `${c.detail || ""} (offence later deleted)`.trim(); await c.save(); }
+      continue;
+    }
+    if (c.type === "White slip") out.whiteSlip = true;
+    await BehaviorConsequence.deleteOne({ _id: c._id });
+    out.consequences += 1;
+  }
+  const fu = await BehaviorFollowup.deleteMany({ schoolId, incidentId: inc._id, status: "open" });
+  out.followups = fu.deletedCount || 0;
+
+  const notices = await BehaviorNotice.find({ schoolId, triggeringIncidentIds: inc._id, status: { $in: ["queued", "sent", "failed"] } });
+  for (const n of notices) {
+    const wasSent = n.status === "sent";
+    n.status = "cancelled";
+    if (wasSent) { n.voidedAt = new Date(); n.voidReason = "An offence that triggered it was deleted."; }
+    await n.save();
+    // Offences this notice had spent count as active strikes again.
+    await BehaviorIncident.updateMany({ schoolId, countedInNoticeId: n._id, _id: { $ne: inc._id } }, { $set: { countedInNoticeId: null } });
+    if (wasSent) { out.noticesVoided += 1; if (n.reason !== "positive") out.voidedSentNotice = true; }
+    else out.noticesCancelled += 1;
+  }
+  if (notices.length) {
+    const config = await BehaviorConfig.findOne({ schoolId }).lean();
+    const last = await BehaviorNotice.findOne({ schoolId, studentId: inc.studentId, status: "sent", reason: { $ne: "positive" } }).sort({ sentAt: -1 }).select("sentAt").lean();
+    await BehaviorStudent.updateOne({ _id: inc.studentId }, { $set: {
+      noticesHomeCount: await countPeriodNotices(schoolId, inc.studentId, config),
+      lastNoticeAt: last?.sentAt || null,
+    } });
+  }
+  return out;
+}
+
+// "Offence withdrawn": the record of a teacher's judgment call to reverse an
+// offence (the offence itself is removed and its effects undone). Documentation
+// only — never a strike, nothing sent home.
+async function logOffenceWithdrawn({ schoolId, inc, teacherId = null, byName = "", why = "", reversed = {} }) {
+  let beh = await Behavior.findOne({ schoolId, name: "Offence withdrawn" });
+  if (!beh) {
+    beh = await Behavior.create({
+      schoolId, name: "Offence withdrawn", keyword: "intervention", kind: "negative", triggerMode: "INTERACTION",
+      description: "A teacher reversed a logged offence on reflection. Its strike, consequence and any notice were undone; this keeps a record of the decision. Documentation only — not a strike.",
+      consequenceText: "", points: 0,
+    });
+  }
+  const when = new Date(inc.timestamp).toLocaleDateString("en-CA", { timeZone: "America/Toronto", month: "short", day: "numeric", year: "numeric" });
+  const undone = [];
+  if (reversed.consequences) undone.push(reversed.whiteSlip ? "the white slip" : "its consequence");
+  if (reversed.noticesVoided || reversed.noticesCancelled) undone.push("the notice it triggered");
+  const note = `${byName || "A teacher"} withdrew “${inc.behaviorSnapshot?.name || "an offence"}” (logged ${when})` +
+    (undone.length ? `; ${undone.join(" and ")} undone` : "") + "." + (why ? ` Reason: ${why}` : "");
+  return BehaviorIncident.create({
+    schoolId, studentId: inc.studentId, teacherId,
+    behaviorId: beh._id,
+    behaviorSnapshot: { name: beh.name, description: beh.description, triggerMode: "INTERACTION", kind: "negative", consequenceText: "", points: 0 },
+    detailText: note, immediateFlag: false, timestamp: new Date(),
+  });
+}
+
+// "Discussed with student": the teacher resolves a consequence with a
+// conversation instead. Logged as an intervention (documentation only — never a
+// strike, nothing sent home) and the consequence is marked resolved that way.
+async function logDiscussedWithStudent({ schoolId, student, teacherId = null, byName = "", insteadOf = "" }) {
+  let beh = await Behavior.findOne({ schoolId, name: "Discussed with student" });
+  if (!beh) {
+    beh = await Behavior.create({
+      schoolId, name: "Discussed with student", keyword: "intervention", kind: "negative", triggerMode: "INTERACTION",
+      description: "The teacher talked the situation through with the student. An intervention — documentation only; not a strike and nothing is sent home.",
+      consequenceText: "", points: 0,
+    });
+  }
+  const note = `${byName || "A teacher"} discussed the situation with the student${insteadOf ? ` (in place of: ${insteadOf})` : ""}.`;
+  return BehaviorIncident.create({
+    schoolId, studentId: student._id, teacherId,
+    behaviorId: beh._id,
+    behaviorSnapshot: { name: beh.name, description: beh.description, triggerMode: "INTERACTION", kind: "negative", consequenceText: "", points: 0 },
+    detailText: note, immediateFlag: false, timestamp: new Date(),
+  });
+}
 
 // Attach photo/video evidence to an incident (camera capture at log time).
 // Stored privately in S3; only the logging teacher or an admin may attach.
@@ -5537,6 +5646,24 @@ router.post("/consequences/:id/message", authAny, loadMembership, async (req, re
 
 // Mark a consequence as completed (or not). Any teacher can confirm follow-
 // through; the threshold notice then shows the consequence as already done.
+router.post("/consequences/:id/discussed", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const c = await BehaviorConsequence.findOne({ _id: req.params.id, schoolId: req.schoolId });
+    if (!c) return res.status(404).json({ ok: false, error: "Not found" });
+    const student = await BehaviorStudent.findOne({ _id: c.studentId, schoolId: req.schoolId });
+    if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
+    const who = actorName(req);
+    const inc = await logDiscussedWithStudent({ schoolId: req.schoolId, student, teacherId: req.membership._id, byName: who, insteadOf: c.type });
+    c.completed = true; c.resolution = "discussed";
+    c.completedByTeacherId = req.membership._id; c.completedByName = who; c.completedAt = new Date();
+    await c.save();
+    await audit(req.schoolId, "consequence.discussed", req, { studentId: String(c.studentId), incidentId: String(inc._id), meta: { type: c.type } });
+    res.json({ ok: true, consequence: c.toObject() });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post("/consequences/:id/complete", authAny, loadMembership, canLog, async (req, res, next) => {
   try {
     const c = await BehaviorConsequence.findOne({ _id: req.params.id, schoolId: req.schoolId });
@@ -5544,6 +5671,7 @@ router.post("/consequences/:id/complete", authAny, loadMembership, canLog, async
     const done = req.body?.completed === false ? false : true;
     const who = req.membership.name || req.user?.name || "";
     c.completed = done;
+    c.resolution = done ? "completed" : "";
     c.completedByTeacherId = done ? req.membership._id : null;
     c.completedByName = done ? who : "";
     c.completedAt = done ? new Date() : null;

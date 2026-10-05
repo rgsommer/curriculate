@@ -2,10 +2,11 @@
 
 import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
-import { api, getToken, loginHref, issueWhiteSlip, completeConsequence, homeroomFollowup, type Me, type StudentSummary } from "./_lib/api";
+import { api, getToken, loginHref, issueWhiteSlip, completeConsequence, discussedConsequence, homeroomFollowup, type Me, type StudentSummary } from "./_lib/api";
 import { Markdown } from "./_lib/Markdown";
 import SendNoticeModal from "./_components/SendNoticeModal";
 import { Card, Button } from "./_components/ui";
+import { toast } from "./_components/toast";
 
 export default function BehaviorDashboard() {
   const [me, setMe] = useState<Me | null>(null);
@@ -686,6 +687,14 @@ function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number
     try { await completeConsequence(consId, true); }
     catch { setRows((list) => (list || []).map((x) => x._id === s._id ? s : x)); }
   }
+  // Resolve it with a conversation instead (logged as an intervention).
+  async function markDiscussed(s: StudentSummary, consId: string) {
+    setRows((list) => (list || []).map((x) => x._id === s._id
+      ? { ...x, pendingConsequences: (x.pendingConsequences || []).filter((c) => c.id !== consId) }
+      : x));
+    try { await discussedConsequence(consId); toast("Logged: discussed with student ✓"); }
+    catch { setRows((list) => (list || []).map((x) => x._id === s._id ? s : x)); toast("Couldn't save — try again", "error"); }
+  }
 
   if (!rows || rows.length === 0) return null;
   // The consequence the next notice would carry = ladder step for (notices + 1).
@@ -741,6 +750,9 @@ function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number
               <button type="button" onClick={() => markDone(s, c.id)}
                 title="The student has carried this out (e.g. handed in the lines)"
                 className="rounded-md border border-green-300 px-3 py-1.5 font-semibold text-green-700 hover:bg-green-50">✓ Mark completed</button>
+              <button type="button" onClick={() => markDiscussed(s, c.id)}
+                title="Resolve it with a conversation instead. Logged as an intervention: documentation only, not a strike, nothing sent home."
+                className="rounded-md border border-slate-300 px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-50">💬 Discussed instead</button>
             </div>
           ))}
         </li>
