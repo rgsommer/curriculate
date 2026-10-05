@@ -175,10 +175,14 @@ check("duty title: no school", P.friendlyDutyTitle("No School (Labour Day)") ===
   check("prayers: and the prayer is what is left", all[0].text === "Creator of all things, true source of light and wisdom.");
   check("prayers: a tag is read and kept out of the title", all[1].tag === "test" && all[1].title === "Before a test", all[1]);
   check("prayers: an untagged one has no tag", all[0].tag === "" && all[3].tag === "");
-  check(
-    "prayers: a cell written on two lines works the same way",
-    P.parsePrayerCell("Before study\nCreator of all things.").title === "Before study",
-  );
+  // A line break is not a title separator: the cells that carry line breaks are
+  // the ones that need them, and the first poem to arrive lost its opening line
+  // to the heading.
+  {
+    const poem = P.parsePrayerCell("O Lord renew in me today\nA mind to please thee well\n— Winifred Symons");
+    check("prayers: a poem keeps its first line", poem.title === "" && poem.text.startsWith("O Lord renew"), poem);
+    check("prayers: and all of its lines", poem.text.split("\n").length === 3, poem.text);
+  }
   check(
     "prayers: a cell with no title still says the prayer",
     P.parsePrayerCell("Creator of all things.").text === "Creator of all things.",

@@ -2257,12 +2257,13 @@ export type ClassPrayer = { title: string; tag: string; text: string };
 export function parsePrayerCell(cell: string): ClassPrayer | null {
   const whole = String(cell || "").replace(/\r/g, "").trim();
   if (!whole) return null;
-  // Whichever comes first: the cell's own line break or a pipe.
-  const nl = whole.indexOf("\n");
-  const bar = whole.indexOf("|");
-  const at = nl >= 0 && (bar < 0 || nl < bar) ? nl : bar;
-  // No separator at all: it is a prayer with no title rather than a title with
-  // no prayer, which is the way round that still puts words on the screen.
+  // **The pipe alone** separates the title from the prayer. A line break does
+  // not: the cells that have line breaks are the ones that need them — a poem
+  // or a hymn set out in lines — and taking the first line as a title stole the
+  // opening line of the first one that arrived ("O Lord renew in me today"),
+  // put it in small capitals as a heading, and left the poem starting at its
+  // second line. A cell with no pipe is a prayer, lines and all.
+  const at = whole.indexOf("|");
   if (at < 0) return { title: "", tag: "", text: whole };
   const head = whole.slice(0, at).trim();
   const text = whole.slice(at + 1).trim();
