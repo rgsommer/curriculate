@@ -19,15 +19,15 @@ export const metadata: Metadata = {
     default: "Curriculate.net – Classroom Scavenger Hunts + Pulse Grading",
   },
   description:
-    "Curriculate is a two-product platform for K-12 teachers: live classroom scavenger hunts (station-based team learning) plus Pulse Grading (fast rubric-matched feedback at curriculate.net/grading) — with native Edsby roster import and gradebook-ready reports.",
+    "Curriculate is a two-product platform for K-12 teachers: live classroom scavenger hunts (station-based team learning) plus Pulse Grading, a teacher feedback platform (curriculate.net/grading) — with native Edsby roster import and gradebook-ready reports.",
   keywords: [
     "education",
     "classroom scavenger hunt",
     "scavenger hunt learning",
     "classroom activities",
     "lesson planning",
-    "rubric grading",
-    "fast feedback for teachers",
+    "teacher feedback platform",
+    "feedback for teachers",
     "Pulse Grading",
     "Edsby gradebook export",
     "Edsby class roster",
@@ -210,7 +210,7 @@ export default function RootLayout({
               url: "https://curriculate.net",
               logo: "https://curriculate.net/images/og/og-home.png",
               description:
-                "Curriculate builds classroom tools for K-12 teachers — live scavenger hunts and fast rubric-matched grading.",
+                "Curriculate builds classroom tools for K-12 teachers — live scavenger hunts and a teacher feedback platform.",
               sameAs: [
                 "https://twitter.com/CurriculateNet",
               ],
