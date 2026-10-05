@@ -1496,6 +1496,16 @@ check("benefit windows: all three shows from the first minute",
 check("benefit windows: the colour follows what is on offer",
   P.statusWords("AB1 & B2", win(3)).code === "AB1" && P.statusWords("AB1 & B2", win(20)).code === "AB2",
   [P.statusWords("AB1 & B2", win(3)), P.statusWords("AB1 & B2", win(20))]);
+// Headphones: quiet work, and the pass or better.
+check("headphones: quiet work time with the pass", P.headphonesOn("AB2", "Quiet Work Time — finish the map"));
+check("headphones: 'Work on ...' counts", P.headphonesOn("AB1 & B2", "Work on the review questions"));
+check("headphones: and 'working on'", P.quietWork("Students will be working on their drafts"));
+check("headphones: all three qualify", P.headphonesOn("AAll 3", "Quiet work for the rest of the period"));
+check("headphones: not without the pass", !P.headphonesOn("AB1", "Quiet Work Time") && !P.headphonesOn("AFD Only", "Work on the questions"));
+check("headphones: not in an ordinary lesson", !P.headphonesOn("AB2", "Discuss the causes of the war as a class"));
+check("headphones: not at recess", !P.headphonesOn("REC", "Work on it outside"));
+check("headphones: no code, no headphones", !P.headphonesOn("", "Quiet Work Time"));
+
 check("setup: the free-seat window defaults to five minutes", P.parseSetup([]).seatMin === 5);
 check("setup: a row can change the free-seat window", P.parseSetup([["", "Free seat for", "7", "minutes"]]).seatMin === 7);
 

@@ -829,6 +829,34 @@ export function statusWords(
 }
 
 /**
+ * Headphones, beside the rewards.
+ *
+ * They are for working on your own and they are a privilege: a class holding the
+ * free pass (Benefit 2) or better may put them on while the room is working
+ * quietly. Nothing in the privilege code says so, and it is not worth a chip of
+ * its own, so the board marks it where the rewards are already named — a small
+ * 🎧 after "Washroom", or after the badge's words when the pass is not the thing
+ * on offer.
+ *
+ * "Quiet Work Time" is how the sheet writes a whole period of it; "Work on …" is
+ * how an activity or an assignment says the same thing. The class's own material
+ * decides — its reminders and its homework are left out, since both point past
+ * this period and headphones are about the minutes in the room.
+ */
+const QUIET_WORK =
+  /\b(?:quiet|silent|independent)\s+(?:work|reading|study)|\bwork\s+(?:time|period)\b|\bwork(?:ing)?\s+on\b|\bwork\s+quietly\b/i;
+
+export function quietWork(text: string): boolean {
+  return QUIET_WORK.test(String(text || ""));
+}
+
+/** Whether this class may wear them: the pass or better, and quiet work on. */
+export function headphonesOn(status: string, material: string): boolean {
+  const st = parseStatus(status);
+  return !!st && !st.rec && st.B2 && quietWork(material);
+}
+
+/**
  * "Plans for Thursday, Sep 10, 2026...   -660--871--220--820--290-" → title
  * and one point value per class.
  *
