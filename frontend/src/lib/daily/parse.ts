@@ -2617,13 +2617,6 @@ export function birthdaysToday(book: Book, at: Date): Birthday[] {
   return out;
 }
 
-/** The ones whose grade matches a class group ("7A" is grade 7). */
-export function birthdaysForSection(all: Birthday[], sec: string): Birthday[] {
-  const grade = String(sec || "").trim().charAt(0);
-  if (!grade) return [];
-  return (all || []).filter((b) => b.grade === grade);
-}
-
 /** "Mia", "Mia and Sam", "Mia, Sam and Ana". */
 export function joinNames(names: string[]): string {
   const list = (names || []).map((n) => String(n || "").trim()).filter(Boolean);
