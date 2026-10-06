@@ -581,6 +581,10 @@ export default function EngagementDetailPage() {
   // Photo challenge: up to 3 photos/videos per response.
   const [mediaItems, setMediaItems] = useState<{ url: string; type: string }[]>([]);
   const [resendingReveal, setResendingReveal] = useState(false);
+  // Un-reveal asks when it should reveal again (one tap: +7 days).
+  const [resealOpen, setResealOpen] = useState(false);
+  const [resealDate, setResealDate] = useState("");
+  const [resealing, setResealing] = useState(false);
 
   // Creator edit state
   const [editing, setEditing] = useState(false);
@@ -8071,32 +8075,106 @@ export default function EngagementDetailPage() {
                 Revealed too early? Put it back.
               </div>
               <p className="text-xs text-slate-500">
-                Re-seals it for everyone. Existing responses are kept — turn on
-                &ldquo;wait until the deadline&rdquo; next so it holds for the surprise.
+                Re-seals it for everyone until a new reveal date you pick. Existing
+                responses are kept.
               </p>
             </div>
-            <button
-              onClick={async () => {
-                const { error: unErr } = await unrevealEngagement();
+            {!resealOpen && (
+              <button onClick={() => setResealOpen(true)} className={`${CF_SECONDARY}`}>
+                ↩️ Un-reveal (re-seal)
+              </button>
+            )}
+          </div>
+          {resealOpen &&
+            (() => {
+              // +7 days, at the original reveal's time of day (8:00 AM if none).
+              const prev = engagement.deadline ? new Date(engagement.deadline) : null;
+              const plus7 = new Date(Date.now() + 7 * 86400000);
+              plus7.setHours(prev ? prev.getHours() : 8, prev ? prev.getMinutes() : 0, 0, 0);
+              const keepPrev = prev && prev.getTime() > Date.now() ? prev : null;
+              const fmt = (d: Date) =>
+                d.toLocaleString(undefined, {
+                  weekday: "short",
+                  month: "short",
+                  day: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                });
+              const pad = (n: number) => String(n).padStart(2, "0");
+              const reseal = async (d: Date) => {
+                if (resealing) return;
+                if (isNaN(d.getTime()) || d.getTime() <= Date.now()) {
+                  cfAlert("Pick a date in the future.");
+                  return;
+                }
+                setResealing(true);
+                const { error: unErr } = await unrevealEngagement(d.toISOString());
+                setResealing(false);
                 if (unErr) {
                   cfAlert("Couldn't un-reveal: " + unErr);
                   return;
                 }
-                // If there's a future deadline, offer to hold it until then.
-                if (
-                  engagement.deadline &&
-                  new Date(engagement.deadline).getTime() > Date.now() &&
-                  typeof window !== "undefined" &&
-                  (await cfConfirm("Hold it sealed until the deadline so it can't re-reveal early?"))
-                ) {
-                  await setHoldUntilDeadline(true);
-                }
-              }}
-              className={`${CF_SECONDARY}`}
-            >
-              ↩️ Un-reveal (re-seal)
-            </button>
-          </div>
+                setResealOpen(false);
+                setResealDate("");
+              };
+              return (
+                <div className="mt-3 rounded-xl border border-orange-200 bg-orange-50 p-3">
+                  <div className="text-sm font-semibold text-slate-800">
+                    When should it reveal again?
+                  </div>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    It stays sealed until then. Responses are kept, and people can keep
+                    adding theirs.
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      onClick={() => reseal(plus7)}
+                      disabled={resealing}
+                      className={`${CF_PRIMARY}`}
+                    >
+                      {resealing ? "Re-sealing…" : `+7 days · ${fmt(plus7)}`}
+                    </button>
+                    {keepPrev && (
+                      <button
+                        onClick={() => reseal(keepPrev)}
+                        disabled={resealing}
+                        className={`${CF_SECONDARY}`}
+                      >
+                        Keep {fmt(keepPrev)}
+                      </button>
+                    )}
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <span className="text-xs text-slate-500">or pick a date:</span>
+                    <input
+                      type="datetime-local"
+                      value={resealDate}
+                      onChange={(e) => setResealDate(e.target.value)}
+                      min={`${new Date().getFullYear()}-${pad(new Date().getMonth() + 1)}-${pad(new Date().getDate())}T00:00`}
+                      className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm outline-none focus:border-orange-500"
+                    />
+                    {resealDate && (
+                      <button
+                        onClick={() => reseal(new Date(resealDate))}
+                        disabled={resealing}
+                        className="rounded-full bg-orange-500 px-3 py-1 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50"
+                      >
+                        Re-seal until then
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        setResealOpen(false);
+                        setResealDate("");
+                      }}
+                      className="text-xs font-medium text-slate-500 underline hover:text-slate-700"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
           <div className="mt-3 border-t border-slate-100 pt-3">
             <button
               onClick={resendReveal}

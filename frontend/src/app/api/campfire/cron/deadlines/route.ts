@@ -735,19 +735,24 @@ export async function GET(req: Request) {
             winnerUserId: _wu,
             winnerName: _wn,
             winnerUnpaid: _wp,
+            voteLastCallAt: _lc,
+            voteActivityEmailAt: _ae,
             ...rest
-          } = prevRaffle;
-          void _vc; void _ng; void _wu; void _wn; void _wp;
+          } = prevRaffle as typeof prevRaffle & { voteLastCallAt?: string; voteActivityEmailAt?: string };
+          void _vc; void _ng; void _wu; void _wn; void _wp; void _lc; void _ae;
           return { ...((baseConfig as Record<string, unknown>) ?? {}), raffle: rest };
         })()
       : baseConfig;
+    // A re-sealed yearly card's real date (see unrevealEngagement) is this run's only.
+    const yearlyAnchor = (spawnConfig as { yearlyAnchor?: string } | null)?.yearlyAnchor;
+    if (yearlyAnchor && spawnConfig) delete (spawnConfig as Record<string, unknown>).yearlyAnchor;
 
     // Yearly (birthday/anniversary/holiday): re-open a lead time before next year's
     // date as a draft (the auto-open step above launches it). A fixed-date birthday
     // anchors to the same calendar day; a floating holiday (config.recurrence_nth,
     // e.g. Mother's Day = 2nd Sun May) recomputes next year's Nth-weekday date.
     if (e.recurrence_rule === "yearly") {
-      const prev = new Date((e.deadline as string) ?? new Date(now).toISOString());
+      const prev = new Date(yearlyAnchor ?? (e.deadline as string) ?? new Date(now).toISOString());
       const nth = (e.config as { recurrence_nth?: NthWeekday } | null)?.recurrence_nth;
       const nextDeadline = nth
         ? nthWeekdayOfMonth(
