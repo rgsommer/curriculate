@@ -436,7 +436,14 @@ const corsOptions = {
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "x-admin-token", "x-demo-admin-key", "x-admin-token"],
+  // A header the browser is not told about is blocked at the preflight, so
+  // the fetch throws before it ever reaches a route — which looks like the
+  // server failing rather than CORS refusing. x-teacher-token lets a teacher
+  // see the marks their students cannot; it was added to the request and not
+  // to this list, and every student's progress page read "Failed to load
+  // results". It takes the slot where x-admin-token was listed a second
+  // time, so the list is no longer than it was.
+  allowedHeaders: ["Content-Type", "Authorization", "x-admin-token", "x-demo-admin-key", "x-teacher-token"],
   optionsSuccessStatus: 204,
 };
 
