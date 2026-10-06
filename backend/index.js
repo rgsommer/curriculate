@@ -16399,6 +16399,32 @@ function buildRubricInstructions({
         enforced.detected_title = extractedDocTitle;
       }
 
+      // What the grader was actually handed, recorded with the result.
+      //
+      // When a matching item comes back crossed against an answer that is not
+      // in the key, there are two quite different explanations — the grader
+      // ignored the key, or it never had one — and the stored result said
+      // nothing either way, so both times it came up we argued from the marks.
+      // This settles it without a re-run.
+      const keyTextForDebug = String(effectiveAnswerKey || "");
+      const keyDiagnostics = {
+        source: keyTextForDebug && hasAnswerKeyImages ? "text+images"
+              : keyTextForDebug ? "text"
+              : hasAnswerKeyImages ? "images"
+              : "none",
+        textChars: keyTextForDebug.length,
+        imageCount: hasAnswerKeyImages ? answerKeyImages.length : 0,
+        // The head of the key as the model saw it. Enough to tell a correct
+        // key from a scrambled one, or from another paper's, at a glance.
+        textHead: keyTextForDebug.slice(0, 300) || undefined,
+        multiPaper: /ANSWER KEY: /.test(keyTextForDebug) || undefined,
+        rubricChars: String(rubricOverride || "").length || undefined,
+      };
+      console.log(
+        `[grading] ${submissionId} answer key: ${keyDiagnostics.source}` +
+        ` (${keyDiagnostics.textChars} chars, ${keyDiagnostics.imageCount} image(s))`
+      );
+
       return res.json({
         ...enforced,
         assignment_images: imageRefs,
@@ -16407,6 +16433,7 @@ function buildRubricInstructions({
         // Non-fatal S3 outage — grade is real, but the shareable capture link
         // wasn't saved. Undefined (dropped from JSON) on the happy path.
         captureWarning: captureWarning || undefined,
+        answer_key_used: keyDiagnostics,
         meta: { submissionId, gradeBand: band }
       });
 

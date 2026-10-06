@@ -1462,6 +1462,11 @@ export default function BatchGrading({
                   score: resultEntry.score ?? null,
                   outOf: resultEntry.outOf ?? null,
                   pct: resultEntry.pct ?? null,
+                  // What the grader was handed. "none" here beside a crossed
+                  // matching item means the key never arrived; "text+images"
+                  // beside one means it had the key and overrode it. Those
+                  // are different bugs and the result used to record neither.
+                  answerKeyUsed: data.answer_key_used || undefined,
                 },
                 sessionId: batchSessionId,
               }),
@@ -4773,6 +4778,44 @@ export default function BatchGrading({
               </div>
             </div>
           )}
+
+          {/* What the grader was given. A batch marked against no answer key,
+              or against a key that came through as 40 characters of noise, is
+              worth knowing before the marks are released rather than after. */}
+          {(() => {
+            const used = results.find((r) => !r.error && r.raw?.answer_key_used)?.raw?.answer_key_used;
+            if (!used) return null;
+            const none = used.source === "none";
+            return (
+              <div style={{
+                margin: "0 0 10px", padding: "7px 12px", borderRadius: 8, fontSize: 12,
+                background: none ? "rgba(220,38,38,0.07)" : "rgba(100,116,139,0.07)",
+                border: `1px solid ${none ? "rgba(220,38,38,0.3)" : "rgba(100,116,139,0.2)"}`,
+                color: none ? "#991b1b" : "#475569",
+              }}>
+                {none ? (
+                  <>
+                    <strong>No answer key reached the grader.</strong> Matching, True/False
+                    and fill-in-the-blank cannot be checked without one — those items are
+                    left unmarked rather than guessed.
+                  </>
+                ) : (
+                  <>
+                    Answer key: <strong>{used.source}</strong>
+                    {used.textChars ? ` · ${used.textChars} characters` : ""}
+                    {used.imageCount ? ` · ${used.imageCount} page${used.imageCount === 1 ? "" : "s"}` : ""}
+                    {used.multiPaper ? " · covers more than one paper" : ""}
+                    {used.textHead ? (
+                      <details style={{ marginTop: 4 }}>
+                        <summary style={{ cursor: "pointer" }}>what the grader read</summary>
+                        <pre style={{ whiteSpace: "pre-wrap", fontSize: 11, margin: "4px 0 0" }}>{used.textHead}</pre>
+                      </details>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Class summary card */}
           {classSummary && (
