@@ -49,7 +49,7 @@ Paste the whole JSON file as the value of `DAILY_SHEETS_SERVICE_ACCOUNT`.
 | `Vertical!A1:J200` | Column A the period times, F to J Monday to Friday — the day's plan with a row per period. B4 (the week the verse is indexed by) is inside this block, so it costs no extra range. |
 | `VerticalAi!D1:J200` | Also the day's plan: columns F to J are Monday to Friday, and each holds the day's classes run together in one cell. Used when DisplayAI's lesson column has not been filled in yet. |
 | The SchoolCalendar tab (`A1:G220`) | The school's own calendar, a row per event: A the date in words, B the same date as `"<serial> n"` (the key the sheet's own lookups match, `n` telling two events on one day apart), C the event, D `TRUE` when school is closed, F a longer description. The banner across the top of the board says what is on today and what is on the next day the room is in — the next school day, so a Friday board talks about Monday — with a day off announced by name in the alert colour. The teacher's own diary (marks due, rosters, a colleague out — `STAFF_ONLY` in `parse.ts`) is left out, because the banner is read by the class; `?debug=1` lists what was left out. |
-| The BDays tab (`A1:AZ400`) | A row per birthday, keyed `"<serial> n"` like the calendar, the name ten columns along and the grade somewhere in the row. Balloons across the top of that grade's classes. **Column K** is the school day a weekend birthday is kept on — where it carries a date, it decides and the birthday's own date does not — and **column L** the note that goes with it, said quietly beside the names. |
+| The BDays tab (`A1:AZ400`) | A row per birthday, keyed `"<serial> n"` like the calendar, the name ten columns along and the grade somewhere in the row. Balloons at the top of every screen, the whole junior high together — the band leads the screen, above the calendar banner, and a grade is said quietly after a name when both grades have one. **Column K** is the school day a weekend birthday is kept on — where it carries a date, it decides and the birthday's own date does not — and **column L** the note that goes with it, said quietly beside the names. |
 | `Points!D52:AE56` | The same reward-threshold block as `Setup!D52:AE56`, and the copy the sheet's own B3 flag is written against (its formula names `Z55` and `AA55` with no tab in front of them). Column **AD** is how many days a week the days figure assumes, which is what the B3 test is prorated against for a class that meets less often. |
 | Both tabs are found by name | As the Kiss & Ride tab is, from the cached tab list. A2's notice rule reaches into both, so they used to arrive only because that rule named them; reading them by name makes the balloons and the banner independent of how that rule happens to be written. |
 | The Kiss & Ride tab | Its "Waiting (Recent First)" column, for the dismissal panel. The tab is found by name (`listSheetTitles`, cached an hour) and the column by its header cell. |
@@ -253,15 +253,19 @@ while the test went unannounced entirely.
 So **"Due and coming up"** has the half from the moment the lesson's own material
 is done with it, alongside the assignment or homework rather than instead of it —
 the work a class is doing and the test it is being told about are different
-things. The cell is split on its semicolons (`dueAndComingUp` in `parse.ts`),
+things — and it sits **above the day's notices**: a test on Thursday is this
+class's business, while whose birthday it is and what is on at school is the
+school's. A class with no assignment and no homework used to carry the same
+notes low down in the work slot; they lead the half now, and the work slot does
+not say them twice. The cell is split on its semicolons (`dueAndComingUp` in `parse.ts`),
 one note to a line, and the block takes the **alert colour** when a note names a
 test, a quiz, an exam, a due date or something to hand in; a standing note
 ("Bring your textbook every class") stays quiet.
 
 The half is a column of a fixed height and its blocks do not shrink, so a panel
 with more than it can hold clips the bottom one. The blocks are therefore built
-in the order the room needs them — the opening note, the Formal Discussion, the
-day's notices, the work, what is due — with the riddle and the day's note last
+in the order the room needs them — the opening note, the Formal Discussion,
+what is due, the day's notices, the work — with the riddle and the day's note last
 and `MAX_PANEL_BLOCKS` keeping only what fits. What falls off the end is the
 thing nobody is waiting for.
 

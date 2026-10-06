@@ -1055,10 +1055,10 @@ check("column letters", P.columnName(4) === "D" && P.columnName(43) === "AQ" && 
   check("birthdays: today's rows only",
     all.map((b) => b.name).join() === "Mia Nguyen,Sam Okafor", all);
   check("birthdays: the grade comes off the row", all[0].grade === "7" && all[1].grade === "8", all);
-  check("birthdays: a grade 7 class sees the grade 7 one",
-    P.birthdaysForSection(all, "7A").map((b) => b.name).join() === "Mia Nguyen");
-  check("birthdays: and the grade 8 class the other",
-    P.birthdaysForSection(all, "8B").map((b) => b.name).join() === "Sam Okafor");
+  // The band carries the whole junior high, whichever class is on the board, so
+  // the grade is only there to be said quietly beside the name.
+  check("birthdays: both grades come through together",
+    all.map((b) => `${b.name} (${b.grade})`).join(", ") === "Mia Nguyen (7), Sam Okafor (8)", all);
   check("birthdays: nothing at all on a day with none",
     P.birthdaysToday(book, new Date(2026, 8, 19)).length === 0);
   check("birthdays: a book without the tab is not an error",
