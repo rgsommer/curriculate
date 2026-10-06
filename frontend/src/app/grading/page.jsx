@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import BatchGrading from "./BatchGrading";
+import BatchGrading, { loadPdfJs } from "./BatchGrading";
 import HomeworkCheck from "./HomeworkCheck";
 import NewYearReset from "./NewYearReset";
 import VideoGrading from "./VideoGrading";
@@ -1548,18 +1548,20 @@ export default function GradingPage() {
       }
 
       if (name.endsWith(".pdf")) {
-        if (typeof pdfjsLib !== "undefined") {
-          const buf = await file.arrayBuffer();
-          const doc = await pdfjsLib.getDocument({ data: buf }).promise;
-          const pages = [];
-          for (let i = 1; i <= doc.numPages; i++) {
-            const page = await doc.getPage(i);
-            const content = await page.getTextContent();
-            pages.push(content.items.map((it) => it.str).join(" "));
-          }
-          return pages.join("\n\n");
+        // Load pdf.js rather than hoping a global is already there: this page
+        // only ever had one if batch grading had loaded it first. And never
+        // fall through to file.text() for a PDF — that returns the raw bytes,
+        // which are not empty, so it quietly became the rubric.
+        const pdfjs = await loadPdfJs();
+        const buf = await file.arrayBuffer();
+        const doc = await pdfjs.getDocument({ data: buf }).promise;
+        const pages = [];
+        for (let i = 1; i <= doc.numPages; i++) {
+          const page = await doc.getPage(i);
+          const content = await page.getTextContent();
+          pages.push(content.items.map((it) => it.str).join(" "));
         }
-        return await file.text();
+        return pages.join("\n\n");
       }
 
       if (name.endsWith(".docx")) {
@@ -1573,6 +1575,43 @@ export default function GradingPage() {
       return await file.text();
     }
 
+    // A scanned answer key has no text layer, so extraction returns nothing
+    // and the upload used to be refused outright — "try pasting the rubric
+    // instead", for a sheet that was printed and scanned and cannot be
+    // pasted. The AI reads pictures perfectly well, and an uploaded photo of
+    // a rubric already goes that way, so render the pages and hand them over
+    // as pictures.
+    const PDF_PAGE_LIMIT = 12;   // an answer key, not a textbook
+    async function pdfPagesAsImages(file) {
+      const pdfjs = await loadPdfJs();
+      const buf = await file.arrayBuffer();
+      const doc = await pdfjs.getDocument({ data: buf }).promise;
+      const out = [];
+      const count = Math.min(doc.numPages, PDF_PAGE_LIMIT);
+      for (let i = 1; i <= count; i++) {
+        const page = await doc.getPage(i);
+        // Scale to a readable width rather than a fixed zoom: a page scanned
+        // at A4 and one at letter should arrive the same size.
+        const base = page.getViewport({ scale: 1 });
+        const scale = Math.min(2.5, Math.max(1, 1700 / (base.width || 1)));
+        const viewport = page.getViewport({ scale });
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+        const ctx = canvas.getContext("2d");
+        // White behind it — a PDF page is transparent, and transparent
+        // flattens to black in a JPEG.
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        out.push({
+          dataUrl: canvas.toDataURL("image/jpeg", 0.85),
+          label: count > 1 ? `${file.name} — p.${i}` : file.name,
+        });
+      }
+      return { pages: out, truncated: doc.numPages > count, total: doc.numPages };
+    }
+
     async function handleRubricFileUpload(e) {
       const files = Array.from(e.target.files || []);
       if (!files.length) return;
@@ -1581,6 +1620,8 @@ export default function GradingPage() {
         const textParts = [];
         const imageFiles = [];
         const docxFiles = [];
+        const renderedPages = [];   // scanned PDF pages, as pictures
+        let pagesDropped = 0;
 
         for (const file of files) {
           const name = file.name.toLowerCase();
@@ -1590,7 +1631,35 @@ export default function GradingPage() {
             docxFiles.push(file);
           } else {
             const text = await extractTextFromFile(file);
-            if (text.trim()) textParts.push(text.trim());
+            if (text.trim()) {
+              textParts.push(text.trim());
+            } else if (name.endsWith(".pdf")) {
+              // No text layer: it was scanned, or exported as pictures.
+              const { pages, truncated, total } = await pdfPagesAsImages(file);
+              renderedPages.push(...pages);
+              if (truncated) pagesDropped += total - pages.length;
+            }
+          }
+        }
+
+        if (renderedPages.length) {
+          for (const pg of renderedPages) {
+            const photoObj = {
+              id: String(Date.now()) + "_rubric_" + Math.random().toString(36).slice(2, 6),
+              dataUrl: pg.dataUrl,
+              rawDataUrl: pg.dataUrl,
+              createdAt: Date.now(),
+            };
+            setPhotos((prev) => [...prev, photoObj]);
+            setPhotoTags((prev) => new Map(prev).set(photoObj.id, "rubric"));
+            setRubricPreviewPages((prev) => [...prev, { src: pg.dataUrl, label: pg.label }]);
+          }
+          setStickyRubricText(`[Answer key: ${renderedPages.length} scanned page${renderedPages.length === 1 ? "" : "s"}]`);
+          setStickyRubricSource("uploaded");
+          setStickyRubricCapturedAt(new Date().toLocaleString());
+          completeQuest("use_rubric_override");
+          if (pagesDropped) {
+            alert(`That PDF has no text in it, so its pages were read as pictures — the first ${PDF_PAGE_LIMIT} of them. ${pagesDropped} further page${pagesDropped === 1 ? " was" : "s were"} left out; split the file if they are needed.`);
           }
         }
 
@@ -1664,8 +1733,8 @@ export default function GradingPage() {
             : textParts.map((t, i) => `--- Rubric ${i + 1} ---\n${t}`).join("\n\n");
           setRubricOverride(combined);
           completeQuest("use_rubric_override");
-        } else if (!imageFiles.length && !docxFiles.length) {
-          alert("Could not extract text from the uploaded file(s). Try pasting the rubric instead.");
+        } else if (!imageFiles.length && !docxFiles.length && !renderedPages.length) {
+          alert("Could not read anything from the uploaded file(s). Try pasting the rubric instead.");
         }
       } catch (err) {
         console.error("Rubric upload error:", err);

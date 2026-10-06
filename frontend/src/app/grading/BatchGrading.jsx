@@ -53,7 +53,7 @@ const PDFJS_WORKER_URLS = [
 ];
 let pdfjsPromise = null;
 
-function loadPdfJs() {
+export function loadPdfJs() {
   if (pdfjsPromise) return pdfjsPromise;
   pdfjsPromise = new Promise((resolve, reject) => {
     if (typeof window === "undefined") return reject(new Error("SSR"));
