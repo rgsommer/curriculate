@@ -13,6 +13,7 @@ export default function LoginPage() {
   const [name, setName] = useState("");
   const [success, setSuccess] = useState<string | null>(null);
   const [emailLocked, setEmailLocked] = useState(false);
+  const [showPw, setShowPw] = useState(false);
 
   // Invite hints from the URL (read after mount to avoid a hydration mismatch):
   // ?mode=signup opens the "set a password" form, and ?email=… prefills + locks
@@ -160,7 +161,8 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@school.ca"
-              autoComplete="email"
+              autoComplete={mode === "login" ? "username" : "email"}
+              inputMode="email"
               required
               readOnly={emailLocked}
               style={emailLocked ? { ...inputStyle, background: "#f1f5f9", color: "#475569" } : inputStyle}
@@ -169,15 +171,33 @@ export default function LoginPage() {
 
           <label style={{ display: "block", marginBottom: 16 }}>
             <span style={{ fontSize: 12, fontWeight: 700, opacity: 0.8, display: "block", marginBottom: 4 }}>Password</span>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={mode === "signup" ? "At least 8 characters" : "Your password"}
-              autoComplete={mode === "login" ? "current-password" : "new-password"}
-              required
-              style={inputStyle}
-            />
+            <span style={{ position: "relative", display: "block" }}>
+              <input
+                type={showPw ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={mode === "signup" ? "At least 8 characters" : "Your password"}
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                required
+                style={{ ...inputStyle, paddingRight: 72 }}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPw((v) => !v)}
+                aria-label={showPw ? "Hide password" : "Show password"}
+                aria-pressed={showPw}
+                style={{
+                  position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)",
+                  border: "none", background: "transparent", color: "#2563eb",
+                  fontSize: 13, fontWeight: 700, padding: "6px 8px", cursor: "pointer",
+                }}
+              >
+                {showPw ? "🙈 Hide" : "👁 Show"}
+              </button>
+            </span>
           </label>
 
           {error && (
@@ -217,6 +237,13 @@ export default function LoginPage() {
             <a href="/forgot-password" style={{ color: "#2563eb", textDecoration: "none", fontWeight: 600 }}>
               Forgot password?
             </a>
+          </div>
+        )}
+
+        {mode === "login" && (
+          <div style={{ marginTop: 14, padding: "10px 12px", borderRadius: 12, background: "#f8fafc", border: "1px solid #e2e8f0", fontSize: 12, lineHeight: 1.5, color: "#475569" }}>
+            <strong style={{ color: "#334155" }}>You stay signed in for 30 days.</strong> If you&apos;re asked every time: open the site in Safari or Chrome
+            (not inside your email app — use &ldquo;Open in browser&rdquo;), don&apos;t use private/incognito browsing, and let your browser save the password.
           </div>
         )}
 

@@ -11,7 +11,7 @@ const faqs = [
   },
   {
     q: "This looks powerful — but will it take a lot of time for teachers to set up?",
-    a: "That concern is exactly why Curriculate was designed the way it is. Teachers do not need to spend hours building task sets. Most sessions can be created in minutes using AI-assisted generation, reusable templates, or prior sessions. Teachers set the goals and constraints; Curriculate handles structure, pacing, and task creation. Many teachers find that after running one session, preparation time is actually lower than with traditional lessons. (See the Features page for how planning, pacing, and task selection are handled automatically.)",
+    a: "That concern is exactly why Curriculate was designed the way it is. Teachers do not need to spend hours building task sets. Most sessions can be created in minutes from a generated set, a reusable template, or a prior session. Teachers set the goals and constraints; Curriculate handles structure, pacing, and task creation. Many teachers find that after running one session, preparation time is actually lower than with traditional lessons. (See the Features page for how planning, pacing, and task selection are handled automatically.)",
   },
   {
     q: "What does this require from teachers at a school-wide level?",

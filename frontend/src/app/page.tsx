@@ -36,7 +36,7 @@ import {
 const painPoints = [
   {
     pain: "Scavenger hunts take hours to prep",
-    fix: "AI plans time-fit task sets in under 60 seconds",
+    fix: "A full set of stations, timed to your period, in under a minute",
     icon: <Clock className="w-5 h-5" />,
   },
   {
@@ -46,12 +46,12 @@ const painPoints = [
   },
   {
     pain: "No way to see who learned what",
-    fix: "Live response tracking + AI-generated reports per student",
+    fix: "Live response tracking, and a report on every student",
     icon: <BarChart3 className="w-5 h-5" />,
   },
   {
     pain: "Grading takes all weekend",
-    fix: "Auto-scored tasks + AI gradebook with custom strands",
+    fix: "Tasks score themselves into a gradebook with your own strands",
     icon: <FileText className="w-5 h-5" />,
   },
 ];
@@ -85,7 +85,7 @@ const taskCategories = [
   {
     label: "Discussion & Debate",
     color: "bg-indigo-100 text-indigo-700",
-    tasks: ["Live Debate", "AI Debate Judge", "Collaboration", "Brainstorm Battle"],
+    tasks: ["Live Debate", "Debate Judge", "Collaboration", "Brainstorm Battle"],
   },
   {
     label: "Deduction & Mystery",
@@ -121,7 +121,7 @@ const taskCategories = [
 
 const reportFeatures = [
   {
-    title: "AI Session Summary",
+    title: "Session Summary",
     desc: "Class-level overview with engagement, proficiency, key concepts, and a ready-to-paste blurb for your class chat.",
     icon: <Sparkles className="w-5 h-5 text-blue-600" />,
   },
@@ -143,20 +143,20 @@ const reportFeatures = [
 ];
 
 const pricingFeatures = [
-  { name: "AI task set generation", free: true, plus: true, pro: true },
+  { name: "Task set generation", free: true, plus: true, pro: true },
   { name: "65+ task types", free: true, plus: true, pro: true },
   { name: "Mystery Box navigation mode", free: true, plus: true, pro: true },
   { name: "Team selfie (2 free sessions)", free: "2 sessions", plus: true, pro: true },
-  { name: "AI-themed selfie images", free: false, plus: true, pro: true },
+  { name: "Themed selfie images", free: false, plus: true, pro: true },
   { name: "Station rotation engine", free: true, plus: true, pro: true },
   { name: "CurricQR station posters", free: true, plus: true, pro: true },
   { name: "Session summary reports", free: true, plus: true, pro: true },
   { name: "Student-level reporting", free: false, plus: true, pro: true },
   { name: "PDF report exports", free: false, plus: true, pro: true },
-  { name: "AI gradebook with strands", free: false, plus: true, pro: true },
+  { name: "Gradebook with custom strands", free: false, plus: true, pro: true },
   { name: "XLSX gradebook export", free: false, plus: true, pro: true },
   { name: "Individual student reports", free: false, plus: false, pro: true },
-  { name: "Expanded AI generation", free: false, plus: false, pro: true },
+  { name: "Expanded generation limits", free: false, plus: false, pro: true },
   { name: "Advanced analytics", free: false, plus: false, pro: true },
   { name: "Full classroom capacity", free: false, plus: false, pro: true },
 ];
@@ -184,8 +184,8 @@ const why = [
   },
   {
     icon: <ShieldCheck className="w-6 h-6 text-indigo-600" />,
-    title: "Teacher-controlled AI",
-    desc: "AI plans pacing + task mix first — then generates. Always teacher-controlled and overrideable.",
+    title: "You stay in control",
+    desc: "Pacing and task mix are planned before anything is built — and every piece of it is yours to change.",
   },
   {
     icon: <Smartphone className="w-6 h-6 text-rose-500" />,
@@ -525,7 +525,7 @@ function SmartPlanning() {
           </div>
 
           <h2 className="text-4xl font-black text-gray-900 mt-4 mb-3">
-            Not just AI task generation — AI pacing and orchestration
+            Not just task generation — pacing and orchestration
           </h2>
 
           <p className="text-lg text-gray-700 font-medium max-w-3xl mb-8">
@@ -637,7 +637,7 @@ export default function Home() {
 
           <p className="text-lg sm:text-xl text-gray-600 mb-4 max-w-2xl mx-auto font-medium leading-relaxed">
             Curriculate plans, generates, and runs classroom scavenger hunts for you — with built-in movement,
-            real-time scoring, and AI reports that land in your inbox before the bell rings.
+            real-time scoring, and reports that land in your inbox before the bell rings.
           </p>
 
           <p className="text-base text-gray-500 mb-8 sm:mb-10 max-w-xl mx-auto">
@@ -733,7 +733,7 @@ export default function Home() {
               <h3 className="text-xl font-black text-gray-900 mb-2">Curriculate</h3>
               <p className="text-sm font-black text-indigo-700 mb-3 uppercase tracking-wider">Live classroom scavenger hunts</p>
               <p className="text-sm text-gray-700 leading-relaxed">
-                AI-generated task stations, real-time scoring, movement + collaboration built in. Turn any lesson into a room-wide game.
+                Task stations built around your lesson, real-time scoring, movement + collaboration built in. Turn any lesson into a room-wide game.
               </p>
             </div>
 
@@ -744,7 +744,7 @@ export default function Home() {
             >
               <div className="text-3xl mb-3" aria-hidden="true">✅</div>
               <h3 className="text-xl font-black text-gray-900 mb-2">Pulse Grading</h3>
-              <p className="text-sm font-black text-emerald-700 mb-3 uppercase tracking-wider">AI grading for teachers</p>
+              <p className="text-sm font-black text-emerald-700 mb-3 uppercase tracking-wider">Grading for teachers</p>
               <p className="text-sm text-gray-700 leading-relaxed mb-4">
                 Snap a paper, batch a whole-class PDF, or upload video/audio — get rubric-matched feedback in seconds.
               </p>
@@ -887,7 +887,7 @@ export default function Home() {
             </h2>
             <p className="text-lg text-gray-600 font-medium max-w-2xl mx-auto">
               Debates, drawing, audio recording, mystery clues, movement breaks, flashcard races,
-              tic-tac-toe, mind mapping — and the AI knows when to use each one.
+              tic-tac-toe, mind mapping — each one used where it actually fits.
             </p>
           </div>
 
@@ -995,8 +995,8 @@ export default function Home() {
             {[
               {
                 title: "Subject-Smart Task Selection",
-                desc: "The AI now knows which task types fit each subject. Math gets logic puzzles; history gets debates and document analysis. Movement breaks stay for everyone.",
-                tag: "AI",
+                desc: "Task types are now matched to the subject. Math gets logic puzzles; history gets debates and document analysis. Movement breaks stay for everyone.",
+                tag: "Smarter",
                 tagColor: "bg-blue-100 text-blue-700",
               },
               {
@@ -1007,7 +1007,7 @@ export default function Home() {
               },
               {
                 title: "Fixed Station Color Picker",
-                desc: "Teachers assign colored CurricQR stations to physical objects — microscopes, maps, models — and the AI generates tasks specific to each station.",
+                desc: "Teachers assign colored CurricQR stations to physical objects — microscopes, maps, models — and the tasks are written for each station.",
                 tag: "Stations",
                 tagColor: "bg-emerald-100 text-emerald-700",
               },
@@ -1025,7 +1025,7 @@ export default function Home() {
               },
               {
                 title: "Guided Onboarding Tour",
-                desc: "First-time users get a spotlight tour of both the AI Generator and Presenter Console. Advanced options stay hidden until needed.",
+                desc: "First-time users get a spotlight tour of both the Generator and the Presenter Console. Advanced options stay hidden until needed.",
                 tag: "Onboarding",
                 tagColor: "bg-indigo-100 text-indigo-700",
               },
@@ -1058,7 +1058,7 @@ export default function Home() {
               The session ends. The reports are already done.
             </h2>
             <p className="text-lg text-gray-600 font-medium max-w-2xl mx-auto">
-              AI-generated summaries, per-student grades, exportable PDFs — delivered to your inbox
+              Summaries, per-student grades, exportable PDFs — delivered to your inbox
               before students leave the room.
             </p>
           </div>
@@ -1159,7 +1159,7 @@ export default function Home() {
               Start free. Upgrade when you need more.
             </h2>
             <p className="text-lg text-gray-600 font-medium max-w-2xl mx-auto">
-              The free plan runs full sessions with AI generation. Paid plans unlock deeper reporting,
+              The free plan runs full sessions. Paid plans unlock deeper reporting,
               higher capacity, and individual student reports.
             </p>
           </div>

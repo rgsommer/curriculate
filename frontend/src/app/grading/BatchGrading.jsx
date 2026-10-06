@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { buildResultsPdf, buildStripsPdf, preloadPdfLibs } from "./pdfReports";
+import { buildResultsPdf, buildStripsPdf, buildMarkingGuidePdf, preloadPdfLibs } from "./pdfReports";
 import { completeQuest } from "../../components/QuestWidget";
 
 /**
@@ -53,7 +53,7 @@ const PDFJS_WORKER_URLS = [
 ];
 let pdfjsPromise = null;
 
-function loadPdfJs() {
+export function loadPdfJs() {
   if (pdfjsPromise) return pdfjsPromise;
   pdfjsPromise = new Promise((resolve, reject) => {
     if (typeof window === "undefined") return reject(new Error("SSR"));
@@ -595,6 +595,7 @@ export default function BatchGrading({
   perQuestionAudit,
   rubricOverride,
   answerKeyOverride,
+  keyImages,
   teacherEmail: parentTeacherEmail,
   setTeacherEmail: parentSetTeacherEmail,
   rosterClasses: parentRosterClasses,
@@ -1258,6 +1259,35 @@ export default function BatchGrading({
       ? Array.from({ length: answerKeyPages }, (_, i) => i + 1) // leading pages (manual config)
       : autoDetectedKeyPages; // auto-detected (may be at end of PDF)
 
+    // A key uploaded on the main page as a picture. It is not a page of the
+    // batch PDF and it has no text, so neither of the two routes below could
+    // see it — which is how a batch ran against an invented answer key.
+    const uploadedKeyImages = Array.isArray(keyImages) ? keyImages.filter(Boolean) : [];
+
+    if (keyPageNumbers.length === 0 && !effectiveAnswerKey && uploadedKeyImages.length) {
+      setProgress({ done: 0, total, current: "Reading the answer key..." });
+      answerKeyImages = uploadedKeyImages;
+      try {
+        const extractUrl = gradingUrl.replace(/\/grading$/, "/grading/extract-answer-key");
+        const extractRes = await fetch(extractUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ answerKeyImages: uploadedKeyImages, standards, gradeBand }),
+        });
+        if (extractRes.ok) {
+          const extractData = await extractRes.json();
+          if (extractData.answerKeyText) {
+            effectiveAnswerKey = extractData.answerKeyText;
+            setExtractedAnswerKey(effectiveAnswerKey);
+          }
+        }
+      } catch (e) {
+        // The images still go with the request, so a failed extraction costs
+        // accuracy, not the key itself.
+        console.warn("[batch] uploaded answer key extraction failed:", e);
+      }
+    }
+
     if (keyPageNumbers.length > 0 && !effectiveAnswerKey) {
       setProgress({ done: 0, total, current: "Extracting answer key..." });
       try {
@@ -1320,7 +1350,10 @@ export default function BatchGrading({
 
         const payload = {
           images,
-          answerKeyImages: (effectiveAnswerKey ? undefined : answerKeyImages) || undefined,
+          // When the key was a picture, send the picture as well as whatever
+          // text came out of it. A matching column reads as "1 F 2 C 3 H" and
+          // survives extraction badly; the model should be able to look.
+          answerKeyImages: answerKeyImages || undefined,
           rubricOverride: effectiveRubric || null,
           answerKeyOverride: effectiveAnswerKey || null,
           gradeBand,
@@ -3028,15 +3061,20 @@ export default function BatchGrading({
       // Generate PDFs and Edsby CSV in parallel (with 15s timeout)
       let pdfBase64 = null;
       let stripsBase64 = null;
+      let guideBase64 = null;
       try {
         const pdfOpts = { ...(effectiveTitle ? { title: effectiveTitle } : {}), hideGrades: !!hideGrades };
         const pdfTimeout = (p) => Promise.race([
           p,
           new Promise((_, reject) => setTimeout(() => reject(new Error("PDF generation timed out (15s)")), 15000)),
         ]);
-        [pdfBase64, stripsBase64] = await Promise.all([
+        // The marking guide is the teacher's own copy and carries the marks
+        // whatever hideGrades says — they are the one holding it.
+        [pdfBase64, stripsBase64, guideBase64] = await Promise.all([
           pdfTimeout(buildResultsPdf(results, pdfOpts)),
           pdfTimeout(buildStripsPdf(results, pdfOpts)),
+          pdfTimeout(buildMarkingGuidePdf(results, effectiveTitle ? { title: effectiveTitle } : {}))
+            .catch((e) => { console.warn("[batch] marking guide failed:", e?.message || e); return null; }),
         ]);
       } catch (pdfErr) {
         console.error("[batch] PDF generation failed:", pdfErr?.message || pdfErr, pdfErr?.stack);
@@ -3063,6 +3101,9 @@ export default function BatchGrading({
       }
       if (stripsBase64) {
         payload.pdfAttachments.push({ data: stripsBase64, filename: `${baseName}-strips.pdf` });
+      }
+      if (guideBase64) {
+        payload.pdfAttachments.push({ data: guideBase64, filename: `${baseName}-marking-guide.pdf` });
       }
       // Legacy single-attachment fields for backward compat
       if (pdfBase64) {
@@ -3193,6 +3234,7 @@ export default function BatchGrading({
   }, [emailTo, emailTitle, buildEmailHtml, buildEdsbyCsv, emailSubject, gradingUrl, results, pdfName]);
 
   // ---------- Copy / email ack ----------
+  const [guidePrinted, setGuidePrinted] = useState(false);
   const [copiedSummary, setCopiedSummary] = useState(false);
   const [emailCopied, setEmailCopied] = useState(false);
   const [csvExported, setCsvExported] = useState(false);
@@ -4583,6 +4625,30 @@ export default function BatchGrading({
                 type="button"
               >
                 {stripsPrinted ? "Printed ✓" : "Print Strips"}
+              </button>
+              <button
+                onClick={async () => {
+                  const good = results.filter((r) => !r.error);
+                  if (!good.length) { alert("No successful results to print."); return; }
+                  try {
+                    // No hideGrades here: this one is for the teacher.
+                    const b64 = await buildMarkingGuidePdf(results, effectiveTitle ? { title: effectiveTitle } : {});
+                    if (!b64) { alert("Nothing to mark from — these results carry no per-question detail."); return; }
+                    const blob = new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: "application/pdf" });
+                    const blobUrl = URL.createObjectURL(blob);
+                    window.open(blobUrl, "_blank");
+                    setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+                    setGuidePrinted(true);
+                  } catch (e) {
+                    console.error("[batch] marking guide failed:", e?.message || e);
+                    alert(`Failed to generate the marking guide: ${e?.message || "unknown error"}`);
+                  }
+                }}
+                style={batchStyles.smallBtn}
+                type="button"
+                title="Every item ticked or crossed, the right answer beside each cross, a mark per section and a total — for you, not the student"
+              >
+                {guidePrinted ? "Printed ✓" : "Marking Guide"}
               </button>
               {!grading && (
                 <button

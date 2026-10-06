@@ -23,7 +23,7 @@ const table = [
   { label: "Engagement", w: "Often drops after 5–10 minutes", c: "Sustained by movement, games, variety, teamwork" },
   { label: "Evidence", w: "Answers on paper; reasoning sometimes unclear", c: "Artifacts: photos, drawings, audio, explanations" },
   { label: "Differentiation", w: "Manual adjustments required", c: "Multiple task types and response modes naturally differentiate" },
-  { label: "Workload", w: "Printing + organizing + grading", c: "Optional AI generation + automatic capture + reports" },
+  { label: "Workload", w: "Printing + organizing + grading", c: "Optional generation + automatic capture + reports" },
 ];
 
 export default function CompareWorksheetsPage() {

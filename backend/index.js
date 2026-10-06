@@ -436,7 +436,14 @@ const corsOptions = {
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "x-admin-token", "x-demo-admin-key", "x-admin-token"],
+  // A header the browser is not told about is blocked at the preflight, so
+  // the fetch throws before it ever reaches a route — which looks like the
+  // server failing rather than CORS refusing. x-teacher-token lets a teacher
+  // see the marks their students cannot; it was added to the request and not
+  // to this list, and every student's progress page read "Failed to load
+  // results". It takes the slot where x-admin-token was listed a second
+  // time, so the list is no longer than it was.
+  allowedHeaders: ["Content-Type", "Authorization", "x-admin-token", "x-demo-admin-key", "x-teacher-token"],
   optionsSuccessStatus: 204,
 };
 
@@ -14149,6 +14156,36 @@ function buildRubricInstructions({
     - If full marks were earned, say what was done well and set incorrect_items to null.
     - If marks were lost, the section comment must make that understandable in plain language.
 
+    MARKING GUIDE RULE (marking_guide):
+    - This is for the TEACHER, marking the paper with it in hand. The student
+      never sees it. Write it plainly: no voice, no encouragement, no softening.
+    - marking_guide.sections mirrors the sections of the paper, in the order
+      they appear, each with its own score and out_of — "Matching 5 / 6".
+    - List EVERY numbered item in a section, not only the wrong ones: 1 to 8
+      in order, each with a verdict. A teacher running down the page needs the
+      whole roll; a list of only the mistakes makes them work out which
+      numbers are missing from it.
+      • n              the question's own number or label, as printed ("1", "4b")
+      • verdict        correct | incorrect | partial | blank
+      • student_answer what the student actually wrote, short. "" if blank.
+      • correct_answer the right answer — ALWAYS when the verdict is not
+                       "correct", and "" when it is, since a tick needs none.
+      • note           why it is wrong, when that is not obvious from the two
+                       answers: for a True/False the student marked wrongly,
+                       say which part of the statement is false; for working,
+                       name the step that went astray. "" otherwise.
+    - Leave marking_guide.sections null ONLY for work with no numbered items at
+      all — an essay, a poster. A test always has them.
+    - marking_guide.highlights: at most 6, worst first, naming what to pick out
+      in the margin — level is incorrect, weak, good or excellent. Include at
+      least one good or excellent where the paper earns it; a marking guide
+      that only lists faults gives the teacher nothing to praise.
+    - marking_guide.write_on_paper: ONE sentence, under about 20 words, for the
+      teacher to copy onto the paper by hand. Specific to this paper. Not a
+      grade, not a percentage.
+    - The verdicts must agree with the section scores. If Matching is 5 / 6,
+      exactly one Matching item is not "correct".
+
     INCORRECT_ITEMS RULE:
     - incorrect_items is ONLY for questions where the student's FINAL ANSWER is WRONG.
     - If the student's final answer is correct, it MUST NOT appear in incorrect_items — even if the work shown is flawed.
@@ -15486,6 +15523,71 @@ function buildRubricInstructions({
             },
             required: ["level", "category", "snippet", "suggested_action"],
           },
+
+          // --- teacher's marking guide (never shown to a student) ---
+          //
+          // incorrect_items lists only what went wrong. A teacher marking the
+          // paper in front of them wants the whole roll — 1 to 8, each ticked
+          // or crossed — so they can run down it against the page instead of
+          // working out which numbers are missing from a list of mistakes.
+          marking_guide: {
+            type: ["object", "null"],
+            additionalProperties: false,
+            properties: {
+              // One sentence, short enough to copy onto the paper by hand.
+              write_on_paper: { type: "string", maxLength: 180 },
+              // What to pick out in the margin, worst first.
+              highlights: {
+                type: ["array", "null"],
+                items: {
+                  type: "object",
+                  additionalProperties: false,
+                  properties: {
+                    level: { type: "string", enum: ["incorrect", "weak", "good", "excellent"] },
+                    where: { type: "string", maxLength: 80 },
+                    note: { type: "string", maxLength: 160 },
+                  },
+                  required: ["level", "where", "note"],
+                },
+              },
+              sections: {
+                type: ["array", "null"],
+                items: {
+                  type: "object",
+                  additionalProperties: false,
+                  properties: {
+                    name: { type: "string", minLength: 1, maxLength: 60 },
+                    score: { type: ["number", "null"], minimum: 0 },
+                    out_of: { type: ["number", "null"], minimum: 0 },
+                    items: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        additionalProperties: false,
+                        properties: {
+                          n: { type: "string", maxLength: 8 },
+                          // "unclear" is for an objective item that cannot be
+                          // checked without the answer key — better an honest
+                          // gap than a guessed answer marking good work wrong.
+                          verdict: { type: "string", enum: ["correct", "incorrect", "partial", "blank", "unclear"] },
+                          student_answer: { type: "string", maxLength: 80 },
+                          // Filled in whenever the verdict is not "correct";
+                          // empty otherwise, since a tick needs no answer.
+                          correct_answer: { type: "string", maxLength: 80 },
+                          // Why it is wrong — the false half of a false
+                          // statement, the step that went astray.
+                          note: { type: "string", maxLength: 140 },
+                        },
+                        required: ["n", "verdict", "student_answer", "correct_answer", "note"],
+                      },
+                    },
+                  },
+                  required: ["name", "score", "out_of", "items"],
+                },
+              },
+            },
+            required: ["write_on_paper", "highlights", "sections"],
+          },
         },
 
         required: [
@@ -15515,6 +15617,7 @@ function buildRubricInstructions({
           "teacher_comment",
           "achievement_summary",
           "wellbeing_concern",
+          "marking_guide",
         ],
       };
       // 2) Optional wrapper if you like keeping it around locally
@@ -15914,15 +16017,45 @@ function buildRubricInstructions({
         }
       }
 
-      const userContent = [{ type: "input_text", text: instructionsWithInferenceFinal }];
+      // With no answer key in hand, an objective section cannot be marked —
+      // the letters in a matching column, the T/F pattern and the words in a
+      // blank are arbitrary facts about THIS paper, not things to be worked
+      // out. Asked to grade one anyway the model supplies plausible letters,
+      // and a student who answered correctly is crossed. Seen on a Math 7A
+      // test: the key read 1→F and 3→H, the student wrote F and H, and both
+      // were marked wrong against an invented A and C.
+      const noKeyGuard = (!effectiveAnswerKey && !hasAnswerKeyImages) ? `
 
-      // Add answer key images first (if teacher tagged any) with clear label
-      // Skip raw images if extraction already produced answerKeyOverride text —
-      // the text is already embedded in the prompt and re-sending images wastes tokens/time
-      if (hasAnswerKeyImages && !effectiveAnswerKey) {
+    NO ANSWER KEY WAS PROVIDED.
+    - For OBJECTIVE items whose answer cannot be derived from the question
+      itself — matching columns, True/False about a convention, fill-in-the-blank
+      of a specific term, multiple choice — you do NOT know the intended answer.
+      Mark them "unclear", leave correct_answer empty, and say in the section
+      comment that they could not be checked without the key.
+    - NEVER supply a correct_answer you inferred from the pattern of the other
+      answers or from how a question is usually set. A guess presented as the
+      key marks correct work wrong, which is the worst thing this tool can do.
+    - Items you CAN still mark: anything self-verifying — arithmetic and algebra
+      you can compute, work you can follow step by step, writing judged against
+      a rubric. Mark those normally.
+    - Score the paper on what you could actually check, and say in the overall
+      comment which sections were not checkable.
+` : "";
+
+      const userContent = [{ type: "input_text", text: instructionsWithInferenceFinal + noKeyGuard }];
+
+      // Add answer key images first (if teacher tagged any) with clear label.
+      //
+      // These used to be dropped whenever extraction had produced any text, to
+      // save tokens. But the text is where a key loses most: a matching column
+      // reads out as "1 F 2 C 3 H 4 A" and comes back scrambled or partial, and
+      // the grader then marks a correct letter wrong against the wrong one.
+      // A page of key is a few thousand tokens; a crossed-out right answer
+      // costs more than that. Send both and let the model look.
+      if (hasAnswerKeyImages) {
         userContent.push({
           type: "input_text",
-          text: "ANSWER KEY / SOLUTION SHEET (provided by teacher — use this to grade the student work that follows):\nLook carefully at the margins for KITA category annotations (e.g., /2T, /3A, T/2) and point values.",
+          text: "ANSWER KEY / SOLUTION SHEET (provided by teacher — use this to grade the student work that follows):\nLook carefully at the margins for KITA category annotations (e.g., /2T, /3A, T/2) and point values.\nFor objective sections, read the answers off THIS sheet item by item. Where a transcription of the key also appears above, THESE PAGES WIN — a matching column survives transcription badly. Never pair a question with an answer belonging to a different number.",
         });
         userContent.push(...answerKeyImages.map((img) => ({ type: "input_image", image_url: img })));
         userContent.push({ type: "input_text", text: "END OF ANSWER KEY. STUDENT WORK follows below:" });

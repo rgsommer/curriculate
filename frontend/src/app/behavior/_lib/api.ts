@@ -9,13 +9,40 @@ export const API_BASE =
   process.env.NEXT_PUBLIC_BACKEND_URL ||
   "https://api.curriculate.net";
 
-export function getToken(): string | null {
-  if (typeof window === "undefined") return null;
+// The login page saves the token in localStorage AND a 30-day first-party
+// "token" cookie. Some browsers drop localStorage while keeping cookies
+// (storage-clearing settings, some in-app/email browsers), which forced a fresh
+// sign-in every visit — so fall back to the cookie and re-save it.
+function cookieToken(): string | null {
   try {
-    return localStorage.getItem("curriculate_auth_token");
+    const m = document.cookie.match(/(?:^|;\s*)token=([^;]+)/);
+    return m ? decodeURIComponent(m[1]) : null;
   } catch {
     return null;
   }
+}
+
+export function getToken(): string | null {
+  if (typeof window === "undefined") return null;
+  let t: string | null = null;
+  try {
+    t = localStorage.getItem("curriculate_auth_token");
+  } catch {
+    /* storage blocked — try the cookie */
+  }
+  if (t) return t;
+  const c = cookieToken();
+  if (c) {
+    try { localStorage.setItem("curriculate_auth_token", c); } catch { /* ignore */ }
+  }
+  return c;
+}
+
+// Forget the sign-in everywhere it's kept (both copies, or the cookie would
+// silently sign a rejected token back in and loop).
+export function clearToken() {
+  try { localStorage.removeItem("curriculate_auth_token"); } catch { /* ignore */ }
+  try { document.cookie = "token=; path=/; max-age=0; SameSite=Lax"; } catch { /* ignore */ }
 }
 
 export class ApiError extends Error {
@@ -82,11 +109,7 @@ export async function api<T = any>(path: string, opts: ApiOptions = {}): Promise
     // can't act on: drop the stale token and send them to sign in again,
     // returning to the page they were on.
     if (res.status === 401 && typeof window !== "undefined") {
-      try {
-        localStorage.removeItem("curriculate_auth_token");
-      } catch {
-        /* storage unavailable — fall through to the redirect anyway */
-      }
+      clearToken();
       const here = window.location.pathname + window.location.search;
       if (!here.startsWith("/login")) window.location.href = loginHref(here);
     }
@@ -195,6 +218,12 @@ export function issueWhiteSlip(consequenceId: string, other?: string) {
 // Mark a consequence completed (or undo). Any teacher can confirm follow-through.
 export function completeConsequence(consequenceId: string, completed = true) {
   return api(`/consequences/${consequenceId}/complete`, { method: "POST", body: { completed } });
+}
+
+// Resolve a consequence with a conversation instead: logs a "Discussed with
+// student" intervention and marks the consequence resolved that way.
+export function discussedConsequence(consequenceId: string) {
+  return api(`/consequences/${consequenceId}/discussed`, { method: "POST", body: {} });
 }
 
 // Log a homeroom follow-up (supportive relational check-in) for a student.

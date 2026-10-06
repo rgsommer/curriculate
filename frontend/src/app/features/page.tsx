@@ -73,10 +73,10 @@ export default function FeaturesPage() {
                 Features
               </div>
               <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-slate-900">
-                Curriculate is AI lesson planning — then AI task generation
+                Curriculate plans the lesson — then builds the tasks
               </h1>
               <p className="mt-4 text-lg text-slate-600">
-                Most "AI classroom tools" generate activities. Curriculate plans the learning experience first:
+                Most classroom tools generate activities. Curriculate plans the learning experience first:
                 time-fit pacing, grade-appropriate task selection, intentional movement breaks, and station-ready delivery —
                 then it generates tasks to match that plan.
               </p>
@@ -160,17 +160,17 @@ export default function FeaturesPage() {
             <div className="grid gap-4 md:grid-cols-2">
               <FeatureCard
                 title="⚡ Hand-crafted preset tasksets"
-                body="Not AI-generated on first launch — real preset sets built and quality-checked by teachers, so a first session never opens with a broken task."
+                body="Nothing is generated on first launch — real preset sets built and quality-checked by teachers, so a first session never opens with a broken task."
                 bullets={[
                   "8 tasks per preset, tuned for a 30–40 min session",
                   "Presets per grade band (K–2, 3–5, 6–8, 9–12)",
                   "Mix of retrieval, reasoning, movement, and reflection",
-                  "Every preset passes the same playability audit as AI-generated sets",
+                  "Every preset passes the same playability audit as a generated set",
                 ]}
               />
               <FeatureCard
                 title="🎯 No taskset editor required first time"
-                body="Teachers who haven't used AI classroom tools before shouldn't have to build a rubric or pick task types on day one. Quick Start makes their first live session zero-prep."
+                body="Teachers new to tools like this shouldn't have to build a rubric or pick task types on day one. Quick Start makes their first live session zero-prep."
                 bullets={[
                   "Grade band picker + subject picker + launch",
                   "Total setup: under a minute before class arrives",
@@ -201,10 +201,10 @@ export default function FeaturesPage() {
               />
               <FeatureCard
                 title="🔬 Fixed Stations with Physical Displays"
-                body='Attach real objects to stations — a microscope at Red, an art print at Blue, a map at Green — and the AI generates tasks that reference what students are actually looking at.'
+                body='Attach real objects to stations — a microscope at Red, an art print at Blue, a map at Green — and the tasks reference what students are actually looking at.'
                 bullets={[
                   "Name and describe the physical display at each station",
-                  "AI writes tasks tied to each object (observation, analysis, comparison)",
+                  "Tasks are written around each object (observation, analysis, comparison)",
                   "Pre-launch checklist confirms everything is in place",
                   "Works for science labs, art galleries, museum exhibits, and more",
                 ]}
@@ -346,7 +346,7 @@ export default function FeaturesPage() {
                 body="Tasks that require sorting, sequencing, comparing, and explaining."
                 bullets={[
                   "Sorting/categorizing and matching formats",
-                  "Label Me — match markers A–E on an AI-generated diagram, map, or illustration",
+                  "Label Me — match markers A–E on a generated diagram, map, or illustration",
                   "Spot the Difference — compare two passages, two images, or two real subjects",
                   "Sequencing/timeline-style tasks",
                   "Explain-your-thinking prompts",
@@ -356,9 +356,9 @@ export default function FeaturesPage() {
                 title="🎨 Expression & Creativity"
                 body="Let students show understanding in more than one modality."
                 bullets={[
-                  "Live AI interviews — talk to historical figures, scientists, or characters in real time",
-                  "Letter writing — write to a historical character, get an AI reply back",
-                  "Case study — solve a real-world scenario, get AI expert feedback",
+                  "Live interviews — talk to historical figures, scientists, or characters in real time",
+                  "Letter writing — write to a historical character and get a reply back",
+                  "Case study — solve a real-world scenario and get expert feedback",
                   "Drawing/visual response and photo journal formats",
                   "Handwriting bonus — write on paper, snap a photo, earn extra points",
                 ]}
@@ -368,7 +368,7 @@ export default function FeaturesPage() {
                 body="Structured discussion and team formats designed for real classrooms."
                 bullets={[
                   "Peer editing with 38 teacher-style correction marks (tap any word to annotate)",
-                  "Teach-back — explain concepts to a younger audience; AI-assessed for clarity and completeness",
+                  "Teach-back — explain concepts to a younger audience, assessed for clarity and completeness",
                   "Intra-team and inter-team challenge options",
                   "Debate/discussion structures",
                 ]}
@@ -396,17 +396,17 @@ export default function FeaturesPage() {
               />
               <FeatureCard
                 title="📸 Team Selfie & Themed Images"
-                body="Sessions start with a fun team photo. On Plus, AI generates a themed version matching the subject."
+                body="Sessions start with a fun team photo. On Plus, a themed version is generated to match the subject."
                 bullets={[
                   "Front-facing camera selfie before the game starts",
-                  "AI-themed team card: history era, lab scene, movie poster, and more",
+                  "Themed team card: history era, lab scene, movie poster, and more",
                   "Selfie included in session reports as team photo",
                   "Configurable in teacher profile (on by default)",
                 ]}
               />
               <FeatureCard
                 title="🤔 Riddle Breathers"
-                body="AI-generated riddles related to the lesson topic — no scoring, just a fun mental reset."
+                body="Riddles tied to the lesson topic — no scoring, just a fun mental reset."
                 bullets={[
                   "Automatically injected mid-set via teacher profile toggle",
                   "Topic-relevant riddles with optional hints",
@@ -526,10 +526,10 @@ export default function FeaturesPage() {
             <div className="grid gap-4 md:grid-cols-2">
               <FeatureCard
                 title="📊 Session Reports & Parent Notes"
-                body="After each session, get a comprehensive report with AI-generated summaries and parent-ready blurbs."
+                body="After each session, get a comprehensive report with written summaries and parent-ready blurbs."
                 bullets={[
                   "Per-student grades with team member names and letter grades",
-                  "AI-generated class chat blurb (copy-paste for Google Classroom or newsletters)",
+                  "A class chat blurb, ready to paste into Google Classroom or a newsletter",
                   "Parent note with engagement level, skills practiced, and proficiency",
                   "Skills developed badges, concepts covered, and activity highlights",
                   "Speech & text quality score per speaker — sustained, varied language vs. filler-heavy",
@@ -538,7 +538,7 @@ export default function FeaturesPage() {
               />
               <FeatureCard
                 title="🔒 Quality Guardrails & Validation"
-                body="AI-generated tasks are automatically validated and fixed before reaching students."
+                body="Every task is automatically validated and repaired before it reaches a student."
                 bullets={[
                   "Deterministic auto-fixes for chronology, answer keys, and item counts",
                   "Tied-date detection, description-item filtering, and dangling reference checks",
@@ -621,7 +621,7 @@ export default function FeaturesPage() {
 
           <div className="mt-12">
             <SectionHeader
-              eyebrow="New: AI Game Modes"
+              eyebrow="New: Game Modes"
               title="Seven new ways for curriculum to come alive"
               desc="In addition to the 23 core task types, Curriculate now ships seven new game modes that turn a classroom into a live simulation. Each one is a different way for academic understanding to drive progress — earn coins, escape rooms, deduce the spy, race the tilt board, debate careers, deduce concepts, or connect today's lesson to this week's news."
               mascot="/images/mascot/promo/2.png"
@@ -633,7 +633,7 @@ export default function FeaturesPage() {
                 bullets={[
                   "Inter-team mode: server-locked global clue ceiling — fair race across all teams",
                   "Server-validated answer matcher (exact / substring / fuzzy)",
-                  "AI generator guards against dictionary-style clues; the answer must NEVER appear in a clue",
+                  "The generator guards against dictionary-style clues; the answer must NEVER appear in a clue",
                   "Teacher controls: force-reveal a clue, freeze submissions, skip task",
                   "Demo pool of 6 concepts (Photosynthesis, the Nile, Gravity, Mitochondria, Magna Carta, Solar Eclipse)",
                 ]}
@@ -656,7 +656,7 @@ export default function FeaturesPage() {
                 title="🔐 Escape Room"
                 body="Knowledge unlocks progress. Tasks award keys; keys open locks; locks reveal puzzle fragments; the final lock requires synthesis of everything earned. Curriculum terms are woven into every lock hint — pure escape doesn't work, only understanding does."
                 bullets={[
-                  "AI generator binds the config to teacher-supplied curriculum terms (≥ 80% coverage required)",
+                  "The generator binds the config to teacher-supplied curriculum terms (≥ 80% coverage required)",
                   "Cascading lock evaluation — open one lock, its keys cascade",
                   "Three final-puzzle types: PIN entry, image-tile assembly, cipher-wheel alignment",
                   "Anti-brute-force: synthesis answer never leaves the server",
@@ -676,7 +676,7 @@ export default function FeaturesPage() {
               />
               <FeatureCard
                 title="📰 Current Events Connection"
-                body="The only Curriculate task that's resolved LIVE at session launch — not at creation. A web search fetches a real news story from the past 7 days that connects to today's lesson, then AI generates discussion questions in your teacher worldview profile."
+                body="The only Curriculate task that's resolved LIVE at session launch — not at creation. A web search fetches a real news story from the past 7 days that connects to today's lesson, then discussion questions are written in your teacher worldview profile."
                 bullets={[
                   "Live web search via Anthropic's tool — no curated feeds to maintain",
                   "Publisher exclusion list — configurable per teacher",
@@ -693,7 +693,7 @@ export default function FeaturesPage() {
                   "Three phases: Earn (questions → coins) → Build (drag-place rails) → Tilt (physics)",
                   "Rotating tilter system encourages every teammate to take a turn",
                   "Server-clamped scoring prevents client-side cheating",
-                  "Theme-aware AI board generation",
+                  "Theme-aware board generation",
                 ]}
               />
               <FeatureCard
@@ -701,10 +701,10 @@ export default function FeaturesPage() {
                 body="Six discussion-driven modes for Grades 6-12: Best Fit, Pathway Builder, Aptitude Match, Salary vs Lifestyle, Who Should Be Hired, Career Myths. Anti-prestige-bias guardrails throughout — trades and ministry count just as much as STEM."
                 bullets={[
                   "Six modes in a single unified renderer",
-                  "AI justification scorer (1 / 2 / 3 tiers) maps to participation / justification / strong-justification points",
+                  "Justification scorer (1 / 2 / 3 tiers) maps to participation / justification / strong-justification points",
                   "Anti-toxicity: Best Fit picks are private; 'worst fit' is never a prompt",
                   "Salary always shown as ranges, never single numbers",
-                  "Category rotation (no STEM bias) baked into the AI prompt",
+                  "Category rotation (no STEM bias) baked in",
                 ]}
               />
               <FeatureCard
@@ -722,8 +722,8 @@ export default function FeaturesPage() {
                 title="🔥 Truth or Dare"
                 body="The classroom party game, rebuilt with academic safety rails. A weighted spotlight picks a student, they choose TRUTH (a curriculum-tied question) or DARE (a curriculum-tied performance), then the class judges. Five-layer moderation makes every prompt safe; an evergreen library guarantees the game never breaks."
                 bullets={[
-                  "AI generator + 5-layer safety pipeline: phrase blacklist → regex → category whitelist → intensity caps → OpenAI moderation API",
-                  "Curated evergreen library auto-falls-back when moderation blocks an AI prompt — the game never stalls",
+                  "5-layer safety pipeline: phrase blacklist → regex → category whitelist → intensity caps → OpenAI moderation API",
+                  "Curated evergreen library auto-falls-back when moderation blocks a prompt — the game never stalls",
                   "Weighted-random spotlight with per-team cooldowns (no one gets picked twice in a row, quiet kids get gentle boosts)",
                   "Three tiers (🌱 Sprout → 🌿 Stem → 🌳 Big) escalate after 3 successes, demote on fail — every student climbs",
                   "Teacher peek window (1.5s) lets you Approve / Reroll / Edit before students ever see a challenge",
@@ -732,9 +732,9 @@ export default function FeaturesPage() {
               />
               <FeatureCard
                 title="🗳 UpVote"
-                body="One debatable proposition tied to the unit. The class votes For or Against, sees the tally, and the AI surfaces the strongest case on each side. Distinct from True/False (no fact answer) and Live Debate (no head-to-head matchup) — UpVote is a class judgement call. Practice mode turns it into a one-person dialectic."
+                body="One debatable proposition tied to the unit. The class votes For or Against, sees the tally, and the strongest case on each side is surfaced. Distinct from True/False (no fact answer) and Live Debate (no head-to-head matchup) — UpVote is a class judgement call. Practice mode turns it into a one-person dialectic."
                 bullets={[
-                  "Two-pass generator: AI emits the proposition, then a gpt-4o-mini debatability gate asks YES/NO 'is this genuinely two-sided?'. Anything one-sided is regenerated up to twice, then dropped — no trivial votes ever ship.",
+                  "Two-pass generator: the proposition is emitted, then a debatability gate asks YES/NO 'is this genuinely two-sided?'. Anything one-sided is regenerated up to twice, then dropped — no trivial votes ever ship.",
                   "Worldview-aware prompt pool: 'faith' worldview opens interior-to-tradition interpretive questions (Peter's denial vs Judas's betrayal); 'secular' or 'general' frames in empirical / ethical / aesthetic terms only",
                   "Strict safety no-fly zones — no named living politicians, no contested personal-choice medical/legal/sexuality questions, no framing of any religious tradition as inferior, no body-image or family-income propositions",
                   "Heavy affinity for history, religion, and English (where judgement calls are the point); lower for math (where there's usually a right answer)",
@@ -745,7 +745,7 @@ export default function FeaturesPage() {
                 title="🗺 Map It"
                 body="Match-on-a-map for any geography-flavoured unit. Students see a real cartographic image with 3–5 numbered coloured markers and match each marker to the correct location, event, or person from a shuffled choice list — the same two-tap interaction as Matching, but anchored to a place."
                 bullets={[
-                  "AI generator detects geographic vocab automatically and refuses to ship a Map It task for non-geographic topics (math operations, grammar rules, abstract concepts)",
+                  "The generator detects geographic vocab automatically and refuses to ship a Map It task for non-geographic topics (math operations, grammar rules, abstract concepts)",
                   "Heavy subject affinity for history, religion, and physical geography — appears naturally in those subjects' tasksets, stays out of math/arts",
                   "Reuses the Matching grading + review flow, so it inherits all the per-student strictness adjustment and answer-overlay polish",
                   "Bloom mapping: APPLY (primary) + ANALYZE (secondary) — students don't just recall a place, they reason about where it fits",
@@ -753,7 +753,7 @@ export default function FeaturesPage() {
               />
               <FeatureCard
                 title="🏷 Label Me"
-                body="Matching, but on a diagram. The AI generates a clean, high-contrast educational illustration — a heart, a cell, a watershed, a Roman forum, a Bible-times map — overlays markers A–E, and students match each marker to the correct term from a shuffled list."
+                body="Matching, but on a diagram. A clean, high-contrast educational illustration is generated — a heart, a cell, a watershed, a Roman forum, a Bible-times map — overlays markers A–E, and students match each marker to the correct term from a shuffled list."
                 bullets={[
                   "Image generation happens at taskset creation time so students see the diagram instantly — no in-session image latency",
                   "Markers are overlaid on top of the rendered image so the prompt never contains baked-in text labels (no cheating from caption-reading)",
@@ -775,7 +775,7 @@ export default function FeaturesPage() {
           <div className="mt-12">
             <SectionHeader
               eyebrow="Pulse Grading"
-              title="AI grading at curriculate.net/grading"
+              title="Grading at curriculate.net/grading"
               desc="A companion product, sharing the same identity layer and class-linking infrastructure. Snap a photo, paste text, upload a batch PDF, record a speech, or upload a video — Pulse Grading gives every student rubric-matched feedback and a personal results page in seconds."
               mascot="/images/mascot/email-results/2.png"
             />
@@ -786,7 +786,7 @@ export default function FeaturesPage() {
                 bullets={[
                   "Photo: snap a single student's work, get instant feedback",
                   "Paste: drop in typed responses",
-                  "Batch PDF: upload a stack of handwritten papers — AI classifies each page and grades each student",
+                  "Batch PDF: upload a stack of handwritten papers — each page is classified and each student graded",
                   "Audio: speeches, music, drama performances with rubric scoring",
                   "Video: full performance grading with multi-modal feedback",
                 ]}
@@ -796,7 +796,7 @@ export default function FeaturesPage() {
                 body="Match the feedback tone to your teaching style — encouraging, rigorous, journal-response, growth-mindset, and more — with optional per-question audit toggle."
                 bullets={[
                   "13 distinct feedback voices, plus a rigorous-review modifier",
-                  "Per-question audit lets you spot-check any AI judgment",
+                  "Per-question audit lets you spot-check any single judgment",
                   "Rubric override: paste, upload PDF/DOCX, or auto-detect from photos",
                   "Saved rubrics for one-click reuse across assignments",
                 ]}
@@ -827,13 +827,13 @@ export default function FeaturesPage() {
           <div className="mt-12">
             <SectionHeader
               eyebrow="Care & Attention"
-              title="What AI grading shouldn't lose: the human read"
+              title="What grading shouldn't lose: the human read"
               desc="When you grade by hand, you catch the moment a student's journal turns serious — a passing line about home, a flicker of struggle, something that deserves a follow-up. Pulse Grading is built to keep that signal visible, not bury it under a pile of efficiency."
               mascot="/images/mascot/feedback/2.png"
             />
             <FeatureCard
               title="🚩 Well-being check — alongside every grade"
-              body="When the AI reads a student's writing, it's also watching for signals a caring teacher would want to know about — and surfaces them in two clearly-marked tiers, with a short snippet so you can locate the passage."
+              body="When a student's writing is read, Pulse is also watching for signals a caring teacher would want to know about — and surfaces them in two clearly-marked tiers, with a short snippet so you can locate the passage."
               bullets={[
                 "⚠️ Possible safety concern — explicit signals (self-harm references, abuse disclosure, persistent bullying, severe hopelessness)",
                 "💛 Wellbeing — notable personal context worth a check-in (recent loss, family stress, anxiety mentioned in passing, identity concerns)",
@@ -846,7 +846,7 @@ export default function FeaturesPage() {
             <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-5">
               <div className="text-sm font-bold text-amber-900 mb-1">A note on what this is and isn't</div>
               <p className="text-sm leading-relaxed text-amber-900/85">
-                This is an AI signal, not a clinical judgment. It catches what's plausibly visible in the
+                This is a software signal, not a clinical judgment. It catches what's plausibly visible in the
                 writing — it cannot replace your judgment, your knowledge of the student, or your school's
                 safeguarding policy. The detection is intentionally biased toward "none" when uncertain, so
                 the few flags that do surface are the ones genuinely worth your attention.
@@ -864,10 +864,10 @@ export default function FeaturesPage() {
             <div className="grid gap-4 md:grid-cols-3">
               <FeatureCard
                 title="Free — $0"
-                body="Run unlimited Curriculate sessions and Pulse Grading with all 23+ task types and the full AI generation pipeline. Capacity-limited."
+                body="Run unlimited Curriculate sessions and Pulse Grading with all 23+ task types and the full generation pipeline. Capacity-limited."
                 bullets={[
                   "All task types and game modes",
-                  "AI lesson planning + generation",
+                  "Lesson planning + task generation",
                   "Standard session reports",
                   "Pulse Grading basics (photo, paste, batch)",
                 ]}
@@ -881,7 +881,7 @@ export default function FeaturesPage() {
                   "Match-a-Session post-hoc reconciliation tool",
                   "Roster admin: edit student + parent emails directly",
                   "Student-level reports and PDF exports",
-                  "AI gradebook with strands; XLSX export",
+                  "Gradebook with strands; XLSX export",
                 ]}
               />
               <FeatureCard
@@ -891,7 +891,7 @@ export default function FeaturesPage() {
                   "Per-student improvement column (vs. last session, vs. average)",
                   "Color-coded trend indicators in email + PDF reports",
                   "Individual one-page student PDFs",
-                  "Expanded AI generation; advanced analytics",
+                  "Expanded generation limits; advanced analytics",
                   "Full classroom capacity",
                 ]}
               />
@@ -918,7 +918,7 @@ export default function FeaturesPage() {
               </div>
               <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                 <div className="text-3xl">🧠</div>
-                <h3 className="mt-3 text-lg font-bold text-slate-900">AI-generated content, every time</h3>
+                <h3 className="mt-3 text-lg font-bold text-slate-900">Fresh content, every time</h3>
                 <p className="mt-2 text-sm text-slate-600">
                   Each task&apos;s questions, distractors, clues, suspect lists, fact pools, riddles, and rubrics are
                   freshly generated. Even the same topic at the same grade produces different items, options, and
@@ -940,7 +940,7 @@ export default function FeaturesPage() {
               <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                 <h3 className="text-lg font-bold text-slate-900">The math, briefly</h3>
                 <p className="mt-2 text-sm text-slate-600">
-                  Pick 12 task types out of 67: C(67, 12) ≈ 4.8 × 10<sup>13</sup>. Multiply by the AI content
+                  Pick 12 task types out of 67: C(67, 12) ≈ 4.8 × 10<sup>13</sup>. Multiply by the content
                   variation per task — different items, different rubrics, different decoys — and the effective
                   sample space dwarfs the number of seconds in a teacher&apos;s career.
                 </p>
@@ -988,7 +988,7 @@ export default function FeaturesPage() {
                     Full Session Report — Water Cycle (PDF)
                   </h3>
                   <p className="mt-2 text-slate-700">
-                    End-to-end report from a real Grade 5 Water Cycle session: AI summary, Bloom's cognitive
+                    End-to-end report from a real Grade 5 Water Cycle session: session summary, Bloom's cognitive
                     profile, team rankings, exit feedback, gradebook with per-student trend column, parent note.
                     This is what your inbox looks like after a live session.
                   </p>

@@ -264,7 +264,7 @@ export default function AboutCampfirePage() {
               "Anonymous donations — give to a fundraiser without an account; raffle entrants leave a name (optional email) so a winner can be reached",
               "Declared cause — hosts can name a cause for the funds (the host forwards the proceeds; Campfire isn't a charity)",
               "Prize-pot funding — fund a prize event by optional chip-ins or a set entry fee; a referrer earns 3% on these",
-              "Party Sign-ups — potlucks and meal trains with RSVP, claimable bring-slots (unlimited slots supported), free-text items, and AI dish suggestions that balance the menu",
+              "Party Sign-ups — potlucks and meal trains with RSVP, claimable bring-slots (unlimited slots supported), free-text items, and dish suggestions that balance the menu",
               "Bulk-add birthdays — seed a whole family or class of recurring cards from one list, reusing a template's photos",
               "Multi-photo posts — share up to three photos in a single photo challenge",
               "Care Check-in — multi-section pastoral check-ins (how you're doing, prayer requests, praise)",
@@ -587,7 +587,7 @@ export default function AboutCampfirePage() {
           <EngCard icon="🔍" name="Guess" desc="Post a mystery photo for the group to guess." />
           <EngCard icon="🎉" name="Surprise" desc="Coordinate greetings or video mash-ups, hidden from the recipient." />
           <EngCard icon="🎂" name="Celebration Card" desc="A surprise card everyone signs — birthday, anniversary, wedding, Mother's/Father's Day, holidays. Each wish stays private to the recipient; it opens on the special day and recurs yearly. Add a group gift everyone chips into." />
-          <EngCard icon="🥗" name="Party Sign-up" desc="Potlucks and meal trains: set when & where, see who's coming (RSVP), and let people claim slots or add what they're bringing. AI balances the menu so you're not all-salad, no mains." />
+          <EngCard icon="🥗" name="Party Sign-up" desc="Potlucks and meal trains: set when & where, see who's coming (RSVP), and let people claim slots or add what they're bringing. The menu gets balanced for you, so you're not all-salad, no mains." />
           <EngCard icon="🎁" name="Group Gift" desc="Everyone chips in toward one gift card. Contributors cover the fees, so the recipient gets the full amount — and the running total stays hidden from them." />
           <EngCard icon="🎅" name="Secret Santa" desc="Run a gift exchange: Campfire randomly assigns who buys for whom and keeps each match private until the reveal." />
           <EngCard icon="🔍" name="Scavenger Hunt" desc="A multi-stop photo checklist — 'you at Yonge & Bloor', 'you in a boat' — done in any order. Add a cash pot the group votes on. Photos are EXIF date-checked for fair play." />

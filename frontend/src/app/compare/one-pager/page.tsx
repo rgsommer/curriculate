@@ -7,13 +7,13 @@ const top = [
   { icon: <Users className="w-6 h-6 text-purple-600" />, title: "Real collaboration", desc: "Teams submit together; peer teaching happens naturally." },
   { icon: <Layers className="w-6 h-6 text-emerald-600" />, title: "Task variety", desc: "Games, debate, photo evidence, drawing, role-play, more." },
   { icon: <BarChart3 className="w-6 h-6 text-indigo-600" />, title: "Live visibility", desc: "Teachers see progress and submissions in real time." },
-  { icon: <ShieldCheck className="w-6 h-6 text-yellow-600" />, title: "Teacher-controlled AI", desc: "Optional generation + feedback, always overrideable." },
+  { icon: <ShieldCheck className="w-6 h-6 text-yellow-600" />, title: "You stay in control", desc: "Optional generation + feedback, always overrideable." },
 ];
 
 const kahootRows = [
   { label: "Primary format", c: "Station-based, physical + digital hybrid learning", r: "Whole-class quiz-show (everyone answers at once)" },
   { label: "Group structure", c: "1–4 players per station (teams collaborate)", r: "Unlimited players; mostly individual competition" },
-  { label: "Task variety", c: "65+ task types (cloze, AI interviews, peer editing, teach-back, movement, photo, debate, creation)", r: "Mostly quiz formats (MC, T/F, short answer)" },
+  { label: "Task variety", c: "65+ task types (cloze, live interviews, peer editing, teach-back, movement, photo, debate, creation)", r: "Mostly quiz formats (MC, T/F, short answer)" },
   { label: "Noise & pacing", c: "Turn-based controls reduce chaos; teacher pacing", r: "Simultaneous answers can get loud/chaotic" },
   { label: "Depth of thinking", c: "Strong: explanation, synthesis, evidence tasks", r: "Best for fast recall review + excitement" },
   { label: "Reporting", c: "Student + teacher reports with artifacts", r: "Results/leaderboards; fewer artifacts" },
@@ -21,7 +21,7 @@ const kahootRows = [
 
 const quizletRows = [
   { label: "Core purpose", c: "Active stations + collaboration + evidence", r: "Flashcard study and recall review (self-paced)" },
-  { label: "Task variety", c: "65+ task types beyond recall (cloze, AI interviews, peer editing, teach-back, and more)", r: "Flashcards + a few recall-focused modes" },
+  { label: "Task variety", c: "65+ task types beyond recall (cloze, live interviews, peer editing, teach-back, and more)", r: "Flashcards + a few recall-focused modes" },
   { label: "Group play", c: "Team submissions at stations", r: "Mostly individual; Live mode is class competition" },
   { label: "Physical integration", c: "Built-in station rotation + movement tasks", r: "Screen-only by design" },
   { label: "Depth of thinking", c: "Strong: explanation, speaking, creation", r: "Best for memorization and rapid review" },
@@ -31,7 +31,7 @@ const quizletRows = [
 const blooketRows = [
   { label: "Primary format", c: "Station-based, physical + digital hybrid learning", r: "Screen-based game modes (Tower Defense, Gold Quest, etc.)" },
   { label: "Group structure", c: "1–4 players per station (teams collaborate)", r: "Individual play; students compete on own device" },
-  { label: "Task variety", c: "65+ task types (cloze, AI interviews, peer editing, teach-back, movement, photo, debate, creation)", r: "Primarily multiple-choice quiz formats in game themes" },
+  { label: "Task variety", c: "65+ task types (cloze, live interviews, peer editing, teach-back, movement, photo, debate, creation)", r: "Primarily multiple-choice quiz formats in game themes" },
   { label: "Physical movement", c: "Built-in station rotation + movement breaks", r: "Screen-only — students stay seated" },
   { label: "Depth of thinking", c: "Strong: explanation, synthesis, evidence tasks", r: "Best for fast recall via gamified repetition" },
   { label: "Reporting", c: "Student + teacher reports with artifacts", r: "Basic performance data; limited artifacts" },

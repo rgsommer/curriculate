@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { api, getToken, loginHref, getMyTemplates, generateParentMessage, type Me, type GuddStatus, type ParentTemplate } from "../../_lib/api";
 import { cardCls, Button } from "../../_components/ui";
+import { toast } from "../../_components/toast";
 import GuddChip from "../../_components/GuddChip";
 import { Markdown } from "../../_lib/Markdown";
 import { Timeline, buildByMonth } from "../../_components/Timeline";
@@ -43,6 +44,7 @@ type StudentDetail = {
     renderedText: string;
     createdAt: string;
     sentAt?: string;
+    voidedAt?: string | null;
     editedAfterSendAt?: string;
     legacyImport?: boolean;
     triggeringIncidentIds?: string[];
@@ -51,7 +53,7 @@ type StudentDetail = {
     deliveries?: Array<{ channel: string; ok: boolean; error?: string }>;
     fromTeachers: Array<{ name: string; behaviorName: string }>;
   }>;
-  consequences?: Array<{ _id: string; type: string; detail?: string; byName?: string; at: string; kind?: "encouraging" | "corrective"; completed?: boolean; completedByName?: string; completedAt?: string; notifiedAt?: string | null; notifiedByName?: string }>;
+  consequences?: Array<{ _id: string; type: string; detail?: string; byName?: string; at: string; kind?: "encouraging" | "corrective"; completed?: boolean; completedByName?: string; completedAt?: string; resolution?: "" | "completed" | "discussed"; notifiedAt?: string | null; notifiedByName?: string }>;
 };
 
 const fmtDT = (d: string) =>
@@ -77,6 +79,11 @@ export default function StudentPage() {
   const [openNotice, setOpenNotice] = useState<string | null>(null);
   // Incident edit/delete
   const [editIncId, setEditIncId] = useState<string | null>(null);
+  // Removing an offence: "entered in error" (no trace) vs "withdrawn" (the
+  // teacher's judgment — a record of the reversal is kept).
+  const [removeIncId, setRemoveIncId] = useState<string | null>(null);
+  const [removeWhy, setRemoveWhy] = useState("");
+  const [removeBusy, setRemoveBusy] = useState(false);
   const [editDetail, setEditDetail] = useState("");
 
   // Admin summary
@@ -342,13 +349,26 @@ export default function StudentPage() {
       setError(e.message);
     }
   }
-  async function deleteIncident(id: string) {
-    if (!window.confirm("Delete this incident? This removes it from the student's strikes and history.")) return;
+  async function deleteIncident(id: string, mode: "error" | "withdrawn" = "error", why = "") {
+    setRemoveBusy(true);
     try {
-      await api(`/incidents/${id}`, { method: "DELETE" });
+      const r = await api<{ reversed?: { consequences: number; whiteSlip: boolean; keptCompleted: number; followups: number; noticesCancelled: number; noticesVoided: number; voidedSentNotice: boolean } }>(`/incidents/${id}`, { method: "DELETE", body: { mode, reason: why } });
+      const v = r?.reversed;
+      const parts: string[] = [];
+      if (v?.consequences) parts.push(`${v.consequences} consequence${v.consequences === 1 ? "" : "s"} removed${v.whiteSlip ? " (incl. the white slip — let the VP know)" : ""}`);
+      if (v?.followups) parts.push(`${v.followups} follow-up${v.followups === 1 ? "" : "s"} removed`);
+      if (v?.noticesCancelled) parts.push(`${v.noticesCancelled} pending notice cancelled`);
+      if (v?.noticesVoided) parts.push(`${v.noticesVoided} sent notice voided — its other strikes are active again${v.voidedSentNotice ? ". If the family already got it, let them know" : ""}`);
+      if (v?.keptCompleted) parts.push(`${v.keptCompleted} completed consequence kept on record`);
+      setError("");
+      const head = mode === "withdrawn" ? "Withdrawn — the reversal is logged on the record." : "Removed.";
+      toast(parts.length ? `${head} ${parts.join("; ")}.` : head);
+      setRemoveIncId(null); setRemoveWhy("");
       load();
     } catch (e: any) {
       setError(e.message);
+    } finally {
+      setRemoveBusy(false);
     }
   }
 
@@ -438,6 +458,11 @@ export default function StudentPage() {
   // ones show as already carried out.
   async function markConsequenceDone(id: string, completed: boolean) {
     try { await api(`/consequences/${id}/complete`, { body: { completed } }); load(); } catch (e: any) { setConsMsg(`✗ ${e.message}`); }
+  }
+  // Resolve a consequence with a conversation instead (logged as an intervention).
+  async function markConsequenceDiscussed(id: string) {
+    try { await api(`/consequences/${id}/discussed`, { body: {} }); toast("Logged: discussed with student ✓"); load(); }
+    catch (e: any) { setConsMsg(`✗ ${e.message}`); }
   }
   // Stage 1: parents notified (message posted/sent). Separate from completed.
   async function markConsequenceNotified(id: string, sent: boolean) {
@@ -790,7 +815,9 @@ export default function StudentPage() {
               {data.consequences!.filter((c) => c.kind !== "encouraging").map((c) => {
                 const notified = !!c.notifiedAt;
                 const done = !!c.completed;
-                const resolved = notified && done;
+                const discussed = c.resolution === "discussed";
+                // A conversation in place of the consequence needs no note home.
+                const resolved = done && (notified || discussed);
                 return (
                 <li key={c._id} className="py-2 text-sm">
                   <div className="flex items-start justify-between gap-2">
@@ -822,15 +849,24 @@ export default function StudentPage() {
                     {/* Stage 2 — student completed the consequence */}
                     {done ? (
                       <span className="inline-flex items-center gap-1 text-xs text-slate-500">
-                        <span className="rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-700">✓ Completed{c.completedByName ? ` · ${c.completedByName}` : ""}</span>
+                        {discussed
+                          ? <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">💬 Discussed with student instead{c.completedByName ? ` · ${c.completedByName}` : ""}</span>
+                          : <span className="rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold text-green-700">✓ Completed{c.completedByName ? ` · ${c.completedByName}` : ""}</span>}
                         <button onClick={() => markConsequenceDone(c._id, false)} className="text-slate-500 hover:underline">undo</button>
                       </span>
                     ) : (
-                      <button onClick={() => markConsequenceDone(c._id, true)}
-                        title="The student has carried this out (e.g. handed in the lines / served the detention)"
-                        className="rounded-lg border border-green-300 px-2 py-0.5 text-xs font-medium text-green-700 hover:bg-green-50">
-                        ✓ Mark completed
-                      </button>
+                      <span className="inline-flex flex-wrap items-center gap-1.5">
+                        <button onClick={() => markConsequenceDone(c._id, true)}
+                          title="The student has carried this out (e.g. handed in the lines / served the detention)"
+                          className="rounded-lg border border-green-300 px-2 py-0.5 text-xs font-medium text-green-700 hover:bg-green-50">
+                          ✓ Mark completed
+                        </button>
+                        <button onClick={() => markConsequenceDiscussed(c._id)}
+                          title="Resolve it with a conversation instead. Logged as an intervention: documentation only, not a strike, nothing sent home."
+                          className="rounded-lg border border-slate-300 px-2 py-0.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                          💬 Discussed instead
+                        </button>
+                      </span>
                     )}
                     {resolved && <span className="text-[10px] font-semibold text-green-700">— resolved</span>}
                   </div>
@@ -888,7 +924,7 @@ export default function StudentPage() {
                   : n.status === "cancelled" ? "bg-slate-100 text-slate-500"
                   : n.status === "failed" ? "bg-red-100 text-red-700"
                   : "bg-amber-100 text-amber-700"}`}>
-                  {n.status}
+                  {n.voidedAt ? "voided" : n.status}
                 </span>
               </button>
               {openNotice === n._id && (
@@ -982,7 +1018,7 @@ export default function StudentPage() {
                   {canEditInc(inc) && editIncId !== inc._id && (
                     <>
                       <button onClick={() => { setEditIncId(inc._id); setEditDetail(inc.detailText || ""); }} className="text-xs text-slate-500 underline">edit</button>
-                      <button onClick={() => deleteIncident(inc._id)} className="text-xs text-red-600 underline">delete</button>
+                      <button onClick={() => { setRemoveIncId(removeIncId === inc._id ? null : inc._id); setRemoveWhy(""); }} className="text-xs text-red-600 underline">remove</button>
                     </>
                   )}
                 </span>
@@ -990,6 +1026,34 @@ export default function StudentPage() {
               {editIncId !== inc._id && inc.detailText ? (
                 <p className="mt-0.5 break-words text-slate-500">— {inc.detailText}</p>
               ) : null}
+              {removeIncId === inc._id && (() => {
+                // Only a real offence can be "withdrawn"; interactions/positives just get removed.
+                const isOffence = inc.behaviorSnapshot.triggerMode !== "INTERACTION" && (inc.behaviorSnapshot as any).kind !== "positive" && ((inc.behaviorSnapshot as any).points || 0) <= 0;
+                return (
+                  <div className="mt-2 rounded-lg border border-red-200 bg-red-50/60 p-3 text-xs">
+                    <p className="font-medium text-slate-800">Why remove it?</p>
+                    <p className="mt-0.5 text-slate-600">Either way, what it set off is undone: house points, a consequence or white slip not yet carried out, an open follow-up, and any notice it triggered (a sent notice is voided and its other strikes count again).</p>
+                    {isOffence && (
+                      <input value={removeWhy} onChange={(e) => setRemoveWhy(e.target.value)} maxLength={500}
+                        placeholder="Reason (optional, kept with a withdrawal) — e.g. talked it through; it was a misunderstanding"
+                        aria-label="Reason for withdrawing" className="mt-2 w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm" />
+                    )}
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {isOffence && (
+                        <Button onClick={() => deleteIncident(inc._id, "withdrawn", removeWhy.trim())} disabled={removeBusy} size="xs"
+                          title="Your judgment to reverse it. A record of the withdrawal (what, who, when, why) stays on the student's history — documentation only, not a strike.">
+                          Withdraw — keep a record
+                        </Button>
+                      )}
+                      <Button onClick={() => deleteIncident(inc._id, "error")} disabled={removeBusy} variant="danger" size="xs"
+                        title="It shouldn't have been logged (wrong student or behaviour). Removed completely.">
+                        Entered in error — remove completely
+                      </Button>
+                      <Button onClick={() => setRemoveIncId(null)} variant="secondary" size="xs">Cancel</Button>
+                    </div>
+                  </div>
+                );
+              })()}
               {editIncId === inc._id && (
                 <div className="mt-1 flex gap-2 pl-3">
                   <input value={editDetail} onChange={(e) => setEditDetail(e.target.value)}

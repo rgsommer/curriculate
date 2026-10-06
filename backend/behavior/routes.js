@@ -164,7 +164,7 @@ async function fireWhiteSlip({ req, student, config, behaviorName, detailText, a
     if (config?.houseWhiteSlipDeduct && !config?.houseNegativePoints && pen > 0 && student.houseId) {
       await HousePointEvent.create({
         schoolId: req.schoolId, houseId: student.houseId, studentId: student._id,
-        points: -Math.abs(pen), reason: `White slip — ${behaviorName}`,
+        points: -Math.abs(pen), reason: `White slip — ${behaviorName}`, incidentId: relatedIncidentId || null,
         awardedByTeacherId: req.membership?._id || null, at: when,
       });
     }
@@ -573,7 +573,8 @@ function escapeHtml(s) {
 // often IS the concern the teacher wants to raise), and from internal support/
 // meta records that should never be surfaced to parents.
 const PARENT_CONTACT_NAME = "Parent meeting / contact";
-const SUPPORT_INTERACTION_NAMES = new Set(["Homeroom follow-up", "Whole-picture note recommended"]);
+// "Offence withdrawn" is an internal record of a reversal — never framed to parents as a concern.
+const SUPPORT_INTERACTION_NAMES = new Set(["Homeroom follow-up", "Whole-picture note recommended", "Offence withdrawn"]);
 // A teacher↔student conversation worth telling parents about: INTERACTION mode,
 // not a parent-contact log, and not an internal support/meta record.
 function isConcernConversation(inc) {
@@ -3955,23 +3956,131 @@ router.put("/incidents/:id", authAny, loadMembership, canLog, async (req, res, n
   }
 });
 
-// Delete an incident (a mis-log). Removes any house points it awarded. Strikes
-// recompute automatically since they're derived from the incident rows.
+// Delete an incident (a mis-log) and BACKPEDAL everything it set in motion, so
+// the escalation steps back as if it never happened:
+//  - house points it awarded/deducted (incl. a white-slip penalty)
+//  - consequences tied to it that weren't carried out yet (incl. a recommended
+//    white slip); ones already completed stay on record (they really happened)
+//  - open follow-ups created from it
+//  - notices it triggered: a queued one is cancelled; a sent one is VOIDED and
+//    the other offences it had spent go back to being active strikes
+// Strikes recompute automatically since they're derived from the incident rows.
+//
+// Two reasons to remove one (body/query `mode`):
+//  - "error" (default): logged in error (wrong student / behaviour) — removed
+//    completely, no trace beyond the audit log.
+//  - "withdrawn": the teacher's judgment to reverse it. Same backpedal, but an
+//    "Offence withdrawn" interaction is logged so the record shows what was
+//    withdrawn, by whom, when and why (documentation only — never a strike).
 router.delete("/incidents/:id", authAny, loadMembership, canLog, async (req, res, next) => {
   try {
     const inc = await BehaviorIncident.findOne({ _id: req.params.id, schoolId: req.schoolId });
     if (!inc) return res.status(404).json({ ok: false, error: "Incident not found" });
     if (!canEditIncident(req.membership, inc)) return res.status(403).json({ ok: false, error: "Only the teacher who logged it (or an admin) can delete it." });
+    const mode = String(req.body?.mode || req.query.mode || "error") === "withdrawn" ? "withdrawn" : "error";
+    const why = String(req.body?.reason || req.query.reason || "").trim().slice(0, 500);
     await HousePointEvent.deleteMany({ schoolId: req.schoolId, incidentId: inc._id });
+    const reversed = await backpedalIncident(req.schoolId, inc);
+    if (mode === "withdrawn") {
+      try { await logOffenceWithdrawn({ schoolId: req.schoolId, inc, teacherId: req.membership._id, byName: actorName(req), why, reversed }); }
+      catch (e) { console.warn("[behavior] withdrawn log failed:", e?.message || e); }
+    }
     // Remove any stored photo/video evidence so it doesn't outlive the incident.
     for (const a of inc.attachments || []) await deleteEvidenceKey(a.key);
     await BehaviorIncident.deleteOne({ _id: inc._id });
-    await audit(req.schoolId, "incident.deleted", req, { studentId: inc.studentId, meta: { behavior: inc.behaviorSnapshot?.name } });
-    res.json({ ok: true });
+    await audit(req.schoolId, mode === "withdrawn" ? "incident.withdrawn" : "incident.deleted", req, { studentId: inc.studentId, meta: { behavior: inc.behaviorSnapshot?.name, reversed, mode, why } });
+    res.json({ ok: true, mode, reversed });
   } catch (err) {
     next(err);
   }
 });
+
+// Undo what an incident triggered (see the DELETE route above). Returns a summary
+// so the UI can tell the teacher what was reversed.
+async function backpedalIncident(schoolId, inc) {
+  const out = { consequences: 0, whiteSlip: false, keptCompleted: 0, followups: 0, noticesCancelled: 0, noticesVoided: 0, voidedSentNotice: false };
+  const cons = await BehaviorConsequence.find({ schoolId, relatedIncidentId: inc._id });
+  for (const c of cons) {
+    if (c.completed) {
+      out.keptCompleted += 1;
+      if (!/offence later deleted/i.test(c.detail || "")) { c.detail = `${c.detail || ""} (offence later deleted)`.trim(); await c.save(); }
+      continue;
+    }
+    if (c.type === "White slip") out.whiteSlip = true;
+    await BehaviorConsequence.deleteOne({ _id: c._id });
+    out.consequences += 1;
+  }
+  const fu = await BehaviorFollowup.deleteMany({ schoolId, incidentId: inc._id, status: "open" });
+  out.followups = fu.deletedCount || 0;
+
+  const notices = await BehaviorNotice.find({ schoolId, triggeringIncidentIds: inc._id, status: { $in: ["queued", "sent", "failed"] } });
+  for (const n of notices) {
+    const wasSent = n.status === "sent";
+    n.status = "cancelled";
+    if (wasSent) { n.voidedAt = new Date(); n.voidReason = "An offence that triggered it was deleted."; }
+    await n.save();
+    // Offences this notice had spent count as active strikes again.
+    await BehaviorIncident.updateMany({ schoolId, countedInNoticeId: n._id, _id: { $ne: inc._id } }, { $set: { countedInNoticeId: null } });
+    if (wasSent) { out.noticesVoided += 1; if (n.reason !== "positive") out.voidedSentNotice = true; }
+    else out.noticesCancelled += 1;
+  }
+  if (notices.length) {
+    const config = await BehaviorConfig.findOne({ schoolId }).lean();
+    const last = await BehaviorNotice.findOne({ schoolId, studentId: inc.studentId, status: "sent", reason: { $ne: "positive" } }).sort({ sentAt: -1 }).select("sentAt").lean();
+    await BehaviorStudent.updateOne({ _id: inc.studentId }, { $set: {
+      noticesHomeCount: await countPeriodNotices(schoolId, inc.studentId, config),
+      lastNoticeAt: last?.sentAt || null,
+    } });
+  }
+  return out;
+}
+
+// "Offence withdrawn": the record of a teacher's judgment call to reverse an
+// offence (the offence itself is removed and its effects undone). Documentation
+// only — never a strike, nothing sent home.
+async function logOffenceWithdrawn({ schoolId, inc, teacherId = null, byName = "", why = "", reversed = {} }) {
+  let beh = await Behavior.findOne({ schoolId, name: "Offence withdrawn" });
+  if (!beh) {
+    beh = await Behavior.create({
+      schoolId, name: "Offence withdrawn", keyword: "intervention", kind: "negative", triggerMode: "INTERACTION",
+      description: "A teacher reversed a logged offence on reflection. Its strike, consequence and any notice were undone; this keeps a record of the decision. Documentation only — not a strike.",
+      consequenceText: "", points: 0,
+    });
+  }
+  const when = new Date(inc.timestamp).toLocaleDateString("en-CA", { timeZone: "America/Toronto", month: "short", day: "numeric", year: "numeric" });
+  const undone = [];
+  if (reversed.consequences) undone.push(reversed.whiteSlip ? "the white slip" : "its consequence");
+  if (reversed.noticesVoided || reversed.noticesCancelled) undone.push("the notice it triggered");
+  const note = `${byName || "A teacher"} withdrew “${inc.behaviorSnapshot?.name || "an offence"}” (logged ${when})` +
+    (undone.length ? `; ${undone.join(" and ")} undone` : "") + "." + (why ? ` Reason: ${why}` : "");
+  return BehaviorIncident.create({
+    schoolId, studentId: inc.studentId, teacherId,
+    behaviorId: beh._id,
+    behaviorSnapshot: { name: beh.name, description: beh.description, triggerMode: "INTERACTION", kind: "negative", consequenceText: "", points: 0 },
+    detailText: note, immediateFlag: false, timestamp: new Date(),
+  });
+}
+
+// "Discussed with student": the teacher resolves a consequence with a
+// conversation instead. Logged as an intervention (documentation only — never a
+// strike, nothing sent home) and the consequence is marked resolved that way.
+async function logDiscussedWithStudent({ schoolId, student, teacherId = null, byName = "", insteadOf = "" }) {
+  let beh = await Behavior.findOne({ schoolId, name: "Discussed with student" });
+  if (!beh) {
+    beh = await Behavior.create({
+      schoolId, name: "Discussed with student", keyword: "intervention", kind: "negative", triggerMode: "INTERACTION",
+      description: "The teacher talked the situation through with the student. An intervention — documentation only; not a strike and nothing is sent home.",
+      consequenceText: "", points: 0,
+    });
+  }
+  const note = `${byName || "A teacher"} discussed the situation with the student${insteadOf ? ` (in place of: ${insteadOf})` : ""}.`;
+  return BehaviorIncident.create({
+    schoolId, studentId: student._id, teacherId,
+    behaviorId: beh._id,
+    behaviorSnapshot: { name: beh.name, description: beh.description, triggerMode: "INTERACTION", kind: "negative", consequenceText: "", points: 0 },
+    detailText: note, immediateFlag: false, timestamp: new Date(),
+  });
+}
 
 // Attach photo/video evidence to an incident (camera capture at log time).
 // Stored privately in S3; only the logging teacher or an admin may attach.
@@ -5537,6 +5646,24 @@ router.post("/consequences/:id/message", authAny, loadMembership, async (req, re
 
 // Mark a consequence as completed (or not). Any teacher can confirm follow-
 // through; the threshold notice then shows the consequence as already done.
+router.post("/consequences/:id/discussed", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const c = await BehaviorConsequence.findOne({ _id: req.params.id, schoolId: req.schoolId });
+    if (!c) return res.status(404).json({ ok: false, error: "Not found" });
+    const student = await BehaviorStudent.findOne({ _id: c.studentId, schoolId: req.schoolId });
+    if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
+    const who = actorName(req);
+    const inc = await logDiscussedWithStudent({ schoolId: req.schoolId, student, teacherId: req.membership._id, byName: who, insteadOf: c.type });
+    c.completed = true; c.resolution = "discussed";
+    c.completedByTeacherId = req.membership._id; c.completedByName = who; c.completedAt = new Date();
+    await c.save();
+    await audit(req.schoolId, "consequence.discussed", req, { studentId: String(c.studentId), incidentId: String(inc._id), meta: { type: c.type } });
+    res.json({ ok: true, consequence: c.toObject() });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post("/consequences/:id/complete", authAny, loadMembership, canLog, async (req, res, next) => {
   try {
     const c = await BehaviorConsequence.findOne({ _id: req.params.id, schoolId: req.schoolId });
@@ -5544,6 +5671,7 @@ router.post("/consequences/:id/complete", authAny, loadMembership, canLog, async
     const done = req.body?.completed === false ? false : true;
     const who = req.membership.name || req.user?.name || "";
     c.completed = done;
+    c.resolution = done ? "completed" : "";
     c.completedByTeacherId = done ? req.membership._id : null;
     c.completedByName = done ? who : "";
     c.completedAt = done ? new Date() : null;
@@ -7511,21 +7639,12 @@ router.get("/public/houses", async (req, res, next) => {
     const memberById = Object.fromEntries(members.map((m) => [String(m._id), m.n]));
     const houseById = Object.fromEntries(houses.map((h) => [String(h._id), h]));
 
-    // House captains (first name + last initial only — minimal PII for a wall board).
-    const captains = await BehaviorStudent.find({ schoolId, active: true, houseCaptain: true, houseId: { $ne: null } })
-      .select("firstName preferredName lastName houseId")
-      .lean();
-    const captainsByHouse = {};
-    for (const c of captains) {
-      const k = String(c.houseId);
-      (captainsByHouse[k] ||= []).push(`${c.preferredName || c.firstName} ${(c.lastName || "").charAt(0)}.`.trim());
-    }
-
+    // PUBLIC PAGE RULE: no student data of any kind — no names, initials or
+    // photos (captains, top students, contributors). Composite totals only.
     const houseOut = houses
       .map((h) => ({
         id: String(h._id), name: h.name, color: h.color || "#0f172a", image: h.image || "",
         points: totalById[String(h._id)] || 0, members: memberById[String(h._id)] || 0,
-        captains: captainsByHouse[String(h._id)] || [],
       }))
       .sort((a, b) => b.points - a.points);
 
@@ -7548,63 +7667,31 @@ router.get("/public/houses", async (req, res, next) => {
     const recentRaw = await HousePointEvent.find({ ...pointMatch, points: { $gt: 0 } })
       .sort({ at: -1 }).limit(40).select("houseId studentId points reason at").lean();
     const activity = [];
+    const scrub = await publicNameScrubber(sid);
     for (const e of recentRaw) {
       if (e.studentId && !activeIdSet.has(String(e.studentId))) continue; // not on the roster
       let hid = e.houseId && houseById[String(e.houseId)] ? String(e.houseId) : null;
       if (!hid && e.studentId) { const cur = houseByStudent[String(e.studentId)]; if (cur && houseById[cur]) hid = cur; }
       if (!hid) continue;
       const h = houseById[hid];
-      activity.push({ house: h.name, color: h.color || "#0f172a", points: e.points, reason: e.reason || "", at: e.at });
+      activity.push({ house: h.name, color: h.color || "#0f172a", points: e.points, reason: scrub(e.reason || ""), at: e.at });
       if (activity.length >= 12) break;
     }
 
-    // Daily winners (today): student who earned the most positive points, and the
-    // house that earned the most net points since local midnight.
+    // Daily winner (today): the house that earned the most net points since
+    // local midnight. (No "top student" — the public page shows no student data.)
     const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
-    const [topStuAgg, topHouseAgg] = await Promise.all([
-      HousePointEvent.aggregate([
-        { $match: { schoolId: sid, studentId: { $in: activeIds }, points: { $gt: 0 }, at: { $gt: dayStart } } },
-        { $group: { _id: "$studentId", pts: { $sum: "$points" } } },
-        { $sort: { pts: -1 } }, { $limit: 1 },
-      ]),
-      HousePointEvent.aggregate([
-        { $match: { schoolId: sid, at: { $gt: dayStart } } },
-        { $group: { _id: "$houseId", pts: { $sum: "$points" } } },
-        { $sort: { pts: -1 } }, { $limit: 1 },
-      ]),
+    const topHouseAgg = await HousePointEvent.aggregate([
+      { $match: { schoolId: sid, at: { $gt: dayStart } } },
+      { $group: { _id: "$houseId", pts: { $sum: "$points" } } },
+      { $sort: { pts: -1 } }, { $limit: 1 },
     ]);
-    let dailyTopStudent = null;
-    if (topStuAgg[0]) {
-      const stu = await BehaviorStudent.findById(topStuAgg[0]._id).select("firstName preferredName lastName photoUrl houseId").lean();
-      if (stu) {
-        const h = stu.houseId ? houseById[String(stu.houseId)] : null;
-        dailyTopStudent = { name: `${stu.preferredName || stu.firstName} ${stu.lastName}`.trim(), photoUrl: stu.photoUrl || "", house: h?.name || "", color: h?.color || "#0f172a", points: topStuAgg[0].pts };
-      }
-    }
     let dailyTopHouse = null;
     if (topHouseAgg[0] && houseById[String(topHouseAgg[0]._id)]) {
       const h = houseById[String(topHouseAgg[0]._id)];
       dailyTopHouse = { name: h.name, color: h.color || "#0f172a", image: h.image || "", points: topHouseAgg[0].pts };
     }
     const rewards = (config.houseRewards || []).slice().sort((a, b) => a.points - b.points);
-
-    // Top 3 students overall (positive points earned since the reset).
-    const topStuOverall = await HousePointEvent.aggregate([
-      { $match: { ...pointMatch, studentId: { $in: activeIds }, points: { $gt: 0 } } },
-      { $group: { _id: "$studentId", pts: { $sum: "$points" } } },
-      { $sort: { pts: -1 } }, { $limit: 3 },
-    ]);
-    let topStudents = [];
-    if (topStuOverall.length) {
-      const stus = await BehaviorStudent.find({ _id: { $in: topStuOverall.map((t) => t._id) } })
-        .select("firstName preferredName lastName photoUrl houseId").lean();
-      const byId = Object.fromEntries(stus.map((s) => [String(s._id), s]));
-      topStudents = topStuOverall.map((t, i) => {
-        const s = byId[String(t._id)]; if (!s) return null;
-        const h = s.houseId ? houseById[String(s.houseId)] : null;
-        return { rank: i + 1, name: `${s.preferredName || s.firstName} ${s.lastName}`.trim(), photoUrl: s.photoUrl || "", house: h?.name || "", color: h?.color || "#0f172a", points: t.pts };
-      }).filter(Boolean);
-    }
 
     const merch = config.merchStore?.enabled
       ? (config.merchStore.items || []).slice().sort((a, b) => (a.points || 0) - (b.points || 0)).map((i) => ({ name: i.name, points: i.points, image: i.image || "" }))
@@ -7613,70 +7700,21 @@ router.get("/public/houses", async (req, res, next) => {
     let eventResult = null;
     const er = config.houseEventResult;
     if (er?.at && Date.now() - new Date(er.at).getTime() < 14 * DAY_MS) {
-      eventResult = { label: er.label || "Results", at: er.at, houses: er.houses || [], students: er.students || [] };
+      // Houses only — top contributors' names stay staff-side (Tally import page).
+      eventResult = { label: er.label || "Results", at: er.at, houses: er.houses || [], students: [] };
     }
-    res.json({ ok: true, enabled: true, schoolName: school?.name || "", houses: houseOut, competitions: compOut, activity, dailyTopStudent, dailyTopHouse, topStudents, rewards, merch, eventResult });
+    res.json({ ok: true, enabled: true, schoolName: school?.name || "", houses: houseOut, competitions: compOut, activity, dailyTopStudent: null, dailyTopHouse, topStudents: [], rewards, merch, eventResult });
   } catch (err) {
     next(err);
   }
 });
 
-// Student self-lookup by last name (code-protected). Returns their house and
-// sub-group (#1/#2) + room, so a student can find where to go for a booster
-// event. Minimal PII: first name + grade only, to disambiguate same surnames.
-router.get("/public/houses/lookup", async (req, res, next) => {
-  try {
-    const code = String(req.query.code || "").trim();
-    if (!/^\d{3,6}$/.test(code)) return res.status(400).json({ ok: false, error: "Enter your school code." });
-    const lastName = String(req.query.lastName || "").trim();
-    if (lastName.length < 2) return res.status(400).json({ ok: false, error: "Type at least two letters of your last name." });
-    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true }).select("schoolId merchStore").lean();
-    if (!config) return res.status(404).json({ ok: false, error: "No school matches that code." });
-
-    const rx = new RegExp("^" + lastName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-    const students = await BehaviorStudent.find({ schoolId: config.schoolId, active: true, lastName: rx, houseId: { $ne: null } })
-      .select("firstName preferredName lastName grade houseId houseGroup")
-      .sort({ lastName: 1, firstName: 1 })
-      .limit(40)
-      .lean();
-    // Personal merch points balance (only surfaced when the store is enabled).
-    const merchOn = !!config.merchStore?.enabled;
-    const balances = merchOn ? await merchBalances(new mongoose.Types.ObjectId(config.schoolId), students.map((s) => s._id)) : {};
-    const houses = await BehaviorHouse.find({ schoolId: config.schoolId }).select("name color roomGroup1 roomGroup2 teacher1 teacher2").lean();
-    const houseById = Object.fromEntries(houses.map((h) => [String(h._id), h]));
-
-    // House captains (first name + last initial only — minimal PII), keyed by house,
-    // so a student's look-up can show who leads their team.
-    const capStudents = await BehaviorStudent.find({ schoolId: config.schoolId, active: true, houseCaptain: true, houseId: { $ne: null } })
-      .select("firstName preferredName lastName houseId")
-      .lean();
-    const captainsByHouse = {};
-    for (const c of capStudents) {
-      const k = String(c.houseId);
-      (captainsByHouse[k] ||= []).push(`${c.preferredName || c.firstName} ${(c.lastName || "").charAt(0)}.`.trim());
-    }
-
-    const matches = students.map((s) => {
-      const h = houseById[String(s.houseId)] || {};
-      const group = s.houseGroup === 1 || s.houseGroup === 2 ? s.houseGroup : null;
-      const room = group === 1 ? (h.roomGroup1 || "") : group === 2 ? (h.roomGroup2 || "") : "";
-      const teachers = [h.teacher1, h.teacher2].filter((t) => t && String(t).trim());
-      return {
-        firstName: s.preferredName || s.firstName || "",
-        grade: s.grade || "",
-        house: h.name || "",
-        color: h.color || "#0f172a",
-        group,
-        room,
-        teachers,
-        captains: captainsByHouse[String(s.houseId)] || [],
-        ...(merchOn ? { points: balances[String(s._id)] || 0 } : {}),
-      };
-    });
-    res.json({ ok: true, merchEnabled: merchOn, matches });
-  } catch (err) {
-    next(err);
-  }
+// Student self-lookup ("Find your house") was REMOVED on purpose (2026-10-05):
+// even an exact-name lookup shows the public page holds student names. The
+// public portal takes no student input and returns no student data. Old clients
+// get a plain 410.
+router.get("/public/houses/lookup", (req, res) => {
+  res.status(410).json({ ok: false, error: "This feature has been removed. Ask your homeroom teacher which house you’re in." });
 });
 
 // Visit beacon for the House Standings portal. The public page fires this once
@@ -7703,10 +7741,42 @@ router.post("/public/houses/visit", async (req, res) => {
 // house events (whole-house awards, studentId null). NEVER returns any student
 // name — only summed totals and per-reason lines, mirroring the leaderboard's
 // active-student + reset-date scope.
+// Public pages show no student data. Point "reasons" can be free text typed by
+// a teacher (manual awards), so before a reason goes to a public page, replace
+// any roster name in it (first, preferred or last, plus a trailing initial like
+// "Mia A.") with "a student". Words that are also behaviour / keyword / house /
+// competition names (e.g. "Faith", "Joy") are left alone so reasons still read.
+async function publicNameScrubber(schoolId) {
+  const sid = new mongoose.Types.ObjectId(String(schoolId));
+  const [students, behaviours, houses, comps] = await Promise.all([
+    BehaviorStudent.find({ schoolId: sid }).select("firstName preferredName lastName").lean(),
+    Behavior.find({ schoolId: sid }).select("name keyword").lean(),
+    BehaviorHouse.find({ schoolId: sid }).select("name").lean(),
+    BehaviorCompetition.find({ schoolId: sid }).select("name").lean(),
+  ]);
+  const words = (v) => String(v || "").toLowerCase().split(/[^\p{L}'’-]+/u).filter(Boolean);
+  const keep = new Set();
+  for (const b of behaviours) { words(b.name).forEach((w) => keep.add(w)); words(b.keyword).forEach((w) => keep.add(w)); }
+  for (const h of houses) words(h.name).forEach((w) => keep.add(w));
+  for (const c of comps) words(c.name).forEach((w) => keep.add(w));
+  const names = new Set();
+  for (const st of students) {
+    for (const n of [st.firstName, st.preferredName, st.lastName]) {
+      for (const w of words(n)) if (w.length >= 2 && !keep.has(w)) names.add(w);
+    }
+  }
+  if (!names.size) return (r) => r;
+  const esc = (v) => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const alt = [...names].sort((a, b) => b.length - a.length).map(esc).join("|");
+  // A name, optionally followed by more name words and/or an initial ("A.").
+  const rx = new RegExp(`(?<![\\p{L}])(?:${alt})(?:\\s+(?:${alt}))*(?:\\s+\\p{L}\\.)?(?![\\p{L}])`, "giu");
+  return (reason) => String(reason || "").replace(rx, "a student");
+}
+
 // Composite breakdown of where a house's points came from (NEVER any names).
 // `includeNegatives`/`includePositives` gate what's returned: the public page
 // hides conduct (negatives) from students by default; a teacher sees it all.
-async function computeHouseDetail(sid, houseId, cfg, { includeNegatives = true, includePositives = true } = {}) {
+async function computeHouseDetail(sid, houseId, cfg, { includeNegatives = true, includePositives = true, scrubNames = false } = {}) {
   const house = await BehaviorHouse.findOne({ _id: houseId, schoolId: sid }).select("name color").lean();
   if (!house) return null;
   const activeIds = (await BehaviorStudent.find({ schoolId: sid, active: true }).select("_id").lean()).map((s) => s._id);
@@ -7728,8 +7798,9 @@ async function computeHouseDetail(sid, houseId, cfg, { includeNegatives = true, 
 
   const indMap = {}, teamMap = {};
   let indPos = 0, indNeg = 0, teamTotal = 0;
+  const scrub = scrubNames ? await publicNameScrubber(sid) : (x) => x;
   for (const r of rows) {
-    const reason = (r._id.reason || "").trim() || "Other";
+    const reason = scrub((r._id.reason || "").trim()) || "Other";
     if (r._id.team) {
       teamMap[reason] = (teamMap[reason] || { reason, points: 0, count: 0 });
       teamMap[reason].points += r.points; teamMap[reason].count += r.count;
@@ -7774,7 +7845,7 @@ router.get("/public/houses/detail", async (req, res, next) => {
     // Student-facing: conduct (negatives) hidden unless the school opts in.
     const includeNegatives = config.housesPublicShowNegatives === true;
     const includePositives = config.housesPublicShowPositives !== false;
-    const detail = await computeHouseDetail(sid, houseId, config, { includeNegatives, includePositives });
+    const detail = await computeHouseDetail(sid, houseId, config, { includeNegatives, includePositives, scrubNames: true });
     if (!detail) return res.status(404).json({ ok: false, error: "House not found." });
     res.json({ ok: true, ...detail, teacherView: false });
   } catch (err) {

@@ -5,10 +5,10 @@ import { ArrowRight, Download } from "lucide-react";
 const rows = [
   { label: "Primary format", c: "Station-based, physical + digital hybrid learning with structured rotation", b: "Screen-based game modes (Tower Defense, Gold Quest, Café, etc.)" },
   { label: "Group structure", c: "1–4 players per station; teams collaborate on shared submissions", b: "Individual play; students compete against each other on their own device" },
-  { label: "Task variety", c: "65+ task types: cloze, AI interviews, peer editing, teach-back, movement, photo evidence, debate, drawing, role-play, trivia", b: "Primarily multiple-choice quiz formats wrapped in game themes" },
+  { label: "Task variety", c: "65+ task types: cloze, live interviews, peer editing, teach-back, movement, photo evidence, debate, drawing, role-play, trivia", b: "Primarily multiple-choice quiz formats wrapped in game themes" },
   { label: "Physical movement", c: "Built-in station rotation, movement breaks, scavenger hunts, multi-room activities", b: "Screen-only — students stay seated at their device" },
   { label: "Depth of thinking", c: "Strong: explanation, synthesis, evidence tasks, case studies, letter writing", b: "Best for fast recall and memorization through gamified repetition" },
-  { label: "Teacher workload", c: "Optional AI generation = near-zero prep; time-aware pacing", b: "Create or import question sets; large community library" },
+  { label: "Teacher workload", c: "Optional generation = near-zero prep; time-aware pacing", b: "Create or import question sets; large community library" },
   { label: "Noise & pacing", c: "Turn-based controls reduce chaos; teacher pacing per station", b: "Individual pacing; game modes can get loud and competitive" },
   { label: "Reports & evidence", c: "Student + teacher reports with photo/audio/drawing artifacts", b: "Basic performance data; limited artifact-style evidence" },
   { label: "Collaboration", c: "Team submissions, peer teaching, inter-team challenges", b: "Primarily individual competition; limited collaboration" },

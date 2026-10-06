@@ -4,15 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { API_BASE } from "../../behavior/_lib/api";
 
 type House = { id: string; name: string; color: string; image?: string; points: number };
-type Daily = { name: string; photoUrl?: string; house: string; color: string; points: number } | null;
-type TopStudent = { rank: number; name: string; photoUrl?: string; house: string; color: string; points: number };
 type Reward = { points: number; reward: string };
 type Board = {
   schoolName: string;
   houses: House[];
-  dailyTopStudent: Daily;
   dailyTopHouse: { name: string; color: string; image?: string; points: number } | null;
-  topStudents: TopStudent[];
   rewards: Reward[];
 };
 
@@ -56,7 +52,7 @@ export default function HousesDisplay() {
           return;
         }
         setErr("");
-        setBoard({ schoolName: d.schoolName || "", houses: d.houses || [], dailyTopStudent: d.dailyTopStudent || null, dailyTopHouse: d.dailyTopHouse || null, topStudents: d.topStudents || [], rewards: d.rewards || [] });
+        setBoard({ schoolName: d.schoolName || "", houses: d.houses || [], dailyTopHouse: d.dailyTopHouse || null, rewards: d.rewards || [] });
         setUpdated(new Date());
       } catch { if (alive) setErr("Network error"); }
     };
@@ -95,7 +91,6 @@ export default function HousesDisplay() {
   const loPts = Math.min(0, ...ptVals);
   const ptSpan = Math.max(1, hiPts - loPts);
   const barPct = (p: number) => Math.max(3, Math.round((((p || 0) - loPts) / ptSpan) * 100));
-  const ts = board?.dailyTopStudent;
   const th = board?.dailyTopHouse;
 
   return (
@@ -113,24 +108,8 @@ export default function HousesDisplay() {
       <div className="mt-[2vh] grid min-h-0 flex-1 grid-cols-[38fr_62fr] gap-[2vw]">
         {/* Left: daily winners + rewards */}
         <div className="flex min-h-0 flex-col gap-[2vh]">
-          <div className="rounded-[1.2vw] border-[0.25vw] border-transparent bg-white/10 p-[1.6vw]" style={ts ? { borderColor: ts.color, background: `${ts.color}26` } : undefined}>
-            <div className="text-[1.1vw] uppercase tracking-wide text-slate-300">⭐ Top student today</div>
-            {ts ? (
-              <div className="mt-[1vh] flex items-center gap-[1.4vw]">
-                {ts.photoUrl
-                  ? <img src={ts.photoUrl} alt="" className="h-[10vw] w-[10vw] rounded-[1vw] border-[0.35vw] object-cover" style={{ borderColor: ts.color }} />
-                  : <div className="flex h-[10vw] w-[10vw] items-center justify-center rounded-[1vw] border-[0.35vw] bg-white/15 text-[4vw]" style={{ borderColor: ts.color }}>🏅</div>}
-                <div className="min-w-0">
-                  <div className="truncate text-[2.4vw] font-extrabold leading-tight">{ts.name}</div>
-                  <div className="mt-[0.5vh] flex items-center gap-[0.6vw] text-[1.4vw]">
-                    <span className="inline-block h-[1.2vw] w-[1.2vw] rounded-full" style={{ background: ts.color }} />{ts.house}
-                  </div>
-                  <div className="mt-[0.5vh] text-[1.6vw] font-bold text-emerald-300">+{ts.points} today</div>
-                </div>
-              </div>
-            ) : <div className="mt-[1vh] text-[1.4vw] text-slate-300">No points yet today.</div>}
-          </div>
-
+          {/* No "top student" panels: the public display shows no student data
+              (no names, initials or photos) — houses and totals only. */}
           <div className="rounded-[1.2vw] border-[0.25vw] border-transparent bg-white/10 p-[1.6vw]" style={th ? { borderColor: th.color, background: `${th.color}26` } : undefined}>
             <div className="text-[1.1vw] uppercase tracking-wide text-slate-300">🏆 Top house today</div>
             {th ? (
@@ -141,24 +120,6 @@ export default function HousesDisplay() {
               </div>
             ) : <div className="mt-[1vh] text-[1.4vw] text-slate-300">No points yet today.</div>}
           </div>
-
-          {board && board.topStudents.length > 0 && (
-            <div className="rounded-[1.2vw] bg-white/10 p-[1.6vw]">
-              <div className="text-[1.1vw] uppercase tracking-wide text-slate-300">🏅 Top students</div>
-              <ul className="mt-[1vh] space-y-[1vh]">
-                {board.topStudents.map((s) => (
-                  <li key={s.rank} className="flex items-center gap-[1vw]">
-                    <span className="w-[2vw] text-center text-[1.6vw]">{["🥇", "🥈", "🥉"][s.rank - 1] || s.rank}</span>
-                    {s.photoUrl
-                      ? <img src={s.photoUrl} alt="" className="h-[3.4vw] w-[3.4vw] rounded-[0.6vw] border-[0.2vw] object-cover" style={{ borderColor: s.color }} />
-                      : <span className="inline-block h-[1.6vw] w-[1.6vw] rounded-full" style={{ background: s.color }} />}
-                    <span className="min-w-0 flex-1 truncate text-[1.5vw] font-bold">{s.name}</span>
-                    <span className="text-[1.5vw] font-extrabold tabular-nums text-emerald-300">{s.points}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
 
           {board && board.rewards.length > 0 && (
             <div className="min-h-0 flex-1 overflow-hidden rounded-[1.2vw] bg-white/10 p-[1.6vw]">

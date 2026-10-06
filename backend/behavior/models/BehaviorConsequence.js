@@ -49,6 +49,9 @@ const BehaviorConsequenceSchema = new mongoose.Schema(
     // was served, the lines handed in). Any staff member marks it done; the
     // strike-threshold notice then shows the consequence as completed.
     completed: { type: Boolean, default: false, index: true },
+    // How it was resolved: "completed" (carried out) or "discussed" (the teacher
+    // chose a conversation with the student instead — logged as an intervention).
+    resolution: { type: String, enum: ["", "completed", "discussed"], default: "" },
     completedByTeacherId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorTeacher", default: null },
     completedByName: { type: String, default: "" },
     completedAt: { type: Date, default: null },

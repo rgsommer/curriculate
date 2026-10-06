@@ -156,7 +156,7 @@ export default function ComparePage() {
 
           <tbody className="divide-y print:divide-gray-200">
             <tr>
-              <td className="p-4">AI-generated tasks</td>
+              <td className="p-4">Tasks built for your lesson</td>
               <Cell mark="yes" />
               <Cell mark="no" />
               <Cell mark="partial" detail="Varies / limited" />
@@ -199,7 +199,7 @@ export default function ComparePage() {
 
             <tr>
               <td className="p-4">Auto-scoring & feedback</td>
-              <Cell mark="yes" detail="Optional AI + rubric" />
+              <Cell mark="yes" detail="Optional generation + rubric" />
               <Cell mark="no" />
               <Cell mark="partial" detail="Mostly objective" />
             </tr>
