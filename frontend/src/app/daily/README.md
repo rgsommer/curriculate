@@ -416,6 +416,42 @@ of its answer. Both are in plain sight at the top of the file, and
 intercept, before it intercepts any of them — a pattern that catches a real
 lesson is a worse fault than the one being fixed.
 
+### The journal on a test day
+
+`apps-script/journal-on-a-test-day.gs` belongs to the same script — the one that
+writes VerticalAi — not to the board.
+
+The lesson writer puts a journal line in each class, and on the day a class
+writes a test it reaches for the only thing the lesson cell talks about: the test
+itself. *"What practical steps, thoughts, or prayers helped you handle stress and
+do your best? How could you apply those strategies during today's test?"* — a
+journal about test-taking, set for a room that is about to write a test and has
+nothing to say about it yet. A test day is the one day the whole unit is in their
+heads at once, and the half hour is worth more than that.
+
+So `JOURNAL_RULES` goes in the prompt beside `LESSON_TEXT_RULES`: on a test
+period the journal looks **forward to the unit coming next** — what they already
+half-know, what they want to be able to do by the end, where it turns up outside
+school — or, failing that, **back over the unit being tested**, naming it.
+Forward is preferred, being the only one of the two they can still act on.
+
+A rule in a prompt is a request, so the answer is checked before it goes in the
+cell. `fixJournal_(journal, topic, about)` returns the model's own line wherever
+it is fine — and on any day that is not a test, where this rule has no business —
+and a written prompt where it is a journal about writing tests. The unit names
+come from `unitsAroundTest_(code, topic)`: the one being tested out of the test
+row's own words (*"Test — 7.1 Unit 1: Number Sense and Patterns and Algebra"*,
+*"Unit 2 TEST"*, *"Test on The Divided Kingdom"* are all read), and the next one
+by walking the Lessons tab forward over the rows that are the end of a unit
+rather than the start of the next — more test, review, study, a work period.
+
+`TEST_SKILLS` is the list of shapes that count, in plain sight at the top of the
+file, and `checkJournals` prints every journal line in VerticalAi the rule would
+have replaced, with its replacement, before it replaces any of them.
+`frontend/scripts/journal-guard-check.mjs` runs the pure parts of the file under
+Node — the teacher's own test journal is caught, the peacemaking one is not, and
+a unit genuinely about stress is left alone.
+
 ### The writing penalty
 
 The legend's last row — *"Writing assignment penalty if below x points z times in
