@@ -95,6 +95,42 @@ router.post("/", createLimiter, async (req, res) => {
     const pdfName = String(meta?.pdfName || "").trim();
     const teacherEmail = String(meta?.teacherEmail || "").trim().toLowerCase();
 
+    // ─── A re-run of the same scanned file supersedes the run before it ───
+    //
+    // The per-student rules below can only identify a student by the name
+    // read off the page, because the roster match has not happened yet. A
+    // first name, a misspelling or an unreadable scrawl found no match, and a
+    // second run of the same stack put a second copy of every test on
+    // /progress — three runs, three copies, with different marks on each.
+    //
+    // The scanned file is the better identity: a teacher scans a stack once
+    // and re-grades it, they do not re-scan it. So the first publish of a new
+    // batch session clears out every result from an earlier session of the
+    // same file. Position-independent, name-independent, and it survives the
+    // teacher changing the pages-per-student between runs, which would move
+    // every student along by one.
+    const isBatch = String(sessionId || "").startsWith("batch-");
+    const canScopeTeacher = !!(teacherId || teacherEmail);
+    if (pdfName && isBatch && canScopeTeacher) {
+      try {
+        const supersede = await PublishedResult.deleteMany({
+          "meta.pdfName": pdfName,
+          ...(teacherId ? { teacherId } : { "meta.teacherEmail": teacherEmail }),
+          // Earlier batch runs only. Never this run's own students, and never
+          // a single-photo grade that happens to share the filename.
+          sessionId: { $nin: [sessionId, null, ""] },
+          "meta.source": "batch-grading",
+        });
+        if (supersede?.deletedCount) {
+          console.log(
+            `[results] New run of "${pdfName}" superseded ${supersede.deletedCount} result(s) from an earlier run`
+          );
+        }
+      } catch (e) {
+        console.warn("[results] supersede-by-file failed:", e?.message || e);
+      }
+    }
+
     if (pdfName) {
       // Scope candidates to this teacher when we can identify them, so we
       // never collapse another teacher's records.
@@ -263,10 +299,46 @@ router.put("/:code", createLimiter, async (req, res) => {
     );
     if (!doc) return res.status(404).json({ error: "Code not found." });
 
+    // Collapse earlier gradings of the same paper.
+    //
+    // The publish-time dedupe can only identify the student by the name read
+    // off the page, because the roster match has not happened yet. Where the
+    // model read a first name, a misspelling or nothing at all, it found no
+    // match and a re-run added a third copy of the same test to /progress.
+    // This update is where the roster studentId arrives, and that is an
+    // identity worth trusting — so the sweep belongs here.
+    //
+    // Same source PDF + same student + same teacher = the same paper graded
+    // again. Older copies go; this one stays, keeping its code so any printed
+    // QR still resolves.
+    let collapsed = 0;
+    const sweepPdf = String(doc.meta?.pdfName || "").trim();
+    const sweepId = doc.meta?.studentId ? String(doc.meta.studentId) : "";
+    const sweepTeacher = String(doc.meta?.teacherEmail || "").trim().toLowerCase();
+    if (sweepPdf && sweepId) {
+      try {
+        const gone = await PublishedResult.deleteMany({
+          code: { $ne: doc.code },
+          "meta.pdfName": sweepPdf,
+          "meta.studentId": sweepId,
+          // Never reach across teachers. With no email on the record we have
+          // no way to be sure whose it is, so leave it alone.
+          ...(sweepTeacher ? { "meta.teacherEmail": sweepTeacher } : { "meta.teacherEmail": { $in: [null, ""] } }),
+          createdAt: { $lt: doc.createdAt },
+        });
+        collapsed = gone?.deletedCount || 0;
+        if (collapsed) {
+          console.log(`[results] ${code}: collapsed ${collapsed} earlier grading(s) of "${sweepPdf}" for student ${sweepId}`);
+        }
+      } catch (e) {
+        console.warn("[results] re-grade sweep failed:", e?.message || e);
+      }
+    }
+
     // Trigger notification if this update adds student info (post-match or title update)
     if (meta) fireGradeNotify(code, doc.meta, doc.payload);
 
-    return res.json({ ok: true });
+    return res.json({ ok: true, collapsed });
   } catch (err) {
     console.error("PUT /results/:code error:", err);
     return res.status(500).json({ error: "Server error." });
