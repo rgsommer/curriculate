@@ -16,7 +16,7 @@
 // picture and any image the sheet puts in the feature cell E1).
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { EMPTY_SOURCES, churchSeason, dueAndComingUp, headphonesOn, prayerForClass, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, evaluateNotice, firstClassStart, formalDiscussion, testWeekday, birthdaysToday, birthdaysForSection, joinNames, specialDays, calendarEvents, columnName, firstVerse, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
+import { EMPTY_SOURCES, churchSeason, dueAndComingUp, headphonesOn, prayerForClass, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, evaluateNotice, firstClassStart, formalDiscussion, testWeekday, birthdaysToday, joinNames, specialDays, calendarEvents, columnName, firstVerse, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
 
 const CLASS_LABELS = ["7A", "7B", "7C", "8A", "8B", "8C"];
 // The Setup slot table's own columns, for ?debug=1.
@@ -1406,18 +1406,23 @@ export default function DailyPage() {
     if (fd && fd.extra && scrub == null && opts.t == null) fdPending.current = period.sec;
     return fd;
   };
-  // A band of balloons across the top of the class, for a birthday in that
-  // grade. Nothing at all when it is not one of theirs.
-  const birthdayBand = (period) => {
-    if (!period || period.duty || period.empty || !period.sec) return null;
-    const mine = birthdaysForSection(birthdays, period.sec);
-    if (!mine.length) return null;
-    const notes = [...new Set(mine.map((b) => (b.note || "").trim()).filter(Boolean))];
+  // A band of balloons at the top of every screen: the whole junior high's
+  // birthdays, not only the grade of the class on the board. They are one small
+  // school and they know each other — a grade 8 birthday on a grade 7 screen is
+  // the point of putting it up at all — and the band now leads the screen, above
+  // the calendar banner, so it is the first thing read rather than a strip under
+  // a list of school events. Where the two grades both have one the grade is
+  // said quietly after the name, since the room will want to know which.
+  const birthdayBand = () => {
+    if (!birthdays.length) return null;
+    const grades = new Set(birthdays.map((b) => b.grade).filter(Boolean));
+    const names = birthdays.map((b) => (grades.size > 1 && b.grade ? `${b.name} (${b.grade})` : b.name));
+    const notes = [...new Set(birthdays.map((b) => (b.note || "").trim()).filter(Boolean))];
     return (
       <div className="balloons">
         <span className="pops" aria-hidden="true">{"🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈🎈"}</span>
         <span className="hb">
-          Happy birthday, {joinNames(mine.map((b) => b.name))}!
+          Happy birthday, {joinNames(names)}!
           {/* A birthday over a weekend is kept on a school day, and the sheet
               says in its own words which and why. */}
           {notes.length ? <i className="hbnote">{notes.join(" · ")}</i> : null}
@@ -1928,6 +1933,7 @@ export default function DailyPage() {
     body = (
       <>
         {header({ title: "Announcements", chips: null, when: `Screen blank until ${fmt(setup.blankTo)}`, leftHtml: <b>Please listen</b>, pct: 0 })}
+        {birthdayBand()}
         {calendarBanner()}
         {/* The flag and the words stand through the announcements as well as
             the anthem that follows them — the room is already on its feet, and
@@ -1948,6 +1954,7 @@ export default function DailyPage() {
     body = (
       <>
         {header({ title: "O Canada", chips: null, when: `Until ${fmt(setup.blankTo)}`, leftHtml: <b>Please stand</b>, pct: 0 })}
+        {birthdayBand()}
         {calendarBanner()}
         {anthemMain()}
         {footer(false)}
@@ -1960,6 +1967,7 @@ export default function DailyPage() {
     body = (
       <>
         {header({ title: "Dismissal", chips: null, when: `From ${fmt(endOfDayAt)}`, leftHtml: <b>Day complete</b>, pct: 100 })}
+        {birthdayBand()}
         {calendarBanner()}
         <div className={`main pic-right endofday${featureImage ? " pic-feature" : ""}`}>
           <div>
@@ -2008,6 +2016,7 @@ export default function DailyPage() {
     body = (
       <>
         {header({ title: greeting, chips: null, when: meta.plans, leftHtml: "", pct: 0 })}
+        {birthdayBand()}
         {calendarBanner()}
         {withPicture(
           <div>
@@ -2035,6 +2044,7 @@ export default function DailyPage() {
     body = (
       <>
         {header({ title: greeting, chips: null, when: meta.plans, leftHtml: <>First class at <b>{fmt(classes[0].start)}</b></>, pct: 0 })}
+        {birthdayBand()}
         {calendarBanner()}
         {withPicture(
           <div>
@@ -2073,6 +2083,7 @@ export default function DailyPage() {
           pct: cur ? ((t - cur.start) / (cur.end - cur.start)) * 100 : 0, period: cur,
           red: redState,
         })}
+        {birthdayBand()}
         {calendarBanner()}
         {withPicture(nx ? (
           <div>
@@ -2260,12 +2271,29 @@ export default function DailyPage() {
       }
       const fd = fdBlock(fdFor(cur));
       if (fd) blocks.push(<div key="fd">{fd}</div>);
-      const n = noticeBlock();
-      if (n) blocks.push(<div key="n">{n}</div>);
       // The half carries the reminders from the moment the lesson's own material
       // is done with it, so this late copy is only for a class whose half is
       // busy with an assignment of its own.
       const remindOnHalf = (workOf(cur) || {}).kind === "remind";
+      // What is due and what is coming up, in its own block, and **above the
+      // day's notices**: a test on Thursday is this class's business, while
+      // whose birthday it is and what is on at school is the school's. The half
+      // is a fixed column and the picture takes the foot of it, so the block
+      // that goes third is the block the room may never see.
+      // It is built here whether or not the half would otherwise have carried
+      // it as "the work": a class with no assignment and no homework used to
+      // show the same notes low down in the work slot, under the notices, which
+      // is the thing being fixed.
+      const notes = dueAndComingUp(cur.remind);
+      const dueBlock = notes.length ? (
+        <div key="due" className={`block ${notes.some((x) => REMIND_URGENT.test(x)) ? "alert" : "quiet"}`}>
+          <h3>Due and coming up</h3>
+          {notes.length > 1 ? list(notes) : <p>{notes[0]}</p>}
+        </div>
+      ) : null;
+      if (dueBlock) blocks.push(dueBlock);
+      const n = noticeBlock();
+      if (n) blocks.push(<div key="n">{n}</div>);
       if (left <= setup.remindersAdvance && cur.remind && !remindOnHalf) {
         blocks.push(<div key="r" className="block navy"><h3>Reminders</h3><p>{cur.remind}</p></div>);
       }
@@ -2286,22 +2314,12 @@ export default function DailyPage() {
         || left <= setup.homeworkAt
         || (phase !== "open" && cur.assign.length > 0);
       const vod = verseBlock();
-      const work = assignShown ? null : workBlock(cur);
-      // What is due and what is coming up, in its own block. A class with an
-      // assignment of its own shows both: the work it is doing and the test it
-      // is being told about are different things, and the test was waiting for
-      // the last two minutes of the period to say so.
-      const notes = dueAndComingUp(cur.remind);
-      const dueBlock = notes.length && (work || assignShown) && !remindOnHalf ? (
-        <div key="due" className={`block ${notes.some((x) => REMIND_URGENT.test(x)) ? "alert" : "quiet"}`}>
-          <h3>Due and coming up</h3>
-          {notes.length > 1 ? list(notes) : <p>{notes[0]}</p>}
-        </div>
-      ) : null;
+      // The reminders are already up, at the top; the work slot does not say
+      // them again.
+      const work = assignShown || remindOnHalf ? null : workBlock(cur);
       if (verseInPanel && vod) { blocks.push(vod); verseUp = true; }
       else {
         if (work) blocks.push(work);
-        if (dueBlock) blocks.push(dueBlock);
         if (!work && !dueBlock && !assignShown && vod) { blocks.push(vod); verseUp = true; }
       }
       // Last, and first to go: the riddle and the day's note are the two things
@@ -2347,8 +2365,8 @@ export default function DailyPage() {
           when: `${fmt(cur.start)} to ${fmt(cur.end)} · ${cur.end - cur.start} min`,
           leftHtml: <><b>{left} min</b> left</>, pct, red: redState, period: cur,
         })}
+        {birthdayBand()}
         {calendarBanner()}
-        {birthdayBand(cur)}
         <div className={`main${side ? "" : " solo"}${picOn && !memoryOn && !prayerOn && !endOfDaySoon ? ` pic-${opts.pic}` : ""}${featureImage && !memoryOn && !prayerOn && !endOfDaySoon ? " pic-feature" : ""}`}>
           {picOn && !memoryOn && !prayerOn && !endOfDaySoon && opts.pic === "left" ? <>{side}{leftCol}</> : <>{leftCol}{side}</>}
         </div>
