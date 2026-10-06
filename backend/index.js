@@ -14156,6 +14156,36 @@ function buildRubricInstructions({
     - If full marks were earned, say what was done well and set incorrect_items to null.
     - If marks were lost, the section comment must make that understandable in plain language.
 
+    MARKING GUIDE RULE (marking_guide):
+    - This is for the TEACHER, marking the paper with it in hand. The student
+      never sees it. Write it plainly: no voice, no encouragement, no softening.
+    - marking_guide.sections mirrors the sections of the paper, in the order
+      they appear, each with its own score and out_of — "Matching 5 / 6".
+    - List EVERY numbered item in a section, not only the wrong ones: 1 to 8
+      in order, each with a verdict. A teacher running down the page needs the
+      whole roll; a list of only the mistakes makes them work out which
+      numbers are missing from it.
+      • n              the question's own number or label, as printed ("1", "4b")
+      • verdict        correct | incorrect | partial | blank
+      • student_answer what the student actually wrote, short. "" if blank.
+      • correct_answer the right answer — ALWAYS when the verdict is not
+                       "correct", and "" when it is, since a tick needs none.
+      • note           why it is wrong, when that is not obvious from the two
+                       answers: for a True/False the student marked wrongly,
+                       say which part of the statement is false; for working,
+                       name the step that went astray. "" otherwise.
+    - Leave marking_guide.sections null ONLY for work with no numbered items at
+      all — an essay, a poster. A test always has them.
+    - marking_guide.highlights: at most 6, worst first, naming what to pick out
+      in the margin — level is incorrect, weak, good or excellent. Include at
+      least one good or excellent where the paper earns it; a marking guide
+      that only lists faults gives the teacher nothing to praise.
+    - marking_guide.write_on_paper: ONE sentence, under about 20 words, for the
+      teacher to copy onto the paper by hand. Specific to this paper. Not a
+      grade, not a percentage.
+    - The verdicts must agree with the section scores. If Matching is 5 / 6,
+      exactly one Matching item is not "correct".
+
     INCORRECT_ITEMS RULE:
     - incorrect_items is ONLY for questions where the student's FINAL ANSWER is WRONG.
     - If the student's final answer is correct, it MUST NOT appear in incorrect_items — even if the work shown is flawed.
@@ -15493,6 +15523,68 @@ function buildRubricInstructions({
             },
             required: ["level", "category", "snippet", "suggested_action"],
           },
+
+          // --- teacher's marking guide (never shown to a student) ---
+          //
+          // incorrect_items lists only what went wrong. A teacher marking the
+          // paper in front of them wants the whole roll — 1 to 8, each ticked
+          // or crossed — so they can run down it against the page instead of
+          // working out which numbers are missing from a list of mistakes.
+          marking_guide: {
+            type: ["object", "null"],
+            additionalProperties: false,
+            properties: {
+              // One sentence, short enough to copy onto the paper by hand.
+              write_on_paper: { type: "string", maxLength: 180 },
+              // What to pick out in the margin, worst first.
+              highlights: {
+                type: ["array", "null"],
+                items: {
+                  type: "object",
+                  additionalProperties: false,
+                  properties: {
+                    level: { type: "string", enum: ["incorrect", "weak", "good", "excellent"] },
+                    where: { type: "string", maxLength: 80 },
+                    note: { type: "string", maxLength: 160 },
+                  },
+                  required: ["level", "where", "note"],
+                },
+              },
+              sections: {
+                type: ["array", "null"],
+                items: {
+                  type: "object",
+                  additionalProperties: false,
+                  properties: {
+                    name: { type: "string", minLength: 1, maxLength: 60 },
+                    score: { type: ["number", "null"], minimum: 0 },
+                    out_of: { type: ["number", "null"], minimum: 0 },
+                    items: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        additionalProperties: false,
+                        properties: {
+                          n: { type: "string", maxLength: 8 },
+                          verdict: { type: "string", enum: ["correct", "incorrect", "partial", "blank"] },
+                          student_answer: { type: "string", maxLength: 80 },
+                          // Filled in whenever the verdict is not "correct";
+                          // empty otherwise, since a tick needs no answer.
+                          correct_answer: { type: "string", maxLength: 80 },
+                          // Why it is wrong — the false half of a false
+                          // statement, the step that went astray.
+                          note: { type: "string", maxLength: 140 },
+                        },
+                        required: ["n", "verdict", "student_answer", "correct_answer", "note"],
+                      },
+                    },
+                  },
+                  required: ["name", "score", "out_of", "items"],
+                },
+              },
+            },
+            required: ["write_on_paper", "highlights", "sections"],
+          },
         },
 
         required: [
@@ -15522,6 +15614,7 @@ function buildRubricInstructions({
           "teacher_comment",
           "achievement_summary",
           "wellbeing_concern",
+          "marking_guide",
         ],
       };
       // 2) Optional wrapper if you like keeping it around locally

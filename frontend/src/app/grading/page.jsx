@@ -8,7 +8,7 @@ import VideoGrading from "./VideoGrading";
 import AudioGrading from "./AudioGrading";
 import QuestWidget, { GRADING_QUESTS, completeQuest } from "../../components/QuestWidget";
 import PulseFeedbackButton from "./PulseFeedbackButton";
-import { buildResultsPdf, buildStripsPdf, sessionItemToResult, buildSessionEdsbyCsv, preloadPdfLibs } from "./pdfReports";
+import { buildResultsPdf, buildStripsPdf, buildMarkingGuidePdf, sessionItemToResult, buildSessionEdsbyCsv, preloadPdfLibs } from "./pdfReports";
 
 /**
  * app/grading/page.jsx
@@ -3528,22 +3528,29 @@ export default function GradingPage() {
             <h2 style="color:#1e293b;margin-bottom:8px;">Session Summary</h2>
             <p style="color:#334155;line-height:1.6;">${(sessionSummary || "").replace(/\n/g, "<br>")}</p>
             <hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0;">
-            <p style="color:#64748b;font-size:13px;">${sessionItems.length} submission${sessionItems.length === 1 ? "" : "s"} graded this session. Full reports and cut strips are attached as PDFs.</p>
+            <p style="color:#64748b;font-size:13px;">${sessionItems.length} submission${sessionItems.length === 1 ? "" : "s"} graded this session. Full reports and cut strips are attached as PDFs${guideBase64 ? ", along with your marking guide — every item ticked or crossed, with a mark per section and a total" : ""}.</p>
           </div>
         `;
 
         // Generate both PDFs in parallel
         let pdfBase64 = null;
         let stripsBase64 = null;
+        let guideBase64 = null;
         try {
           // These attachments go to whoever the teacher addresses the email
           // to — parents included, which is what the field's own placeholder
           // suggests. They follow the setting like every other copy; batch
           // grading's email already did, and this one was printing the marks.
           const pdfOpts = { hideGrades: !!hideGrades };
-          [pdfBase64, stripsBase64] = await Promise.all([
+          // The marking guide goes to the teacher only and keeps the marks
+          // whatever hideGrades says — they are the one marking from it.
+          [pdfBase64, stripsBase64, guideBase64] = await Promise.all([
             buildResultsPdf(results, pdfOpts),
             buildStripsPdf(results, pdfOpts),
+            buildMarkingGuidePdf(results).catch((e) => {
+              console.warn("[session] marking guide failed:", e?.message || e);
+              return null;
+            }),
           ]);
         } catch (pdfErr) {
           console.error("[session] PDF generation failed:", pdfErr?.message || pdfErr, pdfErr?.stack);
@@ -3563,6 +3570,9 @@ export default function GradingPage() {
         }
         if (stripsBase64) {
           payload.pdfAttachments.push({ data: stripsBase64, filename: "session-strips.pdf" });
+        }
+        if (guideBase64) {
+          payload.pdfAttachments.push({ data: guideBase64, filename: "session-marking-guide.pdf" });
         }
 
         // Attach Edsby CSV if any session results have roster-matched student IDs

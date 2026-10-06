@@ -778,3 +778,255 @@ export function buildSessionEdsbyCsv(results, assessmentName = "Curriculate Grad
   }
   return rows.join("\n");
 }
+
+/* ------------------------------------------------------------------
+ *  Marking guide — for the teacher, with the paper in front of them.
+ *
+ *  Pulse is for feedback; the marks go to Edsby. What was missing in
+ *  between was the sheet a teacher actually marks from: every numbered
+ *  item ticked or crossed, the right answer beside each cross, a mark
+ *  per section and a total, and one sentence to write on the paper.
+ *
+ *  Never given to a student. It carries the marks whatever the
+ *  hide-grades setting says, because the teacher is the one holding it.
+ * ------------------------------------------------------------------ */
+
+// jsPDF's built-in fonts are Latin-1: "✓" and "✗" come out as mojibake.
+// Drawn as two short strokes each instead, which also reads better small.
+function markGlyph(doc, verdict, x, y, size = 6) {
+  const s = size;
+  doc.setLineWidth(1.1);
+  if (verdict === "correct") {
+    doc.setDrawColor(22, 163, 74);
+    doc.line(x, y - s * 0.35, x + s * 0.38, y);
+    doc.line(x + s * 0.38, y, x + s, y - s);
+  } else if (verdict === "partial") {
+    doc.setDrawColor(217, 119, 6);
+    doc.line(x, y - s * 0.5, x + s, y - s * 0.5);
+  } else if (verdict === "blank") {
+    doc.setDrawColor(148, 163, 184);
+    doc.circle(x + s * 0.5, y - s * 0.5, s * 0.42, "S");
+  } else {
+    doc.setDrawColor(220, 38, 38);
+    doc.line(x, y - s, x + s, y);
+    doc.line(x, y, x + s, y - s);
+  }
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.5);
+  return s + 2;
+}
+
+// Older results were graded before marking_guide existed. Rather than print
+// nothing for them, rebuild what can be known: the sections carry their own
+// marks, and incorrect_items names what went wrong — only the wrong ones, so
+// the roll is partial and the sheet says so.
+function guideFromResult(r) {
+  const mg = r.raw?.marking_guide;
+  if (mg && Array.isArray(mg.sections) && mg.sections.length) return { ...mg, partial: false };
+
+  const src = Array.isArray(r.raw?.sections) ? r.raw.sections : (Array.isArray(r.sections) ? r.sections : []);
+  if (!src.length) return null;
+  return {
+    partial: true,
+    write_on_paper: mg?.write_on_paper || "",
+    highlights: mg?.highlights || null,
+    sections: src.map((sec) => ({
+      name: sec.name || "Section",
+      score: sec.score ?? null,
+      out_of: sec.out_of ?? null,
+      items: (Array.isArray(sec.incorrect_items) ? sec.incorrect_items : []).map((it, i) => ({
+        n: String(i + 1),
+        verdict: "incorrect",
+        student_answer: it.student_answer || "",
+        correct_answer: it.correct_answer || "",
+        note: it.prompt || "",
+      })),
+    })),
+  };
+}
+
+// The strips show a first name on purpose. A marking guide is sorted against
+// a pile of papers, and two students can share a first name — this one needs
+// the whole name.
+function fullNameFor(r) {
+  const roster = [r.rosterFirstName, r.rosterLastName].filter(Boolean).join(" ").trim();
+  const raw = roster || String(r.studentName || "").trim();
+  if (!raw || /^student\s*\d*$/i.test(raw)) return "Name: ________";
+  return esc(raw);
+}
+
+export async function buildMarkingGuidePdf(results, { title } = {}) {
+  const { jsPDF } = await loadJsPdf();
+  const doc = new jsPDF({ unit: "pt", format: "letter" });
+
+  const PAGE_W = 612, PAGE_H = 792, MARGIN = 36;
+  const COL_W = PAGE_W - MARGIN * 2;
+  const LINE = 11;
+
+  const entries = [];
+  for (const r of results) {
+    if (r.error) continue;
+    const g = guideFromResult(r);
+    if (g) entries.push({ r, g });
+  }
+  if (!entries.length) return null;
+
+  let y = MARGIN;
+  let page = 1;
+
+  function pageHeader() {
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Marking guide${title ? " — " + esc(title) : ""}`, MARGIN, y);
+    doc.setFont("helvetica", "normal");
+    doc.text(`p. ${page}`, PAGE_W - MARGIN, y, { align: "right" });
+    doc.setTextColor(0, 0, 0);
+    y += 6;
+    doc.setDrawColor(203, 213, 225);
+    doc.line(MARGIN, y, PAGE_W - MARGIN, y);
+    y += 14;
+  }
+
+  function newPage() {
+    doc.addPage();
+    page += 1;
+    y = MARGIN;
+    pageHeader();
+  }
+
+  function room(need) {
+    if (y + need > PAGE_H - MARGIN) newPage();
+  }
+
+  pageHeader();
+
+  for (const { r, g } of entries) {
+    // Keep a student's name with at least the start of their first section.
+    room(64);
+
+    // --- name and total ---
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.text(fullNameFor(r), MARGIN, y);
+    const total = (r.score != null && r.outOf != null) ? `${r.score} / ${r.outOf}` : "";
+    if (total) doc.text(total, PAGE_W - MARGIN, y, { align: "right" });
+    y += 14;
+
+    // --- the sentence for the paper ---
+    if (g.write_on_paper) {
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(9);
+      doc.setTextColor(30, 41, 59);
+      for (const ln of doc.splitTextToSize(`Write on paper: ${esc(g.write_on_paper)}`, COL_W)) {
+        room(LINE); doc.text(ln, MARGIN, y); y += LINE;
+      }
+      doc.setTextColor(0, 0, 0);
+      y += 2;
+    }
+
+    // --- sections ---
+    for (const sec of g.sections || []) {
+      room(LINE * 3);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9.5);
+      const mark = (sec.score != null && sec.out_of != null) ? `  ${sec.score} / ${sec.out_of}` : "";
+      doc.text(`${esc(sec.name)}${mark}`, MARGIN, y);
+      y += LINE + 1;
+
+      const items = Array.isArray(sec.items) ? sec.items : [];
+
+      // The whole roll on one line — 1 to 8, each with its mark — so the
+      // teacher can run down the page against it. Wraps rather than clipping.
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      // Skipped when there are no items, or it leaves a blank line and a gap.
+      if (!items.length) {
+        doc.setTextColor(148, 163, 184);
+        doc.text(sec.score != null && sec.out_of != null && sec.score === sec.out_of
+          ? "all correct" : "no item detail", MARGIN + 8, y);
+        doc.setTextColor(0, 0, 0);
+        y += LINE + 1;
+        continue;
+      }
+      let x = MARGIN + 8;
+      for (const it of items) {
+        const label = String(it.n || "");
+        const w = doc.getTextWidth(label) + 14;
+        if (x + w > PAGE_W - MARGIN) { y += LINE; room(LINE); x = MARGIN + 8; }
+        doc.text(label, x, y);
+        markGlyph(doc, it.verdict, x + doc.getTextWidth(label) + 2, y);
+        x += w;
+      }
+      y += LINE + 1;
+
+      // Then the ones that cost marks, with the answer that was wanted.
+      for (const it of items) {
+        if (it.verdict === "correct") continue;
+        const wrote = it.student_answer ? `wrote "${esc(it.student_answer)}"` : "blank";
+        const want = it.correct_answer ? `  \u00b7  answer: ${esc(it.correct_answer)}` : "";
+        const why = it.note ? ` — ${esc(it.note)}` : "";
+        doc.setFontSize(8.5);
+        const lines = doc.splitTextToSize(`${it.n}. ${wrote}${want}${why}`, COL_W - 22);
+        for (let i = 0; i < lines.length; i++) {
+          room(LINE);
+          if (i === 0) markGlyph(doc, it.verdict, MARGIN + 8, y);
+          doc.text(lines[i], MARGIN + 22, y);
+          y += LINE;
+        }
+      }
+      y += 3;
+    }
+
+    // --- what to pick out in the margin ---
+    const hi = Array.isArray(g.highlights) ? g.highlights : [];
+    if (hi.length) {
+      room(LINE * 2);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.text("Highlight", MARGIN, y);
+      y += LINE;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      const colour = {
+        incorrect: [220, 38, 38], weak: [217, 119, 6],
+        good: [22, 163, 74], excellent: [5, 150, 105],
+      };
+      for (const h of hi) {
+        const c = colour[h.level] || [100, 116, 139];
+        const lines = doc.splitTextToSize(`${esc(h.where)} — ${esc(h.note)}`, COL_W - 60);
+        for (let i = 0; i < lines.length; i++) {
+          room(LINE);
+          if (i === 0) {
+            doc.setTextColor(c[0], c[1], c[2]);
+            doc.setFont("helvetica", "bold");
+            doc.text(String(h.level || "").toUpperCase(), MARGIN + 8, y);
+            doc.setFont("helvetica", "normal");
+            doc.setTextColor(0, 0, 0);
+          }
+          doc.text(lines[i], MARGIN + 62, y);
+          y += LINE;
+        }
+      }
+      y += 2;
+    }
+
+    if (g.partial) {
+      room(LINE);
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(7.5);
+      doc.setTextColor(148, 163, 184);
+      doc.text("Graded before the marking guide existed — only the items that lost marks are listed.", MARGIN, y);
+      doc.setTextColor(0, 0, 0);
+      y += LINE;
+    }
+
+    y += 6;
+    room(12);
+    doc.setDrawColor(226, 232, 240);
+    doc.line(MARGIN, y, PAGE_W - MARGIN, y);
+    y += 14;
+  }
+
+  return doc.output("datauristring").split(",")[1];
+}
