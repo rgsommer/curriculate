@@ -44,12 +44,12 @@ const features = [
   {
     icon: <BookOpen className="w-6 h-6 text-emerald-600" />,
     title: "Your rubric, every time",
-    desc: "Paste or describe your rubric once, or upload a PDF. The AI remembers it across every paper in the session.",
+    desc: "Paste or describe your rubric once, or upload a PDF. Pulse holds it across every paper in the session.",
   },
   {
     icon: <Users className="w-6 h-6 text-yellow-600" />,
     title: "Batch grade a whole class",
-    desc: "Upload a scanned PDF of 30 papers. AI splits by student, reads names, grades each one, and gives you a class summary.",
+    desc: "Upload a scanned PDF of 30 papers. Pulse splits it by student, reads the names, marks each one, and gives you a class summary.",
   },
   {
     icon: <ClipboardList className="w-6 h-6 text-indigo-600" />,
@@ -138,7 +138,7 @@ const steps = [
   {
     n: "4",
     title: "Get instant feedback",
-    desc: "AI reads the work, evaluates against your rubric, and generates detailed, personalized feedback with shareable student links.",
+    desc: "The work is read, measured against your rubric, and written up as detailed, personalized feedback with shareable student links.",
   },
 ];
 
@@ -149,19 +149,19 @@ const faqs = [
   },
   {
     q: "Does it work with handwritten work?",
-    a: "Absolutely. Snap a photo of handwritten student work and the AI reads it with high accuracy — even messy handwriting.",
+    a: "Absolutely. Snap a photo of handwritten student work and Pulse reads it accurately — even messy handwriting.",
   },
   {
     q: "Can I grade a whole class at once?",
-    a: "Yes. Scan or photograph a stack of papers into a single PDF, upload it in Batch mode, and the AI splits by student, reads names, and grades each one. You get individual feedback plus a class summary.",
+    a: "Yes. Scan or photograph a stack of papers into a single PDF, upload it in Batch mode, and Pulse splits by student, reads the names, and marks each one. You get individual feedback plus a class summary.",
   },
   {
     q: "Can I use my own rubric?",
-    a: "Yes. Paste, describe, or upload a PDF of your rubric. The AI uses it consistently across every paper in your grading session.",
+    a: "Yes. Paste, describe, or upload a PDF of your rubric. It is applied consistently across every paper in your grading session.",
   },
   {
     q: "Does it work for video and audio?",
-    a: "Yes. Record or upload speeches, skits, music performances, and presentations. The AI evaluates delivery, content, and technique.",
+    a: "Yes. Record or upload speeches, skits, music performances, and presentations. Delivery, content, and technique are all assessed.",
   },
   {
     q: "Can I export grades to my gradebook?",
@@ -201,7 +201,7 @@ const faqs = [
   },
   {
     q: "What subjects does it work for?",
-    a: "Any subject — ELA, science, math, history, world languages, music, drama, and more. If a student created it, the AI can grade it.",
+    a: "Any subject — ELA, science, math, history, world languages, music, drama, and more. If a student made it, Pulse can grade it.",
   },
 ];
 
@@ -454,7 +454,7 @@ function BetaSignup() {
           <textarea
             value={whyInterested}
             onChange={(e) => setWhyInterested(e.target.value)}
-            placeholder="Grading Sunday nights, want to try AI grading for performances, curious about the batch mode…"
+            placeholder="Grading Sunday nights, want to try grading performances, curious about the batch mode…"
             rows={3}
             className="w-full rounded-xl border border-gray-300 px-4 py-3 text-base font-medium focus:border-blue-500 focus:outline-none resize-y"
           />
@@ -946,7 +946,7 @@ export default function PulseLanding() {
                   <Star className="w-6 h-6 text-violet-600" />
                 </div>
                 <div>
-                  <h3 className="text-2xl font-black text-gray-900 leading-tight">Grade what other AI tools can't.</h3>
+                  <h3 className="text-2xl font-black text-gray-900 leading-tight">Grade what other tools can't.</h3>
                   <div className="text-xs font-bold text-violet-600 uppercase tracking-wide mt-1">For music, drama & performance teachers</div>
                 </div>
               </div>
@@ -1111,9 +1111,9 @@ export default function PulseLanding() {
               13 voices. Your classroom culture.
             </h2>
             <p className="text-lg text-gray-700 font-medium max-w-3xl mb-8">
-              Choose how the AI speaks to your students. From warm encouragement
+              Choose how the feedback speaks to your students. From warm encouragement
               to rigorous academic critique — every teacher has a style, and now
-              your AI grader matches it.
+              your reports match it.
             </p>
 
             <div className="flex flex-wrap gap-2">
@@ -1197,7 +1197,7 @@ export default function PulseLanding() {
               Built for real classrooms
             </h2>
             <p className="text-lg text-gray-700 font-medium max-w-2xl mx-auto">
-              Whether you teach kindergarten or AP, the AI adapts to your
+              Whether you teach kindergarten or AP, Pulse adapts to your
               standards and your students.
             </p>
           </div>
@@ -1212,17 +1212,17 @@ export default function PulseLanding() {
               {
                 icon: <Camera className="w-6 h-6 text-purple-600" />,
                 title: "Handwritten work",
-                desc: "Snap a photo of worksheets, journal entries, or exit tickets. AI reads handwriting accurately.",
+                desc: "Snap a photo of worksheets, journal entries, or exit tickets. Handwriting is read accurately.",
               },
               {
                 icon: <Users className="w-6 h-6 text-emerald-600" />,
                 title: "Batch grade a whole class",
-                desc: "Scan 30 papers into one PDF. AI splits by student, reads names, grades each one, and summarizes class performance.",
+                desc: "Scan 30 papers into one PDF. Pulse splits by student, reads the names, grades each one, and summarizes class performance.",
               },
               {
                 icon: <Star className="w-6 h-6 text-yellow-600" />,
                 title: "Video & audio performances",
-                desc: "Record or upload speeches, skits, music performances, and presentations. AI evaluates delivery, content, and technique.",
+                desc: "Record or upload speeches, skits, music performances, and presentations. Delivery, content, and technique are all assessed.",
               },
               {
                 icon: <BarChart3 className="w-6 h-6 text-indigo-600" />,
@@ -1277,7 +1277,7 @@ export default function PulseLanding() {
               Stop spending your evenings grading.
             </h2>
             <p className="text-lg font-medium text-white/90 max-w-3xl">
-              Join thousands of teachers who are grading smarter with AI — personalized
+              Join thousands of teachers who are grading smarter — personalized
               feedback, consistent rubric alignment, and hours of time saved every week.
             </p>
             <div className="mt-8 flex flex-col sm:flex-row gap-4">

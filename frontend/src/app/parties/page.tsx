@@ -158,7 +158,7 @@ const steps = [
   },
   {
     n: "3",
-    title: "AI builds the games",
+    title: "The games build themselves",
     desc: "In under 60 seconds, Curriculate generates a full set of party-ready games.",
     icon: <Sparkles className="w-5 h-5" />,
   },
@@ -195,7 +195,7 @@ export default function PartiesPage() {
             "@type": "WebPage",
             name: "Birthday Party Games — Interactive Party Activities",
             description:
-              "Turn any birthday party into an epic game show. AI generates themed interactive team games that run on phones.",
+              "Turn any birthday party into an epic game show. Themed interactive team games, built for you, that run on phones.",
             url: "https://curriculate.net/parties",
             mainEntity: {
               "@type": "SoftwareApplication",
@@ -268,7 +268,7 @@ export default function PartiesPage() {
           </h2>
           <p className="mt-3 text-slate-600 max-w-2xl mx-auto">
             No more awkward silences, bored kids, or expensive entertainers.
-            Just pick a theme and let the AI handle the rest.
+            Just pick a theme and the rest is handled.
           </p>
         </div>
 
@@ -418,7 +418,7 @@ export default function PartiesPage() {
             Works for every age
           </h2>
           <p className="mt-3 text-slate-600 max-w-2xl mx-auto">
-            The AI adjusts difficulty, vocabulary complexity, and game pacing to match your guests.
+            Difficulty, vocabulary and pacing all adjust to match your guests.
           </p>
         </div>
 

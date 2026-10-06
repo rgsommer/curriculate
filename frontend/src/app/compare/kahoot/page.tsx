@@ -5,8 +5,8 @@ import { ArrowRight, Download } from "lucide-react";
 const rows = [
   { label: "Primary format", c: "Station-based, physical + digital hybrid learning", k: "Whole-class quiz-show style (everyone answers at once)" },
   { label: "Group structure", c: "1–4 players per station (teams collaborate)", k: "Unlimited players; mostly individual competition" },
-  { label: "Task variety", c: "65+ task types: fill-in-the-blank, AI interviews, peer editing, teach-back, movement, photo, role-play, drawing, trivia, games", k: "Primarily quiz formats (MC, T/F, short answer)" },
-  { label: "Teacher workload", c: "Optional AI generation = near zero prep", k: "Teacher creates/chooses quizzes; some AI help" },
+  { label: "Task variety", c: "65+ task types: fill-in-the-blank, live interviews, peer editing, teach-back, movement, photo, role-play, drawing, trivia, games", k: "Primarily quiz formats (MC, T/F, short answer)" },
+  { label: "Teacher workload", c: "Optional generation = near zero prep", k: "Teacher creates/chooses quizzes; some automated help" },
   { label: "Noise & pacing", c: "Turn-based controls reduce chaos; teacher pacing", k: "Simultaneous answers can get loud/chaotic" },
   { label: "Depth of thinking", c: "Strong: synthesis, explanation, evidence tasks", k: "Best for fast recall review and excitement" },
   { label: "Reports & evidence", c: "Student + teacher reports with artifacts", k: "Results/leaderboards; less artifact-style evidence" },

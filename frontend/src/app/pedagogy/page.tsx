@@ -60,8 +60,8 @@ const pillars = [
   },
   {
     icon: <ShieldCheck className="w-6 h-6 text-indigo-600" />,
-    title: "AI That Respects Teachers",
-    body: "AI is optional and teacher-controlled: generate task sets, assist with feedback, and provide rubric-style scoring — while keeping teacher judgment central.",
+    title: "Technology That Respects Teachers",
+    body: "Generation is optional and teacher-controlled: build task sets, get help with feedback, and rubric-style scoring — while keeping teacher judgment central.",
     bullets: [
       "Zero-prep generation (optional)",
       "Consistent feedback support",
@@ -221,7 +221,7 @@ const bloomsData: BloomLevel[] = [
       "Reading Comp",
       "Brain Spark Notes",
       "Live Debate",
-      "AI Debate Judge",
+      "Debate Judge",
       "Peer Editing",
       "Interview",
       "Brainstorm Battle",
@@ -244,7 +244,7 @@ const bloomsData: BloomLevel[] = [
     tasks: [
       "Open Text",
       "Live Debate",
-      "AI Debate Judge",
+      "Debate Judge",
       "Collaboration",
       "Narration Synthesize",
       "Letter",

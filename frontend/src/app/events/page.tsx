@@ -131,7 +131,7 @@ const eventGames = [
   {
     icon: <Trophy className="w-6 h-6" />,
     title: "Live Debate",
-    desc: "Structured team debates with AI judging. Tackle industry hot takes, strategy decisions, or fun hypotheticals.",
+    desc: "Structured team debates with automatic judging. Tackle industry hot takes, strategy decisions, or fun hypotheticals.",
     color: "text-pink-600",
     bg: "bg-pink-50",
   },
@@ -141,7 +141,7 @@ const steps = [
   { n: "1", title: "Pick your event type", desc: "Team building, conference, training, or offsite — each shapes the game mix." },
   { n: "2", title: "Choose an industry", desc: "Tech, Finance, Healthcare, or others — we pre-load relevant vocabulary." },
   { n: "3", title: "Add your content", desc: "Paste in keynote takeaways, training terms, company values, or inside jokes." },
-  { n: "4", title: "AI builds the games", desc: "In under 60 seconds, Curriculate generates a full set of event-ready games." },
+  { n: "4", title: "The games build themselves", desc: "In under 60 seconds, Curriculate generates a full set of event-ready games." },
   { n: "5", title: "Attendees join on phones", desc: "Share a room code. No app, no accounts — any phone or laptop works." },
 ];
 
@@ -192,7 +192,7 @@ export default function EventsPage() {
             "@type": "WebPage",
             name: "Corporate Event Games — Interactive Team Activities",
             description:
-              "Interactive team games for conferences, offsites, and corporate events. AI generates custom activities from your event content.",
+              "Interactive team games for conferences, offsites, and corporate events. Custom activities are built from your event content.",
             url: "https://curriculate.net/events",
             mainEntity: {
               "@type": "SoftwareApplication",

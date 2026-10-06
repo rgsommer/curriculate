@@ -16,7 +16,7 @@ export function SmartPlanningBlock() {
           🧠 Smart Task Planning
         </div>
         <h2 className="text-2xl font-bold text-slate-900">
-          Not just AI task generation — AI scavenger hunt pacing and planning
+          Not just task generation — scavenger hunt pacing and planning
         </h2>
         <p className="text-slate-600">
           Curriculate doesn’t generate a random pile of activities. It first plans a

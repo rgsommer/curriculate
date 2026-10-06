@@ -20,8 +20,8 @@ const rows: Row[] = [
   { label: "Mixed-device sessions", c: "Works, but phone-first.", cMark: "◯", q: "Phones + Chromebooks + tablets all in one room, no config.", qMark: "✓" },
   { label: "Session themes", c: "One backdrop, take it or leave it.", cMark: "✕", q: "Multiple projector themes (neon, chalkboard, arcade) with more shipping.", qMark: "✓" },
   { label: "Kid-facing brand tone", c: "Teacher-serious. Kids find it… fine.", cMark: "✕", q: "'The classroom becomes the game.' Kids get excited.", qMark: "✓" },
-  { label: "Class roster + per-student progress", c: "Yes — CSV upload, AI name-match, portal.", cMark: "✓", q: "Yes — same feature set.", qMark: "✓" },
-  { label: "AI grading of open-ended student work", c: "Yes — photograph, paste, or batch a whole class PDF. Pulse Grading is our thing.", cMark: "✓", q: "They don't grade. That's not what Qrewzi does.", qMark: "✕" },
+  { label: "Class roster + per-student progress", c: "Yes — CSV upload, automatic name-match, portal.", cMark: "✓", q: "Yes — same feature set.", qMark: "✓" },
+  { label: "Grading of open-ended student work", c: "Yes — photograph, paste, or batch a whole class PDF. Pulse Grading is our thing.", cMark: "✓", q: "They don't grade. That's not what Qrewzi does.", qMark: "✕" },
   { label: "Batch PDF grading (whole-class scan)", c: "One of our best features.", cMark: "✓", q: "Nope.", qMark: "✕" },
   { label: "Video + audio performance grading", c: "Yes — music, drama, speeches, all rubric-scored.", cMark: "✓", q: "Not their space.", qMark: "✕" },
 ];

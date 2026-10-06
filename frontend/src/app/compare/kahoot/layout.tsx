@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "Curriculate vs. Kahoot — How They Compare",
   description:
-    "Side-by-side comparison: Kahoot is a quiz game; Curriculate is an AI lesson architect that runs station-based, team-based scavenger hunts with movement, collaboration, and gradebook-ready reports.",
+    "Side-by-side comparison: Kahoot is a quiz game; Curriculate is a lesson architect that runs station-based, team-based scavenger hunts with movement, collaboration, and gradebook-ready reports.",
   keywords: [
     "Kahoot alternative",
     "Curriculate vs Kahoot",

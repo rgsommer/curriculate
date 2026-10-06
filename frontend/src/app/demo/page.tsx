@@ -15,10 +15,10 @@ const CATEGORIES = [
     lightBg: "bg-blue-50",
     lightText: "text-blue-800",
     tasks: [
-      { icon: "🔘", name: "Multiple Choice", desc: "Classic single-answer with AI-written distractors" },
+      { icon: "🔘", name: "Multiple Choice", desc: "Classic single-answer with well-built distractors" },
       { icon: "🏃", name: "Physical Multiple Choice", desc: "Students run to corners of the room to answer" },
       { icon: "✅", name: "True / False", desc: "Quick binary comprehension checks" },
-      { icon: "✍️", name: "Short Answer", desc: "Type a short response, AI evaluates accuracy" },
+      { icon: "✍️", name: "Short Answer", desc: "Type a short response; accuracy is evaluated" },
       { icon: "📖", name: "Reading Comprehension", desc: "Read a passage, summarize in one sentence" },
       { icon: "🔗", name: "Matching", desc: "Drag terms to their definitions" },
       { icon: "🃏", name: "Flashcards", desc: "Study mode — flip cards to review terms" },
@@ -47,9 +47,9 @@ const CATEGORIES = [
     lightText: "text-purple-800",
     tasks: [
       { icon: "📝", name: "Open Text", desc: "Free-form written response with word count goals" },
-      { icon: "✉️", name: "Letter Writing", desc: "Write to a historical figure — they write back via AI" },
-      { icon: "🔍", name: "Case Study", desc: "Analyze a real-world scenario, get expert AI feedback" },
-      { icon: "📖", name: "Storytelling", desc: "Build characters with your name — AI writes your story" },
+      { icon: "✉️", name: "Letter Writing", desc: "Write to a historical figure — and they write back" },
+      { icon: "🔍", name: "Case Study", desc: "Analyze a real-world scenario and get expert feedback" },
+      { icon: "📖", name: "Storytelling", desc: "Build characters with your name — and your story gets written" },
       { icon: "🎤", name: "Record Audio", desc: "Speak your answer — voice recorded for the report" },
       { icon: "🎨", name: "Draw", desc: "Sketch a concept or diagram on the device" },
       { icon: "🤹", name: "Draw or Mime", desc: "Act it out OR draw it — teammates guess" },
@@ -98,7 +98,7 @@ const CATEGORIES = [
     tasks: [
       { icon: "🤝", name: "Collaboration", desc: "Pair up, respond to each other's ideas" },
       { icon: "🎙️", name: "Live Debate", desc: "Structured debate with timed arguments" },
-      { icon: "⚖️", name: "AI Debate Judge", desc: "AI evaluates debate performance in real time" },
+      { icon: "⚖️", name: "Debate Judge", desc: "Debate performance evaluated in real time" },
       { icon: "💡", name: "Brainstorm Battle", desc: "Generate as many ideas as possible in a time limit" },
     ],
   },
@@ -118,14 +118,14 @@ const CATEGORIES = [
     lightBg: "bg-pink-50",
     lightText: "text-pink-800",
     tasks: [
-      { icon: "📋", name: "Brain Spark Notes", desc: "AI-generated study notes with key terms highlighted" },
+      { icon: "📋", name: "Brain Spark Notes", desc: "Study notes with the key terms highlighted" },
       { icon: "🧠", name: "Mind Mapper", desc: "Build a concept map connecting ideas visually" },
       { icon: "📢", name: "Narration Synthesize", desc: "Listen to narration, synthesize the key takeaways" },
       { icon: "🎭", name: "Role Play Deck", desc: "Draw character cards and argue from that perspective" },
       { icon: "🎬", name: "Script Play", desc: "Act out a script — pass the device speaker to speaker" },
       { icon: "✏️", name: "Peer Editing", desc: "Mark up a classmate's writing with teacher-style correction codes" },
-      { icon: "🎙️", name: "Interview", desc: "Interview a historical figure via live AI — scored on question relevance" },
-      { icon: "🧑‍🏫", name: "Teach-Back", desc: "Explain concepts to a younger audience — AI assesses clarity and depth" },
+      { icon: "🎙️", name: "Interview", desc: "Interview a historical figure live — scored on question relevance" },
+      { icon: "🧑‍🏫", name: "Teach-Back", desc: "Explain concepts to a younger audience — assessed for clarity and depth" },
     ],
   },
   {
@@ -134,8 +134,8 @@ const CATEGORIES = [
     lightBg: "bg-teal-50",
     lightText: "text-teal-800",
     tasks: [
-      { icon: "🗣️", name: "Pronunciation Practice", desc: "Practice saying words — AI checks your pronunciation" },
-      { icon: "🎙️", name: "Speech Recognition", desc: "Speak your answer — AI transcribes and evaluates" },
+      { icon: "🗣️", name: "Pronunciation Practice", desc: "Practice saying words — your pronunciation gets checked" },
+      { icon: "🎙️", name: "Speech Recognition", desc: "Speak your answer — it is transcribed and evaluated" },
     ],
   },
   {
@@ -227,7 +227,7 @@ export default function DemoPage() {
               </span>
             </h1>
             <p className="mt-6 max-w-2xl text-lg text-slate-300 leading-relaxed">
-              AI generates the lesson. Students move, write, debate, photograph, act, and collaborate —
+              The lesson builds itself. Students move, write, debate, photograph, act, and collaborate —
               prompted by the device, not stuck on it. Every task type below is live and ready to use.
             </p>
             <div className="mt-8 flex flex-wrap gap-4 justify-center">
@@ -258,7 +258,7 @@ export default function DemoPage() {
             Every way a student can learn
           </h2>
           <p className="mt-3 max-w-2xl mx-auto text-slate-500">
-            From multiple choice to AI-generated storytelling, physical challenges to live debates —
+            From multiple choice to collaborative storytelling, physical challenges to live debates —
             Curriculate gives teachers {totalTasks}+ task types across {CATEGORIES.length} categories.
           </p>
         </div>
@@ -425,7 +425,7 @@ export default function DemoPage() {
             Ready to transform your classroom?
           </h2>
           <p className="text-slate-400 mb-8 max-w-xl mx-auto">
-            AI plans the lesson. You run the room. Students own the learning.
+            The lesson plans itself. You run the room. Students own the learning.
           </p>
           <div className="flex flex-wrap gap-4 justify-center">
             <Link

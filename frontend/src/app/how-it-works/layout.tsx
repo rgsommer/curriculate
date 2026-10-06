@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 export const metadata: Metadata = {
   title: "How it Works — Station-Based Learning Made Simple",
   description:
-    "See how Curriculate works: plan a time-fit station lesson with AI, run interactive team stations with CurricQR rotation, capture photo evidence, and get automatic teacher and student reports.",
+    "See how Curriculate works: plan a time-fit station lesson, run interactive team stations with CurricQR rotation, capture photo evidence, and get automatic teacher and student reports.",
   keywords: [
     "how station rotation works",
     "classroom station setup",
