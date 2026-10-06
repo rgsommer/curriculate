@@ -15566,7 +15566,10 @@ function buildRubricInstructions({
                         additionalProperties: false,
                         properties: {
                           n: { type: "string", maxLength: 8 },
-                          verdict: { type: "string", enum: ["correct", "incorrect", "partial", "blank"] },
+                          // "unclear" is for an objective item that cannot be
+                          // checked without the answer key — better an honest
+                          // gap than a guessed answer marking good work wrong.
+                          verdict: { type: "string", enum: ["correct", "incorrect", "partial", "blank", "unclear"] },
                           student_answer: { type: "string", maxLength: 80 },
                           // Filled in whenever the verdict is not "correct";
                           // empty otherwise, since a tick needs no answer.
@@ -16014,7 +16017,32 @@ function buildRubricInstructions({
         }
       }
 
-      const userContent = [{ type: "input_text", text: instructionsWithInferenceFinal }];
+      // With no answer key in hand, an objective section cannot be marked —
+      // the letters in a matching column, the T/F pattern and the words in a
+      // blank are arbitrary facts about THIS paper, not things to be worked
+      // out. Asked to grade one anyway the model supplies plausible letters,
+      // and a student who answered correctly is crossed. Seen on a Math 7A
+      // test: the key read 1→F and 3→H, the student wrote F and H, and both
+      // were marked wrong against an invented A and C.
+      const noKeyGuard = (!effectiveAnswerKey && !hasAnswerKeyImages) ? `
+
+    NO ANSWER KEY WAS PROVIDED.
+    - For OBJECTIVE items whose answer cannot be derived from the question
+      itself — matching columns, True/False about a convention, fill-in-the-blank
+      of a specific term, multiple choice — you do NOT know the intended answer.
+      Mark them "unclear", leave correct_answer empty, and say in the section
+      comment that they could not be checked without the key.
+    - NEVER supply a correct_answer you inferred from the pattern of the other
+      answers or from how a question is usually set. A guess presented as the
+      key marks correct work wrong, which is the worst thing this tool can do.
+    - Items you CAN still mark: anything self-verifying — arithmetic and algebra
+      you can compute, work you can follow step by step, writing judged against
+      a rubric. Mark those normally.
+    - Score the paper on what you could actually check, and say in the overall
+      comment which sections were not checkable.
+` : "";
+
+      const userContent = [{ type: "input_text", text: instructionsWithInferenceFinal + noKeyGuard }];
 
       // Add answer key images first (if teacher tagged any) with clear label
       // Skip raw images if extraction already produced answerKeyOverride text —

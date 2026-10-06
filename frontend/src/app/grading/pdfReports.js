@@ -806,6 +806,14 @@ function markGlyph(doc, verdict, x, y, size = 6) {
   } else if (verdict === "blank") {
     doc.setDrawColor(148, 163, 184);
     doc.circle(x + s * 0.5, y - s * 0.5, s * 0.42, "S");
+  } else if (verdict === "unclear") {
+    // Could not be checked — no answer key for it. Deliberately not a cross.
+    doc.setTextColor(100, 116, 139);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(8);
+    doc.text("?", x + s * 0.2, y);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont("helvetica", "normal");
   } else {
     doc.setDrawColor(220, 38, 38);
     doc.line(x, y - s, x + s, y);
@@ -834,13 +842,21 @@ function guideFromResult(r) {
       name: sec.name || "Section",
       score: sec.score ?? null,
       out_of: sec.out_of ?? null,
-      items: (Array.isArray(sec.incorrect_items) ? sec.incorrect_items : []).map((it, i) => ({
-        n: String(i + 1),
-        verdict: "incorrect",
-        student_answer: it.student_answer || "",
-        correct_answer: it.correct_answer || "",
-        note: it.prompt || "",
-      })),
+      items: (Array.isArray(sec.incorrect_items) ? sec.incorrect_items : []).map((it) => {
+        // Number these by what the prompt says, never by their position in
+        // the list. Counting them off 1, 2, 3 labelled the second mistake
+        // "question 2" when the prompt plainly said question 3 — so the
+        // teacher looked at a question that was right and found it crossed.
+        const prompt = String(it.prompt || "").trim();
+        const m = prompt.match(/^\(?([0-9]{1,2}[a-z]?|[a-z])\)?[.)]\s*/i);
+        return {
+          n: m ? m[1] : "",
+          verdict: "incorrect",
+          student_answer: it.student_answer || "",
+          correct_answer: it.correct_answer || "",
+          note: m ? prompt.slice(m[0].length) : prompt,
+        };
+      }),
     })),
   };
 }
@@ -949,6 +965,25 @@ export async function buildMarkingGuidePdf(results, { title } = {}) {
         y += LINE + 1;
         continue;
       }
+      // In partial mode only the failures are known, so a roll of them reads
+      // as the whole section — "1 x 2 x" for a section of eight. Skip it and
+      // let the detail lines, which carry the real numbers, speak.
+      if (g.partial) {
+        for (const it of items) {
+          const wrote = it.student_answer ? `wrote "${esc(it.student_answer)}"` : "blank";
+          const want = it.correct_answer ? `  \u00b7  answer: ${esc(it.correct_answer)}` : "";
+          const what = it.note ? ` — ${esc(it.note)}` : "";
+          const head = it.n ? `${it.n}. ` : "";
+          for (const [i, ln] of doc.splitTextToSize(`${head}${wrote}${want}${what}`, COL_W - 22).entries()) {
+            room(LINE);
+            if (i === 0) markGlyph(doc, "incorrect", MARGIN + 8, y);
+            doc.text(ln, MARGIN + 22, y);
+            y += LINE;
+          }
+        }
+        y += 3;
+        continue;
+      }
       let x = MARGIN + 8;
       for (const it of items) {
         const label = String(it.n || "");
@@ -964,7 +999,9 @@ export async function buildMarkingGuidePdf(results, { title } = {}) {
       for (const it of items) {
         if (it.verdict === "correct") continue;
         const wrote = it.student_answer ? `wrote "${esc(it.student_answer)}"` : "blank";
-        const want = it.correct_answer ? `  \u00b7  answer: ${esc(it.correct_answer)}` : "";
+        const want = it.correct_answer
+          ? `  \u00b7  answer: ${esc(it.correct_answer)}`
+          : (it.verdict === "unclear" ? "  \u00b7  not checked — no answer key" : "");
         const why = it.note ? ` — ${esc(it.note)}` : "";
         doc.setFontSize(8.5);
         const lines = doc.splitTextToSize(`${it.n}. ${wrote}${want}${why}`, COL_W - 22);
@@ -1016,7 +1053,7 @@ export async function buildMarkingGuidePdf(results, { title } = {}) {
       doc.setFont("helvetica", "italic");
       doc.setFontSize(7.5);
       doc.setTextColor(148, 163, 184);
-      doc.text("Graded before the marking guide existed — only the items that lost marks are listed.", MARGIN, y);
+      doc.text("Graded before the marking guide existed: only the items that lost marks are listed, and only where the grader named the question.", MARGIN, y);
       doc.setTextColor(0, 0, 0);
       y += LINE;
     }
