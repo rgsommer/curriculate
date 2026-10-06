@@ -17048,13 +17048,26 @@ Do NOT include any text outside the JSON array.`,
 
 Your ONLY job is to extract structured information from this answer key. Do NOT grade anything.
 
-IMPORTANT — MULTIPLE TEST VERSIONS:
-Teachers often create multiple versions of the same test (e.g., "Test A" and "Test B", or "Version 1" and "Version 2").
-Each version has the SAME questions but DIFFERENT correct answers (e.g., different matching pairs, different T/F patterns).
-Look carefully for version labels like "Answer Key A", "Answer Key B", "Test A", "Test B", "Version 1", "Version 2", etc.
+IMPORTANT — MORE THAN ONE PAPER IN ONE KEY:
+A single answer key document often covers more than one paper. There are two
+quite different cases, and confusing them scrambles the marking:
 
-If you see MULTIPLE versions, you MUST create SEPARATE entries in the "versions" array — one per version.
-If there is only ONE version (or no version label), create a single entry with version_label "A".
+1. SCRAMBLED VERSIONS of the same test — "Test A" / "Test B", "Version 1" /
+   "Version 2". Same questions, same mark total, different correct answers
+   (the matching pairs and T/F pattern are shuffled). Label these "A", "B", …
+
+2. DIFFERENT PAPERS sat by different students — a full test and an
+   "Accommodated", "Modified" or "Adapted" version beside it. These have
+   DIFFERENT questions, FEWER of them, and a DIFFERENT mark total (/50 and
+   /30). They are not versions of each other and a student sat one or the
+   other. Label each with the heading the key itself gives it — "Unit Test",
+   "Accommodated" — never "A" and "B".
+
+Create one entry in "versions" per paper you find, of either kind, and set
+version_label accordingly. Set total_marks for each from its own heading. If
+there is only one paper, create a single entry with version_label "A".
+
+Do NOT split one paper into two entries because it has several sections.
 
 For EACH version, extract ALL questions:
 - question_id: the question label (e.g., "M1" for Matching #1, "TF1" for True/False #1, "2a", "Q1")
@@ -17137,19 +17150,27 @@ Return valid JSON matching this exact schema.`;
       const categoryGroups = {};
 
       if (isMultiVersion) {
-        summaryLines.push("⚠️ MULTIPLE TEST VERSIONS DETECTED — READ CAREFULLY ⚠️");
+        summaryLines.push("⚠️ THIS KEY COVERS MORE THAN ONE PAPER — PICK ONE BEFORE YOU MARK ⚠️");
         summaryLines.push("");
-        summaryLines.push("This test has MULTIPLE VERSIONS with DIFFERENT correct answers.");
-        summaryLines.push("You MUST first determine which version the student has by looking at their test pages.");
-        summaryLines.push("Look for labels like 'Test A', 'Test B', 'Version 1', etc. on the student's cover page.");
-        summaryLines.push("If no label is visible, compare the student's answers against both keys — the version");
-        summaryLines.push("where more answers match is likely the correct one.");
+        summaryLines.push("Decide which paper the student sat from THEIR PAGES, not from their answers:");
+        summaryLines.push("  1. The heading printed on their paper, matched to the headings below.");
+        summaryLines.push("  2. The mark total printed on their paper (e.g. '/50'), matched to the Total of each key.");
+        summaryLines.push("  3. How many questions each section actually has on their paper — an accommodated");
+        summaryLines.push("     paper is shorter, so a section of 5 matching items is not the key that lists 8.");
+        summaryLines.push("");
+        summaryLines.push("NEVER choose a key by counting how many of the student's answers it would make");
+        summaryLines.push("correct. That fits the key to the answers: a student who was consistently wrong");
+        summaryLines.push("then 'matches' the other paper better, and correct work gets marked wrong.");
+        summaryLines.push("");
+        summaryLines.push("If their paper still cannot be identified, use the FIRST key below, mark only");
+        summaryLines.push("what you are sure of, and say in the overall comment that the paper could not be");
+        summaryLines.push("identified.");
         summaryLines.push("");
       }
 
       for (const version of versions) {
         if (isMultiVersion) {
-          summaryLines.push(`========== ANSWER KEY: VERSION ${version.version_label} ==========`);
+          summaryLines.push(`========== ANSWER KEY: ${version.version_label} (Total /${version.total_marks}) ==========`);
         }
 
         for (const q of version.questions || []) {
@@ -17170,13 +17191,19 @@ Return valid JSON matching this exact schema.`;
 
       if (isMultiVersion) {
         summaryLines.push("GRADING INSTRUCTIONS:");
-        summaryLines.push("1. FIRST: Identify which test version this student has (look for 'Test A'/'Test B' or version label on their pages).");
-        summaryLines.push("2. THEN: Grade ONLY against that version's answer key above.");
-        summaryLines.push("3. Do NOT mix answers from different versions.");
-        summaryLines.push("4. Report the detected version in detected_title (e.g., 'War of 1812 Test - Version A').");
+        summaryLines.push("1. FIRST: identify the student's paper from its heading, its mark total and its");
+        summaryLines.push("   question count — never from how well their answers fit a key.");
+        summaryLines.push("2. THEN: mark ONLY against that paper's key above. Its letters are the answers.");
+        summaryLines.push("   Where the key gives a letter for a matching item, that letter IS the answer —");
+        summaryLines.push("   do not work out your own from the wording of the definitions and do not");
+        summaryLines.push("   override the key with it. If the key says 1 is F and the student wrote F, it");
+        summaryLines.push("   is correct, whatever the definitions appear to say.");
+        summaryLines.push("3. Do NOT mix answers between papers.");
+        summaryLines.push("4. Report the paper you marked against in detected_title.");
       } else {
         summaryLines.push("");
         summaryLines.push("GRADING INSTRUCTIONS: Compare the student's answer for EACH question above against the correct answer. If the student's final answer does not match, they lose the marks for that question.");
+        summaryLines.push("The key above IS the answer. For a matching section its letter settles the item: do not derive your own pairing from the wording of the definitions, and never let that override the key. If the key says 1 is F and the student wrote F, it is correct.");
       }
 
       // Add KITA summary if categories found (use first version for KITA since structure should be same)
