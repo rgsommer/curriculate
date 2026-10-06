@@ -7,10 +7,21 @@ import TourButton from "./_components/TourButton";
 import FeedbackButton from "./_components/FeedbackButton";
 import { Toaster } from "./_components/toast";
 import ClientGate from "./_components/ClientGate";
+import InstallCatcher from "./_components/InstallCatcher";
+import type { Metadata, Viewport } from "next";
 
-export const metadata = {
+export const metadata: Metadata = {
   title: "Compass — Curriculate",
   description: "Cross-teacher student behaviour tracking and parent notices.",
+  // Home-screen install: Android/Chrome read the manifest; iPhone/iPad use the
+  // apple-touch icon + appleWebApp settings.
+  manifest: "/compass.webmanifest",
+  icons: { icon: "/compass-icon-192.png", apple: "/compass-apple-touch-icon.png" },
+  appleWebApp: { capable: true, title: "Compass", statusBarStyle: "default" },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0f172a",
 };
 
 export default function BehaviorLayout({ children }: { children: ReactNode }) {
@@ -37,6 +48,7 @@ export default function BehaviorLayout({ children }: { children: ReactNode }) {
       <main className="mx-auto max-w-3xl px-4 py-5"><ClientGate>{children}</ClientGate></main>
       <FeedbackButton />
       <Toaster />
+      <InstallCatcher />
     </div>
   );
 }

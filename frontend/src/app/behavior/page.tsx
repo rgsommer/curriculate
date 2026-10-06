@@ -7,6 +7,7 @@ import { Markdown } from "./_lib/Markdown";
 import SendNoticeModal from "./_components/SendNoticeModal";
 import { Card, Button } from "./_components/ui";
 import { toast } from "./_components/toast";
+import AddToHomeScreen from "./_components/AddToHomeScreen";
 
 export default function BehaviorDashboard() {
   const [me, setMe] = useState<Me | null>(null);
@@ -78,6 +79,8 @@ export default function BehaviorDashboard() {
         </h1>
         <p className="mt-1 text-sm text-slate-500 capitalize">Role: {membership.role}</p>
       </Card>
+
+      <AddToHomeScreen />
 
       {(!membership.name?.trim() || !membership.courtesyName?.trim()) && (
         <SetMyName
