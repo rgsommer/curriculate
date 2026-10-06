@@ -16044,13 +16044,18 @@ function buildRubricInstructions({
 
       const userContent = [{ type: "input_text", text: instructionsWithInferenceFinal + noKeyGuard }];
 
-      // Add answer key images first (if teacher tagged any) with clear label
-      // Skip raw images if extraction already produced answerKeyOverride text —
-      // the text is already embedded in the prompt and re-sending images wastes tokens/time
-      if (hasAnswerKeyImages && !effectiveAnswerKey) {
+      // Add answer key images first (if teacher tagged any) with clear label.
+      //
+      // These used to be dropped whenever extraction had produced any text, to
+      // save tokens. But the text is where a key loses most: a matching column
+      // reads out as "1 F 2 C 3 H 4 A" and comes back scrambled or partial, and
+      // the grader then marks a correct letter wrong against the wrong one.
+      // A page of key is a few thousand tokens; a crossed-out right answer
+      // costs more than that. Send both and let the model look.
+      if (hasAnswerKeyImages) {
         userContent.push({
           type: "input_text",
-          text: "ANSWER KEY / SOLUTION SHEET (provided by teacher — use this to grade the student work that follows):\nLook carefully at the margins for KITA category annotations (e.g., /2T, /3A, T/2) and point values.",
+          text: "ANSWER KEY / SOLUTION SHEET (provided by teacher — use this to grade the student work that follows):\nLook carefully at the margins for KITA category annotations (e.g., /2T, /3A, T/2) and point values.\nFor objective sections, read the answers off THIS sheet item by item. Where a transcription of the key also appears above, THESE PAGES WIN — a matching column survives transcription badly. Never pair a question with an answer belonging to a different number.",
         });
         userContent.push(...answerKeyImages.map((img) => ({ type: "input_image", image_url: img })));
         userContent.push({ type: "input_text", text: "END OF ANSWER KEY. STUDENT WORK follows below:" });

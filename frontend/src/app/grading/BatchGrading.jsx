@@ -595,6 +595,7 @@ export default function BatchGrading({
   perQuestionAudit,
   rubricOverride,
   answerKeyOverride,
+  keyImages,
   teacherEmail: parentTeacherEmail,
   setTeacherEmail: parentSetTeacherEmail,
   rosterClasses: parentRosterClasses,
@@ -1258,6 +1259,35 @@ export default function BatchGrading({
       ? Array.from({ length: answerKeyPages }, (_, i) => i + 1) // leading pages (manual config)
       : autoDetectedKeyPages; // auto-detected (may be at end of PDF)
 
+    // A key uploaded on the main page as a picture. It is not a page of the
+    // batch PDF and it has no text, so neither of the two routes below could
+    // see it — which is how a batch ran against an invented answer key.
+    const uploadedKeyImages = Array.isArray(keyImages) ? keyImages.filter(Boolean) : [];
+
+    if (keyPageNumbers.length === 0 && !effectiveAnswerKey && uploadedKeyImages.length) {
+      setProgress({ done: 0, total, current: "Reading the answer key..." });
+      answerKeyImages = uploadedKeyImages;
+      try {
+        const extractUrl = gradingUrl.replace(/\/grading$/, "/grading/extract-answer-key");
+        const extractRes = await fetch(extractUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ answerKeyImages: uploadedKeyImages, standards, gradeBand }),
+        });
+        if (extractRes.ok) {
+          const extractData = await extractRes.json();
+          if (extractData.answerKeyText) {
+            effectiveAnswerKey = extractData.answerKeyText;
+            setExtractedAnswerKey(effectiveAnswerKey);
+          }
+        }
+      } catch (e) {
+        // The images still go with the request, so a failed extraction costs
+        // accuracy, not the key itself.
+        console.warn("[batch] uploaded answer key extraction failed:", e);
+      }
+    }
+
     if (keyPageNumbers.length > 0 && !effectiveAnswerKey) {
       setProgress({ done: 0, total, current: "Extracting answer key..." });
       try {
@@ -1320,7 +1350,10 @@ export default function BatchGrading({
 
         const payload = {
           images,
-          answerKeyImages: (effectiveAnswerKey ? undefined : answerKeyImages) || undefined,
+          // When the key was a picture, send the picture as well as whatever
+          // text came out of it. A matching column reads as "1 F 2 C 3 H" and
+          // survives extraction badly; the model should be able to look.
+          answerKeyImages: answerKeyImages || undefined,
           rubricOverride: effectiveRubric || null,
           answerKeyOverride: effectiveAnswerKey || null,
           gradeBand,

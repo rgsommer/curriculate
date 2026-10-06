@@ -4265,6 +4265,17 @@ export default function GradingPage() {
                 ""
               }
               answerKeyOverride={(stickyAnswerKeyText || "").trim() || ""}
+              /* An answer key uploaded here as a picture — a scan, a photo, or
+                 a PDF with no text layer — had nowhere to go. Batch grading
+                 could take a key only from pages inside the batch PDF or as
+                 text, so a separately-uploaded scanned key was silently
+                 dropped and the grader marked a matching column with letters
+                 it had invented. These are the photos tagged "rubric", which
+                 is where both a rubric image and a scanned key land. */
+              keyImages={photos
+                .filter((p) => photoTags.get(p.id) === "rubric")
+                .map((p) => p.rawDataUrl || p.dataUrl)
+                .filter(Boolean)}
               teacherEmail={teacherEmail}
               setTeacherEmail={setTeacherEmail}
               rosterClasses={rosterClasses}
