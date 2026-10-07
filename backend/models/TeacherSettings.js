@@ -20,6 +20,16 @@ const teacherSettingsSchema = new mongoose.Schema(
     // was never the grade. The gradebook is the record; this stops a draft
     // competing with it.
     hideGradesFromStudents: { type: Boolean, default: false },
+
+    // Email students and parents when a new result is published for them.
+    //
+    // On by default — a family that never hears is a family that never looks.
+    // But a teacher on a free sending tier has a daily cap, and one batch of
+    // thirty papers can spend most of it, so a teacher who releases work in
+    // bulk needs to be able to turn it off without losing the portal. With it
+    // off nothing is withheld: the results, the codes and the progress pages
+    // all work exactly as before, and families read them when they visit.
+    notifyStudentsOnNewResult: { type: Boolean, default: true },
   },
   { timestamps: true }
 );

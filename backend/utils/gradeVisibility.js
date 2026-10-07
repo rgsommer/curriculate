@@ -16,27 +16,52 @@ import TeacherSettings from "../models/TeacherSettings.js";
 const CACHE_MS = 60 * 1000;
 const cache = new Map(); // email -> { value, expires }
 
-export async function hidesGrades(teacherEmail) {
+// One cached read per teacher, serving every preference, rather than a cache
+// per field — the settings arrive in one document anyway.
+async function settingsFor(teacherEmail) {
   const email = String(teacherEmail || "").trim().toLowerCase();
-  if (!email) return false;
+  if (!email) return null;
 
   const hit = cache.get(email);
   if (hit && hit.expires > Date.now()) return hit.value;
 
-  let value = false;
+  let value = {};
   try {
-    const doc = await TeacherSettings.findOne({ teacherEmail: email }).select("hideGradesFromStudents").lean();
-    value = !!doc?.hideGradesFromStudents;
+    value = await TeacherSettings.findOne({ teacherEmail: email })
+      .select("hideGradesFromStudents notifyStudentsOnNewResult")
+      .lean() || {};
   } catch (err) {
-    // Fail open: a database hiccup must not start hiding marks a teacher
-    // never asked to hide, nor revealing ones they did. Showing is the
-    // long-standing default, so that is the safer of the two.
+    // Fail to the defaults: a database hiccup must not start hiding marks a
+    // teacher never asked to hide, nor silence notifications they rely on.
     console.warn("[gradeVisibility] lookup failed:", err?.message || err);
-    value = false;
+    value = {};
   }
   if (cache.size > 500) cache.clear();
   cache.set(email, { value, expires: Date.now() + CACHE_MS });
   return value;
+}
+
+export async function hidesGrades(teacherEmail) {
+  if (!String(teacherEmail || "").trim()) return false;
+  return !!(await settingsFor(teacherEmail))?.hideGradesFromStudents;
+}
+
+// Whether this teacher's students and parents are emailed when a result is
+// published. On unless they have turned it off — a free sending tier has a
+// daily cap and one batch of thirty can spend most of it.
+export async function notifiesStudents(teacherEmail) {
+  if (!String(teacherEmail || "").trim()) return true;
+  return (await settingsFor(teacherEmail))?.notifyStudentsOnNewResult !== false;
+}
+
+// Silent when ANY teacher who could own this result has asked for silence.
+// Same asymmetry as hiding: an email not sent can be sent later, and the
+// result is sitting on the portal either way.
+export async function notifiesForResult(meta) {
+  const owners = await teachersForResult(meta);
+  if (!owners.length) return true;
+  const views = await Promise.all(owners.map((e) => notifiesStudents(e)));
+  return views.every(Boolean);
 }
 
 // Which teacher a result belongs to.

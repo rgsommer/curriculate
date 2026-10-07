@@ -2,7 +2,7 @@
 // Sends grade notification emails to students/parents
 import StudentAccount from "../models/StudentAccount.js";
 import { sendSystemEmail } from "./shareInviteEmailer.js";
-import { hidesGradesForResult } from "../utils/gradeVisibility.js";
+import { hidesGradesForResult, notifiesForResult, notifiesStudents } from "../utils/gradeVisibility.js";
 
 /**
  * Send "new grade" notification to all opted-in emails for a student.
@@ -42,7 +42,18 @@ export async function notifyNewGrade(studentId, gradeInfo) {
       try {
         const { default: PublishedResult } = await import("../models/PublishedResult.js");
         const doc = await PublishedResult.findOne({ code }).select("meta").lean();
-        if (doc) hide = await hidesGradesForResult(doc.meta);
+        if (doc) {
+          // A teacher can turn these off. A free sending tier has a daily
+          // cap and one batch of thirty papers can spend most of it, so the
+          // choice is between a notification and being able to publish at
+          // all. Nothing is withheld by switching it off: the result, its
+          // code and the progress page are all there to be visited.
+          if (!(await notifiesForResult(doc.meta))) {
+            console.log(`[grade-notify] ${code}: notifications off for this teacher — not sending`);
+            return;
+          }
+          hide = await hidesGradesForResult(doc.meta);
+        }
       } catch (err) {
         console.warn("[grade-notify] visibility lookup failed:", err?.message || err);
       }
@@ -138,7 +149,9 @@ export async function sendWeeklyDigests(options = {}) {
     if (weeklyRecipients.length === 0) continue;
 
     // Find this student's results from the past week
-    const results = await PublishedResult.find({
+    // let, not const: results whose teacher has notifications off are
+    // dropped from the digest below.
+    let results = await PublishedResult.find({
       "meta.studentId": account.studentId,
       createdAt: { $gte: since },
     }).sort({ createdAt: -1 }).lean();
@@ -150,6 +163,14 @@ export async function sendWeeklyDigests(options = {}) {
 
     // Per result, since a child may be taught by several teachers and only
     // one of them may hide marks.
+    // The digest spends the same daily allowance, so it follows the same
+    // switch. Dropped per result, since a child may be taught by several
+    // teachers and only one of them may have turned it off.
+    const notifiable = await Promise.all(results.map((r) => notifiesForResult(r.meta)));
+    const keptResults = results.filter((_, i) => notifiable[i]);
+    if (keptResults.length === 0) continue;
+    results = keptResults;
+
     const hidden = await Promise.all(results.map((r) => hidesGradesForResult(r.meta)));
     // A column of dashes is worse than no column: it reads as work that was
     // never marked rather than marks deliberately withheld.
