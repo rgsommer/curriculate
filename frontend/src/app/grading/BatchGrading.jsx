@@ -2567,15 +2567,42 @@ export default function BatchGrading({
         aiName.toLowerCase() === classifierName.toLowerCase()
       );
 
+      // A name the teacher has settled is not up for re-reading.
+      //
+      // The AI's fresh read used to win, so picking "Aaryan Sran" off the
+      // roster and then re-grading put it back to whatever the handwriting
+      // looked like — "Aaryan", or the wrong Aaryan — and the roster match
+      // the teacher had just made was lost with it.
+      const teacherPicked = !!(r.rosterStudentId || r.rosterEdsbyId || r.rosterFirstName);
+      const keptName = teacherPicked
+        ? (r.rosterFirstName ? `${r.rosterFirstName} ${r.rosterLastName || ""}`.trim() : r.studentName)
+        : (data.student_name || r.studentName);
+
+      // The teacher has also already decided what the paper is out of. A
+      // re-grade came back on whatever scale the model picked this time, so
+      // one student in a set normalised to /40 would land back on /20 and
+      // the set was mixed again. Convert to the scale in force.
+      let keptScore = Number.isFinite(score) ? score : "?";
+      let keptOutOf = Number.isFinite(outOf) ? outOf : "?";
+      let keptPct = pct;
+      if (typeof r.outOf === "number" && r.outOf > 0
+          && Number.isFinite(score) && Number.isFinite(outOf) && outOf > 0
+          && Math.abs(outOf - r.outOf) > 0.01) {
+        keptScore = Math.round((score / outOf) * r.outOf * 100) / 100;
+        keptOutOf = r.outOf;
+        keptPct = Math.round((keptScore / keptOutOf) * 100);
+        console.log(`[batch] re-grade came back /${outOf}; converted to the /${r.outOf} in force`);
+      }
+
       const updatedEntry = {
         ...r,
-        studentName: data.student_name || r.studentName,
-        nameConfirmed,
-        studentId: data.student_id || r.studentId || null,
-        score: Number.isFinite(score) ? score : "?",
-        outOf: Number.isFinite(outOf) ? outOf : "?",
-        pct,
-        letter: pct != null ? letterGrade(pct) : "?",
+        studentName: keptName,
+        nameConfirmed: teacherPicked ? true : nameConfirmed,
+        studentId: teacherPicked ? (r.studentId || null) : (data.student_id || r.studentId || null),
+        score: keptScore,
+        outOf: keptOutOf,
+        pct: keptPct,
+        letter: keptPct != null ? letterGrade(keptPct) : "?",
         strengths: Array.isArray(data.strengths) ? data.strengths : [],
         improvements: Array.isArray(data.improvements) ? data.improvements : [],
         comment: data.teacher_comment || "",
@@ -3394,8 +3421,17 @@ export default function BatchGrading({
       const updated = prev.map((r) => {
         if (r.error || typeof r.outOf !== "number" || r.outOf <= 0) return r;
         if (r.outOf === targetDenom) return r; // already correct
-        // Curve: keep raw score, change denominator (cap if score exceeds new denom)
-        const newScore = Math.min(r.score, targetDenom);
+        // Convert the mark to the new scale; do not just relabel it.
+        //
+        // This kept the raw score and changed the denominator — a curve — so
+        // a paper marked 20 out of 20 became 20 out of 40 and a student with
+        // full marks was shown 50% and an F. What the teacher is choosing
+        // here is which scale to report on, not a deduction: the work is the
+        // same work, so 20/20 is 40/40 and 19/20 is 38/40.
+        const ratio = typeof r.score === "number" && r.outOf > 0 ? r.score / r.outOf : null;
+        const newScore = ratio != null
+          ? Math.round(ratio * targetDenom * 100) / 100
+          : Math.min(r.score, targetDenom);
         const newPct = targetDenom > 0 ? Math.round((newScore / targetDenom) * 100) : null;
         return { ...r, score: newScore, outOf: targetDenom, pct: newPct, letter: newPct != null ? letterGrade(newPct) : r.letter };
       });
