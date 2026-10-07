@@ -24,7 +24,7 @@ const BehaviorIncidentSchema = new mongoose.Schema(
       name: { type: String, default: "" },
       description: { type: String, default: "" },
       kind: { type: String, enum: ["negative", "positive"], default: "negative" },
-      triggerMode: { type: String, enum: ["THRESHOLD", "IMMEDIATE", "INTERACTION"], default: "THRESHOLD" },
+      triggerMode: { type: String, enum: ["THRESHOLD", "IMMEDIATE", "INTERACTION", "NOTE"], default: "THRESHOLD" },
       consequenceText: { type: String, default: "" },
       // House points at log time: positive = a positive behaviour (reward),
       // negative = a deduction. Positive incidents NEVER count toward strikes.

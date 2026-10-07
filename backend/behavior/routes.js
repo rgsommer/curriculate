@@ -400,7 +400,7 @@ async function sendConsequenceMessage({ req, student, config, behavior, detailTe
 function shouldSendConsequenceNote(behavior) {
   return (
     behavior?.kind !== "positive" &&
-    behavior?.triggerMode === "THRESHOLD" &&
+    (behavior?.triggerMode === "THRESHOLD" || behavior?.triggerMode === "NOTE") &&
     !behavior?.immediateWhiteSlip &&
     !!String(behavior?.consequenceText || "").trim()
   );
@@ -2868,7 +2868,7 @@ router.post("/behaviors", authAny, loadMembership, canLog, async (req, res, next
     // counts as a strike or notifies, so its mode is always INTERACTION.
     const triggerMode = kind === "positive"
       ? "INTERACTION"
-      : ["THRESHOLD", "IMMEDIATE", "INTERACTION"].includes(req.body?.triggerMode) ? req.body.triggerMode : "THRESHOLD";
+      : ["THRESHOLD", "IMMEDIATE", "INTERACTION", "NOTE"].includes(req.body?.triggerMode) ? req.body.triggerMode : "THRESHOLD";
     // Every offence must carry at least one category — it drives reporting + the
     // white-slip/GUDD rules. Positive behaviours never have categories.
     const categories = cleanCategories(withBehaviourIfWhiteSlip(req.body?.categories, req.body?.immediateWhiteSlip), kind);
@@ -2929,7 +2929,7 @@ router.put("/behaviors/:id", authAny, loadMembership, canLog, async (req, res, n
     if ("consequenceText" in b) beh.consequenceText = String(b.consequenceText || "");
     if (["first", "after_first"].includes(b.consequenceTiming)) beh.consequenceTiming = b.consequenceTiming;
     if (["", "witnessed", "reported"].includes(b.evidence)) beh.evidence = b.evidence;
-    if (["THRESHOLD", "IMMEDIATE", "INTERACTION"].includes(b.triggerMode)) beh.triggerMode = b.triggerMode;
+    if (["THRESHOLD", "IMMEDIATE", "INTERACTION", "NOTE"].includes(b.triggerMode)) beh.triggerMode = b.triggerMode;
     if ("points" in b) beh.points = Number(b.points) || 0;
     if ("immediateWhiteSlip" in b) beh.immediateWhiteSlip = !!b.immediateWhiteSlip;
     if ("categories" in b || "immediateWhiteSlip" in b) {

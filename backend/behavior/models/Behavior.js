@@ -34,7 +34,10 @@ const BehaviorSchema = new mongoose.Schema(
     // IMMEDIATE   → notifies the parent on a single occurrence, regardless of count.
     // INTERACTION → documentable interaction; never notifies and never counts,
     //               but IS included in the AI Admin Summary.
-    triggerMode: { type: String, enum: ["THRESHOLD", "IMMEDIATE", "INTERACTION"], default: "THRESHOLD" },
+    // NOTE        → a concern with a note home (consequence / "please discuss at
+    //               home" message) that never counts toward strikes and never
+    //               fires a notice — e.g. an offence REPORTED by another student.
+    triggerMode: { type: String, enum: ["THRESHOLD", "IMMEDIATE", "INTERACTION", "NOTE"], default: "THRESHOLD" },
 
     // Consequence wording included in the note home automatically (§5a).
     consequenceText: { type: String, default: "" },

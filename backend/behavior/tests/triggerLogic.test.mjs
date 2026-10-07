@@ -149,6 +149,21 @@ test("INTERACTION never notifies and never counts", () => {
   assert.equal(d.shouldNotify, false);
 });
 
+test("NOTE (note home, no strike) never notifies and never counts — even past the threshold", () => {
+  const prior = [inc({ id: "a", daysAgo: 2 }), inc({ id: "b", daysAgo: 1 }), inc({ id: "c", daysAgo: 0 })];
+  const d = evaluateIncident({
+    newIncident: inc({ id: "x", mode: "NOTE", daysAgo: 0 }),
+    priorIncidents: prior,
+    config: { triggerCount: 3, fadeWindowDays: 30 },
+    student: { noticesHomeCount: 0 },
+    asOf: now,
+  });
+  assert.equal(d.shouldNotify, false);
+  // And NOTE incidents are never part of the strike count.
+  const active = activeThresholdIncidents([...prior.slice(0, 2), inc({ id: "n1", mode: "NOTE" }), inc({ id: "n2", mode: "NOTE" })], { fadeWindowDays: 30, asOf: now });
+  assert.deepEqual(active.map((i) => i._id), ["a", "b"]);
+});
+
 test("POSITIVE behaviour (points > 0) never notifies, even in THRESHOLD mode", () => {
   // A positive incident sitting on top of 2 real strikes must NOT trigger.
   const positive = { ...inc({ id: "p", mode: "THRESHOLD", daysAgo: 0 }) };

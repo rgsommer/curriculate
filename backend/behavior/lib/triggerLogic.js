@@ -132,7 +132,9 @@ export function evaluateIncident({ newIncident, priorIncidents, config, student,
   }
 
   // INTERACTION: documented only — never notifies, never counts.
-  if (mode === "INTERACTION") {
+  // NOTE: a concern whose note home is handled per-incident (consequence /
+  // "please discuss at home"); it never counts toward strikes or fires a notice.
+  if (mode === "INTERACTION" || mode === "NOTE") {
     return { shouldNotify: false, reason: null, contributingIncidents: [], sequenceNo: 0, ccVp: false };
   }
 

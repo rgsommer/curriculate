@@ -12,6 +12,7 @@ const FOLLOWUPS = [
 ];
 const MODES = [
   { v: "THRESHOLD", label: "Counts toward strikes" },
+  { v: "NOTE", label: "Note home only — no strike (e.g. reported by another student)" },
   { v: "INTERACTION", label: "Does NOT count toward strikes (document only)" },
   { v: "IMMEDIATE", label: "Notify immediately" },
 ];

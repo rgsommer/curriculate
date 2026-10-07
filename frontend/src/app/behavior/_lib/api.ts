@@ -248,7 +248,7 @@ export type Behavior = {
   _id: string;
   name: string;
   keyword?: string;
-  triggerMode: "THRESHOLD" | "IMMEDIATE" | "INTERACTION";
+  triggerMode: "THRESHOLD" | "IMMEDIATE" | "INTERACTION" | "NOTE";
   consequenceText?: string;
   scope: "standard" | "custom";
   uniform?: boolean;

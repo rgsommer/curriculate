@@ -657,7 +657,7 @@ export default function LogIncidentPage() {
             {offenseOptions.map((b) => (
               <option key={b._id} value={b._id}>
                 {b.name}
-                {kindFilter === "negative" && (b.triggerMode === "IMMEDIATE" ? " — immediate" : b.triggerMode === "INTERACTION" ? " — documentation only, not a consequence" : "")}
+                {kindFilter === "negative" && (b.triggerMode === "IMMEDIATE" ? " — immediate" : b.triggerMode === "INTERACTION" ? " — documentation only, not a consequence" : b.triggerMode === "NOTE" ? " — note home, no strike" : "")}
               </option>
             ))}
           </select>
@@ -1021,7 +1021,7 @@ function BatchLog({
           {offenseOptions.map((b) => (
             <option key={b._id} value={b._id}>
               {b.name}
-              {b.triggerMode === "IMMEDIATE" ? " — immediate" : b.triggerMode === "INTERACTION" ? " — documentation only, not a consequence" : ""}
+              {b.triggerMode === "IMMEDIATE" ? " — immediate" : b.triggerMode === "INTERACTION" ? " — documentation only, not a consequence" : b.triggerMode === "NOTE" ? " — note home, no strike" : ""}
             </option>
           ))}
         </select>
