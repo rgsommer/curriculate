@@ -4530,7 +4530,7 @@ router.post("/students/:id/parent-summary", authAny, loadMembership, async (req,
       const what = i.behaviorSnapshot?.name || "";
       const fd = prepareFamilyDetail(famScrub, (i.detailText || "").trim());
       const detail = fd.detail;
-      const line = `${d} — ${what}${detail ? `: ${detail}` : ""}${fd.reported ? " [reported to the teacher, not witnessed — word tentatively, never mention the source]" : ""}`;
+      const line = `${d} — ${what}${detail ? `: ${detail}` : ""}${fd.reported ? " [reported to the teacher, not witnessed — word tentatively, say 'at school' rather than 'in class' unless stated, never mention the source]" : ""}`;
       if (isPositive) { positives.push(`${d} — ${what}${detail ? `: ${detail}` : ""} (noted by ${who})`); continue; }
       if (isInteraction) {
         // A teacher↔student conversation is often the very concern to convey —
@@ -7848,7 +7848,8 @@ const FAMILY_PRIVACY_RULES =
   `PRIVACY (overrides everything): Never name, describe, or hint at any OTHER student — not who reported it, who saw it, or who was affected — and never say how the teacher found out (no "I was informed by…", "a student reported…", "I received a report…"). ` +
   `Never quote slurs or crude words; describe them sensitively.`;
 const REPORTED_RULE = (first) =>
-  `This concern was REPORTED to the teacher, not witnessed first-hand. Word it tentatively — e.g. "I have reason to believe that ${first} may have…" or "I suspect that ${first} may have…" — and introduce the task with "Unless my information is inaccurate, ${first} is required to…". Do not mention the source.`;
+  `This concern was REPORTED to the teacher, not witnessed first-hand. Word it tentatively — e.g. "I have reason to believe that ${first} may have…" or "I suspect that ${first} may have…" — and introduce the task with "Unless my information is inaccurate, ${first} is required to…". Do not mention the source. ` +
+  `Keep the setting broad: say "at school" (and "our school" rather than "our classroom") unless the teacher's note says exactly where it happened — never assume it was in class.`;
 
 // Composite breakdown of where a house's points came from (NEVER any names).
 // `includeNegatives`/`includePositives` gate what's returned: the public page
