@@ -22,7 +22,11 @@ router.get("/", async (req, res) => {
     const doc = await TeacherSettings.findOne({ teacherEmail }).lean();
     return res.json({
       ok: true,
-      settings: { hideGradesFromStudents: !!doc?.hideGradesFromStudents },
+      settings: {
+        hideGradesFromStudents: !!doc?.hideGradesFromStudents,
+        // Absent means never set, and the default is on.
+        notifyStudentsOnNewResult: doc?.notifyStudentsOnNewResult !== false,
+      },
     });
   } catch (err) {
     console.error("[teacher-settings get]", err?.message || err);
@@ -36,18 +40,37 @@ router.put("/", async (req, res) => {
     const teacherEmail = emailOf(req);
     if (!teacherEmail) return res.status(400).json({ ok: false, error: "Valid teacherEmail is required." });
 
-    const hide = !!req.body?.hideGradesFromStudents;
-    await TeacherSettings.findOneAndUpdate(
+    // Only touch what the caller actually sent. The page saves one toggle at
+    // a time, and writing both every time would let a stale copy of one
+    // setting undo a change to the other.
+    const set = { teacherEmail };
+    if ("hideGradesFromStudents" in (req.body || {})) {
+      set.hideGradesFromStudents = !!req.body.hideGradesFromStudents;
+    }
+    if ("notifyStudentsOnNewResult" in (req.body || {})) {
+      set.notifyStudentsOnNewResult = !!req.body.notifyStudentsOnNewResult;
+    }
+    const hide = set.hideGradesFromStudents;
+    const saved = await TeacherSettings.findOneAndUpdate(
       { teacherEmail },
-      { $set: { teacherEmail, hideGradesFromStudents: hide } },
+      { $set: set },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
     // The serving path caches this for a minute; a teacher who has just
     // flipped it should not have to wait to see the effect.
     invalidateGradeVisibility(teacherEmail);
 
-    console.log(`[teacher-settings] ${teacherEmail} hideGradesFromStudents=${hide}`);
-    return res.json({ ok: true, settings: { hideGradesFromStudents: hide } });
+    console.log(
+      `[teacher-settings] ${teacherEmail} ` +
+      Object.entries(set).filter(([k]) => k !== "teacherEmail").map(([k, v]) => `${k}=${v}`).join(" ")
+    );
+    return res.json({
+      ok: true,
+      settings: {
+        hideGradesFromStudents: !!saved.hideGradesFromStudents,
+        notifyStudentsOnNewResult: saved.notifyStudentsOnNewResult !== false,
+      },
+    });
   } catch (err) {
     console.error("[teacher-settings put]", err?.message || err);
     return res.status(500).json({ ok: false, error: "Could not save settings." });

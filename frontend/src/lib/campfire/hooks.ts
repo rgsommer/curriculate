@@ -760,11 +760,40 @@ export function useEngagement(engagementId: string) {
   };
 
   // Creator un-reveals — puts it back to sealed/active (e.g. revealed too early).
-  const unrevealEngagement = async () => {
+  // With a new reveal date it also holds sealed until then; without one, a past
+  // deadline would make the hourly cron reveal it straight back.
+  const unrevealEngagement = async (revealAt?: string) => {
     if (!engagementId) return { error: "Missing engagement" };
+    const update: Record<string, unknown> = { status: "active" };
+    if (revealAt) {
+      update.deadline = revealAt;
+      update.hold_until_deadline = true;
+      // A vote contest's voting window belongs to the reveal that just got undone —
+      // clear it so voting opens fresh at the new reveal (unless a winner's decided).
+      const { data: cur } = await supabase
+        .from("engagements")
+        .select("config, deadline, recurrence_rule")
+        .eq("id", engagementId)
+        .maybeSingle();
+      let cfg = (cur?.config ?? {}) as Record<string, unknown>;
+      const r = cfg.raffle as Record<string, unknown> | undefined;
+      if (r?.voteClosesAt && !r.winnerUserId) {
+        const rest = { ...r };
+        delete rest.voteClosesAt;
+        delete rest.voteLastCallAt;
+        delete rest.voteActivityEmailAt;
+        cfg = { ...cfg, raffle: rest };
+      }
+      // A yearly card keeps its real date for next year's copy (a birthday re-sealed
+      // a week late still comes back on the birthday).
+      if (cur?.recurrence_rule === "yearly" && cur.deadline && !cfg.yearlyAnchor && !cfg.recurrence_nth) {
+        cfg = { ...cfg, yearlyAnchor: cur.deadline };
+      }
+      if (cfg !== (cur?.config ?? {})) update.config = cfg;
+    }
     const { error } = await supabase
       .from("engagements")
-      .update({ status: "active" })
+      .update(update)
       .eq("id", engagementId);
     if (!error) await fetchEngagement();
     return { error: error?.message ?? null };

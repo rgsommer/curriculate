@@ -830,12 +830,15 @@ function markGlyph(doc, verdict, x, y, size = 6) {
 // the roll is partial and the sheet says so.
 function guideFromResult(r) {
   const mg = r.raw?.marking_guide;
-  if (mg && Array.isArray(mg.sections) && mg.sections.length) return { ...mg, partial: false };
+  if (mg && Array.isArray(mg.sections) && mg.sections.length) {
+    return { ...mg, partial: false, fromClassKey: !!mg.fromClassKey };
+  }
 
   const src = Array.isArray(r.raw?.sections) ? r.raw.sections : (Array.isArray(r.sections) ? r.sections : []);
   if (!src.length) return null;
   return {
     partial: true,
+    handwrite: mg?.handwrite || "",
     write_on_paper: mg?.write_on_paper || "",
     highlights: mg?.highlights || null,
     sections: src.map((sec) => ({
@@ -928,6 +931,26 @@ export async function buildMarkingGuidePdf(results, { title } = {}) {
     const total = (r.score != null && r.outOf != null) ? `${r.score} / ${r.outOf}` : "";
     if (total) doc.text(total, PAGE_W - MARGIN, y, { align: "right" });
     y += 14;
+
+    // The two or three words that go on the paper beside the mark. This is
+    // the line that actually gets written thirty times, so it is set to be
+    // copied at a glance rather than read — bigger than the sentence under
+    // it, and directly under the name where the eye already is.
+    if (g.handwrite) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(37, 99, 235);
+      const hw = clamp(esc(g.handwrite), 44);
+      doc.text(hw, MARGIN, y);
+      // A rule the length of the phrase, so it reads as something to copy.
+      doc.setDrawColor(191, 219, 254);
+      doc.setLineWidth(0.8);
+      doc.line(MARGIN, y + 2.5, MARGIN + doc.getTextWidth(hw), y + 2.5);
+      doc.setTextColor(0, 0, 0);
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(0.5);
+      y += 14;
+    }
 
     // --- the sentence for the paper ---
     if (g.write_on_paper) {
@@ -1048,14 +1071,23 @@ export async function buildMarkingGuidePdf(results, { title } = {}) {
       y += 2;
     }
 
-    if (g.partial) {
-      room(LINE);
+    // Say which key the marks rest on. A sheet that was marked against an
+    // answer key worked out from the class is a different thing from one
+    // marked against the teacher's own, and the teacher has to know which
+    // they are holding before they write anything on a paper.
+    const footnote = g.fromClassKey
+      ? "No answer key was given, so one was worked out from the class and the objective items re-marked against it. Check it before you write on the papers."
+      : g.partial
+      ? "Graded before the marking guide existed: only the items that lost marks are listed, and only where the grader named the question."
+      : "";
+    if (footnote) {
       doc.setFont("helvetica", "italic");
       doc.setFontSize(7.5);
-      doc.setTextColor(148, 163, 184);
-      doc.text("Graded before the marking guide existed: only the items that lost marks are listed, and only where the grader named the question.", MARGIN, y);
+      doc.setTextColor(g.fromClassKey ? 180 : 148, g.fromClassKey ? 83 : 163, g.fromClassKey ? 9 : 184);
+      for (const ln of doc.splitTextToSize(footnote, COL_W)) {
+        room(LINE); doc.text(ln, MARGIN, y); y += LINE;
+      }
       doc.setTextColor(0, 0, 0);
-      y += LINE;
     }
 
     y += 6;

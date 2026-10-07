@@ -1786,13 +1786,22 @@ export default function GradingPage() {
     // already shared and can be switched back.
     const [hideGrades, setHideGrades] = useState(false);
     const [hideGradesBusy, setHideGradesBusy] = useState(false);
+    // Whether a family is emailed when a result is published. On by default;
+    // a teacher on a free sending tier runs out of allowance long before they
+    // run out of papers.
+    const [notifyStudents, setNotifyStudents] = useState(true);
+    const [notifyBusy, setNotifyBusy] = useState(false);
     useEffect(() => {
       const email = (teacherEmail || "").trim();
-      if (!email.includes("@") || !backendBase) { setHideGrades(false); return; }
+      if (!email.includes("@") || !backendBase) { setHideGrades(false); setNotifyStudents(true); return; }
       let cancelled = false;
       fetch(`${backendBase}/teacher-settings?teacherEmail=${encodeURIComponent(email)}`)
         .then((r) => (r.ok ? r.json() : null))
-        .then((d) => { if (!cancelled && d?.ok) setHideGrades(!!d.settings?.hideGradesFromStudents); })
+        .then((d) => {
+          if (cancelled || !d?.ok) return;
+          setHideGrades(!!d.settings?.hideGradesFromStudents);
+          setNotifyStudents(d.settings?.notifyStudentsOnNewResult !== false);
+        })
         .catch(() => {});
       return () => { cancelled = true; };
     }, [teacherEmail, backendBase]);
@@ -1815,6 +1824,29 @@ export default function GradingPage() {
         alert("Could not save that setting. Marks are unchanged for students.");
       } finally {
         setHideGradesBusy(false);
+      }
+    }
+
+    async function saveNotifyStudents(next) {
+      const email = (teacherEmail || "").trim();
+      if (!email.includes("@") || !backendBase) return;
+      setNotifyStudents(next);
+      setNotifyBusy(true);
+      try {
+        const res = await fetch(`${backendBase}/teacher-settings`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          // Only this field: the route writes what it is sent, so a stale
+          // copy of the other toggle cannot undo a change to it.
+          body: JSON.stringify({ teacherEmail: email, notifyStudentsOnNewResult: next }),
+        });
+        const d = await res.json().catch(() => null);
+        if (!res.ok || !d?.ok) throw new Error(d?.error || "save failed");
+      } catch {
+        setNotifyStudents(!next);
+        alert("Could not save that setting. Notifications are unchanged.");
+      } finally {
+        setNotifyBusy(false);
       }
     }
 
@@ -4077,14 +4109,51 @@ export default function GradingPage() {
                   onChange={(e) => saveHideGrades(e.target.checked)}
                   style={{ marginTop: 2 }}
                 />
-                <span>
+                {/* The explanation is four lines of grey that the teacher
+                    reads once and then scrolls past every session. It moves
+                    to the tip, with a marker so it can still be found. */}
+                <span
+                  title={
+                    "Hides the mark on the progress page and on shared result links. " +
+                    "Comments, next steps and the achievement bars stay. You still see " +
+                    "every mark here, in exports and in Edsby." +
+                    (hideGrades ? " Applies to results already shared, and can be switched back." : "")
+                  }
+                >
                   <b>Feedback only for students &amp; parents</b>
-                  <div style={{ color: "#64748b" }}>
-                    Hides the mark on the progress page and on shared result links.
-                    Comments, next steps and the achievement bars stay. You still see
-                    every mark here, in exports and in Edsby.
-                    {hideGrades && <> Applies to results already shared, and can be switched back.</>}
-                  </div>
+                  <span style={{ ...styles.hintDot }}>?</span>
+                </span>
+              </label>
+            )}
+            {/* A free sending tier has a daily cap, and one batch of thirty
+                papers can spend most of it — so the choice becomes a
+                notification or being able to publish at all. Switching this
+                off withholds nothing: the result, its code and the progress
+                page are all there whenever a family visits. */}
+            {teacherEmail && (
+              <label
+                style={{
+                  marginTop: 8, display: "flex", gap: 8, alignItems: "flex-start",
+                  fontSize: 12, color: "#334155", cursor: "pointer", lineHeight: 1.45,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={!notifyStudents}
+                  disabled={notifyBusy}
+                  onChange={(e) => saveNotifyStudents(!e.target.checked)}
+                  style={{ marginTop: 2 }}
+                />
+                <span
+                  title={
+                    "Stops the \u201cnew feedback\u201d email and the weekly summary. " +
+                    "Nothing is withheld \u2014 results, codes and the progress page work as " +
+                    "usual, and families see them when they visit." +
+                    (!notifyStudents ? " Printed slips and QR codes are the way they will hear." : "")
+                  }
+                >
+                  <b>Don&apos;t email students &amp; parents about new feedback</b>
+                  <span style={{ ...styles.hintDot }}>?</span>
                 </span>
               </label>
             )}
@@ -6600,6 +6669,15 @@ export default function GradingPage() {
   }
 
 const styles = {
+  // A small marker beside a setting whose explanation now lives in the tip.
+  // Without it a tooltip is a thing nobody knows is there.
+  hintDot: {
+    display: "inline-flex", alignItems: "center", justifyContent: "center",
+    width: 13, height: 13, marginLeft: 5, borderRadius: "50%",
+    background: "#e2e8f0", color: "#475569",
+    fontSize: 9, fontWeight: 800, lineHeight: 1,
+    verticalAlign: "middle", cursor: "help",
+  },
   page: {
     padding: "16px 18px 40px",
     maxWidth: 1200,

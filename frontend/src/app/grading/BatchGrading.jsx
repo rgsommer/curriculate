@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildResultsPdf, buildStripsPdf, buildMarkingGuidePdf, preloadPdfLibs } from "./pdfReports";
+import { deriveConsensusKey, keyIndex, applyKeyToGuide, MIN_VOTERS } from "./consensusKey";
 import { completeQuest } from "../../components/QuestWidget";
 
 /**
@@ -614,6 +615,11 @@ export default function BatchGrading({
   const [precisionMode, setPrecisionMode] = useState(false); // multi-pass median scoring
   const PRECISION_PASSES = 3; // number of AI passes per student in precision mode
   const [answerKeyPages, setAnswerKeyPages] = useState(0); // leading pages that are the answer key
+  // The answer key worked out from the class, when the teacher gave none.
+  // Declared here, above runBatch, not beside the other result state far
+  // below it: a dependency array is evaluated during render, and a const
+  // read there before its declaration throws.
+  const [consensusKey, setConsensusKey] = useState(null);
   const [tapMarkedPages, setTapMarkedPages] = useState(new Set()); // pages marked as "first page" in tap mode
   const [thumbnails, setThumbnails] = useState([]); // [{page, dataUrl}] for tap mode
 
@@ -1462,6 +1468,11 @@ export default function BatchGrading({
                   score: resultEntry.score ?? null,
                   outOf: resultEntry.outOf ?? null,
                   pct: resultEntry.pct ?? null,
+                  // What the grader was handed. "none" here beside a crossed
+                  // matching item means the key never arrived; "text+images"
+                  // beside one means it had the key and overrode it. Those
+                  // are different bugs and the result used to record neither.
+                  answerKeyUsed: data.answer_key_used || undefined,
                 },
                 sessionId: batchSessionId,
               }),
@@ -1593,6 +1604,63 @@ export default function BatchGrading({
       });
 
       setResults([...batchResults]);
+    }
+
+    // --- No answer key? Let the class be the key. ---
+    //
+    // With nothing to mark objective items against, the grader was left to
+    // work the answers out, and a student who wrote the right letter was
+    // crossed against an invented one. The papers themselves are better
+    // evidence: for matching, True/False and one-word blanks most students
+    // are right most of the time. Weighted by how reliable each paper proves
+    // to be, and anchored by any the teacher starred.
+    //
+    // Nothing uncertain is applied — a split or disputed item stays as the
+    // grader left it, and the whole derived key is shown for review.
+    try {
+      const keyUsed = batchResults.find((r) => !r.error && r.raw?.answer_key_used)?.raw?.answer_key_used;
+      const hadKey = keyUsed ? keyUsed.source !== "none" : !!effectiveAnswerKey || !!answerKeyImages;
+      const papers = batchResults
+        .filter((r) => !r.error && Array.isArray(r.raw?.marking_guide?.sections))
+        .map((r) => ({
+          id: String(r.index),
+          label: r.studentName || `Student ${r.index}`,
+          starred: !!r.raw?.teacher_starred,
+          sections: r.raw.marking_guide.sections.map((sec) => ({
+            name: sec.name,
+            items: (sec.items || []).map((it) => ({ n: it.n, answer: it.student_answer })),
+          })),
+        }));
+
+      if (!hadKey && papers.length >= MIN_VOTERS) {
+        const derived = deriveConsensusKey(papers);
+        const index = keyIndex(derived);
+        let moved = 0;
+        for (const r of batchResults) {
+          if (r.error || !r.raw?.marking_guide) continue;
+          const { guide, delta, changed } = applyKeyToGuide(r.raw.marking_guide, index);
+          if (!changed.length) continue;
+          r.raw = { ...r.raw, marking_guide: guide };
+          r.consensusChanges = changed.length;
+          if (typeof r.score === "number" && delta) {
+            r.score = Math.max(0, Math.round((r.score + delta) * 100) / 100);
+            if (typeof r.outOf === "number" && r.outOf > 0) {
+              r.pct = Math.round((r.score / r.outOf) * 100);
+              r.letter = letterGrade(r.pct);
+            }
+          }
+          moved += changed.length;
+        }
+        setConsensusKey({ ...derived, applied: moved });
+        console.log(`[batch] no answer key — derived one from ${derived.papers} papers,` +
+          ` ${derived.sections.reduce((n, s) => n + s.items.length, 0)} items,` +
+          ` ${derived.starredCount} starred, ${moved} marks corrected`);
+        setResults([...batchResults]);
+      } else if (!hadKey) {
+        setConsensusKey({ tooFew: papers.length, sections: [], reliability: [] });
+      }
+    } catch (ckErr) {
+      console.warn("[batch] consensus key failed:", ckErr);
     }
 
     // --- Roster matching: two-pass context-aware name matching ---
@@ -2499,15 +2567,42 @@ export default function BatchGrading({
         aiName.toLowerCase() === classifierName.toLowerCase()
       );
 
+      // A name the teacher has settled is not up for re-reading.
+      //
+      // The AI's fresh read used to win, so picking "Aaryan Sran" off the
+      // roster and then re-grading put it back to whatever the handwriting
+      // looked like — "Aaryan", or the wrong Aaryan — and the roster match
+      // the teacher had just made was lost with it.
+      const teacherPicked = !!(r.rosterStudentId || r.rosterEdsbyId || r.rosterFirstName);
+      const keptName = teacherPicked
+        ? (r.rosterFirstName ? `${r.rosterFirstName} ${r.rosterLastName || ""}`.trim() : r.studentName)
+        : (data.student_name || r.studentName);
+
+      // The teacher has also already decided what the paper is out of. A
+      // re-grade came back on whatever scale the model picked this time, so
+      // one student in a set normalised to /40 would land back on /20 and
+      // the set was mixed again. Convert to the scale in force.
+      let keptScore = Number.isFinite(score) ? score : "?";
+      let keptOutOf = Number.isFinite(outOf) ? outOf : "?";
+      let keptPct = pct;
+      if (typeof r.outOf === "number" && r.outOf > 0
+          && Number.isFinite(score) && Number.isFinite(outOf) && outOf > 0
+          && Math.abs(outOf - r.outOf) > 0.01) {
+        keptScore = Math.round((score / outOf) * r.outOf * 100) / 100;
+        keptOutOf = r.outOf;
+        keptPct = Math.round((keptScore / keptOutOf) * 100);
+        console.log(`[batch] re-grade came back /${outOf}; converted to the /${r.outOf} in force`);
+      }
+
       const updatedEntry = {
         ...r,
-        studentName: data.student_name || r.studentName,
-        nameConfirmed,
-        studentId: data.student_id || r.studentId || null,
-        score: Number.isFinite(score) ? score : "?",
-        outOf: Number.isFinite(outOf) ? outOf : "?",
-        pct,
-        letter: pct != null ? letterGrade(pct) : "?",
+        studentName: keptName,
+        nameConfirmed: teacherPicked ? true : nameConfirmed,
+        studentId: teacherPicked ? (r.studentId || null) : (data.student_id || r.studentId || null),
+        score: keptScore,
+        outOf: keptOutOf,
+        pct: keptPct,
+        letter: keptPct != null ? letterGrade(keptPct) : "?",
         strengths: Array.isArray(data.strengths) ? data.strengths : [],
         improvements: Array.isArray(data.improvements) ? data.improvements : [],
         comment: data.teacher_comment || "",
@@ -3326,8 +3421,17 @@ export default function BatchGrading({
       const updated = prev.map((r) => {
         if (r.error || typeof r.outOf !== "number" || r.outOf <= 0) return r;
         if (r.outOf === targetDenom) return r; // already correct
-        // Curve: keep raw score, change denominator (cap if score exceeds new denom)
-        const newScore = Math.min(r.score, targetDenom);
+        // Convert the mark to the new scale; do not just relabel it.
+        //
+        // This kept the raw score and changed the denominator — a curve — so
+        // a paper marked 20 out of 20 became 20 out of 40 and a student with
+        // full marks was shown 50% and an F. What the teacher is choosing
+        // here is which scale to report on, not a deduction: the work is the
+        // same work, so 20/20 is 40/40 and 19/20 is 38/40.
+        const ratio = typeof r.score === "number" && r.outOf > 0 ? r.score / r.outOf : null;
+        const newScore = ratio != null
+          ? Math.round(ratio * targetDenom * 100) / 100
+          : Math.min(r.score, targetDenom);
         const newPct = targetDenom > 0 ? Math.round((newScore / targetDenom) * 100) : null;
         return { ...r, score: newScore, outOf: targetDenom, pct: newPct, letter: newPct != null ? letterGrade(newPct) : r.letter };
       });
@@ -4774,6 +4878,44 @@ export default function BatchGrading({
             </div>
           )}
 
+          {/* What the grader was given. A batch marked against no answer key,
+              or against a key that came through as 40 characters of noise, is
+              worth knowing before the marks are released rather than after. */}
+          {(() => {
+            const used = results.find((r) => !r.error && r.raw?.answer_key_used)?.raw?.answer_key_used;
+            if (!used) return null;
+            const none = used.source === "none";
+            return (
+              <div style={{
+                margin: "0 0 10px", padding: "7px 12px", borderRadius: 8, fontSize: 12,
+                background: none ? "rgba(220,38,38,0.07)" : "rgba(100,116,139,0.07)",
+                border: `1px solid ${none ? "rgba(220,38,38,0.3)" : "rgba(100,116,139,0.2)"}`,
+                color: none ? "#991b1b" : "#475569",
+              }}>
+                {none ? (
+                  <>
+                    <strong>No answer key reached the grader.</strong> Matching, True/False
+                    and fill-in-the-blank cannot be checked without one — those items are
+                    left unmarked rather than guessed.
+                  </>
+                ) : (
+                  <>
+                    Answer key: <strong>{used.source}</strong>
+                    {used.textChars ? ` · ${used.textChars} characters` : ""}
+                    {used.imageCount ? ` · ${used.imageCount} page${used.imageCount === 1 ? "" : "s"}` : ""}
+                    {used.multiPaper ? " · covers more than one paper" : ""}
+                    {used.textHead ? (
+                      <details style={{ marginTop: 4 }}>
+                        <summary style={{ cursor: "pointer" }}>what the grader read</summary>
+                        <pre style={{ whiteSpace: "pre-wrap", fontSize: 11, margin: "4px 0 0" }}>{used.textHead}</pre>
+                      </details>
+                    ) : null}
+                  </>
+                )}
+              </div>
+            );
+          })()}
+
           {/* Class summary card */}
           {classSummary && (
             <div style={batchStyles.summaryCard}>
@@ -4887,7 +5029,14 @@ export default function BatchGrading({
                 </tr>
               </thead>
               <tbody>
-                {results.map((r) => (
+                {results.map((r) => {
+                  // An unmatched paper reaches no progress page and no
+                  // gradebook, so it is the row that most needs the teacher's
+                  // eye — and only when there is a roster to match against.
+                  const rowUnmatched = rosterClasses.length > 0
+                    && !r.error
+                    && !r.rosterEdsbyId && !r.rosterStudentId && !r.rosterFirstName;
+                  return (
                   <React.Fragment key={r.index}>
                     <tr
                       style={{
@@ -4898,6 +5047,10 @@ export default function BatchGrading({
                             ? "rgba(37,99,235,0.06)"
                             : r.error
                             ? "rgba(220,38,38,0.05)"
+                            : rowUnmatched
+                            // Louder than a failing grade: a fail is a result,
+                            // an unmatched paper is unfinished work.
+                            ? "rgba(220,38,38,0.13)"
                             : r.letter === "F"
                             // A fail is the row a teacher acts on — a follow-up,
                             // a phone call, a re-do — and the only thing marking
@@ -4906,7 +5059,9 @@ export default function BatchGrading({
                             // result, not a fault in the run.
                             ? "rgba(220,38,38,0.07)"
                             : "transparent",
-                        ...(r.letter === "F" && expandedIndex !== r.index && !r.error
+                        ...(rowUnmatched && expandedIndex !== r.index
+                          ? { boxShadow: "inset 5px 0 0 #dc2626" }
+                          : r.letter === "F" && expandedIndex !== r.index && !r.error
                           ? { boxShadow: "inset 3px 0 0 #dc2626" }
                           : null),
                       }}
@@ -4925,6 +5080,12 @@ export default function BatchGrading({
                         </span>
                       </td>
                       <td style={{ ...batchStyles.td, fontWeight: 700, textAlign: "left", position: "relative" }}>
+                        {/* A name that matched nobody on the roster was red
+                            text and nothing else, which is easy to read past
+                            in a grid of twenty rows — and it is the one thing
+                            on the row that must be fixed, because an
+                            unmatched result reaches no student's progress
+                            page and no gradebook. It gets a badge. */}
                         <span
                           onClick={(e) => {
                             e.stopPropagation();
@@ -4932,13 +5093,30 @@ export default function BatchGrading({
                           }}
                           style={{
                             cursor: "pointer",
-                            borderBottom: "1px dashed #94a3b8",
-                            color: (!r.rosterEdsbyId && !r.rosterStudentId && !r.rosterFirstName && rosterClasses.length > 0) ? "#dc2626" : r.multiRosterMatch ? "#d97706" : "inherit",
+                            borderBottom: rowUnmatched ? "2px solid #dc2626" : "1px dashed #94a3b8",
+                            color: rowUnmatched ? "#b91c1c" : r.multiRosterMatch ? "#d97706" : "inherit",
+                            fontWeight: rowUnmatched ? 800 : undefined,
                           }}
-                          title={r.multiRosterMatch ? "This name appears in multiple classes — click to verify" : "Click to change student name"}
+                          title={rowUnmatched
+                            ? "No roster match — click to pick the student. Until you do, this result reaches nobody."
+                            : r.multiRosterMatch ? "This name appears in multiple classes — click to verify" : "Click to change student name"}
                         >
                           {r.studentName}
                         </span>
+                        {rowUnmatched && (
+                          <span
+                            onClick={(e) => { e.stopPropagation(); setEditingNameIndex(r.index); }}
+                            style={{
+                              marginLeft: 6, padding: "1px 6px", borderRadius: 999,
+                              background: "#dc2626", color: "#fff", fontSize: 9.5,
+                              fontWeight: 800, letterSpacing: 0.4, whiteSpace: "nowrap",
+                              cursor: "pointer", verticalAlign: "middle",
+                            }}
+                            title="Pick the student this paper belongs to"
+                          >
+                            PICK STUDENT
+                          </span>
+                        )}
                         {r.studentId && (
                           <span style={{ fontSize: 10, color: "#94a3b8", fontWeight: 400, marginLeft: 6 }} title={`ID detected: ${r.studentId}${r.rosterFirstName ? ` → ${r.rosterFirstName} ${r.rosterLastName}` : ""}`}>
                             #{r.studentId.slice(-4)}
@@ -5575,7 +5753,8 @@ export default function BatchGrading({
                       </tr>
                     )}
                   </React.Fragment>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

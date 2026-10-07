@@ -107,8 +107,9 @@ export function deterministicNote(ctx) {
   lines.push(`The following were recorded${ctx.daysSinceFirst ? ` over the past ${ctx.daysSinceFirst} day(s)` : ""}:`);
   for (const inc of ctx.incidents || []) {
     const date = fmtDate(inc.date);
-    const who = inc.teacherName ? ` (logged by ${inc.teacherName})` : "";
-    const detail = inc.detail ? ` — ${inc.detail}` : "";
+    const who = inc.teacherName && !inc.isWriter ? ` (logged by ${inc.teacherName})` : "";
+    const d = inc.templateDetail !== undefined ? inc.templateDetail : inc.detail;
+    const detail = d ? ` — ${d}` : "";
     const uni = inc.uniform ? " [uniform / dress-code]" : "";
     lines.push(`  • ${date ? date + ": " : ""}${inc.behaviorName}${uni}${who}${detail}`);
   }
@@ -219,12 +220,13 @@ export async function composePositiveNotice(ctx, opts = {}) {
 /** Build the instruction prompt for the AI provider from de-identified context. */
 export function buildPrompt(ctx) {
   const incidentLines = (ctx.incidents || [])
-    .map((inc) => `- ${fmtDate(inc.date)}: ${inc.behaviorName}${inc.uniform ? " [uniform/dress-code]" : ""}${inc.teacherName ? ` [logged by ${inc.teacherName}]` : ""}${inc.detail ? ` (${inc.detail})` : ""}`)
+    .map((inc) => `- ${fmtDate(inc.date)}: ${inc.behaviorName}${inc.uniform ? " [uniform/dress-code]" : ""}${inc.isWriter ? " [logged by YOU, the writer]" : inc.teacherName ? ` [logged by ${inc.teacherName}]` : ""}${inc.reported ? " [REPORTED to the teacher, not witnessed]" : ""}${inc.detail ? ` (${inc.detail})` : ""}`)
     .join("\n");
+  const anyReported = (ctx.incidents || []).some((i) => i.reported);
   const hasUniform = (ctx.incidents || []).some((i) => i.uniform);
   // When more than one teacher logged the incidents, the note should make that
   // clear so it doesn't read as though a single teacher recorded everything.
-  const teacherNames = [...new Set((ctx.incidents || []).map((i) => i.teacherName).filter(Boolean))];
+  const teacherNames = [...new Set((ctx.incidents || []).map((i) => (i.isWriter ? ctx.writerName || i.teacherName : i.teacherName)).filter(Boolean))];
   const multiTeacher = teacherNames.length > 1;
 
   // Background history is for the model's AWARENESS only — it shapes tone but is
@@ -266,6 +268,13 @@ export function buildPrompt(ctx) {
     `School: ${ctx.schoolName || ""}.`,
     ctx.daysSinceFirst ? `Days since first incident this period: ${ctx.daysSinceFirst}.` : "",
     `The note should be ABOUT only these current incidents:\n${incidentLines}`,
+    ctx.writerName
+      ? `VOICE: you are ${ctx.writerName}, and you sign this note. Write in the FIRST PERSON ("I noticed…", "I had to…"). Never refer to ${ctx.writerName} in the third person. Incidents marked "[logged by YOU, the writer]" are your own observations; attribute any others to the colleague who logged them.`
+      : "",
+    `PRIVACY (overrides everything): never name, describe, or hint at any OTHER student — not who reported something, who saw it, or who was affected — and never say how a concern came to light (no "I was informed by…", "a student reported…"). Never quote slurs or crude words; describe them sensitively.`,
+    anyReported
+      ? `Items marked "[REPORTED to the teacher, not witnessed]" must be worded tentatively — e.g. "I have reason to believe that ${ctx.studentName} may have…" — and any consequence tied to them introduced with "Unless my information is inaccurate, ${ctx.studentName} is required to…". Never mention the source.`
+      : "",
     multiTeacher
       ? `These incidents were logged by MORE THAN ONE teacher (${teacherNames.join(", ")}). Make it clear the concerns span multiple teachers/classes — attribute the relevant incidents to the teacher who logged them (naming the teacher in parentheses is fine, e.g. "…during science (Mr. Lee)"). Do NOT imply that a single teacher recorded everything or that the student only struggles in one class. Do not use the "[logged by …]" bracket format verbatim; weave the teacher names in naturally.`
       : "",

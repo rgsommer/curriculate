@@ -14149,12 +14149,35 @@ function buildRubricInstructions({
     ` : ''}
     - Do NOT collapse a clearly sectioned test into one generic overall comment.
 
+    THE SECTIONS MUST ADD UP TO THE TOTAL:
+    - sum(sections[].out_of) MUST equal overall_out_of, and sum(sections[].score)
+      MUST equal overall_score. They are the same marks counted twice.
+    - If a total has been specified for you, mark the sections ON THAT SCALE.
+      Do not mark each page out of ten and then report the specified total:
+      two pages at /10 against a stated /40 gives "19 / 40" for a paper that
+      lost one mark out of twenty, which is half the mark the student earned.
+      Either make the sections add to the stated total, or state the total the
+      sections actually add to. Never one with the other.
+
     SECTION COMMENT RULE:
     - Each section teacher_comment must briefly explain:
       1) what was done well in that section, and
       2) what cost marks in that section.
     - If full marks were earned, say what was done well and set incorrect_items to null.
     - If marks were lost, the section comment must make that understandable in plain language.
+
+    TEACHER'S STAR (teacher_starred):
+    - Set true ONLY for a star, asterisk or similar mark drawn by hand in a
+      margin or corner of the page — usually the top left — by the teacher.
+      It means the teacher is vouching for this paper.
+    - It is a mark ON the page, not part of the work: drawn in a different
+      pen, outside the answer area, not attached to any question.
+    - Do NOT set it for: a star a student drew as decoration, a star inside an
+      answer, a printed star or bullet, a multiplication asterisk, a tick, a
+      circled mark total, or any mark that belongs to a question.
+    - When in doubt, false. A wrongly starred paper is treated as the answer
+      key for the whole class, so the cost of a false positive is high and
+      the cost of missing one is only that the class votes unaided.
 
     MARKING GUIDE RULE (marking_guide):
     - This is for the TEACHER, marking the paper with it in hand. The student
@@ -14174,15 +14197,26 @@ function buildRubricInstructions({
                        answers: for a True/False the student marked wrongly,
                        say which part of the statement is false; for working,
                        name the step that went astray. "" otherwise.
-    - Leave marking_guide.sections null ONLY for work with no numbered items at
-      all — an essay, a poster. A test always has them.
+    - marking_guide is ALWAYS required. Never return it as null, and never
+      omit it. Even an essay with no numbered items has a handwrite phrase and
+      highlights worth giving; for that case fill those and set
+      marking_guide.sections to null. A test always has numbered items.
     - marking_guide.highlights: at most 6, worst first, naming what to pick out
       in the margin — level is incorrect, weak, good or excellent. Include at
       least one good or excellent where the paper earns it; a marking guide
       that only lists faults gives the teacher nothing to praise.
+    - marking_guide.handwrite: TWO or THREE words to write beside the mark —
+      four at the very most. This is the line that actually gets written on
+      thirty papers, so it has to carry the whole verdict at a glance:
+        "Neat and accurate"   "Show your steps"   "Rushed — recheck"
+        "Strong reasoning"    "Label everything"  "Careful with signs"
+      Specific to this paper, not a stock phrase. Name the one thing that
+      matters most — what to keep doing, or the single change worth making.
+      No mark, no percentage, no full sentence, no final full stop.
     - marking_guide.write_on_paper: ONE sentence, under about 20 words, for the
-      teacher to copy onto the paper by hand. Specific to this paper. Not a
-      grade, not a percentage.
+      teacher to copy onto the paper by hand when there is room. It expands on
+      handwrite; it does not repeat it word for word. Specific to this paper.
+      Not a grade, not a percentage.
     - The verdicts must agree with the section scores. If Matching is 5 / 6,
       exactly one Matching item is not "correct".
 
@@ -15453,6 +15487,16 @@ function buildRubricInstructions({
             },
           },
 
+          // --- teacher's exemplary mark ---
+          //
+          // A hand-drawn star in a corner, put there by the teacher to say
+          // "this paper is right". With no answer key the class's own answers
+          // are the only key available, and a vote cannot tell a class that
+          // has misread a question together — they agree, unanimously, on the
+          // wrong answer. A starred paper is the one thing that can disagree
+          // with a confident class and be believed.
+          teacher_starred: { type: "boolean" },
+
           // --- student name detection ---
           student_name: { type: ["string", "null"] },
 
@@ -15531,9 +15575,20 @@ function buildRubricInstructions({
           // or crossed — so they can run down it against the page instead of
           // working out which numbers are missing from a list of mistakes.
           marking_guide: {
-            type: ["object", "null"],
+            // NOT nullable. It was ["object","null"], and the model took the
+            // null every time — the guide never appeared, so the sheet fell
+            // back to "graded before the marking guide existed" and carried
+            // no phrase to write on the paper. Only `sections` inside it may
+            // be null, for work with no numbered items.
+            type: "object",
             additionalProperties: false,
             properties: {
+              // Two or three words to write beside the mark. A teacher
+              // marking thirty papers writes the grade and a phrase, not a
+              // sentence, and that phrase is what the student actually
+              // reads. Distinct from write_on_paper below, which is the
+              // longer line for when there is room.
+              handwrite: { type: "string", maxLength: 40 },
               // One sentence, short enough to copy onto the paper by hand.
               write_on_paper: { type: "string", maxLength: 180 },
               // What to pick out in the margin, worst first.
@@ -15586,7 +15641,7 @@ function buildRubricInstructions({
                 },
               },
             },
-            required: ["write_on_paper", "highlights", "sections"],
+            required: ["handwrite", "write_on_paper", "highlights", "sections"],
           },
         },
 
@@ -15601,6 +15656,7 @@ function buildRubricInstructions({
           "final_score_out_of_10",
           "deductions",
           "sections",
+          "teacher_starred",
           "student_name",
           "student_id",
           "detected_title",
@@ -16105,7 +16161,10 @@ function buildRubricInstructions({
         model: gradingModel,
         input: [{ role: "user", content: userContent }],
         text: { format: { type: "json_schema", name: schema.name, strict: true, schema: schema.schema } },
-        max_output_tokens: 4000
+        // The marking guide lists every item of every section, which on a
+        // fifty-mark test is a few hundred tokens on top of everything else.
+        // A truncated response loses whatever the schema puts last, silently.
+        max_output_tokens: 6000
       });
 
       const grade = safeJsonParse(response.output_text);
@@ -16230,10 +16289,25 @@ function buildRubricInstructions({
         : (hasTrustedCountedOutOf ? countedOutOf : null);
 
       if (finalFixedOutOf) {
-        // If the AI used a different denominator than the teacher override, rescale
+        // If the AI used a different denominator than the teacher override, rescale.
+        //
+        // Scale from what the sections ACTUALLY add up to, not from the total
+        // the model declared. Asked for /40 it will say overall_out_of: 40 and
+        // then mark two pages out of ten each — the declared total matches, so
+        // nothing rescaled, and a paper that lost one mark of twenty was
+        // reported as 19/40 instead of 38/40. The sections are itemised and
+        // the declared total is an assertion, so where they disagree the
+        // sections are the better evidence.
         const aiOutOf = Number(enforced.overall_out_of) || 0;
-        if (aiOutOf > 0 && aiOutOf !== finalFixedOutOf && Array.isArray(enforced.sections)) {
-          const scale = finalFixedOutOf / aiOutOf;
+        const sectionOutOf = Array.isArray(enforced.sections)
+          ? enforced.sections.reduce((t, sec) => t + (Number(sec?.out_of) || 0), 0)
+          : 0;
+        const basis = sectionOutOf > 0 ? sectionOutOf : aiOutOf;
+        if (sectionOutOf > 0 && aiOutOf > 0 && Math.abs(sectionOutOf - aiOutOf) > 0.01) {
+          console.log(`[grading] sections add to ${sectionOutOf} but overall_out_of says ${aiOutOf} — scaling from the sections`);
+        }
+        if (basis > 0 && Math.abs(basis - finalFixedOutOf) > 0.01 && Array.isArray(enforced.sections)) {
+          const scale = finalFixedOutOf / basis;
           for (const sec of enforced.sections) {
             if (sec && Number.isFinite(sec.out_of)) {
               const oldOutOf = sec.out_of;
@@ -16399,6 +16473,32 @@ function buildRubricInstructions({
         enforced.detected_title = extractedDocTitle;
       }
 
+      // What the grader was actually handed, recorded with the result.
+      //
+      // When a matching item comes back crossed against an answer that is not
+      // in the key, there are two quite different explanations — the grader
+      // ignored the key, or it never had one — and the stored result said
+      // nothing either way, so both times it came up we argued from the marks.
+      // This settles it without a re-run.
+      const keyTextForDebug = String(effectiveAnswerKey || "");
+      const keyDiagnostics = {
+        source: keyTextForDebug && hasAnswerKeyImages ? "text+images"
+              : keyTextForDebug ? "text"
+              : hasAnswerKeyImages ? "images"
+              : "none",
+        textChars: keyTextForDebug.length,
+        imageCount: hasAnswerKeyImages ? answerKeyImages.length : 0,
+        // The head of the key as the model saw it. Enough to tell a correct
+        // key from a scrambled one, or from another paper's, at a glance.
+        textHead: keyTextForDebug.slice(0, 300) || undefined,
+        multiPaper: /ANSWER KEY: /.test(keyTextForDebug) || undefined,
+        rubricChars: String(rubricOverride || "").length || undefined,
+      };
+      console.log(
+        `[grading] ${submissionId} answer key: ${keyDiagnostics.source}` +
+        ` (${keyDiagnostics.textChars} chars, ${keyDiagnostics.imageCount} image(s))`
+      );
+
       return res.json({
         ...enforced,
         assignment_images: imageRefs,
@@ -16407,6 +16507,7 @@ function buildRubricInstructions({
         // Non-fatal S3 outage — grade is real, but the shareable capture link
         // wasn't saved. Undefined (dropped from JSON) on the happy path.
         captureWarning: captureWarning || undefined,
+        answer_key_used: keyDiagnostics,
         meta: { submissionId, gradeBand: band }
       });
 
@@ -17048,13 +17149,26 @@ Do NOT include any text outside the JSON array.`,
 
 Your ONLY job is to extract structured information from this answer key. Do NOT grade anything.
 
-IMPORTANT — MULTIPLE TEST VERSIONS:
-Teachers often create multiple versions of the same test (e.g., "Test A" and "Test B", or "Version 1" and "Version 2").
-Each version has the SAME questions but DIFFERENT correct answers (e.g., different matching pairs, different T/F patterns).
-Look carefully for version labels like "Answer Key A", "Answer Key B", "Test A", "Test B", "Version 1", "Version 2", etc.
+IMPORTANT — MORE THAN ONE PAPER IN ONE KEY:
+A single answer key document often covers more than one paper. There are two
+quite different cases, and confusing them scrambles the marking:
 
-If you see MULTIPLE versions, you MUST create SEPARATE entries in the "versions" array — one per version.
-If there is only ONE version (or no version label), create a single entry with version_label "A".
+1. SCRAMBLED VERSIONS of the same test — "Test A" / "Test B", "Version 1" /
+   "Version 2". Same questions, same mark total, different correct answers
+   (the matching pairs and T/F pattern are shuffled). Label these "A", "B", …
+
+2. DIFFERENT PAPERS sat by different students — a full test and an
+   "Accommodated", "Modified" or "Adapted" version beside it. These have
+   DIFFERENT questions, FEWER of them, and a DIFFERENT mark total (/50 and
+   /30). They are not versions of each other and a student sat one or the
+   other. Label each with the heading the key itself gives it — "Unit Test",
+   "Accommodated" — never "A" and "B".
+
+Create one entry in "versions" per paper you find, of either kind, and set
+version_label accordingly. Set total_marks for each from its own heading. If
+there is only one paper, create a single entry with version_label "A".
+
+Do NOT split one paper into two entries because it has several sections.
 
 For EACH version, extract ALL questions:
 - question_id: the question label (e.g., "M1" for Matching #1, "TF1" for True/False #1, "2a", "Q1")
@@ -17137,19 +17251,27 @@ Return valid JSON matching this exact schema.`;
       const categoryGroups = {};
 
       if (isMultiVersion) {
-        summaryLines.push("⚠️ MULTIPLE TEST VERSIONS DETECTED — READ CAREFULLY ⚠️");
+        summaryLines.push("⚠️ THIS KEY COVERS MORE THAN ONE PAPER — PICK ONE BEFORE YOU MARK ⚠️");
         summaryLines.push("");
-        summaryLines.push("This test has MULTIPLE VERSIONS with DIFFERENT correct answers.");
-        summaryLines.push("You MUST first determine which version the student has by looking at their test pages.");
-        summaryLines.push("Look for labels like 'Test A', 'Test B', 'Version 1', etc. on the student's cover page.");
-        summaryLines.push("If no label is visible, compare the student's answers against both keys — the version");
-        summaryLines.push("where more answers match is likely the correct one.");
+        summaryLines.push("Decide which paper the student sat from THEIR PAGES, not from their answers:");
+        summaryLines.push("  1. The heading printed on their paper, matched to the headings below.");
+        summaryLines.push("  2. The mark total printed on their paper (e.g. '/50'), matched to the Total of each key.");
+        summaryLines.push("  3. How many questions each section actually has on their paper — an accommodated");
+        summaryLines.push("     paper is shorter, so a section of 5 matching items is not the key that lists 8.");
+        summaryLines.push("");
+        summaryLines.push("NEVER choose a key by counting how many of the student's answers it would make");
+        summaryLines.push("correct. That fits the key to the answers: a student who was consistently wrong");
+        summaryLines.push("then 'matches' the other paper better, and correct work gets marked wrong.");
+        summaryLines.push("");
+        summaryLines.push("If their paper still cannot be identified, use the FIRST key below, mark only");
+        summaryLines.push("what you are sure of, and say in the overall comment that the paper could not be");
+        summaryLines.push("identified.");
         summaryLines.push("");
       }
 
       for (const version of versions) {
         if (isMultiVersion) {
-          summaryLines.push(`========== ANSWER KEY: VERSION ${version.version_label} ==========`);
+          summaryLines.push(`========== ANSWER KEY: ${version.version_label} (Total /${version.total_marks}) ==========`);
         }
 
         for (const q of version.questions || []) {
@@ -17170,13 +17292,19 @@ Return valid JSON matching this exact schema.`;
 
       if (isMultiVersion) {
         summaryLines.push("GRADING INSTRUCTIONS:");
-        summaryLines.push("1. FIRST: Identify which test version this student has (look for 'Test A'/'Test B' or version label on their pages).");
-        summaryLines.push("2. THEN: Grade ONLY against that version's answer key above.");
-        summaryLines.push("3. Do NOT mix answers from different versions.");
-        summaryLines.push("4. Report the detected version in detected_title (e.g., 'War of 1812 Test - Version A').");
+        summaryLines.push("1. FIRST: identify the student's paper from its heading, its mark total and its");
+        summaryLines.push("   question count — never from how well their answers fit a key.");
+        summaryLines.push("2. THEN: mark ONLY against that paper's key above. Its letters are the answers.");
+        summaryLines.push("   Where the key gives a letter for a matching item, that letter IS the answer —");
+        summaryLines.push("   do not work out your own from the wording of the definitions and do not");
+        summaryLines.push("   override the key with it. If the key says 1 is F and the student wrote F, it");
+        summaryLines.push("   is correct, whatever the definitions appear to say.");
+        summaryLines.push("3. Do NOT mix answers between papers.");
+        summaryLines.push("4. Report the paper you marked against in detected_title.");
       } else {
         summaryLines.push("");
         summaryLines.push("GRADING INSTRUCTIONS: Compare the student's answer for EACH question above against the correct answer. If the student's final answer does not match, they lose the marks for that question.");
+        summaryLines.push("The key above IS the answer. For a matching section its letter settles the item: do not derive your own pairing from the wording of the definitions, and never let that override the key. If the key says 1 is F and the student wrote F, it is correct.");
       }
 
       // Add KITA summary if categories found (use first version for KITA since structure should be same)
