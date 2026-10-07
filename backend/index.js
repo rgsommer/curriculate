@@ -16493,6 +16493,14 @@ function buildRubricInstructions({
         textHead: keyTextForDebug.slice(0, 300) || undefined,
         multiPaper: /ANSWER KEY: /.test(keyTextForDebug) || undefined,
         rubricChars: String(rubricOverride || "").length || undefined,
+        // Whether the grader had ANYTHING authoritative to mark against.
+        //
+        // source only reports the answer-key channel, and a key attached
+        // under Rubric Options arrives as a rubric — so a run with the
+        // teacher's key in hand reported "none", which both cried wolf on
+        // screen and, worse, invited the class-consensus key to overwrite
+        // marks that had been made against the real thing.
+        hasReference: !!(keyTextForDebug || hasAnswerKeyImages || String(rubricOverride || "").trim()),
       };
       console.log(
         `[grading] ${submissionId} answer key: ${keyDiagnostics.source}` +

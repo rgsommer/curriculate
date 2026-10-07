@@ -1619,7 +1619,13 @@ export default function BatchGrading({
     // grader left it, and the whole derived key is shown for review.
     try {
       const keyUsed = batchResults.find((r) => !r.error && r.raw?.answer_key_used)?.raw?.answer_key_used;
-      const hadKey = keyUsed ? keyUsed.source !== "none" : !!effectiveAnswerKey || !!answerKeyImages;
+      // Anything authoritative counts, not just the answer-key channel. A key
+      // attached under Rubric Options reaches the grader as a rubric, and
+      // deriving a key from the class on top of that would overwrite marks
+      // made against the teacher's own.
+      const hadKey = keyUsed
+        ? (keyUsed.hasReference ?? (keyUsed.source !== "none" || !!keyUsed.rubricChars))
+        : !!effectiveAnswerKey || !!answerKeyImages || !!effectiveRubric;
       const papers = batchResults
         .filter((r) => !r.error && Array.isArray(r.raw?.marking_guide?.sections))
         .map((r) => ({
@@ -4884,19 +4890,28 @@ export default function BatchGrading({
           {(() => {
             const used = results.find((r) => !r.error && r.raw?.answer_key_used)?.raw?.answer_key_used;
             if (!used) return null;
-            const none = used.source === "none";
+            const none = used.source === "none" && !used.rubricChars;
+            const rubricOnly = used.source === "none" && !!used.rubricChars;
             return (
               <div style={{
                 margin: "0 0 10px", padding: "7px 12px", borderRadius: 8, fontSize: 12,
-                background: none ? "rgba(220,38,38,0.07)" : "rgba(100,116,139,0.07)",
-                border: `1px solid ${none ? "rgba(220,38,38,0.3)" : "rgba(100,116,139,0.2)"}`,
-                color: none ? "#991b1b" : "#475569",
+                background: none ? "rgba(220,38,38,0.07)" : rubricOnly ? "rgba(217,119,6,0.07)" : "rgba(100,116,139,0.07)",
+                border: `1px solid ${none ? "rgba(220,38,38,0.3)" : rubricOnly ? "rgba(217,119,6,0.3)" : "rgba(100,116,139,0.2)"}`,
+                color: none ? "#991b1b" : rubricOnly ? "#92400e" : "#475569",
               }}>
                 {none ? (
                   <>
                     <strong>No answer key reached the grader.</strong> Matching, True/False
                     and fill-in-the-blank cannot be checked without one — those items are
                     left unmarked rather than guessed.
+                  </>
+                ) : rubricOnly ? (
+                  <>
+                    <strong>Your key came through as a rubric</strong> ({used.rubricChars} characters).
+                    It was in front of the grader and used, but as marking guidance rather than
+                    as the answers — so a matching letter is weighed rather than looked up. For
+                    an answer key, set <em>Answer key pages</em> if it is part of the scanned
+                    stack, and the letters will be read off it directly.
                   </>
                 ) : (
                   <>
