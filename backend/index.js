@@ -14197,8 +14197,10 @@ function buildRubricInstructions({
                        answers: for a True/False the student marked wrongly,
                        say which part of the statement is false; for working,
                        name the step that went astray. "" otherwise.
-    - Leave marking_guide.sections null ONLY for work with no numbered items at
-      all — an essay, a poster. A test always has them.
+    - marking_guide is ALWAYS required. Never return it as null, and never
+      omit it. Even an essay with no numbered items has a handwrite phrase and
+      highlights worth giving; for that case fill those and set
+      marking_guide.sections to null. A test always has numbered items.
     - marking_guide.highlights: at most 6, worst first, naming what to pick out
       in the margin — level is incorrect, weak, good or excellent. Include at
       least one good or excellent where the paper earns it; a marking guide
@@ -15573,7 +15575,12 @@ function buildRubricInstructions({
           // or crossed — so they can run down it against the page instead of
           // working out which numbers are missing from a list of mistakes.
           marking_guide: {
-            type: ["object", "null"],
+            // NOT nullable. It was ["object","null"], and the model took the
+            // null every time — the guide never appeared, so the sheet fell
+            // back to "graded before the marking guide existed" and carried
+            // no phrase to write on the paper. Only `sections` inside it may
+            // be null, for work with no numbered items.
+            type: "object",
             additionalProperties: false,
             properties: {
               // Two or three words to write beside the mark. A teacher
@@ -16154,7 +16161,10 @@ function buildRubricInstructions({
         model: gradingModel,
         input: [{ role: "user", content: userContent }],
         text: { format: { type: "json_schema", name: schema.name, strict: true, schema: schema.schema } },
-        max_output_tokens: 4000
+        // The marking guide lists every item of every section, which on a
+        // fifty-mark test is a few hundred tokens on top of everything else.
+        // A truncated response loses whatever the schema puts last, silently.
+        max_output_tokens: 6000
       });
 
       const grade = safeJsonParse(response.output_text);
