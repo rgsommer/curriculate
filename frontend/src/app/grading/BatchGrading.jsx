@@ -2454,6 +2454,9 @@ export default function BatchGrading({
     feedbackVoice,
     voiceMode,
     answerKeyOverride,
+    // Was missing, so runBatch closed over the empty array from before the
+    // teacher uploaded a key and the pages never reached the request.
+    keyImages,
     rosterClasses,
     rotatedPages,
     perQuestionAudit,

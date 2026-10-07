@@ -662,6 +662,14 @@ function extractDetectedAnswerKey(anyObj) {
 // Only allow http(s) URLs to be rendered as clickable links. AI-generated
 // assessment content could otherwise smuggle a javascript:/data: URL that would
 // execute on click. Returns the URL if safe, else null.
+// The UI writes a bracketed summary into stickyRubricText so the teacher can
+// see what is attached — "[Answer key: 2 scanned pages]". It is a caption,
+// never content, and must not be sent to the grader as a rubric.
+function isPlaceholderLabel(t) {
+  const s = String(t || "").trim();
+  return s.startsWith("[") && s.endsWith("]") && s.length < 120;
+}
+
 function safeHttpUrl(url) {
   const s = String(url || "").trim();
   if (!s) return null;
@@ -1849,6 +1857,18 @@ export default function GradingPage() {
         setNotifyBusy(false);
       }
     }
+
+    // The key pages, as a stable array. Built inline in the JSX it was a new
+    // array every render, which cannot go in a dependency list — and leaving
+    // it out of runBatch's is why the batch ran with the empty value from
+    // before the upload.
+    const keyImagesForBatch = useMemo(
+      () => photos
+        .filter((p) => photoTags.get(p.id) === "rubric")
+        .map((p) => p.rawDataUrl || p.dataUrl)
+        .filter(Boolean),
+      [photos, photoTags]
+    );
 
     const rubricsSyncedRef = useRef("");   // teacherEmail whose library we've pulled
     useEffect(() => {
@@ -4294,7 +4314,12 @@ export default function GradingPage() {
               feedbackVoice={voiceOverrideOn ? voiceOverride : voice}
               rubricOverride={
                 (rubricOverride || "").trim() ||
-                (stickyRubricText || "").trim() ||
+                // Real rubric text only. stickyRubricText is the caption the
+                // UI shows for what is attached — "[Answer key: 2 scanned
+                // pages]" — and sending that put 29 characters of
+                // placeholder in front of the grader as its marking
+                // guidance, while the pages themselves went nowhere.
+                (isPlaceholderLabel(stickyRubricText) ? "" : (stickyRubricText || "").trim()) ||
                 ""
               }
               subjectArea={subjectArea}
@@ -4310,7 +4335,12 @@ export default function GradingPage() {
               feedbackVoice={voiceOverrideOn ? voiceOverride : voice}
               rubricOverride={
                 (rubricOverride || "").trim() ||
-                (stickyRubricText || "").trim() ||
+                // Real rubric text only. stickyRubricText is the caption the
+                // UI shows for what is attached — "[Answer key: 2 scanned
+                // pages]" — and sending that put 29 characters of
+                // placeholder in front of the grader as its marking
+                // guidance, while the pages themselves went nowhere.
+                (isPlaceholderLabel(stickyRubricText) ? "" : (stickyRubricText || "").trim()) ||
                 ""
               }
               subjectArea={subjectArea}
@@ -4330,7 +4360,12 @@ export default function GradingPage() {
               perQuestionAudit={perQuestionAudit}
               rubricOverride={
                 (rubricOverride || "").trim() ||
-                (stickyRubricText || "").trim() ||
+                // Real rubric text only. stickyRubricText is the caption the
+                // UI shows for what is attached — "[Answer key: 2 scanned
+                // pages]" — and sending that put 29 characters of
+                // placeholder in front of the grader as its marking
+                // guidance, while the pages themselves went nowhere.
+                (isPlaceholderLabel(stickyRubricText) ? "" : (stickyRubricText || "").trim()) ||
                 ""
               }
               answerKeyOverride={(stickyAnswerKeyText || "").trim() || ""}
@@ -4341,10 +4376,7 @@ export default function GradingPage() {
                  dropped and the grader marked a matching column with letters
                  it had invented. These are the photos tagged "rubric", which
                  is where both a rubric image and a scanned key land. */
-              keyImages={photos
-                .filter((p) => photoTags.get(p.id) === "rubric")
-                .map((p) => p.rawDataUrl || p.dataUrl)
-                .filter(Boolean)}
+              keyImages={keyImagesForBatch}
               teacherEmail={teacherEmail}
               setTeacherEmail={setTeacherEmail}
               rosterClasses={rosterClasses}
