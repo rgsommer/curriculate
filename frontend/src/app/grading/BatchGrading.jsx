@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildResultsPdf, buildStripsPdf, buildMarkingGuidePdf, preloadPdfLibs } from "./pdfReports";
+import { deriveConsensusKey, keyIndex, applyKeyToGuide, MIN_VOTERS } from "./consensusKey";
 import { completeQuest } from "../../components/QuestWidget";
 
 /**
@@ -614,6 +615,11 @@ export default function BatchGrading({
   const [precisionMode, setPrecisionMode] = useState(false); // multi-pass median scoring
   const PRECISION_PASSES = 3; // number of AI passes per student in precision mode
   const [answerKeyPages, setAnswerKeyPages] = useState(0); // leading pages that are the answer key
+  // The answer key worked out from the class, when the teacher gave none.
+  // Declared here, above runBatch, not beside the other result state far
+  // below it: a dependency array is evaluated during render, and a const
+  // read there before its declaration throws.
+  const [consensusKey, setConsensusKey] = useState(null);
   const [tapMarkedPages, setTapMarkedPages] = useState(new Set()); // pages marked as "first page" in tap mode
   const [thumbnails, setThumbnails] = useState([]); // [{page, dataUrl}] for tap mode
 
@@ -1598,6 +1604,63 @@ export default function BatchGrading({
       });
 
       setResults([...batchResults]);
+    }
+
+    // --- No answer key? Let the class be the key. ---
+    //
+    // With nothing to mark objective items against, the grader was left to
+    // work the answers out, and a student who wrote the right letter was
+    // crossed against an invented one. The papers themselves are better
+    // evidence: for matching, True/False and one-word blanks most students
+    // are right most of the time. Weighted by how reliable each paper proves
+    // to be, and anchored by any the teacher starred.
+    //
+    // Nothing uncertain is applied — a split or disputed item stays as the
+    // grader left it, and the whole derived key is shown for review.
+    try {
+      const keyUsed = batchResults.find((r) => !r.error && r.raw?.answer_key_used)?.raw?.answer_key_used;
+      const hadKey = keyUsed ? keyUsed.source !== "none" : !!effectiveAnswerKey || !!answerKeyImages;
+      const papers = batchResults
+        .filter((r) => !r.error && Array.isArray(r.raw?.marking_guide?.sections))
+        .map((r) => ({
+          id: String(r.index),
+          label: r.studentName || `Student ${r.index}`,
+          starred: !!r.raw?.teacher_starred,
+          sections: r.raw.marking_guide.sections.map((sec) => ({
+            name: sec.name,
+            items: (sec.items || []).map((it) => ({ n: it.n, answer: it.student_answer })),
+          })),
+        }));
+
+      if (!hadKey && papers.length >= MIN_VOTERS) {
+        const derived = deriveConsensusKey(papers);
+        const index = keyIndex(derived);
+        let moved = 0;
+        for (const r of batchResults) {
+          if (r.error || !r.raw?.marking_guide) continue;
+          const { guide, delta, changed } = applyKeyToGuide(r.raw.marking_guide, index);
+          if (!changed.length) continue;
+          r.raw = { ...r.raw, marking_guide: guide };
+          r.consensusChanges = changed.length;
+          if (typeof r.score === "number" && delta) {
+            r.score = Math.max(0, Math.round((r.score + delta) * 100) / 100);
+            if (typeof r.outOf === "number" && r.outOf > 0) {
+              r.pct = Math.round((r.score / r.outOf) * 100);
+              r.letter = letterGrade(r.pct);
+            }
+          }
+          moved += changed.length;
+        }
+        setConsensusKey({ ...derived, applied: moved });
+        console.log(`[batch] no answer key — derived one from ${derived.papers} papers,` +
+          ` ${derived.sections.reduce((n, s) => n + s.items.length, 0)} items,` +
+          ` ${derived.starredCount} starred, ${moved} marks corrected`);
+        setResults([...batchResults]);
+      } else if (!hadKey) {
+        setConsensusKey({ tooFew: papers.length, sections: [], reliability: [] });
+      }
+    } catch (ckErr) {
+      console.warn("[batch] consensus key failed:", ckErr);
     }
 
     // --- Roster matching: two-pass context-aware name matching ---

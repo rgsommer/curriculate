@@ -14149,6 +14149,16 @@ function buildRubricInstructions({
     ` : ''}
     - Do NOT collapse a clearly sectioned test into one generic overall comment.
 
+    THE SECTIONS MUST ADD UP TO THE TOTAL:
+    - sum(sections[].out_of) MUST equal overall_out_of, and sum(sections[].score)
+      MUST equal overall_score. They are the same marks counted twice.
+    - If a total has been specified for you, mark the sections ON THAT SCALE.
+      Do not mark each page out of ten and then report the specified total:
+      two pages at /10 against a stated /40 gives "19 / 40" for a paper that
+      lost one mark out of twenty, which is half the mark the student earned.
+      Either make the sections add to the stated total, or state the total the
+      sections actually add to. Never one with the other.
+
     SECTION COMMENT RULE:
     - Each section teacher_comment must briefly explain:
       1) what was done well in that section, and
@@ -16269,10 +16279,25 @@ function buildRubricInstructions({
         : (hasTrustedCountedOutOf ? countedOutOf : null);
 
       if (finalFixedOutOf) {
-        // If the AI used a different denominator than the teacher override, rescale
+        // If the AI used a different denominator than the teacher override, rescale.
+        //
+        // Scale from what the sections ACTUALLY add up to, not from the total
+        // the model declared. Asked for /40 it will say overall_out_of: 40 and
+        // then mark two pages out of ten each — the declared total matches, so
+        // nothing rescaled, and a paper that lost one mark of twenty was
+        // reported as 19/40 instead of 38/40. The sections are itemised and
+        // the declared total is an assertion, so where they disagree the
+        // sections are the better evidence.
         const aiOutOf = Number(enforced.overall_out_of) || 0;
-        if (aiOutOf > 0 && aiOutOf !== finalFixedOutOf && Array.isArray(enforced.sections)) {
-          const scale = finalFixedOutOf / aiOutOf;
+        const sectionOutOf = Array.isArray(enforced.sections)
+          ? enforced.sections.reduce((t, sec) => t + (Number(sec?.out_of) || 0), 0)
+          : 0;
+        const basis = sectionOutOf > 0 ? sectionOutOf : aiOutOf;
+        if (sectionOutOf > 0 && aiOutOf > 0 && Math.abs(sectionOutOf - aiOutOf) > 0.01) {
+          console.log(`[grading] sections add to ${sectionOutOf} but overall_out_of says ${aiOutOf} — scaling from the sections`);
+        }
+        if (basis > 0 && Math.abs(basis - finalFixedOutOf) > 0.01 && Array.isArray(enforced.sections)) {
+          const scale = finalFixedOutOf / basis;
           for (const sec of enforced.sections) {
             if (sec && Number.isFinite(sec.out_of)) {
               const oldOutOf = sec.out_of;

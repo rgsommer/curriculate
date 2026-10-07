@@ -830,7 +830,9 @@ function markGlyph(doc, verdict, x, y, size = 6) {
 // the roll is partial and the sheet says so.
 function guideFromResult(r) {
   const mg = r.raw?.marking_guide;
-  if (mg && Array.isArray(mg.sections) && mg.sections.length) return { ...mg, partial: false };
+  if (mg && Array.isArray(mg.sections) && mg.sections.length) {
+    return { ...mg, partial: false, fromClassKey: !!mg.fromClassKey };
+  }
 
   const src = Array.isArray(r.raw?.sections) ? r.raw.sections : (Array.isArray(r.sections) ? r.sections : []);
   if (!src.length) return null;
@@ -1069,14 +1071,23 @@ export async function buildMarkingGuidePdf(results, { title } = {}) {
       y += 2;
     }
 
-    if (g.partial) {
-      room(LINE);
+    // Say which key the marks rest on. A sheet that was marked against an
+    // answer key worked out from the class is a different thing from one
+    // marked against the teacher's own, and the teacher has to know which
+    // they are holding before they write anything on a paper.
+    const footnote = g.fromClassKey
+      ? "No answer key was given, so one was worked out from the class and the objective items re-marked against it. Check it before you write on the papers."
+      : g.partial
+      ? "Graded before the marking guide existed: only the items that lost marks are listed, and only where the grader named the question."
+      : "";
+    if (footnote) {
       doc.setFont("helvetica", "italic");
       doc.setFontSize(7.5);
-      doc.setTextColor(148, 163, 184);
-      doc.text("Graded before the marking guide existed: only the items that lost marks are listed, and only where the grader named the question.", MARGIN, y);
+      doc.setTextColor(g.fromClassKey ? 180 : 148, g.fromClassKey ? 83 : 163, g.fromClassKey ? 9 : 184);
+      for (const ln of doc.splitTextToSize(footnote, COL_W)) {
+        room(LINE); doc.text(ln, MARGIN, y); y += LINE;
+      }
       doc.setTextColor(0, 0, 0);
-      y += LINE;
     }
 
     y += 6;
