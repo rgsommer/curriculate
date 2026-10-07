@@ -620,6 +620,10 @@ export default function BatchGrading({
   // below it: a dependency array is evaluated during render, and a const
   // read there before its declaration throws.
   const [consensusKey, setConsensusKey] = useState(null);
+  // What the run could see when it started. Twice now a key has been
+  // attached and not arrived, and both times the screen could only say it
+  // was missing, not what was in reach — so it was argued from screenshots.
+  const [keySeen, setKeySeen] = useState(null);
   const [tapMarkedPages, setTapMarkedPages] = useState(new Set()); // pages marked as "first page" in tap mode
   const [thumbnails, setThumbnails] = useState([]); // [{page, dataUrl}] for tap mode
 
@@ -1269,6 +1273,18 @@ export default function BatchGrading({
     // batch PDF and it has no text, so neither of the two routes below could
     // see it — which is how a batch ran against an invented answer key.
     const uploadedKeyImages = Array.isArray(keyImages) ? keyImages.filter(Boolean) : [];
+    setKeySeen({
+      uploadedPages: uploadedKeyImages.length,
+      keyPagesInPdf: keyPageNumbers.length,
+      keyText: (effectiveAnswerKey || "").length,
+      rubricText: String(rubricOverride || "").trim().length,
+    });
+    console.log("[batch] key in reach at run:", {
+      uploadedPages: uploadedKeyImages.length,
+      keyPagesInPdf: keyPageNumbers.length,
+      keyTextChars: (effectiveAnswerKey || "").length,
+      rubricChars: String(rubricOverride || "").trim().length,
+    });
 
     if (keyPageNumbers.length === 0 && !effectiveAnswerKey && uploadedKeyImages.length) {
       setProgress({ done: 0, total, current: "Reading the answer key..." });
@@ -4938,6 +4954,19 @@ export default function BatchGrading({
                     <strong>No answer key reached the grader.</strong> Matching, True/False
                     and fill-in-the-blank cannot be checked without one — those items are
                     left unmarked rather than guessed.
+                    {keySeen && (
+                      <div style={{ marginTop: 4, fontSize: 11, opacity: 0.85 }}>
+                        When the run started it could see:{" "}
+                        {keySeen.uploadedPages} uploaded key page{keySeen.uploadedPages === 1 ? "" : "s"},{" "}
+                        {keySeen.keyPagesInPdf} key page{keySeen.keyPagesInPdf === 1 ? "" : "s"} inside the stack,{" "}
+                        {keySeen.keyText} characters of key text,{" "}
+                        {keySeen.rubricText} of rubric.
+                        {keySeen.uploadedPages === 0 && keySeen.keyPagesInPdf === 0 && (
+                          <> Nothing was attached when grading began — if you uploaded the key
+                          after pressing Grade, it was not in reach. Attach it first, then run.</>
+                        )}
+                      </div>
+                    )}
                   </>
                 ) : rubricOnly ? (
                   <>

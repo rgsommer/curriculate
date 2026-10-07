@@ -3573,26 +3573,20 @@ export default function GradingPage() {
           </div>
         ` : "";
 
-        // Build HTML body from session summary
-        const summaryHtml = `
-          <div style="font-family:sans-serif;max-width:640px;margin:0 auto;">
-            ${wellbeingBlock}
-            <h2 style="color:#1e293b;margin-bottom:8px;">Session Summary</h2>
-            <p style="color:#334155;line-height:1.6;">${(sessionSummary || "").replace(/\n/g, "<br>")}</p>
-            <hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0;">
-            <p style="color:#64748b;font-size:13px;">${sessionItems.length} submission${sessionItems.length === 1 ? "" : "s"} graded this session. Full reports and cut strips are attached as PDFs${guideBase64 ? ", along with your marking guide — every item ticked or crossed, with a mark per section and a total" : ""}.</p>
-          </div>
-        `;
-
-        // Generate both PDFs in parallel
+        // Declared before the body is built, because the body mentions the
+        // marking guide and reading a `let` above its declaration throws —
+        // which it did, on every session email, from the moment the guide
+        // was added.
         let pdfBase64 = null;
         let stripsBase64 = null;
         let guideBase64 = null;
+
+        // Generate the PDFs first, so the body can say truthfully what is
+        // attached rather than guessing before they exist.
         try {
           // These attachments go to whoever the teacher addresses the email
           // to — parents included, which is what the field's own placeholder
-          // suggests. They follow the setting like every other copy; batch
-          // grading's email already did, and this one was printing the marks.
+          // suggests. They follow the setting like every other copy.
           const pdfOpts = { hideGrades: !!hideGrades };
           // The marking guide goes to the teacher only and keeps the marks
           // whatever hideGrades says — they are the one marking from it.
@@ -3614,6 +3608,18 @@ export default function GradingPage() {
             return;
           }
         }
+
+        // Build HTML body from session summary
+        const summaryHtml = `
+          <div style="font-family:sans-serif;max-width:640px;margin:0 auto;">
+            ${wellbeingBlock}
+            <h2 style="color:#1e293b;margin-bottom:8px;">Session Summary</h2>
+            <p style="color:#334155;line-height:1.6;">${(sessionSummary || "").replace(/\n/g, "<br>")}</p>
+            <hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0;">
+            <p style="color:#64748b;font-size:13px;">${sessionItems.length} submission${sessionItems.length === 1 ? "" : "s"} graded this session. Full reports and cut strips are attached as PDFs${guideBase64 ? ", along with your marking guide — every item ticked or crossed, with a mark per section and a total" : ""}.</p>
+          </div>
+        `;
+
 
         const sendUrl = gradingUrl.replace(/\/grading$/, "/grading/send-email");
         const payload = { to, subject: emailSubject, html: summaryHtml, pdfAttachments: [], csvAttachments: [] };
