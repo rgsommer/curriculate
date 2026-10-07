@@ -1052,6 +1052,16 @@ const SESSION_KEY = "curriculate_grading_session_v1";
 const RUBRIC_STICKY_TEXT_KEY = "curriculate_grading_rubric_sticky_text_v1";
 const RUBRIC_STICKY_SRC_KEY = "curriculate_grading_rubric_sticky_src_v1"; // "captured" | "manual"
 const RUBRIC_STICKY_TS_KEY = "curriculate_grading_rubric_sticky_ts_v1";
+// The key's own pages. Everything else about a sticky rubric was persisted —
+// its caption, its source, when it was captured — and the pictures were not,
+// so a scanned answer key survived a reload as the words "[Answer key: 2
+// scanned pages]" with nothing behind them. The screen said a key was
+// attached; the grader got none and invented the answers.
+const RUBRIC_STICKY_IMAGES_KEY = "curriculate_grading_rubric_sticky_images_v1";
+// localStorage is a few megabytes and shared with everything else here. Two
+// or three scanned pages fit comfortably; a whole booklet does not, and the
+// honest thing then is to say so rather than to half-save it.
+const RUBRIC_IMAGES_MAX_BYTES = 3_000_000;
 
 const ANSWERKEY_STICKY_TEXT_KEY = "curriculate_grading_answerkey_sticky_text_v1";
 const ANSWERKEY_STICKY_TS_KEY = "curriculate_grading_answerkey_sticky_ts_v1";
@@ -1466,7 +1476,71 @@ export default function GradingPage() {
     useEffect(() => saveLS(RUBRIC_STICKY_TS_KEY, stickyRubricCapturedAt || ""), [stickyRubricCapturedAt]);
 
     // Rubric page preview images (from DOCX/image uploads converted to page images)
-    const [rubricPreviewPages, setRubricPreviewPages] = useState([]);
+    const [rubricPreviewPages, setRubricPreviewPages] = useState(() => {
+      // loadLS hands back the raw string — it does not parse. Treating its
+      // return as an array meant the restore always saw nothing, and the
+      // effect below then deleted the pages it was supposed to be keeping.
+      try {
+        const raw = loadLS(RUBRIC_STICKY_IMAGES_KEY, "");
+        const saved = raw ? JSON.parse(raw) : null;
+        return Array.isArray(saved) ? saved.filter((p) => p?.src) : [];
+      } catch { return []; }
+    });
+    // Set when the caption claims a key but its pages could not be kept, so
+    // the UI can ask for it again instead of quietly grading without it.
+    const [stickyImagesLost, setStickyImagesLost] = useState(false);
+
+    // Keep the pages with the caption, and put them back into `photos` on
+    // load so the grader actually receives them. Without this the caption
+    // outlived the pictures and the batch ran against nothing.
+    useEffect(() => {
+      const pages = (rubricPreviewPages || []).filter((p) => p?.src);
+      if (!pages.length) {
+        try { localStorage.removeItem(RUBRIC_STICKY_IMAGES_KEY); } catch {}
+        return;
+      }
+      const payload = JSON.stringify(pages);
+      if (payload.length > RUBRIC_IMAGES_MAX_BYTES) {
+        // Too big to keep. Say so rather than storing a caption with nothing
+        // behind it — the teacher can re-attach, which is a small cost next
+        // to a class marked against invented answers.
+        try { localStorage.removeItem(RUBRIC_STICKY_IMAGES_KEY); } catch {}
+        return;
+      }
+      try { localStorage.setItem(RUBRIC_STICKY_IMAGES_KEY, payload); }
+      catch { try { localStorage.removeItem(RUBRIC_STICKY_IMAGES_KEY); } catch {} }
+    }, [rubricPreviewPages]);
+
+    // Restored pages are previews; the grader needs them in `photos`, tagged,
+    // the same as a fresh upload. Runs once, and only for pages that are not
+    // already there.
+    const restoredKeyRef = useRef(false);
+    useEffect(() => {
+      if (restoredKeyRef.current) return;
+      const pages = (rubricPreviewPages || []).filter((p) => p?.src);
+      if (!pages.length) return;
+      restoredKeyRef.current = true;
+      const objs = pages.map((pg, i) => ({
+        id: `restored_rubric_${i}_${Math.random().toString(36).slice(2, 6)}`,
+        dataUrl: pg.src, rawDataUrl: pg.src, createdAt: Date.now(),
+      }));
+      setPhotos((prev) => [...prev, ...objs]);
+      setPhotoTags((prev) => {
+        const m = new Map(prev);
+        for (const o of objs) m.set(o.id, "rubric");
+        return m;
+      });
+      console.log(`[rubric] restored ${objs.length} key page(s) from the last session`);
+    }, [rubricPreviewPages]);
+
+    // The caption says a key is attached but nothing is in reach: the pages
+    // were lost with the tab. Surfaced rather than silently graded around.
+    useEffect(() => {
+      const claimsKey = /^\[Answer key:/i.test(String(stickyRubricText || ""));
+      const hasPages = (rubricPreviewPages || []).some((p) => p?.src);
+      const hasText = !!String(rubricOverride || "").trim();
+      setStickyImagesLost(claimsKey && !hasPages && !hasText);
+    }, [stickyRubricText, rubricPreviewPages, rubricOverride]);
     const [enlargedRubricPage, setEnlargedRubricPage] = useState(null);
 
     // ✅ Sticky answer key captured from solution sheet (session-level)
@@ -4876,6 +4950,17 @@ export default function GradingPage() {
               >
                 <div style={{ display: "flex", flexDirection: "column", gap: 2, textAlign: "left" }}>
                   <div style={{ fontWeight: 900 }}>Rubric Options</div>
+                  {stickyImagesLost && (
+                    <div style={{
+                      marginTop: 6, padding: "7px 10px", borderRadius: 8, fontSize: 12,
+                      background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.35)",
+                      color: "#991b1b", lineHeight: 1.45,
+                    }}>
+                      <strong>Your answer key needs re-attaching.</strong> It was uploaded in an
+                      earlier session and the pages did not survive. The label above is all that
+                      is left — grading now would mark matching and True/False against nothing.
+                    </div>
+                  )}
                   <div style={{ fontSize: 12, opacity: 0.75 }}>
                     {(() => {
                       const manual = (rubricOverride || "").trim();
