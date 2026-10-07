@@ -44,6 +44,12 @@ const BehaviorSchema = new mongoose.Schema(
     // in from the second occurrence of THIS behaviour for the student onward.
     consequenceTiming: { type: String, enum: ["first", "after_first"], default: "first" },
 
+    // How the teacher knows: "witnessed" first-hand, or "reported" by someone
+    // else (e.g. another student). Reported ones are worded tentatively to the
+    // family ("I suspect that X may have…", "If this turns out to be true…") and
+    // never reveal the source. "" = not set (Compass infers from the note).
+    evidence: { type: String, enum: ["", "witnessed", "reported"], default: "" },
+
     // Offence categories (multi-select): "preparedness" (class preparedness),
     // "behaviour", "uniform". Teachers don't pick these when logging — admins set
     // them per behaviour. White-slip consequences require a "behaviour" category.

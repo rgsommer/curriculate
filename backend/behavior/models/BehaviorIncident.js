@@ -33,6 +33,8 @@ const BehaviorIncidentSchema = new mongoose.Schema(
       uniform: { type: Boolean, default: false },
       // Frozen offence categories: "preparedness" | "behaviour" | "uniform".
       categories: { type: [String], default: [] },
+      // Frozen: "witnessed" | "reported" | "" (see Behavior.evidence).
+      evidence: { type: String, default: "" },
     },
 
     detailText: { type: String, default: "" }, // optional free-text detail (goes in the parent note)
