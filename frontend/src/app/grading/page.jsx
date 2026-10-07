@@ -1697,6 +1697,20 @@ export default function GradingPage() {
     async function handleRubricFileUpload(e) {
       const files = Array.from(e.target.files || []);
       if (!files.length) return;
+
+      // A new upload REPLACES the key, it does not add to it. Pages used to
+      // be appended, so a key restored from the last session plus the same
+      // key attached again went to the grader as four pages of a two-page
+      // key — the same answers twice, on every student in the stack.
+      setPhotos((prev) => prev.filter((p) => photoTags.get(p.id) !== "rubric"));
+      setPhotoTags((prev) => {
+        const m = new Map(prev);
+        for (const [id, tag] of prev) if (tag === "rubric") m.delete(id);
+        return m;
+      });
+      setRubricPreviewPages([]);
+      restoredKeyRef.current = true;   // do not re-restore over the new upload
+
       setUploadingRubricFile(true);
       try {
         const textParts = [];
