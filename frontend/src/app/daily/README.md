@@ -416,41 +416,58 @@ of its answer. Both are in plain sight at the top of the file, and
 intercept, before it intercepts any of them — a pattern that catches a real
 lesson is a worse fault than the one being fixed.
 
-### The journal on a test day
+### The journal on a test, review or quiet-work day
 
-`apps-script/journal-on-a-test-day.gs` belongs to the same script — the one that
+`apps-script/journal-about-the-unit.gs` belongs to the same script — the one that
 writes VerticalAi — not to the board.
 
-The lesson writer puts a journal line in each class, and on the day a class
-writes a test it reaches for the only thing the lesson cell talks about: the test
-itself. *"What practical steps, thoughts, or prayers helped you handle stress and
-do your best? How could you apply those strategies during today's test?"* — a
-journal about test-taking, set for a room that is about to write a test and has
-nothing to say about it yet. A test day is the one day the whole unit is in their
-heads at once, and the half hour is worth more than that.
+The lesson writer puts a journal line in each class, and on a day whose lesson
+cell describes how the period will **run** rather than what it is **about**, it
+has nothing to write about but the running of it:
 
-So `JOURNAL_RULES` goes in the prompt beside `LESSON_TEXT_RULES`: on a test
-period the journal looks **forward to the unit coming next** — what they already
-half-know, what they want to be able to do by the end, where it turns up outside
-school — or, failing that, **back over the unit being tested**, naming it.
-Forward is preferred, being the only one of the two they can still act on.
+> Today we take the Test — 7.1 Unit 1: Number Sense and Patterns and Algebra.
+> 🍎 Journal: … What practical steps, thoughts, or prayers helped you handle
+> stress and do your best? How could you apply those strategies during today's
+> test?
+
+> Today we use quiet work time to complete assigned review tasks.
+> 🍎 Journal: When you have a long list like today's, how do you decide what to
+> do first and stay focused? Describe one strategy that helps you keep momentum
+> when working quietly and independently.
+
+Two journals about study skills, set for a room that is about to spend the
+period inside the unit itself. These are the days the whole unit is in their
+heads at once, and the half hour is worth more than a prompt about momentum.
+
+So `JOURNAL_RULES` goes in the prompt beside `LESSON_TEXT_RULES`, and the
+journal on such a day is about the unit:
+
+- on a **test** day, forward to the unit coming next where one is known — what
+  they already half-know, what they want to be able to do by the end, where it
+  turns up outside school — else back over the unit just tested. Forward is
+  preferred, being the only one of the two they can still act on;
+- on a **review or quiet-work** day the unit is still in play, so the prompt
+  stays in it: what is still not clear, how they would explain the hardest part
+  to someone who missed those classes.
 
 A rule in a prompt is a request, so the answer is checked before it goes in the
 cell. `fixJournal_(journal, topic, about)` returns the model's own line wherever
-it is fine — and on any day that is not a test, where this rule has no business —
-and a written prompt where it is a journal about writing tests. The unit names
-come from `unitsAroundTest_(code, topic)`: the one being tested out of the test
-row's own words (*"Test — 7.1 Unit 1: Number Sense and Patterns and Algebra"*,
-*"Unit 2 TEST"*, *"Test on The Divided Kingdom"* are all read), and the next one
-by walking the Lessons tab forward over the rows that are the end of a unit
-rather than the start of the next — more test, review, study, a work period.
+it is fine — and on an ordinary teaching day, where this rule has no business —
+and a written prompt where it is a journal about getting through the period.
+`periodKind_` tells the two days apart ("practice test" is a work period, not a
+test), and `unitsAround_(code, topic)` finds the names: the unit in hand out of
+the row's own words (*"Test — 7.1 Unit 1: Number Sense and Patterns and
+Algebra"*, *"Unit 2 TEST"*, *"Test on The Divided Kingdom"* are all read, and a
+work period falls back to a chapter its tasks name — *"Ch1 Review Handout"* is
+Chapter 1), and the next one by walking the Lessons tab forward past the rows
+that end a unit rather than start one.
 
-`TEST_SKILLS` is the list of shapes that count, in plain sight at the top of the
-file, and `checkJournals` prints every journal line in VerticalAi the rule would
-have replaced, with its replacement, before it replaces any of them.
+`ROUTINE_SKILLS` is the list of shapes that count, in plain sight at the top of
+the file, and `checkJournals` prints every journal line in VerticalAi the rule
+would have replaced, with its replacement, before it replaces any of them.
 `frontend/scripts/journal-guard-check.mjs` runs the pure parts of the file under
-Node — the teacher's own test journal is caught, the peacemaking one is not, and
-a unit genuinely about stress is left alone.
+Node — both of the teacher's own journals are caught, the peacemaking one is
+not, and a unit genuinely about stress, or about managing water, is left alone.
 
 ### The writing penalty
 
