@@ -253,7 +253,7 @@ async function maybeAutoRecommendWhiteSlip({ req, student, config, incidents }) 
 // task ("write the following 10×", "hand-write an apology by 9am") from the
 // behaviour's consequenceText, plus the follow-up deadline. Deterministic: normal
 // logging is high-volume, so no AI cost.
-function buildConsequenceMessage({ studentName, behaviorName, detailText, consequenceText, when, followUpType, teacherName, schoolName }) {
+function buildConsequenceMessage({ studentName, behaviorName, detailText, consequenceText, when, followUpType, teacherName, schoolName, reported = false }) {
   const date = new Date(when || Date.now()).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: SCHOOL_TZ });
   const deadline =
     followUpType === "next_school_day" ? "Please complete this and hand it in by 9:00 AM the next school day." :
@@ -261,9 +261,16 @@ function buildConsequenceMessage({ studentName, behaviorName, detailText, conseq
   const lines = [];
   lines.push(`Dear ${studentName} (and parents),`);
   lines.push("");
-  lines.push(`This is to let you know about a consequence from ${date} for ${behaviorName}${detailText ? ` — ${detailText}` : ""}.`);
-  lines.push("");
-  lines.push(`What to do:`);
+  const first = (studentName || "").split(" ")[0] || "your child";
+  if (reported) {
+    lines.push(`I have reason to believe that ${first} may have been involved in ${behaviorName} on ${date}.`);
+    lines.push("");
+    lines.push(`Unless my information is inaccurate, ${first} is required to:`);
+  } else {
+    lines.push(`This is to let you know about a consequence from ${date} for ${behaviorName}${detailText ? ` — ${detailText}` : ""}.`);
+    lines.push("");
+    lines.push(`What to do:`);
+  }
   lines.push(`  • ${consequenceText}`);
   if (deadline) { lines.push(""); lines.push(deadline); }
   lines.push("");
@@ -276,7 +283,13 @@ function buildConsequenceMessage({ studentName, behaviorName, detailText, conseq
 // student-directed with parents reading), falling back to the deterministic text
 // if the AI is unavailable. Used by both the auto-email and the Copy-message button.
 async function composeConsequenceMessageAI(opts) {
-  const det = buildConsequenceMessage(opts);
+  // Protect other students named in the teacher's note, and word second-hand
+  // reports tentatively. (opts.schoolId/studentId enable the roster scrub.)
+  const scrub = opts.schoolId ? await familyNameScrubber(opts.schoolId, opts.studentId) : null;
+  const prep = prepareFamilyDetail(scrub, opts.detailText);
+  opts = { ...opts, detailText: prep.detail, reported: prep.reported };
+  // Template fallback: leave out a note that named another student entirely.
+  const det = (scrub || ((t) => t))(buildConsequenceMessage({ ...opts, detailText: prep.mentionedOther ? "" : prep.detail }));
   const aiClient = makeDefaultAiClient(opts.config || {});
   if (!aiClient) return det;
   const first = (opts.studentName || "the student").split(" ")[0] || "the student";
@@ -289,10 +302,13 @@ async function composeConsequenceMessageAI(opts) {
     `Begin with the greeting: "Dear ${first} and parents,".`,
     `The student's name is ${opts.studentName} — use it where natural; NEVER output a bracketed placeholder.`,
     `Note that ${dayPhrase} there was a concern — ${opts.behaviorName}${opts.detailText ? `: ${opts.detailText}` : ""}. Then clearly state what the student must now do: ${opts.consequenceText}. ${deadline}`,
+    FAMILY_PRIVACY_RULES,
+    opts.reported ? REPORTED_RULE(first) : "",
+    `You are writing AS ${opts.teacherName}: write in the first person ("I"). Never refer to ${opts.teacherName} in the third person.`,
     `For any deadline, keep the wording EXACTLY "the next school day" — do NOT say "tomorrow", "Saturday", a weekday, or a date (the next school day may be after the weekend or a holiday).`,
     `Close with a brief encouraging "fresh start / from now on" line and sign off exactly as: ${opts.teacherName}.`,
     `FORMAT: do NOT write one block. Use short paragraphs separated by a blank line: (1) the greeting on its own line; (2) a sentence on what happened; (3) the task SET OFF on its own line(s) — the action, the exact words to write in quotation marks, and the deadline; (4) the encouraging line; (5) the sign-off. Plain text with real line breaks, no bullets, no invented facts, no placeholders.`,
-  ].join("\n");
+  ].filter(Boolean).join("\n");
   try {
     const out = await Promise.race([
       aiClient.complete(prompt),
@@ -305,6 +321,7 @@ async function composeConsequenceMessageAI(opts) {
       .trim();
     // Guardrail: a deadline must never read "tomorrow" (could be a weekend/holiday).
     t = t.replace(/\bby\s+tomorrow\b/gi, "by the next school day").replace(/\btomorrow\b/gi, "the next school day");
+    if (scrub) t = scrub(t); // last line of defence: no other student's name survives
     return t || det;
   } catch (e) { console.warn("[behavior] consequence message AI failed:", e?.message || e); return det; }
 }
@@ -334,6 +351,7 @@ async function sendConsequenceMessage({ req, student, config, behavior, detailTe
   const teacherName = (req.membership?.courtesyName || "").trim() || actorName(req);
   const schoolName = config?.branding?.schoolName || "";
   const message = await composeConsequenceMessageAI({
+    schoolId: req.schoolId, studentId: student._id,
     studentName, behaviorName: behavior.name, detailText,
     consequenceText: behavior.consequenceText, when: at,
     followUpType: behavior.followUpType, teacherName, schoolName, config,
@@ -3367,6 +3385,9 @@ async function composeAndCreateNotice({
     : parentNames.length === 1 ? `Dear ${studentName}, and ${parentNames[0]},`
     : `Dear ${studentName} and Parents,`;
   const personalize = (t) => String(t || "").replace(/\bnnn\b/gi, studentName);
+  // Protect other students named in teachers' notes; flag second-hand reports.
+  const famScrub = await familyNameScrubber(schoolId, student._id);
+  const famDetail = (t) => prepareFamilyDetail(famScrub, personalize(t));
 
   // Background history + recent positives are only relevant to the disciplinary
   // note. A positive (good-news) note is built purely from its own incidents.
@@ -3401,7 +3422,7 @@ async function composeAndCreateNotice({
     positives = positiveInc.map((i) => ({
       behaviorName: i.behaviorSnapshot?.name || "",
       date: i.timestamp,
-      detail: personalize(i.detailText || ""),
+      detail: famDetail(i.detailText || "").detail,
     }));
   }
 
@@ -3411,13 +3432,21 @@ async function composeAndCreateNotice({
     pronoun: derivePronoun(student),
     history,
     positives,
-    incidents: contextIncidents.map((i) => ({
-      behaviorName: i.behaviorSnapshot?.name,
-      teacherName: i.__teacherName || "",
-      date: i.timestamp,
-      detail: personalize(i.detailText || ""),
-      uniform: !!i.behaviorSnapshot?.uniform,
-    })),
+    incidents: contextIncidents.map((i) => {
+      const fd = famDetail(i.detailText || "");
+      return {
+        behaviorName: i.behaviorSnapshot?.name,
+        teacherName: i.__teacherName || "",
+        // Logged by the teacher who signs the note → written in the first person.
+        isWriter: !!effectiveSenderId && String(i.teacherId) === String(effectiveSenderId),
+        date: i.timestamp,
+        detail: fd.detail,
+        templateDetail: fd.mentionedOther ? "" : fd.detail,
+        reported: fd.reported,
+        uniform: !!i.behaviorSnapshot?.uniform,
+      };
+    }),
+    writerName: senderName,
     consequences: effectiveConsequenceTexts.map(personalize),
     sequenceNo,
     daysSinceFirst,
@@ -3433,9 +3462,13 @@ async function composeAndCreateNotice({
   const aiClient = makeDefaultAiClient(config || {});
   // `text` is clean plain prose (stored + dispatched to parents); `markdown`
   // keeps the composer's **bold** for the teacher's rich, pasteable copy only.
-  const { text, markdown, aiUsed } = isPositive
+  const composed = isPositive
     ? await composePositiveNotice(ctx, { aiClient })
     : await composeNotice(ctx, { aiClient });
+  // Last line of defence: no other student's name reaches this family.
+  const text = famScrub(composed.text);
+  const markdown = composed.markdown ? famScrub(composed.markdown) : composed.markdown;
+  const aiUsed = composed.aiUsed;
   const richText = markdown || text;
 
   const cancelWindow = config?.cancelWindowSeconds ?? 60;
@@ -4458,6 +4491,8 @@ router.post("/students/:id/parent-summary", authAny, loadMembership, async (req,
 
     const name = `${student.preferredName || student.firstName} ${student.lastName}`.trim();
     const studentFirst = student.preferredName || student.firstName || name;
+    // Other students named in teachers' notes never reach this family.
+    const famScrub = await familyNameScrubber(req.schoolId, student._id);
 
     // Window cutoff: the current behaviour period (since strikes were last
     // cleared) by default; the whole record for "all".
@@ -4493,8 +4528,9 @@ router.post("/students/:id/parent-summary", authAny, loadMembership, async (req,
       const tid = String(i.teacherId);
       const who = tName[tid] || "a teacher";
       const what = i.behaviorSnapshot?.name || "";
-      const detail = (i.detailText || "").trim();
-      const line = `${d} — ${what}${detail ? `: ${detail}` : ""}`;
+      const fd = prepareFamilyDetail(famScrub, (i.detailText || "").trim());
+      const detail = fd.detail;
+      const line = `${d} — ${what}${detail ? `: ${detail}` : ""}${fd.reported ? " [reported to the teacher, not witnessed — word tentatively, never mention the source]" : ""}`;
       if (isPositive) { positives.push(`${d} — ${what}${detail ? `: ${detail}` : ""} (noted by ${who})`); continue; }
       if (isInteraction) {
         // A teacher↔student conversation is often the very concern to convey —
@@ -4543,7 +4579,7 @@ router.post("/students/:id/parent-summary", authAny, loadMembership, async (req,
         kind: isConvo ? "conversation" : "offense",
         offense: isConvo ? "Conversation" : (i.behaviorSnapshot?.name || "—"),
         teacher: tName[String(i.teacherId)] || "a teacher",
-        consequence: isConvo ? "" : (c ? (c.detail && c.detail.length <= 70 ? `${c.type} — ${c.detail}` : c.type) : ""),
+        consequence: isConvo ? "" : famScrub(c ? (c.detail && c.detail.length <= 70 ? `${c.type} — ${c.detail}` : c.type) : ""),
       });
     }
     const historyText = history
@@ -4630,6 +4666,7 @@ router.post("/students/:id/parent-summary", authAny, loadMembership, async (req,
     } catch {
       /* fall back to the deterministic note */
     }
+    summary = famScrub(summary); // last line of defence: no other student's name
 
     await audit(req.schoolId, "parent_summary.generated", req, { studentId: student._id, meta: { scope, aiUsed, concerns: concernCount } });
     res.json({ ok: true, summary, history, historyText, aiUsed, scope, concernCount, teacherGroups: Object.keys(byTeacher).length });
@@ -5635,6 +5672,7 @@ router.post("/consequences/:id/message", authAny, loadMembership, async (req, re
     const incidentDetail = incident?.detailText || "";
 
     const message = await composeConsequenceMessageAI({
+      schoolId: req.schoolId, studentId: c.studentId,
       studentName, behaviorName: behaviourName, detailText: incidentDetail,
       consequenceText: `${c.type}${c.detail ? ` — ${c.detail}` : ""}`,
       when: incident?.timestamp || c.at, followUpType: incident ? "next_school_day" : "none",
@@ -7747,6 +7785,18 @@ router.post("/public/houses/visit", async (req, res) => {
 // "Mia A.") with "a student". Words that are also behaviour / keyword / house /
 // competition names (e.g. "Faith", "Joy") are left alone so reasons still read.
 async function publicNameScrubber(schoolId) {
+  return rosterNameScrubber(schoolId);
+}
+
+// Family-facing messages are about ONE student; any OTHER student named in a
+// teacher's private note (who reported it, a witness, a target) must never reach
+// that family. Same matcher as the public scrubber, but the subject student's
+// own names are left alone. `.mentions(text)` tells whether a name was present.
+async function familyNameScrubber(schoolId, subjectStudentId) {
+  return rosterNameScrubber(schoolId, { exceptStudentId: subjectStudentId, replacement: "another student" });
+}
+
+async function rosterNameScrubber(schoolId, { exceptStudentId = null, replacement = "a student" } = {}) {
   const sid = new mongoose.Types.ObjectId(String(schoolId));
   const [students, behaviours, houses, comps] = await Promise.all([
     BehaviorStudent.find({ schoolId: sid }).select("firstName preferredName lastName").lean(),
@@ -7759,19 +7809,46 @@ async function publicNameScrubber(schoolId) {
   for (const b of behaviours) { words(b.name).forEach((w) => keep.add(w)); words(b.keyword).forEach((w) => keep.add(w)); }
   for (const h of houses) words(h.name).forEach((w) => keep.add(w));
   for (const c of comps) words(c.name).forEach((w) => keep.add(w));
+  // The subject student's own name words are never scrubbed.
+  if (exceptStudentId) {
+    const me = students.find((st) => String(st._id) === String(exceptStudentId));
+    if (me) for (const n of [me.firstName, me.preferredName, me.lastName]) words(n).forEach((w) => keep.add(w));
+  }
   const names = new Set();
   for (const st of students) {
+    if (exceptStudentId && String(st._id) === String(exceptStudentId)) continue;
     for (const n of [st.firstName, st.preferredName, st.lastName]) {
       for (const w of words(n)) if (w.length >= 2 && !keep.has(w)) names.add(w);
     }
   }
-  if (!names.size) return (r) => r;
+  if (!names.size) { const id = (r) => String(r || ""); id.mentions = () => false; return id; }
   const esc = (v) => v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const alt = [...names].sort((a, b) => b.length - a.length).map(esc).join("|");
   // A name, optionally followed by more name words and/or an initial ("A.").
   const rx = new RegExp(`(?<![\\p{L}])(?:${alt})(?:\\s+(?:${alt}))*(?:\\s+\\p{L}\\.)?(?![\\p{L}])`, "giu");
-  return (reason) => String(reason || "").replace(rx, "a student");
+  const test = new RegExp(rx.source, "iu");
+  const fn = (text) => String(text || "").replace(rx, replacement);
+  fn.mentions = (text) => test.test(String(text || ""));
+  return fn;
 }
+
+// Did the teacher LEARN of this second-hand (vs. witness it)? A note that names
+// another student or uses reporting language. Such incidents are written
+// tentatively to the family ("I suspect … may have", "Unless my information is
+// inaccurate, … is required to …") and never say who reported it.
+const REPORTED_RX = /\b(report(?:ed|s|ing)?|told me|informed|heard|overheard|said that|according to|claim(?:ed|s)?|apparently|allegedly|witness(?:ed)?)\b/i;
+function prepareFamilyDetail(scrub, detail) {
+  const raw = String(detail || "");
+  const mentionedOther = !!scrub?.mentions?.(raw);
+  return { detail: scrub ? scrub(raw) : raw, mentionedOther, reported: mentionedOther || REPORTED_RX.test(raw) };
+}
+
+// Rules every family-facing AI message follows (consequence messages, notices).
+const FAMILY_PRIVACY_RULES =
+  `PRIVACY (overrides everything): Never name, describe, or hint at any OTHER student — not who reported it, who saw it, or who was affected — and never say how the teacher found out (no "I was informed by…", "a student reported…", "I received a report…"). ` +
+  `Never quote slurs or crude words; describe them sensitively.`;
+const REPORTED_RULE = (first) =>
+  `This concern was REPORTED to the teacher, not witnessed first-hand. Word it tentatively — e.g. "I have reason to believe that ${first} may have…" or "I suspect that ${first} may have…" — and introduce the task with "Unless my information is inaccurate, ${first} is required to…". Do not mention the source.`;
 
 // Composite breakdown of where a house's points came from (NEVER any names).
 // `includeNegatives`/`includePositives` gate what's returned: the public page
