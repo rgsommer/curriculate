@@ -836,6 +836,7 @@ function guideFromResult(r) {
   if (!src.length) return null;
   return {
     partial: true,
+    handwrite: mg?.handwrite || "",
     write_on_paper: mg?.write_on_paper || "",
     highlights: mg?.highlights || null,
     sections: src.map((sec) => ({
@@ -928,6 +929,26 @@ export async function buildMarkingGuidePdf(results, { title } = {}) {
     const total = (r.score != null && r.outOf != null) ? `${r.score} / ${r.outOf}` : "";
     if (total) doc.text(total, PAGE_W - MARGIN, y, { align: "right" });
     y += 14;
+
+    // The two or three words that go on the paper beside the mark. This is
+    // the line that actually gets written thirty times, so it is set to be
+    // copied at a glance rather than read — bigger than the sentence under
+    // it, and directly under the name where the eye already is.
+    if (g.handwrite) {
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(37, 99, 235);
+      const hw = clamp(esc(g.handwrite), 44);
+      doc.text(hw, MARGIN, y);
+      // A rule the length of the phrase, so it reads as something to copy.
+      doc.setDrawColor(191, 219, 254);
+      doc.setLineWidth(0.8);
+      doc.line(MARGIN, y + 2.5, MARGIN + doc.getTextWidth(hw), y + 2.5);
+      doc.setTextColor(0, 0, 0);
+      doc.setDrawColor(0, 0, 0);
+      doc.setLineWidth(0.5);
+      y += 14;
+    }
 
     // --- the sentence for the paper ---
     if (g.write_on_paper) {

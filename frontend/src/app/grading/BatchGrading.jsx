@@ -4930,7 +4930,14 @@ export default function BatchGrading({
                 </tr>
               </thead>
               <tbody>
-                {results.map((r) => (
+                {results.map((r) => {
+                  // An unmatched paper reaches no progress page and no
+                  // gradebook, so it is the row that most needs the teacher's
+                  // eye — and only when there is a roster to match against.
+                  const rowUnmatched = rosterClasses.length > 0
+                    && !r.error
+                    && !r.rosterEdsbyId && !r.rosterStudentId && !r.rosterFirstName;
+                  return (
                   <React.Fragment key={r.index}>
                     <tr
                       style={{
@@ -4941,6 +4948,10 @@ export default function BatchGrading({
                             ? "rgba(37,99,235,0.06)"
                             : r.error
                             ? "rgba(220,38,38,0.05)"
+                            : rowUnmatched
+                            // Louder than a failing grade: a fail is a result,
+                            // an unmatched paper is unfinished work.
+                            ? "rgba(220,38,38,0.13)"
                             : r.letter === "F"
                             // A fail is the row a teacher acts on — a follow-up,
                             // a phone call, a re-do — and the only thing marking
@@ -4949,7 +4960,9 @@ export default function BatchGrading({
                             // result, not a fault in the run.
                             ? "rgba(220,38,38,0.07)"
                             : "transparent",
-                        ...(r.letter === "F" && expandedIndex !== r.index && !r.error
+                        ...(rowUnmatched && expandedIndex !== r.index
+                          ? { boxShadow: "inset 5px 0 0 #dc2626" }
+                          : r.letter === "F" && expandedIndex !== r.index && !r.error
                           ? { boxShadow: "inset 3px 0 0 #dc2626" }
                           : null),
                       }}
@@ -4968,6 +4981,12 @@ export default function BatchGrading({
                         </span>
                       </td>
                       <td style={{ ...batchStyles.td, fontWeight: 700, textAlign: "left", position: "relative" }}>
+                        {/* A name that matched nobody on the roster was red
+                            text and nothing else, which is easy to read past
+                            in a grid of twenty rows — and it is the one thing
+                            on the row that must be fixed, because an
+                            unmatched result reaches no student's progress
+                            page and no gradebook. It gets a badge. */}
                         <span
                           onClick={(e) => {
                             e.stopPropagation();
@@ -4975,13 +4994,30 @@ export default function BatchGrading({
                           }}
                           style={{
                             cursor: "pointer",
-                            borderBottom: "1px dashed #94a3b8",
-                            color: (!r.rosterEdsbyId && !r.rosterStudentId && !r.rosterFirstName && rosterClasses.length > 0) ? "#dc2626" : r.multiRosterMatch ? "#d97706" : "inherit",
+                            borderBottom: rowUnmatched ? "2px solid #dc2626" : "1px dashed #94a3b8",
+                            color: rowUnmatched ? "#b91c1c" : r.multiRosterMatch ? "#d97706" : "inherit",
+                            fontWeight: rowUnmatched ? 800 : undefined,
                           }}
-                          title={r.multiRosterMatch ? "This name appears in multiple classes — click to verify" : "Click to change student name"}
+                          title={rowUnmatched
+                            ? "No roster match — click to pick the student. Until you do, this result reaches nobody."
+                            : r.multiRosterMatch ? "This name appears in multiple classes — click to verify" : "Click to change student name"}
                         >
                           {r.studentName}
                         </span>
+                        {rowUnmatched && (
+                          <span
+                            onClick={(e) => { e.stopPropagation(); setEditingNameIndex(r.index); }}
+                            style={{
+                              marginLeft: 6, padding: "1px 6px", borderRadius: 999,
+                              background: "#dc2626", color: "#fff", fontSize: 9.5,
+                              fontWeight: 800, letterSpacing: 0.4, whiteSpace: "nowrap",
+                              cursor: "pointer", verticalAlign: "middle",
+                            }}
+                            title="Pick the student this paper belongs to"
+                          >
+                            PICK STUDENT
+                          </span>
+                        )}
                         {r.studentId && (
                           <span style={{ fontSize: 10, color: "#94a3b8", fontWeight: 400, marginLeft: 6 }} title={`ID detected: ${r.studentId}${r.rosterFirstName ? ` → ${r.rosterFirstName} ${r.rosterLastName}` : ""}`}>
                             #{r.studentId.slice(-4)}
@@ -5618,7 +5654,8 @@ export default function BatchGrading({
                       </tr>
                     )}
                   </React.Fragment>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

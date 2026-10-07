@@ -14156,6 +14156,19 @@ function buildRubricInstructions({
     - If full marks were earned, say what was done well and set incorrect_items to null.
     - If marks were lost, the section comment must make that understandable in plain language.
 
+    TEACHER'S STAR (teacher_starred):
+    - Set true ONLY for a star, asterisk or similar mark drawn by hand in a
+      margin or corner of the page — usually the top left — by the teacher.
+      It means the teacher is vouching for this paper.
+    - It is a mark ON the page, not part of the work: drawn in a different
+      pen, outside the answer area, not attached to any question.
+    - Do NOT set it for: a star a student drew as decoration, a star inside an
+      answer, a printed star or bullet, a multiplication asterisk, a tick, a
+      circled mark total, or any mark that belongs to a question.
+    - When in doubt, false. A wrongly starred paper is treated as the answer
+      key for the whole class, so the cost of a false positive is high and
+      the cost of missing one is only that the class votes unaided.
+
     MARKING GUIDE RULE (marking_guide):
     - This is for the TEACHER, marking the paper with it in hand. The student
       never sees it. Write it plainly: no voice, no encouragement, no softening.
@@ -14180,9 +14193,18 @@ function buildRubricInstructions({
       in the margin — level is incorrect, weak, good or excellent. Include at
       least one good or excellent where the paper earns it; a marking guide
       that only lists faults gives the teacher nothing to praise.
+    - marking_guide.handwrite: TWO or THREE words to write beside the mark —
+      four at the very most. This is the line that actually gets written on
+      thirty papers, so it has to carry the whole verdict at a glance:
+        "Neat and accurate"   "Show your steps"   "Rushed — recheck"
+        "Strong reasoning"    "Label everything"  "Careful with signs"
+      Specific to this paper, not a stock phrase. Name the one thing that
+      matters most — what to keep doing, or the single change worth making.
+      No mark, no percentage, no full sentence, no final full stop.
     - marking_guide.write_on_paper: ONE sentence, under about 20 words, for the
-      teacher to copy onto the paper by hand. Specific to this paper. Not a
-      grade, not a percentage.
+      teacher to copy onto the paper by hand when there is room. It expands on
+      handwrite; it does not repeat it word for word. Specific to this paper.
+      Not a grade, not a percentage.
     - The verdicts must agree with the section scores. If Matching is 5 / 6,
       exactly one Matching item is not "correct".
 
@@ -15453,6 +15475,16 @@ function buildRubricInstructions({
             },
           },
 
+          // --- teacher's exemplary mark ---
+          //
+          // A hand-drawn star in a corner, put there by the teacher to say
+          // "this paper is right". With no answer key the class's own answers
+          // are the only key available, and a vote cannot tell a class that
+          // has misread a question together — they agree, unanimously, on the
+          // wrong answer. A starred paper is the one thing that can disagree
+          // with a confident class and be believed.
+          teacher_starred: { type: "boolean" },
+
           // --- student name detection ---
           student_name: { type: ["string", "null"] },
 
@@ -15534,6 +15566,12 @@ function buildRubricInstructions({
             type: ["object", "null"],
             additionalProperties: false,
             properties: {
+              // Two or three words to write beside the mark. A teacher
+              // marking thirty papers writes the grade and a phrase, not a
+              // sentence, and that phrase is what the student actually
+              // reads. Distinct from write_on_paper below, which is the
+              // longer line for when there is room.
+              handwrite: { type: "string", maxLength: 40 },
               // One sentence, short enough to copy onto the paper by hand.
               write_on_paper: { type: "string", maxLength: 180 },
               // What to pick out in the margin, worst first.
@@ -15586,7 +15624,7 @@ function buildRubricInstructions({
                 },
               },
             },
-            required: ["write_on_paper", "highlights", "sections"],
+            required: ["handwrite", "write_on_paper", "highlights", "sections"],
           },
         },
 
@@ -15601,6 +15639,7 @@ function buildRubricInstructions({
           "final_score_out_of_10",
           "deductions",
           "sections",
+          "teacher_starred",
           "student_name",
           "student_id",
           "detected_title",
