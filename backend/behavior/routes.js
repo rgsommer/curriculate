@@ -265,7 +265,7 @@ function buildConsequenceMessage({ studentName, behaviorName, detailText, conseq
   if (mode === "parents_discuss") {
     // No consequence: ask the family to talk it over at home.
     lines.push(reported
-      ? `I have reason to believe that ${first} may have been involved in ${behaviorName} on ${date}.`
+      ? `I am concerned that ${first} may have been involved in ${behaviorName} on ${date}.`
       : `I want to let you know about ${behaviorName} on ${date}${detailText ? ` — ${detailText}` : ""}.`);
     lines.push("");
     lines.push(`Rather than assigning a consequence, I'd ask that you take a few minutes at home to talk with ${first} about it — just to be sure this doesn't happen going forward.`);
@@ -275,7 +275,7 @@ function buildConsequenceMessage({ studentName, behaviorName, detailText, conseq
     return lines.join("\n");
   }
   if (reported) {
-    lines.push(`I have reason to believe that ${first} may have been involved in ${behaviorName} on ${date}.`);
+    lines.push(`I am concerned that ${first} may have been involved in ${behaviorName} on ${date}.`);
     lines.push("");
     lines.push(`If this turns out to be true, ${first} is required to:`);
   } else {
@@ -7869,7 +7869,7 @@ async function rosterNameScrubber(schoolId, { exceptStudentId = null, replacemen
 
 // Did the teacher LEARN of this second-hand (vs. witness it)? A note that names
 // another student or uses reporting language. Such incidents are written
-// tentatively to the family ("I suspect … may have", "Unless my information is
+// tentatively to the family ("I am concerned that … may have", "Unless my information is
 // inaccurate, … is required to …") and never say who reported it.
 // The behaviour's own "How you know" setting (witnessed / reported) wins; the
 // note-based guess only applies when it isn't set. ("heard"/"overheard" are left
@@ -7887,7 +7887,7 @@ const FAMILY_PRIVACY_RULES =
   `PRIVACY (overrides everything): Never name, describe, or hint at any OTHER student — not who reported it, who saw it, or who was affected — and never say how the teacher found out (no "I was informed by…", "a student reported…", "I received a report…"). ` +
   `Never quote slurs or crude words; describe them sensitively.`;
 const REPORTED_RULE = (first) =>
-  `This concern was REPORTED to the teacher, not witnessed first-hand. Word it tentatively — e.g. "I have reason to believe that ${first} may have…" or "I suspect that ${first} may have…" — and make the task conditional: "If this turns out to be true, ${first} is required to…" (or "Unless my information is inaccurate, ${first} is required to…"). Do not mention the source. ` +
+  `This concern was REPORTED to the teacher, not witnessed first-hand. Word it tentatively, opening with "I am concerned that ${first} may have…" (never "I suspect" or "I was told") — and make the task conditional: "If this turns out to be true, ${first} is required to…" (or "Unless my information is inaccurate, ${first} is required to…"). Do not mention the source. ` +
   `Keep the setting broad: say "at school" (and "our school" rather than "our classroom") unless the teacher's note says exactly where it happened — never assume it was in class.`;
 
 // Composite breakdown of where a house's points came from (NEVER any names).
