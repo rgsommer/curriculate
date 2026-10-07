@@ -1111,6 +1111,16 @@ router.get("/teacher/students", teacherAuth, async (req, res) => {
       : [];
     const acctByStudent = {};
     for (const a of accounts) acctByStudent[a.studentId] = a;
+
+    // Whether this teacher has withheld each student's feedback from their
+    // family. One indexed query for the whole screen; absent means shown,
+    // which is what every student without a row is.
+    const offRows = accountIds.length
+      ? await StudentVisibility.find({
+          teacherEmail: email, studentId: { $in: accountIds }, showFeedback: false,
+        }).select("studentId note").lean()
+      : [];
+    const withheld = new Map(offRows.map((r) => [r.studentId, r.note || ""]));
     for (const s of filtered) {
       const a = acctByStudent[s.studentId];
       const emails = Array.isArray(a?.emails) ? a.emails.filter(Boolean) : [];
@@ -1122,6 +1132,8 @@ router.get("/teacher/students", teacherAuth, async (req, res) => {
       // "Verified" = email on file AND someone (student or parent) has
       // actually logged in via that email.
       s.emailVerified = s.hasEmail && (s.studentLoginCount > 0 || s.parentLoginCount > 0);
+      s.showFeedback = !withheld.has(s.studentId);
+      if (!s.showFeedback) s.visibilityNote = withheld.get(s.studentId) || "";
     }
 
     // Class-level reach stats: dedupe by studentId (a student can

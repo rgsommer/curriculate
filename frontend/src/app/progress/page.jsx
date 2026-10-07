@@ -209,6 +209,9 @@ export default function ProgressPage() {
   // Marks are hidden from students, not from the teacher who awarded them.
   // previewAsStudent drops the teacher token from the request, which is what
   // produces the student's own view — the same path the student takes.
+  // Which student's visibility is mid-save, so one row disables rather than
+  // the whole table.
+  const [visibilityBusy, setVisibilityBusy] = useState(null);
   const [previewAsStudent, setPreviewAsStudent] = useState(false);
   const [viewingAsTeacher, setViewingAsTeacher] = useState(false);
   const [anyGradesHidden, setAnyGradesHidden] = useState(false);
@@ -253,6 +256,36 @@ export default function ProgressPage() {
       }
     }
   }, []);
+
+  // Withhold, or restore, one student's feedback from their family.
+  //
+  // Optimistic: the tick should not lag behind the click. On failure the row
+  // goes back rather than showing a state the server does not hold — a
+  // checkbox that says "withheld" while the family can still see everything
+  // is worse than no checkbox.
+  const setStudentVisibility = useCallback(async (studentId, showFeedback) => {
+    const tToken = teacherToken || (() => {
+      try { return localStorage.getItem(TEACHER_TOKEN_KEY); } catch { return null; }
+    })() || token;
+    if (!tToken) return;
+    setVisibilityBusy(studentId);
+    setTeacherStudents((prev) => prev.map((s) => (s.studentId === studentId ? { ...s, showFeedback } : s)));
+    try {
+      const r = await fetch(`${API}/student-progress/teacher/student-visibility`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${tToken}` },
+        body: JSON.stringify({ studentId, showFeedback }),
+      });
+      const d = await r.json().catch(() => null);
+      if (!r.ok || !d?.ok) throw new Error(d?.error || "save failed");
+    } catch {
+      setTeacherStudents((prev) => prev.map((s) => (s.studentId === studentId ? { ...s, showFeedback: !showFeedback } : s)));
+      setError("Could not save that. This family's view is unchanged.");
+      setTimeout(() => setError(""), 4000);
+    } finally {
+      setVisibilityBusy(null);
+    }
+  }, [teacherToken, token]);
 
   const apiCall = useCallback(async (path, opts = {}) => {
     const headers = { "Content-Type": "application/json" };
@@ -945,6 +978,36 @@ export default function ProgressPage() {
                   )}
                 </div>
                 {showClass && <div style={{ flex: 1, textAlign: "center", fontSize: 12, color: "#64748b" }}>{ts.className}</div>}
+                {/* Some families do not want their child's work put through
+                    this at all, and that is theirs to decide. Unticking it
+                    withholds everything from them — the portal, the results
+                    link a QR leads to, and the emails — while the teacher
+                    keeps every mark and comment. Nothing is deleted, and
+                    ticking it back makes their pages work again. */}
+                <div
+                  style={{ flex: 1, textAlign: "center" }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <label
+                    title={ts.showFeedback === false
+                      ? "Withheld — this family sees nothing. Tick to show their feedback again."
+                      : "Shown to this student and their family. Untick to withhold it."}
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: 5,
+                      cursor: visibilityBusy === ts.studentId ? "wait" : "pointer",
+                      fontSize: 11, color: ts.showFeedback === false ? "#b45309" : "#94a3b8",
+                      fontWeight: ts.showFeedback === false ? 700 : 400,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={ts.showFeedback !== false}
+                      disabled={visibilityBusy === ts.studentId}
+                      onChange={(e) => setStudentVisibility(ts.studentId, e.target.checked)}
+                    />
+                    {ts.showFeedback === false ? "withheld" : "show"}
+                  </label>
+                </div>
                 <div style={{ flex: 1, textAlign: "center", fontSize: 13 }}>{ts.totalAssignments}</div>
                 <div style={{ flex: 1, textAlign: "center" }}>
                   {ts.avg != null ? (
@@ -962,6 +1025,7 @@ export default function ProgressPage() {
                 <>
                   <div style={{ fontSize: 11, color: "#94a3b8", padding: "8px 0", borderBottom: "2px solid #e2e8f0", display: "flex", fontWeight: 700 }}>
                     <div style={{ flex: 2 }}>STUDENT</div>
+                    <div style={{ flex: 1, textAlign: "center" }}>SHOW FEEDBACK</div>
                     <div style={{ flex: 1, textAlign: "center" }}>ASSIGNMENTS</div>
                     <div style={{ flex: 1, textAlign: "center" }}>AVERAGE</div>
                   </div>
@@ -1007,6 +1071,7 @@ export default function ProgressPage() {
                       {/* Column headers */}
                       <div style={{ fontSize: 11, color: "#94a3b8", padding: "6px 14px", display: "flex", fontWeight: 700, background: "#fafbfc" }}>
                         <div style={{ flex: 2 }}>STUDENT</div>
+                        <div style={{ flex: 1, textAlign: "center" }}>SHOW FEEDBACK</div>
                         <div style={{ flex: 1, textAlign: "center" }}>ASSIGNMENTS</div>
                         <div style={{ flex: 1, textAlign: "center" }}>AVERAGE</div>
                       </div>
