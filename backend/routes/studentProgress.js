@@ -8,7 +8,8 @@ import PublishedResult from "../models/PublishedResult.js";
 import { resultExpiryDate } from "../utils/retention.js";
 import { sendWeeklyDigests } from "../email/gradeNotification.js";
 
-import { hidesGradesForResult, teachersForResult } from "../utils/gradeVisibility.js";
+import { hidesGradesForResult, teachersForResult, feedbackHiddenForResult, invalidateStudentVisibility } from "../utils/gradeVisibility.js";
+import StudentVisibility from "../models/StudentVisibility.js";
 const router = express.Router();
 
 /**
@@ -651,7 +652,23 @@ router.get("/results", studentAuth, async (req, res) => {
     // from the class — most published results predate meta.teacherEmail.
     // Passing no teacher token is how the dashboard previews the student's
     // own view, so this is the toggle as well as the reveal.
+    // A family opted out sees nothing — not a blank mark, nothing. The
+    // teacher viewing still does, or they could not tell a student who has
+    // opted out from one with no work.
     const viewer = teacherViewer(req);
+    if (!viewer && await feedbackHiddenForResult({ studentId: account.studentId })) {
+      return res.json({
+        ok: true,
+        student: {
+          firstName: account.firstName, lastName: account.lastName,
+          className: account.className, emailCount: (account.emails || []).length,
+        },
+        results: [],
+        overallAvg: null,
+        totalAssignments: 0,
+        feedbackWithheld: true,
+      });
+    }
     const hideByCode = new Map(
       await Promise.all(results.map(async (r) => {
         if (viewer && (await teachersForResult(r.meta)).includes(viewer)) return [r.code, false];
@@ -811,6 +828,33 @@ router.post("/profile/add-email", studentAuth, async (req, res) => {
  *  GET /teacher/students (requires teacher auth)
  *  Returns class overview — same data as the magic code login response
  * ------------------------------------------------------------------ */
+// PUT /teacher/student-visibility  { studentId, showFeedback, note? }
+//
+// A family who does not want their child's work shown. Recorded, not acted
+// on destructively: the results, the marks and the comments all stay, the
+// teacher keeps seeing everything, and switching it back makes the family's
+// pages work again.
+router.put("/teacher/student-visibility", teacherAuth, async (req, res) => {
+  try {
+    const studentId = String(req.body?.studentId || "").trim();
+    if (!studentId) return res.status(400).json({ error: "studentId required." });
+    const showFeedback = req.body?.showFeedback !== false;
+    const note = String(req.body?.note || "").slice(0, 300);
+
+    await StudentVisibility.findOneAndUpdate(
+      { teacherEmail: req.teacherEmail, studentId },
+      { $set: { teacherEmail: req.teacherEmail, studentId, showFeedback, note } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    invalidateStudentVisibility(studentId);
+    console.log(`[visibility] ${req.teacherEmail}: ${studentId} showFeedback=${showFeedback}`);
+    return res.json({ ok: true, studentId, showFeedback });
+  } catch (err) {
+    console.error("PUT /teacher/student-visibility error:", err?.message || err);
+    return res.status(500).json({ error: "Could not save that." });
+  }
+});
+
 router.get("/teacher/students", teacherAuth, async (req, res) => {
   try {
     const email = req.teacherEmail;

@@ -294,6 +294,23 @@ export function deriveConsensusKey(papers, { rounds = 3, graderOpinion = null } 
  * "unclear" where the class could not settle it, which is honest and leaves
  * the item for the teacher, rather than a cross the student did not earn.
  */
+// Two answers that mean the same thing.
+//
+// A key prints "\u00d7" and a student writes "x"; a key prints "\u00f7" and a
+// student writes "/". Marking those wrong over a glyph is pedantry no
+// teacher would apply. Handled here rather than in normaliseAnswer because
+// "x" is also a perfectly good option letter in a matching column, and
+// flattening it there would damage the commoner case.
+const SAME_THING = [
+  new Set(["X", "\u00d7", "*"]),
+  new Set(["\u00f7", "/"]),
+  new Set(["-", "\u2212"]),
+];
+export function answersMatch(a, b) {
+  if (a === b) return true;
+  return SAME_THING.some((group) => group.has(a) && group.has(b));
+}
+
 export function verdictAgainstKey(studentAnswer, keyItem) {
   const undecided = ["low", "not-votable", "disputed"];
   if (!keyItem || !keyItem.answer || undecided.includes(keyItem.confidence)) {
@@ -301,7 +318,7 @@ export function verdictAgainstKey(studentAnswer, keyItem) {
   }
   const a = normaliseAnswer(studentAnswer);
   if (!a) return "blank";
-  return a === keyItem.answer ? "correct" : "incorrect";
+  return answersMatch(a, keyItem.answer) ? "correct" : "incorrect";
 }
 
 /* ------------------------------------------------------------------
@@ -383,4 +400,87 @@ export function applyKeyToGuide(guide, index) {
     delta: Math.round(delta * 100) / 100,
     changed,
   };
+}
+
+/* ------------------------------------------------------------------
+ *  The teacher's own key, applied the same deterministic way.
+ *
+ *  The model reads a key accurately and then fails to USE it: holding a
+ *  key that says 4 is A it accepted G, and rejected A on question 6
+ *  while naming question 1's answer. Matching a letter to a row is a
+ *  lookup, and a lookup is not a thing to ask a language model for when
+ *  the table is already in hand.
+ *
+ *  /grading/extract-answer-key transcribes the key reliably — that part
+ *  it does well. So parse that text and mark the objective items here,
+ *  by string comparison, exactly as the class-derived key is applied.
+ * ------------------------------------------------------------------ */
+
+/**
+ * Parse the extracted key into sections of numbered answers.
+ *
+ * The extractor emits one line per question, labelled by the section
+ * letter and number as the paper prints them:
+ *     A1: F (/1)        B3: FALSE (/1)       C2: 6 (/1)
+ * Lines it cannot label that way (the working-out sections, the headers,
+ * the grading notes) are skipped — those are not lookups anyway.
+ */
+export function parseExtractedKey(text) {
+  const bySection = new Map();
+  for (const rawLine of String(text || "").split("\n")) {
+    const line = rawLine.trim();
+    // Stop at a second paper's key; the caller picks which one applies.
+    const m = line.match(/^([A-Z])\s*(\d{1,2}[a-z]?)\s*[:.]\s*(.+?)\s*(?:\(\/\s*[\d.]+[^)]*\))?\s*$/);
+    if (!m) continue;
+    const [, letter, n, answer] = m;
+    const clean = answer.trim();
+    // "See Option 1 and 2 solutions provided" and similar are not answers
+    // to compare against.
+    if (!clean || clean.length > 40 || /^see\b/i.test(clean)) continue;
+    if (!bySection.has(letter)) bySection.set(letter, []);
+    bySection.get(letter).push({ n, answer: normaliseAnswer(clean) });
+  }
+  return [...bySection.entries()].map(([letter, items]) => ({ letter, items }));
+}
+
+/**
+ * Line the key's lettered sections up with the guide's named ones.
+ *
+ * The key says "A1"; the guide says "Key terms — matching". Where the
+ * guide's own name starts with that letter ("A. Key terms") they are
+ * matched on it; otherwise they are matched in order, which is the order
+ * both read the paper in. A section whose item numbers do not line up is
+ * left alone rather than forced.
+ */
+export function keyIndexFromExtracted(text, guideSections) {
+  const parsed = parseExtractedKey(text);
+  const index = new Map();
+  if (!parsed.length || !Array.isArray(guideSections) || !guideSections.length) return index;
+
+  const used = new Set();
+  const pairs = [];
+  for (const sec of guideSections) {
+    const lead = String(sec.name || "").trim().match(/^([A-Z])[.)\s]/);
+    const hit = lead && parsed.find((p) => p.letter === lead[1] && !used.has(p.letter));
+    if (hit) { used.add(hit.letter); pairs.push([sec, hit]); }
+  }
+  // Anything unmatched falls back to order, skipping what is already paired.
+  const leftoverGuide = guideSections.filter((sec) => !pairs.some(([g]) => g === sec));
+  const leftoverKey = parsed.filter((p) => !used.has(p.letter));
+  leftoverGuide.forEach((sec, i) => { if (leftoverKey[i]) pairs.push([sec, leftoverKey[i]]); });
+
+  for (const [sec, keySec] of pairs) {
+    const byN = new Map(keySec.items.map((it) => [String(it.n), it.answer]));
+    const names = (sec.items || []).map((it) => String(it.n));
+    // Only apply where the numbering actually corresponds. A section of
+    // eight items against a key of six is a different section.
+    const overlap = names.filter((n) => byN.has(n)).length;
+    if (!overlap || overlap < Math.min(names.length, keySec.items.length) * 0.6) continue;
+    for (const n of names) {
+      const answer = byN.get(n);
+      if (!answer) continue;
+      index.set(`${sec.name}\u0000${n}`, { answer, agreement: 1, confidence: "high", fromTeacherKey: true });
+    }
+  }
+  return index;
 }

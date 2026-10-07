@@ -8,7 +8,7 @@ import { sendSystemEmail } from "../email/shareInviteEmailer.js";
 import { notifyNewGrade } from "../email/gradeNotification.js";
 import { resultExpiryDate } from "../utils/retention.js";
 
-import { hidesGradesForResult, stripGradesFromPayload } from "../utils/gradeVisibility.js";
+import { hidesGradesForResult, stripGradesFromPayload, feedbackHiddenForResult } from "../utils/gradeVisibility.js";
 const router = express.Router();
 
 /**
@@ -666,6 +666,13 @@ router.get("/:code", lookupLimiter, async (req, res) => {
     // were already out there — which is usually why it gets turned on.
     // Resolves the owner from the class when the result predates
     // meta.teacherEmail, which most published results do.
+    // A family who has opted out reaches this by the QR on a printed slip as
+    // readily as by a link, so it is refused here too. 404 rather than 403:
+    // the code's existence is not this page's business to confirm.
+    if (await feedbackHiddenForResult(doc.meta)) {
+      return res.status(404).json({ error: "Not available." });
+    }
+
     const hide = await hidesGradesForResult(doc.meta);
     const meta = doc.meta ? { ...doc.meta } : null;
     if (hide && meta) {

@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildResultsPdf, buildStripsPdf, buildMarkingGuidePdf, preloadPdfLibs } from "./pdfReports";
-import { deriveConsensusKey, keyIndex, applyKeyToGuide, MIN_VOTERS } from "./consensusKey";
+import { deriveConsensusKey, keyIndex, keyIndexFromExtracted, applyKeyToGuide, MIN_VOTERS } from "./consensusKey";
 import { completeQuest } from "../../components/QuestWidget";
 
 /**
@@ -1637,6 +1637,37 @@ export default function BatchGrading({
             items: (sec.items || []).map((it) => ({ n: it.n, answer: it.student_answer })),
           })),
         }));
+
+      // The teacher's own key, applied by string comparison rather than by
+      // asking the model to look a letter up. Holding a key that said 4 is A
+      // it accepted G, and rejected A on 6 while naming question 1's answer.
+      // It transcribes a key well and applies one badly, so the transcription
+      // is what gets used and the comparison happens here.
+      if (hadKey && effectiveAnswerKey) {
+        let fixed = 0, touched = 0;
+        for (const r of batchResults) {
+          const g = r.raw?.marking_guide;
+          if (r.error || !Array.isArray(g?.sections)) continue;
+          const idx = keyIndexFromExtracted(effectiveAnswerKey, g.sections);
+          if (!idx.size) continue;
+          const { guide, delta, changed } = applyKeyToGuide(g, idx);
+          if (!changed.length) continue;
+          r.raw = { ...r.raw, marking_guide: guide };
+          r.keyChanges = changed.length;
+          if (typeof r.score === "number" && delta) {
+            r.score = Math.max(0, Math.round((r.score + delta) * 100) / 100);
+            if (typeof r.outOf === "number" && r.outOf > 0) {
+              r.pct = Math.round((r.score / r.outOf) * 100);
+              r.letter = letterGrade(r.pct);
+            }
+          }
+          fixed += changed.length; touched += 1;
+        }
+        if (fixed) {
+          console.log(`[batch] teacher's key applied directly: ${fixed} item(s) re-marked across ${touched} paper(s)`);
+          setResults([...batchResults]);
+        }
+      }
 
       if (!hadKey && papers.length >= MIN_VOTERS) {
         const derived = deriveConsensusKey(papers);
