@@ -4109,14 +4109,19 @@ export default function GradingPage() {
                   onChange={(e) => saveHideGrades(e.target.checked)}
                   style={{ marginTop: 2 }}
                 />
-                <span>
+                {/* The explanation is four lines of grey that the teacher
+                    reads once and then scrolls past every session. It moves
+                    to the tip, with a marker so it can still be found. */}
+                <span
+                  title={
+                    "Hides the mark on the progress page and on shared result links. " +
+                    "Comments, next steps and the achievement bars stay. You still see " +
+                    "every mark here, in exports and in Edsby." +
+                    (hideGrades ? " Applies to results already shared, and can be switched back." : "")
+                  }
+                >
                   <b>Feedback only for students &amp; parents</b>
-                  <div style={{ color: "#64748b" }}>
-                    Hides the mark on the progress page and on shared result links.
-                    Comments, next steps and the achievement bars stay. You still see
-                    every mark here, in exports and in Edsby.
-                    {hideGrades && <> Applies to results already shared, and can be switched back.</>}
-                  </div>
+                  <span style={{ ...styles.hintDot }}>?</span>
                 </span>
               </label>
             )}
@@ -4139,14 +4144,16 @@ export default function GradingPage() {
                   onChange={(e) => saveNotifyStudents(!e.target.checked)}
                   style={{ marginTop: 2 }}
                 />
-                <span>
+                <span
+                  title={
+                    "Stops the \u201cnew feedback\u201d email and the weekly summary. " +
+                    "Nothing is withheld \u2014 results, codes and the progress page work as " +
+                    "usual, and families see them when they visit." +
+                    (!notifyStudents ? " Printed slips and QR codes are the way they will hear." : "")
+                  }
+                >
                   <b>Don&apos;t email students &amp; parents about new feedback</b>
-                  <div style={{ color: "#64748b" }}>
-                    Stops the &ldquo;new feedback&rdquo; email and the weekly summary.
-                    Nothing is withheld — results, codes and the progress page work as
-                    usual, and families see them when they visit.
-                    {!notifyStudents && <> Printed slips and QR codes are the way they will hear.</>}
-                  </div>
+                  <span style={{ ...styles.hintDot }}>?</span>
                 </span>
               </label>
             )}
@@ -6662,6 +6669,15 @@ export default function GradingPage() {
   }
 
 const styles = {
+  // A small marker beside a setting whose explanation now lives in the tip.
+  // Without it a tooltip is a thing nobody knows is there.
+  hintDot: {
+    display: "inline-flex", alignItems: "center", justifyContent: "center",
+    width: 13, height: 13, marginLeft: 5, borderRadius: "50%",
+    background: "#e2e8f0", color: "#475569",
+    fontSize: 9, fontWeight: 800, lineHeight: 1,
+    verticalAlign: "middle", cursor: "help",
+  },
   page: {
     padding: "16px 18px 40px",
     maxWidth: 1200,
