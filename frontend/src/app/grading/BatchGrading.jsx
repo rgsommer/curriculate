@@ -1907,12 +1907,29 @@ export default function BatchGrading({
           return matches;
         }
 
+        // How good a match is, lower being better. Hoisted out of pass 1 so
+        // the class-context pass below can ask the same question of a match
+        // pass 1 already accepted.
+        function matchQuality(s, aiName) {
+          const first = norm(s.firstName);
+          const last = norm(s.lastName);
+          const full = first + last;
+          if (aiName === full || aiName === last + first) return 0; // exact full name
+          if (aiName === first) return 1; // exact first name
+          if (aiName === last) return 2; // exact last name
+          if (first.length >= 3 && aiName.startsWith(first) && aiName.length <= first.length + 2) return 3; // first + initial
+          if (first.length >= 2 && last.length >= 2 && aiName.includes(first) && aiName.includes(last)) return 3; // contains both
+          return 5; // partial/fuzzy/substring
+        }
+        const GUESS = 5; // the fuzzy bucket: a resemblance, not a reading
+
         // --- PASS 1: resolve matches, tally roster votes ---
         // Vote by rosterId (unique per uploaded CSV) not className, because
         // className may be identical across files (e.g. all "Gradebook").
         // A student in multiple rosters with the same edsbyId is the same person.
         const rosterVotes = {}; // { rosterId: count }
         const pendingAmbiguous = []; // results that had >1 distinct student
+        const resolvedInPass1 = []; // { result, aiName, quality } — revisited below
 
         for (const r of batchResults) {
           if (r.error) continue;
@@ -1939,19 +1956,7 @@ export default function BatchGrading({
           // Exact full name > exact first name > partial/fuzzy match.
           let resolved = uniqueStudents;
           if (uniqueStudents.length > 1) {
-            // Score each candidate: lower = better
-            function matchQuality(s) {
-              const first = norm(s.firstName);
-              const last = norm(s.lastName);
-              const full = first + last;
-              if (aiName === full || aiName === last + first) return 0; // exact full name
-              if (aiName === first) return 1; // exact first name
-              if (aiName === last) return 2; // exact last name
-              if (first.length >= 3 && aiName.startsWith(first) && aiName.length <= first.length + 2) return 3; // first + initial
-              if (first.length >= 2 && last.length >= 2 && aiName.includes(first) && aiName.includes(last)) return 3; // contains both
-              return 5; // partial/fuzzy/substring
-            }
-            const scored = uniqueStudents.map((s) => ({ s, q: matchQuality(s) }));
+            const scored = uniqueStudents.map((s) => ({ s, q: matchQuality(s, aiName) }));
             const bestQ = Math.min(...scored.map((x) => x.q));
             const bestMatches = scored.filter((x) => x.q === bestQ);
             if (bestMatches.length === 1) {
@@ -1973,7 +1978,9 @@ export default function BatchGrading({
               rosterClassName: m.className,
               rosterRosterId: m.rosterId,
             });
+            const readAs = r.studentName; // before the roster name replaces it
             r.studentName = `${m.firstName} ${m.lastName}`.trim() || r.studentName;
+            resolvedInPass1.push({ result: r, aiName, readAs, quality: matchQuality(m, aiName) });
             // Vote for every roster this student appears in
             for (const match of nameMatches) {
               rosterVotes[match.rosterId] = (rosterVotes[match.rosterId] || 0) + 1;
@@ -2026,6 +2033,96 @@ export default function BatchGrading({
               r.rosterStudentId = correctEntry.studentId;
               r.rosterClassName = correctEntry.className;
               r.rosterRosterId = correctEntry.rosterId;
+            }
+          }
+        }
+
+        // --- PASS 1C: a guess from another class is not good enough ---
+        //
+        // Pass 1 accepts a lone match the moment only one student answers to
+        // the name, and never asks which class the batch is. So one paper in
+        // a stack of twenty 7A tests went to a 7B student: the name read
+        // "Franco", the fuzzy first-name rule allows two characters, and
+        // "Frank" is two from "Franco". Nineteen papers had voted 7A and the
+        // vote was never consulted.
+        //
+        // Only guesses are reconsidered — the fuzzy bucket, a resemblance
+        // rather than a reading. An exact name from another roster stands,
+        // because a stack really can hold a visiting student. If the batch's
+        // own roster has a candidate, it wins; if it has none, the match is
+        // dropped and the teacher picks. A paper handed to the wrong child
+        // publishes to the wrong progress page, and an empty name on the
+        // screen says so where a plausible wrong one does not.
+        if (batchRosterId) {
+          const batchRoster = allRosterStudents.filter((s) => s.rosterId === batchRosterId);
+
+          // The read name against this one class's list, token by token.
+          //
+          // Across eight rosters this would be reckless — "Franko" is one
+          // letter from "Franco" and close to half a dozen other names — but
+          // inside the single class nineteen other papers have voted for, it
+          // is decisive. Which is the whole of the Franco case: the paper read
+          // "Franko Gafani", no rule could get from that to "Franco Gopaul"
+          // because the general rules compare the name run together, and the
+          // substring rule reached "Frank" in another class instead.
+          function nearestInClass(read) {
+            const tokens = String(read || "").toLowerCase().split(/\s+/)
+              .map((t) => t.replace(/[^a-z]/g, ""))
+              .filter((t) => t.length >= 4);
+            if (!tokens.length) return [];
+            const scored = [];
+            for (const s of batchRoster) {
+              const first = norm(s.firstName);
+              const last = norm(s.lastName);
+              let d = Infinity;
+              for (const t of tokens) {
+                if (first.length >= 4) d = Math.min(d, levenshtein(t, first));
+                if (last.length >= 4) d = Math.min(d, levenshtein(t, last));
+              }
+              // Two characters on a whole name, not on a fragment of one.
+              // Ranked just better than a guess, so it is taken over the
+              // other class's match and still loses to any real reading.
+              if (d <= 2) scored.push({ s, q: 4 + d / 10 });
+            }
+            return scored.sort((a, b) => a.q - b.q);
+          }
+
+          for (const { result: r, aiName, readAs, quality } of resolvedInPass1) {
+            if (quality < GUESS) continue;
+            if (r.rosterRosterId === batchRosterId) continue;
+
+            let inBatch = findNameMatches(aiName)
+              .filter((s) => s.rosterId === batchRosterId)
+              .map((s) => ({ s, q: matchQuality(s, aiName) }))
+              .sort((a, b) => a.q - b.q);
+            if (!inBatch.length) inBatch = nearestInClass(readAs);
+
+            if (inBatch.length && inBatch[0].q <= quality &&
+                (inBatch.length === 1 || inBatch[0].q < inBatch[1].q)) {
+              const m = inBatch[0].s;
+              console.log(`[match] "${aiName}" was ${r.rosterFirstName} ${r.rosterLastName} (${r.rosterClassName}) — taking ${m.firstName} ${m.lastName} from this batch's own class instead`);
+              Object.assign(r, {
+                rosterFirstName: m.firstName,
+                rosterLastName: m.lastName,
+                rosterEdsbyId: m.edsbyId,
+                rosterStudentId: m.studentId,
+                rosterClassName: m.className,
+                rosterRosterId: m.rosterId,
+              });
+              r.studentName = `${m.firstName} ${m.lastName}`.trim() || r.studentName;
+            } else {
+              console.log(`[match] "${aiName}" only resembled ${r.rosterFirstName} ${r.rosterLastName} in ${r.rosterClassName}, and this batch is ${batchClass} — leaving it for the teacher`);
+              // Back to what was read off the paper. Showing the roster name
+              // of a student we have just decided this is not would be the
+              // same wrong answer with the warning taken off.
+              if (readAs) r.studentName = readAs;
+              r.nameConfirmed = false;
+              delete r.rosterFirstName;
+              delete r.rosterLastName;
+              delete r.rosterEdsbyId;
+              delete r.rosterStudentId;
+              delete r.rosterClassName;
+              delete r.rosterRosterId;
             }
           }
         }
