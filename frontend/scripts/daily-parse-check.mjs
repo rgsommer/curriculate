@@ -1064,6 +1064,52 @@ check("column letters", P.columnName(4) === "D" && P.columnName(43) === "AQ" && 
   check("birthdays: a book without the tab is not an error",
     P.birthdaysToday({}, day).length === 0);
 
+  // The real tab is the school's roster, not a block of keys: a header row, a
+  // student per row, and the dates written out. Nothing on it carries the
+  // "<serial> n" key, so the guard that keeps a heading off the projector threw
+  // every row away and no birthday reached the board at all.
+  const rosterTab = (rows) => ({ bdays: [{ top: 1, left: 1, values: [
+    ["FALSE"],
+    ["FALSE", "Hari", "", "Ariel"],
+    ["", "Last", "Formal", "First", "Common", "", "F", "Class", "DOB", "Next BD", "Celebrate BD", "BD is on"],
+    ["", "#REF!", "#REF!", "", "", "", "#REF!", "", "#REF!", "#REF!", "#REF!", "#REF!"],
+    ...rows,
+  ] }] });
+  const student = (last, first, klass, dob, next, keep, note) =>
+    ["", last, first, first, "", `${first} ${last}`, "F", klass, dob, next, keep, note || ""];
+  const roster = rosterTab([
+    student("Dhillon", "Harnoor", "8A", "2013-10-08", "2026-10-08", "2026-10-08"),
+    student("Padda", "Aliyah", "6B", "2015-10-08", "2026-10-08", "2026-10-08"),
+    student("Barker", "Deborah", "8A", "2013-10-04", "2026-10-04", "2026-10-05", "Sunday"),
+    student("Porter", "Micah", "7B", "2014-10-12", "2026-10-12", "2026-10-12"),
+    student("Billing", "Aveer", "6B", "2015-09-23", "2026-09-23", "2026-09-23"),
+  ]);
+  const oct8 = P.birthdaysToday(roster, new Date(2026, 9, 8));
+  check("roster: today's birthday is found at last",
+    oct8.map((b) => `${b.name} (${b.grade})`).join() === "Harnoor Dhillon (8)", oct8);
+  check("roster: a grade 6 birthday stays out of the junior high's band",
+    !oct8.some((b) => /Padda/.test(b.name)), oct8);
+  check("roster: a weekend birthday is kept on the school day the sheet names",
+    P.birthdaysToday(roster, new Date(2026, 9, 5)).map((b) => b.name).join() === "Deborah Barker");
+  check("roster: and not on the Sunday itself",
+    P.birthdaysToday(roster, new Date(2026, 9, 4)).length === 0);
+  check("roster: the note comes with it",
+    P.birthdaysToday(roster, new Date(2026, 9, 5))[0].note === "Sunday");
+  check("roster: a grade 7 birthday too",
+    P.birthdaysToday(roster, new Date(2026, 9, 12)).map((b) => b.name).join() === "Micah Porter");
+  check("roster: the surname of a grade 6 student is not wished a happy birthday",
+    P.birthdaysToday(roster, new Date(2026, 8, 23)).length === 0);
+  check("roster: nor is the header row, whatever day it is read on",
+    [0, 1, 2, 3, 4].every((d) => !P.birthdaysToday(roster, new Date(2026, 9, d + 1))
+      .some((b) => /Last|Formal|Common|#REF/.test(b.name))));
+  // A date is the day the sheet wrote, not the day before it: the serial's own
+  // midnight is UTC and Date.parse reads "2026-10-08" as UTC midnight, which in
+  // the room's own time zone is the evening before.
+  check("roster: with no Celebrate BD it falls back to the day and month of the DOB",
+    P.birthdaysToday(rosterTab([
+      ["", "Hall", "Willow", "Willow", "", "Willow Hall", "F", "7C", "2014-10-08"],
+    ]), new Date(2027, 9, 8)).map((b) => b.name).join() === "Willow Hall");
+
   // Column K is the school day a weekend birthday is kept on, and L the note.
   // Where K says a day, it is K that decides and the birthday's own date does
   // not — the Saturday itself is not the day the room is in.
