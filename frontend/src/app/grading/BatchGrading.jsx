@@ -93,6 +93,34 @@ export function loadPdfJs() {
 
 // Render a single page to a JPEG data URL.
 // For image-mode batches, `imageDataArr` supplies pre-loaded data URLs — pdfDoc may be null.
+// The answer key is rendered larger than the student pages, on purpose.
+//
+// A mistake in a student's page costs that student a mark. A mistake in the
+// KEY costs the whole class: it crosses every student who answered that
+// question correctly. And the key is one or two pages read once per batch,
+// where resolution is nearly free, against eighty pages where it is not.
+//
+// The default 1.5 put a 598pt page on screen at 897px — about 110 dpi, a
+// seventh of the pixels in the 300 dpi scan behind it — and at that size the
+// extractor lost the numbering of a compact list: on a real Math 7 key it
+// read "x" as "5", "3" as "12x" and "12x" as "15 + 6n", shifting a whole
+// section onto the next question's answers. Measured on that key, at this
+// width every one of the twenty objective answers comes back right.
+const KEY_TARGET_PX = 2000;
+async function renderKeyPageToDataUrl(pdfDoc, pageNum, rotation, imageDataArr) {
+  let scale = 3;
+  try {
+    if (pdfDoc && !(imageDataArr && imageDataArr[pageNum - 1])) {
+      const page = await pdfDoc.getPage(pageNum);
+      const base = page.getViewport({ scale: 1 });
+      // Never below the student-page scale, and capped so a poster-sized
+      // page does not turn into a twenty-megabyte upload.
+      scale = Math.min(4, Math.max(1.5, KEY_TARGET_PX / (base.width || 1)));
+    }
+  } catch { /* fall back to the fixed scale below */ }
+  return renderPageToDataUrl(pdfDoc, pageNum, scale, rotation, imageDataArr);
+}
+
 async function renderPageToDataUrl(pdfDoc, pageNum, scale = 1.5, extraRotation = 0, imageDataArr = null) {
   // ── Image mode: return stored data URL (optionally scaled) ──
   if (imageDataArr && imageDataArr[pageNum - 1]) {
@@ -1288,6 +1316,10 @@ export default function BatchGrading({
     // --- Extract answer key from leading pages OR auto-detected key pages ---
     let effectiveAnswerKey = extractedAnswerKey || "";
     let answerKeyImages = null;
+    // Key answers the two readings disagreed about. Shown to the teacher and
+    // excluded from marking: a wrong key entry crosses every student who got
+    // that question right.
+    let keyDoubt = [];
 
     // Determine which pages to use as answer key
     const keyPageNumbers = answerKeyPages > 0
@@ -1328,6 +1360,10 @@ export default function BatchGrading({
             effectiveAnswerKey = extractData.answerKeyText;
             setExtractedAnswerKey(effectiveAnswerKey);
           }
+          keyDoubt = Array.isArray(extractData.unverified) ? extractData.unverified : [];
+          if (keyDoubt.length) {
+            say(`${keyDoubt.length} key answer${keyDoubt.length === 1 ? "" : "s"} read two different ways — not used to mark anyone`);
+          }
         }
       } catch (e) {
         // The images still go with the request, so a failed extraction costs
@@ -1344,7 +1380,7 @@ export default function BatchGrading({
         for (const p of keyPageNumbers) {
           if (p >= 1 && p <= pageCount) {
             const rotation = localRotatedPages[p] ? 180 : 0;
-            akImages.push(await renderPageToDataUrl(doc, p, 1.5, rotation, imgArr));
+            akImages.push(await renderKeyPageToDataUrl(doc, p, rotation, imgArr));
           }
         }
         answerKeyImages = akImages;
@@ -1362,6 +1398,10 @@ export default function BatchGrading({
             effectiveAnswerKey = extractData.answerKeyText;
             setExtractedAnswerKey(effectiveAnswerKey);
           }
+          keyDoubt = Array.isArray(extractData.unverified) ? extractData.unverified : [];
+          if (keyDoubt.length) {
+            say(`${keyDoubt.length} key answer${keyDoubt.length === 1 ? "" : "s"} read two different ways — not used to mark anyone`);
+          }
         }
       } catch (e) {
         console.warn("[batch] answer key extraction failed:", e);
@@ -1371,6 +1411,10 @@ export default function BatchGrading({
     const effectiveRubric = (rubricOverride || "").trim();
 
     // Grade a single student — returns a result entry
+    if (keyDoubt.length) {
+      setKeySeen((prev) => ({ ...(prev || {}), unverified: keyDoubt }));
+    }
+
     const gradeOneStudent = async (i, group) => {
       const startPage = group.startPage;
       const endPage = group.endPage;
@@ -4720,6 +4764,90 @@ export default function BatchGrading({
             </div>
           )}
 
+          {/* CHECK THE KEY BEFORE IT MARKS ANYONE.
+              A wrong entry here is not worth one mark, it is worth the class:
+              it crosses every student who got that question right. On a real
+              Math 7 key the extractor shifted a whole section — C3 "x" read
+              as "5", C4 "3" as "12x", C5 "12x" as "15 + 6n" — so three of
+              the six blanks were marked against the NEXT question's answer.
+              Reading the key twice did not catch it; both readings shifted
+              the same way. Only the teacher can catch that, and only once
+              per test. */}
+          {keyReviewRows.length > 0 && (
+            <div style={{
+              marginTop: 10, border: "1px solid #e2e8f0", borderRadius: 10,
+              background: "#fff", overflow: "hidden",
+            }}>
+              <button
+                type="button"
+                onClick={() => setKeyReviewOpen((v) => !v)}
+                style={{
+                  width: "100%", textAlign: "left", padding: "9px 12px", fontSize: 12.5,
+                  border: 0, background: keyFlagged > 0 ? "#fffbeb" : "#f8fafc",
+                  color: keyFlagged > 0 ? "#78350f" : "#334155", cursor: "pointer", fontWeight: 600,
+                }}
+              >
+                {keyReviewOpen ? "▾" : "▸"} Check the answer key ({keyReviewRows.length} answers)
+                {keyFlagged > 0 && (
+                  <span style={{ fontWeight: 700 }}>
+                    {" "}— {keyFlagged} read two different ways
+                  </span>
+                )}
+                <span style={{ fontWeight: 400, opacity: 0.75 }}>
+                  {" "}· a wrong answer here marks the whole class wrong
+                </span>
+              </button>
+
+              {keyReviewOpen && (
+                <div style={{ padding: "4px 12px 12px" }}>
+                  {[...new Set(keyReviewRows.map((r) => r.paper))].map((paper) => (
+                    <div key={paper || "only"}>
+                      {paper && (
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", margin: "8px 0 4px" }}>
+                          {paper}
+                        </div>
+                      )}
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {keyReviewRows.filter((r) => r.paper === paper).map((r) => (
+                          <label
+                            key={r.id}
+                            style={{
+                              display: "flex", alignItems: "center", gap: 5,
+                              border: `1px solid ${r.flagged ? "#fcd34d" : "#e2e8f0"}`,
+                              background: r.flagged ? "#fffbeb" : "#fff",
+                              borderRadius: 7, padding: "3px 7px",
+                            }}
+                            title={r.flagged
+                              ? "The two readings of your key disagreed here — it is not being used to mark anyone until you set it"
+                              : `${r.marks} mark${r.marks === 1 ? "" : "s"}`}
+                          >
+                            <span style={{
+                              fontFamily: "ui-monospace, Menlo, monospace", fontSize: 11,
+                              color: "#64748b", minWidth: 22,
+                            }}>{r.id}</span>
+                            <input
+                              value={r.answer}
+                              onChange={(e) => correctKeyAnswer(r.id, e.target.value)}
+                              style={{
+                                width: Math.max(42, Math.min(130, r.answer.length * 8 + 16)),
+                                border: 0, borderBottom: "1px solid #cbd5e1", outline: "none",
+                                fontSize: 12.5, padding: "1px 2px", background: "transparent",
+                              }}
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  <div style={{ fontSize: 11, color: "#64748b", marginTop: 9 }}>
+                    Typing here changes only the key, and only for this run. Anything left
+                    highlighted is skipped rather than guessed — no student is marked wrong on it.
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <div style={{ marginTop: 14 }}>
             <button
               onClick={runBatch}
@@ -5170,6 +5298,33 @@ export default function BatchGrading({
           {/* What the grader was given. A batch marked against no answer key,
               or against a key that came through as 40 characters of noise, is
               worth knowing before the marks are released rather than after. */}
+          {/* The key is read twice and only what both readings agree on is
+              used to mark. A wrong key entry is not worth one mark, it is
+              worth the class: it crosses every student who got that question
+              right. These are the ones to settle by eye. */}
+          {Array.isArray(keySeen?.unverified) && keySeen.unverified.length > 0 && (
+            <div style={{
+              margin: "0 0 10px", padding: "9px 12px", borderRadius: 8, fontSize: 12,
+              background: "#fffbeb", border: "1px solid #fcd34d", color: "#78350f",
+            }}>
+              <strong>
+                {keySeen.unverified.length} answer{keySeen.unverified.length === 1 ? "" : "s"} on your key
+                {keySeen.unverified.length === 1 ? " was" : " were"} read two different ways.
+              </strong>{" "}
+              {keySeen.unverified.length === 1 ? "It has" : "They have"} been left out of the marking
+              entirely — nobody has been marked wrong on {keySeen.unverified.length === 1 ? "it" : "them"}.
+              Check {keySeen.unverified.length === 1 ? "it" : "them"} against your key and mark
+              {keySeen.unverified.length === 1 ? " it" : " them"} by hand:
+              <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                {keySeen.unverified.slice(0, 12).map((u) => (
+                  <li key={u.id} style={{ fontFamily: "ui-monospace, Menlo, monospace", fontSize: 11.5 }}>
+                    <strong>{u.id}</strong>: read as &ldquo;{u.first}&rdquo; and as &ldquo;{u.second}&rdquo;
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {(() => {
             const used = results.find((r) => !r.error && r.raw?.answer_key_used)?.raw?.answer_key_used;
             if (!used) return null;

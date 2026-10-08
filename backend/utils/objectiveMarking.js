@@ -94,6 +94,10 @@ export function parseKeyAnswers(text) {
       started = true;
       continue;
     }
+    // An item the two readings of the key disagreed about. Never used to
+    // mark: a wrong key entry crosses every student who got that question
+    // right, and on this test a single reading turned "3" into "4".
+    if (line.includes("[CHECK]")) continue;
     const m = line.match(/^([A-Z])\s*(\d{1,2}[a-z]?)\s*[:.]\s*(.+?)\s*(?:\(\/\s*[\d.]+[^)]*\))?\s*$/);
     if (!m) continue;
     const [, letter, n, answer] = m;

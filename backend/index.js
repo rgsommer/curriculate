@@ -17493,17 +17493,59 @@ Return valid JSON matching this exact schema.`;
 
       console.log(`[extract-answer-key] images=${answerKeyImages.length} standards=${standards} band=${band} kita=${isKitaBand}`);
 
-      const response = await openai.responses.create({
+      // THE KEY IS READ TWICE, AND ONLY WHAT BOTH READINGS AGREE ON IS USED
+      // TO MARK.
+      //
+      // A mistake here is not worth one mark, it is worth the whole class: a
+      // key entry read wrongly marks every student who got that question
+      // right as having got it wrong. On this very test the key says C3 is
+      // "×" and C4 is "3", and a single reading returned "5x" and "4" — two
+      // items, twenty students, forty wrong crosses, each one a child being
+      // told they are wrong when they are right. It also mangled D1 from
+      // "6 36 16 12" to "36 16 12 14" and dropped "y = 8" from D2.
+      //
+      // The key is extracted once per batch, not once per paper, so a second
+      // reading costs a fortieth of a twenty-paper run. There is no cheaper
+      // mark in the whole pipeline.
+      const readKeyOnce = () => openai.responses.create({
         model: AI_MODEL_FULL,
         input: [{ role: "user", content }],
         text: { format: { type: "json_schema", name: "answer_key_extraction", strict: true, schema: extractionSchema } },
         max_output_tokens: 4000, // increased for multi-version answer keys
       });
 
+      const [response, second] = await Promise.all([
+        readKeyOnce(),
+        readKeyOnce().catch((e) => {
+          // A failed second reading must not cost the teacher the key. It
+          // costs the verification instead, and that is said out loud below.
+          console.warn("[extract-answer-key] second reading failed:", e?.message || e);
+          return null;
+        }),
+      ]);
+
       const extracted = safeJsonParse(response.output_text);
       if (!extracted) {
         return res.status(500).json({ error: "Failed to parse extraction response." });
       }
+      const extractedB = second ? safeJsonParse(second.output_text) : null;
+
+      // question_id -> the answer the second reading gave, for comparison.
+      const secondAnswers = new Map();
+      if (extractedB) {
+        const vb = extractedB.versions || [{ version_label: "A", questions: extractedB.questions || [] }];
+        vb.forEach((v, vi) => {
+          for (const q of v.questions || []) {
+            if (q?.question_id) secondAnswers.set(`${vi}\u0000${q.question_id}`, String(q.correct_answer ?? "").trim());
+          }
+        });
+      }
+      // Compared on meaning, not on typography: "×" and "x", "15 + 6n" and
+      // "6n + 15" are one answer, and a disagreement about a space is not a
+      // reason to withhold an item from marking.
+      const { normaliseAnswer: normKeyAns, answersMatch: keyAnsMatch } =
+        await import("./utils/objectiveMarking.js");
+      const unverified = [];
 
       // Handle both new multi-version format and legacy single-version format
       const versions = extracted.versions || [{ version_label: "A", questions: extracted.questions || [], total_marks: extracted.total_marks || 0 }];
@@ -17532,13 +17574,30 @@ Return valid JSON matching this exact schema.`;
         summaryLines.push("");
       }
 
-      for (const version of versions) {
+      for (const [vi, version] of versions.entries()) {
         if (isMultiVersion) {
           summaryLines.push(`========== ANSWER KEY: ${version.version_label} (Total /${version.total_marks}) ==========`);
         }
 
         for (const q of version.questions || []) {
-          const line = `${q.question_id}: ${q.correct_answer} (/${q.marks}${q.kita_category ? ` ${q.kita_category}` : ""})`;
+          // An item the two readings disagree about is marked [CHECK]. The
+          // deterministic marking skips those entirely rather than crossing
+          // a student on an answer we are not sure of, and the teacher is
+          // shown the pair so they can settle it in seconds.
+          let suspect = false;
+          if (extractedB) {
+            const other = secondAnswers.get(`${vi}\u0000${q.question_id}`);
+            const mine = String(q.correct_answer ?? "").trim();
+            if (other === undefined) {
+              suspect = true;
+              unverified.push({ id: q.question_id, first: mine, second: "(not read)" });
+            } else if (!keyAnsMatch(normKeyAns(mine), normKeyAns(other))) {
+              suspect = true;
+              unverified.push({ id: q.question_id, first: mine, second: other });
+            }
+          }
+          const line = `${q.question_id}: ${q.correct_answer} (/${q.marks}${q.kita_category ? ` ${q.kita_category}` : ""})`
+            + (suspect ? "  [CHECK]" : "");
           summaryLines.push(line);
 
           if (q.kita_category) {
@@ -17588,6 +17647,13 @@ Return valid JSON matching this exact schema.`;
       console.log(`[extract-answer-key] extracted ${totalQuestions} questions across ${versions.length} version(s), ${Object.keys(categoryGroups).length} KITA categories`);
       console.log(`[extract-answer-key] summary:\n${answerKeyText}`);
 
+      if (unverified.length) {
+        console.warn(`[extract-answer-key] ${unverified.length} item(s) the two readings disagreed about, excluded from marking: `
+          + unverified.map((u) => `${u.id} "${u.first}" vs "${u.second}"`).join("; "));
+      } else if (extractedB) {
+        console.log("[extract-answer-key] both readings agree on every item");
+      }
+
       res.json({
         extraction: extracted,
         answerKeyText,
@@ -17595,6 +17661,11 @@ Return valid JSON matching this exact schema.`;
         hasKita: Object.keys(categoryGroups).length > 0,
         isMultiVersion,
         versionCount: versions.length,
+        // Items the two readings of the key disagreed about. They are not
+        // used to mark anyone — a wrong key entry crosses every student who
+        // got that question right — and the teacher is shown both readings.
+        unverified,
+        verified: Boolean(extractedB),
       });
     } catch (err) {
       console.error("[extract-answer-key] error:", err);

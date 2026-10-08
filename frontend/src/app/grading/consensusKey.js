@@ -444,6 +444,9 @@ export function parseExtractedKey(text) {
       continue;
     }
 
+    // An item the two readings of the key disagreed about — never used to
+    // mark. See parseKeyAnswers in backend/utils/objectiveMarking.js.
+    if (line.includes("[CHECK]")) continue;
     const m = line.match(/^([A-Z])\s*(\d{1,2}[a-z]?)\s*[:.]\s*(.+?)\s*(?:\(\/\s*[\d.]+[^)]*\))?\s*$/);
     if (!m) continue;
     const [, letter, n, answer] = m;
@@ -600,4 +603,55 @@ export function applyBlindMarking(grade, blindSections) {
       : Math.round(sum * 100) / 100;
   }
   return moved;
+}
+
+/* ------------------------------------------------------------------
+ *  The key, laid out so a teacher can check it in fifteen seconds.
+ *
+ *  An error in the key is not worth one mark, it is worth the class: it
+ *  crosses every student who answered that question correctly. On a real
+ *  Math 7 key the extractor shifted a whole section — C3 "×" came back as
+ *  "5", C4 "3" as "12x", C5 "12x" as "15 + 6n" — so three of the six blanks
+ *  were marked against the answer to the NEXT question. Reading the key
+ *  twice did not catch it, because both readings shifted the same way.
+ *
+ *  Verification cannot fix a systematic misread. The teacher can, and they
+ *  only have to do it once per test.
+ * ------------------------------------------------------------------ */
+
+/** The short, checkable answers of a key, in the order they appear. */
+export function keyRowsForReview(text) {
+  const rows = [];
+  let paper = "";
+  for (const raw of String(text || "").split("\n")) {
+    const line = raw.trim();
+    const banner = line.match(/^=+\s*ANSWER KEY:\s*(.+?)\s*\(Total/i);
+    if (banner) { paper = banner[1]; continue; }
+    const m = line.match(/^([A-Z])\s*(\d{1,2}[a-z]?)\s*[:.]\s*(.+?)\s*(?:\(\/\s*([\d.]+)[^)]*\))?\s*(\[CHECK\])?\s*$/);
+    if (!m) continue;
+    const [, letter, n, answer, marks, flagged] = m;
+    const clean = String(answer || "").trim();
+    // Only the ones a teacher can eyeball. A worked solution for an extended
+    // problem is not a row in a table, and marking it is a judgement anyway.
+    if (!clean || clean.length > 24) continue;
+    rows.push({ id: `${letter}${n}`, letter, n, answer: clean, marks: Number(marks) || 1, flagged: !!flagged, paper });
+  }
+  return rows;
+}
+
+/**
+ * Put a corrected answer back into the key text, on its own line only.
+ * The [CHECK] marker comes off: the teacher has just settled it.
+ */
+export function withCorrectedAnswer(text, id, answer) {
+  const want = String(id || "").match(/^([A-Z])(\d{1,2}[a-z]?)$/);
+  if (!want) return text;
+  let done = false;
+  return String(text || "").split("\n").map((raw) => {
+    if (done) return raw;
+    const m = raw.match(/^(\s*)([A-Z])\s*(\d{1,2}[a-z]?)\s*[:.]\s*(.+?)\s*(\(\/\s*[\d.]+[^)]*\))?\s*(\[CHECK\])?\s*$/);
+    if (!m || m[2] !== want[1] || m[3] !== want[2]) return raw;
+    done = true;
+    return `${m[1]}${m[2]}${m[3]}: ${String(answer).trim()}${m[5] ? ` ${m[5]}` : ""}`;
+  }).join("\n");
 }

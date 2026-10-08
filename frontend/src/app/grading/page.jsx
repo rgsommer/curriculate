@@ -1675,7 +1675,13 @@ export default function GradingPage() {
         // Scale to a readable width rather than a fixed zoom: a page scanned
         // at A4 and one at letter should arrive the same size.
         const base = page.getViewport({ scale: 1 });
-        const scale = Math.min(2.5, Math.max(1, 1700 / (base.width || 1)));
+        // 2000px wide, not 1700. An answer key is read once and marks the
+        // whole class against it, and at ~110 dpi the extractor lost the
+        // numbering of a compact list — reading "x" as "5" and "3" as "12x",
+        // shifting a section onto the next question's answers. At this width
+        // every objective answer on that key came back right. A page or two
+        // per batch, so the extra pixels cost almost nothing.
+        const scale = Math.min(4, Math.max(1, 2000 / (base.width || 1)));
         const viewport = page.getViewport({ scale });
         const canvas = document.createElement("canvas");
         canvas.width = Math.ceil(viewport.width);

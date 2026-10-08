@@ -73,8 +73,11 @@ export function markSchemeFromKey(keyText) {
       started = true;
       continue;
     }
+    // No [CHECK] guard here on purpose: that marks an answer the two
+    // readings of the key disagreed about, and this reads only the marks
+    // available — "(/4)" — which is a different thing and reliably read.
     // Greedy up to the LAST bracket, since an answer may carry its own.
-    const m = line.match(/^([A-Z])\s*(\d{1,2}[a-z]?)\s*[:.]\s*.*\(\/\s*([\d.]+)[^)]*\)\s*$/);
+    const m = line.match(/^([A-Z])\s*(\d{1,2}[a-z]?)\s*[:.]\s*.*\(\/\s*([\d.]+)[^)]*\)\s*(?:\[[A-Z]+\]\s*)?$/);
     if (!m) continue;
     const [, letter, n, marks] = m;
     const outOf = Number(marks);
