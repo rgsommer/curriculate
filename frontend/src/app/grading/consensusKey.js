@@ -488,6 +488,22 @@ export function keyIndexFromExtracted(text, guideSections) {
   leftoverGuide.forEach((sec, i) => { if (leftoverKey[i]) pairs.push([sec, leftoverKey[i]]); });
 
   for (const [sec, keySec] of pairs) {
+    // Only sections a key can actually settle.
+    //
+    // A key's entry for "Show your work" is a method — "x = 5 y = 8 z = 6
+    // m = 63", "add 5 -> 21, 26 multiply by 2 -> 40, 80" — not an answer to
+    // compare a string against. Applied as a lookup it marked correct
+    // working wrong whenever the student wrote it differently, and because
+    // that section is twenty marks over six items each miss cost 3.33. That
+    // is where the fractional totals and the five-to-eight mark losses on
+    // the strongest papers came from.
+    //
+    // A section qualifies when its answers are short: a letter, a truth
+    // value, a word, a term. Anything wordier is left to the model.
+    const answers = keySec.items.map((it) => it.answer).filter(Boolean);
+    const short = answers.filter((a) => a.length <= 20).length;
+    if (answers.length < 2 || short / answers.length < 0.8) continue;
+
     const byN = new Map(keySec.items.map((it) => [String(it.n), it.answer]));
     const names = (sec.items || []).map((it) => String(it.n));
     // Only apply where the numbering actually corresponds. A section of
