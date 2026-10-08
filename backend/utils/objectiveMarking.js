@@ -214,21 +214,6 @@ export function markObjective(transcript, keyText) {
 }
 
 /**
- * Is this key answer one that could actually mark a student wrong?
- *
- * Only short answers are ever used as a lookup: parseKeyAnswers drops
- * anything longer, and isObjectiveSection drops a section whose answers are
- * mostly long. A key's entry for "Show your work" is a method, and nobody is
- * marked against it. So there is no point telling a teacher that the two
- * readings punctuated a worked solution differently — it buries the one line
- * that matters under ten that do not.
- */
-export function isCheckableAnswer(v) {
-  const s = String(v ?? "").trim();
-  return s.length > 0 && s.length <= 24;
-}
-
-/**
  * Do two readings of the same key entry say the same thing?
  *
  * Looser than answersMatch, which compares a student's answer to the key and

@@ -17543,8 +17543,32 @@ Return valid JSON matching this exact schema.`;
       // Compared on meaning, not on typography: "×" and "x", "15 + 6n" and
       // "6n + 15" are one answer, and a disagreement about a space is not a
       // reason to withhold an item from marking.
-      const { sameKeyReading, isCheckableAnswer } =
+      const { sameKeyReading, normaliseAnswer: normKeyAns, isObjectiveSection } =
         await import("./utils/objectiveMarking.js");
+
+      // Which sections the marking will actually look answers up in.
+      //
+      // The length of one answer is the wrong test, and warning on it kept
+      // the panel useless: "x = 6 kg" is short, so D6 was reported when one
+      // reading gave the answer and the other the whole method, and E was
+      // reported four times because one reading did not enumerate the
+      // extended problem at all. Nobody is marked against either. What
+      // matters is whether the SECTION is one markObjective will use, which
+      // is the same question isObjectiveSection answers for the marking —
+      // so the warning is now about exactly the items that can produce a
+      // wrongly crossed answer, and silent about the rest.
+      const objectiveLetters = versions.map((v) => {
+        const bySec = new Map();
+        for (const q of v.questions || []) {
+          const l = String(q?.question_id || "").trim().match(/^([A-Z])/)?.[1];
+          if (!l) continue;
+          if (!bySec.has(l)) bySec.set(l, new Map());
+          bySec.get(l).set(String(q.question_id), normKeyAns(q.correct_answer));
+        }
+        const out = new Set();
+        for (const [l, items] of bySec) if (isObjectiveSection(items)) out.add(l);
+        return out;
+      });
       const unverified = [];
 
       // Handle both new multi-version format and legacy single-version format
@@ -17586,14 +17610,10 @@ Return valid JSON matching this exact schema.`;
           // shown the pair so they can settle it in seconds.
           let suspect = false;
           const mine = String(q.correct_answer ?? "").trim();
-          // Only answers that could actually mark somebody wrong. A key's
-          // entry for "Show your work" is a method — no student is marked
-          // against it, parseKeyAnswers drops it for being long — so a note
-          // that the two readings punctuated it differently is noise, and
-          // ten lines of noise bury the one line that matters. On a real run
-          // this took the warning from eleven items to the two letters that
-          // were genuinely read two ways.
-          if (extractedB && isCheckableAnswer(mine)) {
+          // Only sections the marking looks answers up in — see
+          // objectiveLetters above.
+          const letter = String(q.question_id || "").trim().match(/^([A-Z])/)?.[1] || "";
+          if (extractedB && objectiveLetters[vi]?.has(letter)) {
             const other = secondAnswers.get(`${vi}\u0000${q.question_id}`);
             if (other === undefined) {
               suspect = true;
