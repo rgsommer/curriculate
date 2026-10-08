@@ -1393,7 +1393,13 @@ const AI_MODEL_FULL = process.env.AI_MODEL_FULL || "gpt-4.1";
 // the key and called it right. So transcription does NOT default to the
 // "full" model — it follows AI_MODEL, and can be pointed somewhere cheaper
 // still, since the small model was accurate here and twice as fast.
-const AI_MODEL_TRANSCRIBE = process.env.AI_MODEL_TRANSCRIBE || AI_MODEL;
+// Reading a paper is not the same job as marking one, and the smaller model
+// does it exactly: on the isolated reading task it got every blank right,
+// including the two the full grader kept filling in from the key. It is also
+// the faster of the two, and this call now runs on every paper. The whole
+// class was measured in this configuration — gpt-5.4 marking, mini reading —
+// at 2.3 marks mean error against the teacher's own marking.
+const AI_MODEL_TRANSCRIBE = process.env.AI_MODEL_TRANSCRIBE || "gpt-5.4-mini";
 
 const AWS_REGION = process.env.AWS_REGION || "us-east-2";
 const S3_BUCKET = process.env.S3_BUCKET || "";
@@ -17269,7 +17275,15 @@ Do NOT include any text outside the JSON array.`,
   // ------------------------------------------------------------------
   app.post("/grading/transcribe", gradingLimiter, async (req, res) => {
     try {
-      const { images, gradeBand } = req.body || {};
+      // answerKeyText is used to MARK what comes back. It is deliberately not
+      // put anywhere near the prompt: a grader shown the key reports the
+      // student's answers as the key's answers. Measured on a class of
+      // twenty, the matching section came back +22 marks over the teacher's
+      // own marking, "8 out of 8" on ten papers where only four earned it —
+      // and the same model reading the same pages with no key in front of it
+      // got that section right. So the paper is read blind here, and the
+      // comparison happens afterwards in code.
+      const { images, gradeBand, answerKeyText } = req.body || {};
       if (!Array.isArray(images) || !images.length) {
         return res.status(400).json({ error: "No images provided." });
       }
@@ -17343,7 +17357,19 @@ Also give the student's name as written, the paper's title, and the mark total p
       if (!out) return res.status(502).json({ error: "Could not read the paper." });
       const items = (out.sections || []).reduce((n, s2) => n + (s2.items || []).length, 0);
       console.log(`[transcribe] ${AI_MODEL_TRANSCRIBE} ${out.student_name || "?"}: ${(out.sections || []).length} sections, ${items} items, band ${band}`);
-      return res.json({ ok: true, ...out });
+
+      // Marked here, against the key, by string comparison — the same code
+      // /grading/mark-objective runs, so there is one implementation of it.
+      let marking = null;
+      if (String(answerKeyText || "").trim()) {
+        const { markObjective } = await import("./utils/objectiveMarking.js");
+        marking = markObjective(out.sections || [], answerKeyText);
+        const scored = marking.sections.filter((s2) => s2.objective)
+          .map((s2) => `${s2.letter || s2.name}=${s2.score}/${s2.out_of}`).join(" ");
+        console.log(`[transcribe] marked blind against the key: ${scored || "nothing objective"}`);
+      }
+
+      return res.json({ ok: true, ...out, marking });
     } catch (err) {
       console.error("POST /grading/transcribe error:", err?.message || err);
       return res.status(500).json({ error: "Transcription failed." });

@@ -122,6 +122,30 @@ export function isObjectiveSection(keyItems) {
 }
 
 /**
+ * Is this section a CLOSED SET — a letter from a column, or true/false?
+ *
+ * Stricter than isObjectiveSection, and the distinction is worth real marks.
+ * Matching and true/false have an answer that is right or wrong with nothing
+ * in between, and a string comparison settles them exactly. A fill-in-the
+ * blank does not: the key says one word and a student writes another that
+ * means the same, or the same one spelled differently, or the right thing
+ * with the units attached.
+ *
+ * Measured over a hand-marked class of twenty, taking the blind reading for
+ * matching and true/false cut their error from 28 marks to 10 and from 11 to
+ * 8. Taking it for the blanks as well raised theirs from 16 to 36 — every
+ * paper in the class lost marks it had earned. So the blanks are left to the
+ * grader, which can see that "brackets" and "parentheses" are one answer.
+ */
+export function isClosedSetSection(keyItems) {
+  if (!keyItems || keyItems.size < 2) return false;
+  const vals = [...keyItems.values()];
+  const allLetters = vals.every((v) => /^[A-Z]$/.test(v));
+  const allTF = vals.every((v) => v === "T" || v === "F");
+  return allLetters || allTF;
+}
+
+/**
  * Mark one transcribed paper against the key.
  *
  * @param transcript  [{ section, letter?, items: [{ n, written }] }]
@@ -146,10 +170,11 @@ export function markObjective(transcript, keyText) {
     const keyItems = letter ? key.get(letter) : null;
 
     if (!keyItems || !isObjectiveSection(keyItems)) {
-      out.push({ name: sec.section, letter, objective: false, items: sec.items || [] });
+      out.push({ name: sec.section, letter, objective: false, closedSet: false, items: sec.items || [] });
       skipped += (sec.items || []).length;
       continue;
     }
+    const closedSet = isClosedSetSection(keyItems);
 
     const items = (sec.items || []).map((it) => {
       const want = keyItems.get(String(it.n));
@@ -172,6 +197,9 @@ export function markObjective(transcript, keyText) {
       name: sec.section,
       letter,
       objective: true,
+      // Only a closed set may override the grader outright; see
+      // isClosedSetSection for what that cost when it was not checked.
+      closedSet,
       items,
       score: counted.filter((i) => i.verdict === "correct").length,
       out_of: counted.length,

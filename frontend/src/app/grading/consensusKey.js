@@ -518,3 +518,86 @@ export function keyIndexFromExtracted(text, guideSections) {
   }
   return index;
 }
+
+/* ------------------------------------------------------------------
+ *  The blind reading, put back into the grade.
+ *
+ *  A grader holding the answer key reports the student's answers AS the
+ *  key's answers. Against a hand-marked class of twenty the matching
+ *  section came back 22 marks over the teacher's own — "8 out of 8" on ten
+ *  papers where four earned it. On one of them the key read F C H A G D B E
+ *  and the student had written F C A G H D B E, three of them rotated; the
+ *  grader called it full marks, and the same model reading the same pages
+ *  with no key in front of it read all three correctly.
+ *
+ *  So /grading/transcribe reads the paper blind and marks it in code, and
+ *  what it returns replaces the grader's verdict on those sections. The
+ *  grader keeps the written sections and the feedback.
+ * ------------------------------------------------------------------ */
+
+const letterOf = (name) =>
+  (String(name || "").trim().match(/^([A-Z])[.)\s]/) || [])[1] || "";
+
+/**
+ * @param grade          the /grading response, mutated in place
+ * @param blindSections  marking.sections from /grading/transcribe
+ * @returns short descriptions of what moved, for the activity line
+ */
+export function applyBlindMarking(grade, blindSections) {
+  if (!grade || !Array.isArray(grade.sections) || !Array.isArray(blindSections)) return [];
+
+  const byLetter = new Map();
+  for (const b of blindSections) {
+    // Closed sets only: a letter from a matching column, a true or a false.
+    // Those a string comparison settles exactly, and taking the blind
+    // reading for them cut this class's matching error from 28 marks to 10.
+    // A fill-in-the-blank is not one — the key says one word and a student
+    // writes another that means the same — and taking it there put every
+    // paper in the class BELOW its real mark, 16 marks of error becoming 36.
+    // The grader keeps those, and keeps the written sections.
+    if (!b?.objective || !b?.closedSet) continue;
+    const l = String(b.letter || "").toUpperCase().slice(0, 1) || letterOf(b.name);
+    if (l && !byLetter.has(l)) byLetter.set(l, b);
+  }
+  if (!byLetter.size) return [];
+
+  const moved = [];
+  for (const sec of grade.sections) {
+    const l = letterOf(sec?.name);
+    const b = l ? byLetter.get(l) : null;
+    if (!b || !(Number(b.out_of) > 0) || !(Number(sec.out_of) > 0)) continue;
+
+    // The blind pass counts the items it could mark; the paper's section may
+    // be worth more or less than that. The proportion is what it knows.
+    const next = Math.round((Number(b.score) / Number(b.out_of)) * Number(sec.out_of) * 100) / 100;
+    const was = Number(sec.score);
+    if (!Number.isFinite(next)) continue;
+    if (Math.abs(next - was) > 0.01) moved.push(`${l} ${was}→${next}`);
+    sec.score = next;
+
+    // Keep the marking guide in step, or the teacher's guide would tick
+    // items the score says were wrong.
+    const gs = (grade.marking_guide?.sections || []).find((g) => letterOf(g?.name) === l);
+    if (gs) {
+      gs.score = next;
+      const byN = new Map((b.items || []).map((it) => [String(it.n), it]));
+      for (const it of gs.items || []) {
+        const bi = byN.get(String(it.n));
+        if (!bi || bi.verdict === "unmarked") continue;
+        it.verdict = bi.verdict === "blank" ? "blank" : bi.verdict;
+        it.student_answer = bi.written ?? it.student_answer;
+        it.correct_answer = bi.verdict === "correct" ? "" : (bi.answer || it.correct_answer || "");
+        it.readBlind = true;
+      }
+    }
+  }
+
+  if (moved.length) {
+    const sum = grade.sections.reduce((t, s) => t + (Number(s.score) || 0), 0);
+    const outOf = Number(grade.overall_out_of);
+    grade.overall_score = Number.isFinite(outOf) && outOf > 0
+      ? Math.max(0, Math.min(outOf, Math.round(sum * 100) / 100))
+      : Math.round(sum * 100) / 100;
+  }
+  return moved;
+}

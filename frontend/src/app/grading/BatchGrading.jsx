@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildResultsPdf, buildStripsPdf, buildMarkingGuidePdf, preloadPdfLibs } from "./pdfReports";
-import { deriveConsensusKey, keyIndex, keyIndexFromExtracted, applyKeyToGuide, MIN_VOTERS } from "./consensusKey";
+import { deriveConsensusKey, keyIndex, keyIndexFromExtracted, applyKeyToGuide, applyBlindMarking, MIN_VOTERS } from "./consensusKey";
 import { completeQuest } from "../../components/QuestWidget";
 
 /**
@@ -1438,6 +1438,34 @@ export default function BatchGrading({
         say(`${who}: sending ${images.length} page${images.length === 1 ? "" : "s"} (${kb} KB)` +
             `${effectiveAnswerKey ? " with the answer key" : " — no key"}`);
 
+        // Two readings of the same paper, at the same time.
+        //
+        // A grader holding the answer key reports the student's answers AS
+        // the key's answers. Measured against a hand-marked class of twenty,
+        // the matching section came back 22 marks over the teacher's own
+        // across the class — "8 out of 8" on ten papers where four earned it
+        // — and on one paper the key read F C H A G D B E while the student
+        // had written F C A G H D B E, three of them rotated. The grader
+        // called it eight out of eight. The same model, reading the same
+        // pages with no key in front of it, read all three correctly.
+        //
+        // So the objective sections are read blind and marked in code, and
+        // the grader's own verdict on them is discarded. It still does the
+        // written sections and the feedback, which is what it is for. The
+        // two calls go together, so this costs latency only when the blind
+        // read is the slower of the two.
+        const blindRead = effectiveAnswerKey
+          ? fetchWithRetry(gradingUrl.replace(/\/grading$/, "/grading/transcribe"), {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ images, gradeBand, answerKeyText: effectiveAnswerKey }),
+              signal: abortControllerRef.current?.signal,
+            }).then((r) => r.json()).catch((e) => {
+              console.warn("[batch] blind read failed:", e);
+              return null;
+            })
+          : Promise.resolve(null);
+
         const res = await fetchWithRetry(gradingUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1448,6 +1476,15 @@ export default function BatchGrading({
         const data = await res.json();
         say(`${who}: marked in ${((Date.now() - began) / 1000).toFixed(1)}s` +
             `${Number.isFinite(Number(data.overall_score)) ? ` — ${Math.round(Number(data.overall_score) * 10) / 10}/${Math.round(Number(data.overall_out_of))}` : ""}`);
+
+        const blind = await blindRead;
+        if (blind?.marking?.sections?.length) {
+          const moved = applyBlindMarking(data, blind.marking.sections);
+          if (moved.length) {
+            say(`${who}: read blind — ${moved.join(", ")}` +
+                `${Number.isFinite(Number(data.overall_score)) ? ` → ${Math.round(Number(data.overall_score) * 10) / 10}/${Math.round(Number(data.overall_out_of))}` : ""}`);
+          }
+        }
 
         const rawScore = Number(data.overall_score);
         const rawOutOf = Number(data.overall_out_of);
