@@ -8,6 +8,7 @@ import SendNoticeModal from "./_components/SendNoticeModal";
 import { Card, Button } from "./_components/ui";
 import { toast } from "./_components/toast";
 import AddToHomeScreen from "./_components/AddToHomeScreen";
+import { useOccurrences, StudentNameTap, OccurrenceList } from "./_components/Occurrences";
 
 export default function BehaviorDashboard() {
   const [me, setMe] = useState<Me | null>(null);
@@ -651,6 +652,7 @@ function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number
   const [rows, setRows] = useState<StudentSummary[] | null>(null);
   const [trigger, setTrigger] = useState(3);
   const [othersOpen, setOthersOpen] = useState(false);
+  const occ = useOccurrences();
 
   useEffect(() => {
     api<{ students: StudentSummary[]; triggerCount: number }>("/students")
@@ -722,21 +724,23 @@ function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number
         <li className="py-2">
           <div className="flex items-center justify-between gap-2 text-sm">
             <span className="flex min-w-0 items-center gap-2">
-              <Link href={`/behavior/student/${s._id}`} className="min-w-0 hover:text-slate-600">
+              <StudentNameTap studentId={s._id} open={occ.openId === s._id} onToggle={() => occ.toggle(s._id)}>
                 <span className="font-medium">{s.lastName}, {s.firstName}</span> <span className="text-slate-500">{s.classGroup}</span>
                 {s.pendingWhiteSlipId
-                  ? <span className="mt-0.5 block text-xs text-red-700">Next: White slip recommended</span>
-                  : action && <span className="mt-0.5 block text-xs text-red-700">Next: {action}</span>}
-              </Link>
+                  ? <span className="mt-0.5 block pl-4 text-xs text-red-700">Next: White slip recommended</span>
+                  : action && <span className="mt-0.5 block pl-4 text-xs text-red-700">Next: {action}</span>}
+              </StudentNameTap>
               <HrButton studentId={s._id} done={s.hrFollowedUpThisWeek} />
             </span>
             <span className="flex shrink-0 items-center gap-3">
               <span className="text-xs text-slate-500">{s.noticesHomeCount} notice{(s.noticesHomeCount || 0) === 1 ? "" : "s"}</span>
-              <span className={`font-semibold tabular-nums ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
+              <Link href={`/behavior/student/${s._id}`} aria-label={`Open ${s.firstName} ${s.lastName}'s history`}
+                className={`font-semibold tabular-nums hover:underline ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
                 {s.activeCount}/{trigger} →
-              </span>
+              </Link>
             </span>
           </div>
+          {occ.openId === s._id && <OccurrenceList studentId={s._id} occ={occ.occById[s._id]} />}
           {s.pendingWhiteSlipId && (
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
               <span className="text-slate-500">Confirm the consequence given:</span>
@@ -798,30 +802,11 @@ function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number
   );
 }
 
-type Occ = { date: string; name: string; detail?: string; teacher?: string };
 function StudentsToWatch({ fadeDays, myHomeroom }: { fadeDays?: number; myHomeroom?: string }) {
   const [rows, setRows] = useState<StudentSummary[] | null>(null);
   const [trigger, setTrigger] = useState(3);
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [occById, setOccById] = useState<Record<string, Occ[] | "loading">>({});
+  const occ = useOccurrences();
   const [othersOpen, setOthersOpen] = useState(false);
-
-  async function toggleOcc(id: string) {
-    if (openId === id) { setOpenId(null); return; }
-    setOpenId(id);
-    if (occById[id] && occById[id] !== "loading") return;
-    setOccById((m) => ({ ...m, [id]: "loading" }));
-    try {
-      const d = await api<{ incidents: Array<{ behaviorSnapshot: { name: string; kind?: string }; detailText?: string; teacherName?: string; timestamp: string }> }>(`/students/${id}`);
-      const occ: Occ[] = (d.incidents || [])
-        .filter((inc) => inc.behaviorSnapshot?.kind !== "positive")
-        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-        .slice(0, 12)
-        .map((inc) => ({ date: inc.timestamp, name: inc.behaviorSnapshot?.name || "Offence", detail: inc.detailText || "", teacher: inc.teacherName || "" }));
-      setOccById((m) => ({ ...m, [id]: occ }));
-    } catch { setOccById((m) => ({ ...m, [id]: [] })); }
-  }
-
   useEffect(() => {
     api<{ students: StudentSummary[]; triggerCount: number }>("/students")
       .then((d) => {
@@ -850,35 +835,18 @@ function StudentsToWatch({ fadeDays, myHomeroom }: { fadeDays?: number; myHomero
       )}
       <li className="flex items-center justify-between gap-2 py-2 text-sm">
         <span className="flex min-w-0 items-center gap-2">
-          <button onClick={() => toggleOcc(s._id)} aria-label={openId === s._id ? "Hide occurrences" : "Show occurrences"} aria-expanded={openId === s._id} className="-m-1 shrink-0 p-1 text-slate-500 hover:text-slate-700">{openId === s._id ? "▾" : "▸"}</button>
-          <Link href={`/behavior/student/${s._id}`} className="min-w-0 truncate font-medium hover:text-slate-600">
-            {s.lastName}, {s.firstName} <span className="text-slate-500">{s.classGroup}</span>
-          </Link>
+          <StudentNameTap studentId={s._id} open={occ.openId === s._id} onToggle={() => occ.toggle(s._id)}>
+            <span className="font-medium">{s.lastName}, {s.firstName}</span> <span className="text-slate-500">{s.classGroup}</span>
+          </StudentNameTap>
           <HrButton studentId={s._id} done={s.hrFollowedUpThisWeek} />
         </span>
-        <span className={`shrink-0 font-semibold tabular-nums ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
+        <Link href={`/behavior/student/${s._id}`} aria-label={`Open ${s.firstName} ${s.lastName}'s history`}
+          className={`shrink-0 font-semibold tabular-nums hover:underline ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
           {s.activeCount}/{trigger} →
-        </span>
+        </Link>
       </li>
-      {openId === s._id && (
-        <li className="!border-t-0 pb-2 pl-6 text-xs text-slate-600">
-          {occById[s._id] === "loading" ? (
-            <span className="text-slate-500">Loading…</span>
-          ) : (occById[s._id] as Occ[])?.length ? (
-            <ul className="space-y-0.5">
-              {(occById[s._id] as Occ[]).map((o, k) => (
-                <li key={k}>
-                  <span className="text-slate-500">{new Date(o.date).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}</span>
-                  {" · "}<span className="font-medium">{o.name}</span>
-                  {o.detail ? <span className="text-slate-500"> — {o.detail}</span> : null}
-                  {o.teacher ? <span className="text-slate-500"> ({o.teacher})</span> : null}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <span className="text-slate-500">No recent occurrences.</span>
-          )}
-        </li>
+      {occ.openId === s._id && (
+        <li className="!border-t-0 pb-2"><OccurrenceList studentId={s._id} occ={occ.occById[s._id]} /></li>
       )}
     </Fragment>
   );

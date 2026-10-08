@@ -79,6 +79,16 @@ export default function StudentPage() {
   const [openNotice, setOpenNotice] = useState<string | null>(null);
   // Incident edit/delete
   const [editIncId, setEditIncId] = useState<string | null>(null);
+  // Arriving from a dashboard offence row (#inc-<id>): highlight that offence
+  // for a few seconds (ClientGate does the scrolling).
+  const [focusInc, setFocusInc] = useState<string | null>(null);
+  useEffect(() => {
+    const m = window.location.hash.match(/^#inc-([a-f0-9]{24})$/i);
+    if (!m) return;
+    setFocusInc(m[1]);
+    const t = setTimeout(() => setFocusInc(null), 4000);
+    return () => clearTimeout(t);
+  }, []);
   // Removing an offence: "entered in error" (no trace) vs "withdrawn" (the
   // teacher's judgment — a record of the reversal is kept).
   const [removeIncId, setRemoveIncId] = useState<string | null>(null);
@@ -1005,7 +1015,8 @@ export default function StudentPage() {
         <h2 className="font-semibold">Incident log</h2>
         <ul className="mt-2 divide-y divide-slate-100">
           {data.incidents.map((inc) => (
-            <li key={inc._id} className="py-3 text-sm">
+            <li key={inc._id} id={`inc-${inc._id}`}
+              className={`scroll-mt-20 py-3 text-sm transition-colors duration-1000 ${focusInc === inc._id ? "-mx-2 rounded-lg bg-amber-50 px-2 ring-2 ring-amber-300" : ""}`}>
               <div className="flex items-start justify-between gap-2">
                 <span className="min-w-0 flex-1 break-words">
                   {inc.behaviorSnapshot.name}
