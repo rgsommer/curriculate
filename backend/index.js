@@ -16106,6 +16106,15 @@ function buildRubricInstructions({
 ` : "";
 
       const userContent = [{ type: "input_text", text: instructionsWithInferenceFinal + noKeyGuard }];
+      // Every call carries the whole instruction text and every image again.
+      // Logged so "it is taking too long" can be answered with a number
+      // rather than a guess about which half is the cost.
+      console.log(
+        `[grade] payload: prompt ${Math.round((instructionsWithInferenceFinal + noKeyGuard).length / 1000)}k chars, ` +
+        `${Array.isArray(images) ? images.length : 0} student image(s), ` +
+        `${hasAnswerKeyImages ? answerKeyImages.length : 0} key image(s), ` +
+        `key text ${String(effectiveAnswerKey || "").length} chars`
+      );
 
       // Add answer key images first (if teacher tagged any) with clear label.
       //

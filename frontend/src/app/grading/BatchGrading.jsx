@@ -1372,10 +1372,16 @@ export default function BatchGrading({
 
         const payload = {
           images,
-          // When the key was a picture, send the picture as well as whatever
-          // text came out of it. A matching column reads as "1 F 2 C 3 H" and
-          // survives extraction badly; the model should be able to look.
-          answerKeyImages: answerKeyImages || undefined,
+          // The key's pages ride along ONLY when no text came out of them.
+          //
+          // They were sent with every student, from when the model had to do
+          // the lookup itself and a transcription of a matching column was
+          // not good enough to trust. The objective sections are now marked
+          // here by string comparison against the key text, so the pages are
+          // two extra full-page scans on every call, buying nothing: what
+          // the model still needs from the key is the mark scheme for the
+          // written sections, and that is text.
+          answerKeyImages: (effectiveAnswerKey ? undefined : answerKeyImages) || undefined,
           rubricOverride: effectiveRubric || null,
           answerKeyOverride: effectiveAnswerKey || null,
           gradeBand,
@@ -1550,8 +1556,12 @@ export default function BatchGrading({
       return mergeMultiPassResults(passes);
     };
 
-    // Grade first student solo for fast initial feedback, then batches of 3
-    const CONCURRENCY = precisionMode ? 1 : 3; // serialize in precision mode to avoid API overload
+    // Grade the first student solo for fast initial feedback, then in
+    // parallel. Three at a time meant seven rounds for a class of twenty and
+    // most of the wait was spent waiting. Six is still well inside a normal
+    // rate limit, and a call that does get limited is retried by
+    // fetchWithRetry rather than failing the run.
+    const CONCURRENCY = precisionMode ? 1 : 6; // serialize in precision mode to avoid API overload
     let start = 0;
     // Distinct from abortRef, which means the teacher pressed Stop. This means
     // the service itself is down and continuing is pointless.
