@@ -28,6 +28,7 @@ import gradingFeedbackRouter from "./routes/gradingFeedback.js";
 import homeworkCheckRouter from "./routes/homeworkCheck.js";
 import gradingResetRouter from "./routes/gradingReset.js";
 import { RESULT_RETENTION_DAYS, RESULT_RETENTION_MS } from "./utils/retention.js";
+import { reconcileSectionsFromGuide, totalFromKey } from "./utils/sectionTotals.js";
 import pulseBetaRouter, { isActiveBetaCode } from "./routes/pulseBeta.js";
 import cardsRouter from "./routes/cards.js";
 import avgsRouter from "./routes/avgs.js";
@@ -14226,6 +14227,26 @@ function buildRubricInstructions({
       Not a grade, not a percentage.
     - The verdicts must agree with the section scores. If Matching is 5 / 6,
       exactly one Matching item is not "correct".
+    - MARK EACH PART OF A WRITTEN SECTION SEPARATELY. For any section worth
+      more than one mark an item — "Show your work /20", an extended problem,
+      a long-answer question — give every item its own marks and marks_out_of:
+        • marks_out_of  what that part is worth. The answer key states it
+                        ("D1: … (/3)"); where it does not, divide the
+                        section's total evenly across its parts.
+        • marks         what this student earned on that part, 0 to
+                        marks_out_of. Half and part marks are fine.
+      Then make the section score the SUM of those marks. Add them up; do not
+      write down an impression of how the section went and fit the items to
+      it. A part that reaches the right answer with sound working earns its
+      full allocation even if it is set out differently from the key, and a
+      part left blank or abandoned earns nothing — "I'm not done" is 0, not a
+      sympathetic half.
+    - Do not drift towards the middle. A paper where every part is right
+      scores full marks on that section, and one where nothing works scores
+      near nothing. Mark what is on the page, part by part, and let the total
+      fall where it falls.
+    - Leave marks and marks_out_of null on single-mark objective items
+      (matching, true/false, fill in the blank). Those are settled by the key.
 
     INCORRECT_ITEMS RULE:
     - incorrect_items is ONLY for questions where the student's FINAL ANSWER is WRONG.
@@ -15639,8 +15660,25 @@ function buildRubricInstructions({
                           // Why it is wrong — the false half of a false
                           // statement, the step that went astray.
                           note: { type: "string", maxLength: 140 },
+                          // What this item is worth, and what it earned.
+                          //
+                          // A section score the model asserts is a judgement
+                          // about the paper as a whole, and it regresses to
+                          // the mean: measured against a hand-marked class of
+                          // twenty, the written sections came back inside a
+                          // band of 12 to 27 out of 30 where the truth ran 12
+                          // to 30 — the best papers short by four or five, the
+                          // weakest over by eight or ten, while the class mean
+                          // was right to half a mark. Marking each part
+                          // against its own allocation is a local judgement,
+                          // which is the kind it makes well, and the section
+                          // total is then arithmetic rather than an
+                          // impression. Null on an objective item: those are
+                          // one mark each and settled against the key.
+                          marks: { type: ["number", "null"], minimum: 0 },
+                          marks_out_of: { type: ["number", "null"], minimum: 0 },
                         },
-                        required: ["n", "verdict", "student_answer", "correct_answer", "note"],
+                        required: ["n", "verdict", "student_answer", "correct_answer", "note", "marks", "marks_out_of"],
                       },
                     },
                   },
@@ -16289,6 +16327,7 @@ function buildRubricInstructions({
 
       // Remove bogus incorrect_items where student_answer == correct_answer (after normalization)
       scrubIncorrectItems(grade);
+      reconcileSectionsFromGuide(grade, (m) => console.log(m));
       recomputeOverallFromSections(grade);
       reconcileAchievementSummary(grade);
 
@@ -16300,9 +16339,33 @@ function buildRubricInstructions({
       const hasTrustedCountedOutOf =
         Number.isFinite(countedOutOf) && countedOutOf > 0;
 
+      // The key knows what the paper is out of.
+      //
+      // With no teacher total and nothing counted off the pages, the model's
+      // own denominator stood unchallenged, and it invents: one paper in a
+      // class of twenty came back 84/100 on a test the key plainly heads
+      // "Total: /50". The extractor writes those totals into the key text, one
+      // per version, so they are already in hand — a declared total is better
+      // evidence than a number the model chose.
+      //
+      // Only applied when the model's answer matches no declared total: a
+      // multi-version key carries one per paper, and an accommodated /40 paper
+      // marked out of 40 is already right. See utils/sectionTotals.js.
+      let keyDeclaredOutOf = null;
+      if (!hasTeacherOverride && !hasTrustedCountedOutOf) {
+        const sectionOutOf = Array.isArray(enforced?.sections)
+          ? enforced.sections.reduce((t, sec) => t + (Number(sec?.out_of) || 0), 0)
+          : 0;
+        const modelOutOf = Number(enforced?.overall_out_of) || sectionOutOf || 0;
+        keyDeclaredOutOf = totalFromKey(effectiveAnswerKey, modelOutOf);
+        if (keyDeclaredOutOf) {
+          console.log(`[grading] marked out of ${modelOutOf} but the key declares /${keyDeclaredOutOf} — rescaling`);
+        }
+      }
+
       const finalFixedOutOf = hasTeacherOverride
         ? overrideFixedOutOf
-        : (hasTrustedCountedOutOf ? countedOutOf : null);
+        : (hasTrustedCountedOutOf ? countedOutOf : keyDeclaredOutOf);
 
       if (finalFixedOutOf) {
         // If the AI used a different denominator than the teacher override, rescale.

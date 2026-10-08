@@ -100,6 +100,13 @@ export function preloadPdfLibs() {
 // ---------- Helpers ----------
 const esc = (s) => String(s || "").replace(/[\r]/g, "");
 
+// Marks print as a teacher writes them: 3, not 3.0, and 2.5 rather than 2.50.
+const trimNum = (n) => {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "";
+  return String(Math.round(v * 100) / 100);
+};
+
 /** Show first name if we have one, otherwise "Student N" */
 function getDisplayName(r) {
   const raw = (r.studentName || "").trim();
@@ -1009,11 +1016,17 @@ export async function buildMarkingGuidePdf(results, { title } = {}) {
       }
       let x = MARGIN + 8;
       for (const it of items) {
+        // On a written section a tick says nothing useful — the question is
+        // how many of its marks the part earned. Where the item carries its
+        // own allocation, that is what gets printed; a glyph alone cannot
+        // tell 2 of 3 from 3 of 3.
+        const scored = Number.isFinite(Number(it.marks)) && Number(it.marks_out_of) > 0;
         const label = String(it.n || "");
-        const w = doc.getTextWidth(label) + 14;
+        const tail = scored ? ` ${trimNum(it.marks)}/${trimNum(it.marks_out_of)}` : "";
+        const w = doc.getTextWidth(label + tail) + 14;
         if (x + w > PAGE_W - MARGIN) { y += LINE; room(LINE); x = MARGIN + 8; }
-        doc.text(label, x, y);
-        markGlyph(doc, it.verdict, x + doc.getTextWidth(label) + 2, y);
+        doc.text(label + tail, x, y);
+        markGlyph(doc, it.verdict, x + doc.getTextWidth(label + tail) + 2, y);
         x += w;
       }
       y += LINE + 1;
@@ -1026,8 +1039,10 @@ export async function buildMarkingGuidePdf(results, { title } = {}) {
           ? `  \u00b7  answer: ${esc(it.correct_answer)}`
           : (it.verdict === "unclear" ? "  \u00b7  not checked — no answer key" : "");
         const why = it.note ? ` — ${esc(it.note)}` : "";
+        const scored = Number.isFinite(Number(it.marks)) && Number(it.marks_out_of) > 0;
+        const got = scored ? `${trimNum(it.marks)}/${trimNum(it.marks_out_of)}  ` : "";
         doc.setFontSize(8.5);
-        const lines = doc.splitTextToSize(`${it.n}. ${wrote}${want}${why}`, COL_W - 22);
+        const lines = doc.splitTextToSize(`${it.n}. ${got}${wrote}${want}${why}`, COL_W - 22);
         for (let i = 0; i < lines.length; i++) {
           room(LINE);
           if (i === 0) markGlyph(doc, it.verdict, MARGIN + 8, y);

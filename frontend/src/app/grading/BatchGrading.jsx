@@ -614,6 +614,7 @@ export default function BatchGrading({
   const [pagesPerStudent, setPagesPerStudent] = useState("auto"); // number, "auto", or "tap"
   const [precisionMode, setPrecisionMode] = useState(false); // multi-pass median scoring
   const PRECISION_PASSES = 3; // number of AI passes per student in precision mode
+  const ACT_LINE = 18; // one row of the activity ticker, in px
   const [answerKeyPages, setAnswerKeyPages] = useState(0); // leading pages that are the answer key
   // The answer key worked out from the class, when the teacher gave none.
   // Declared here, above runBatch, not beside the other result state far
@@ -636,6 +637,28 @@ export default function BatchGrading({
 
   const [grading, setGrading] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0, current: "" });
+
+  // A running account of what the batch is doing.
+  //
+  // Twenty papers take minutes, and a progress bar that moves once a student
+  // looks like a page that has stopped. The headline says which student; this
+  // says what is happening to them right now — the key going in, the pages
+  // going up, the mark coming back — so the wait reads as work rather than as
+  // a hang.
+  const [activity, setActivity] = useState([]);
+  const activitySeq = useRef(0);
+  const say = useCallback((text) => {
+    if (!text) return;
+    const at = new Date();
+    const stamp = `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}:${String(at.getSeconds()).padStart(2, "0")}`;
+    setActivity((prev) => {
+      const next = [...prev, { id: ++activitySeq.current, stamp, text }];
+      // Trimming from the front is invisible: the ticker's offset is
+      // -(length - 1) lines, so dropping n lines moves the content up by n
+      // and the offset down by n, and the two cancel exactly.
+      return next.length > 160 ? next.slice(next.length - 120) : next;
+    });
+  }, []);
   // Read at the moment of use, never captured. runBatch is a useCallback with
   // 23 dependencies and the email was not among them, so gradeOneStudent
   // published with whatever the prop held when that callback was last built —
@@ -1157,6 +1180,7 @@ export default function BatchGrading({
     abortRef.current = false;
     abortControllerRef.current = new AbortController();
     setServiceFault(null); // a fresh run gets a fresh verdict on the service
+    setActivity([]);       // and a fresh account of itself
     setGrading(true);
     // Wrap the whole run so an unexpected throw (or early return) can never leave
     // the UI stuck in the "grading" state — finally always clears it.
@@ -1176,6 +1200,7 @@ export default function BatchGrading({
     let localRotatedPages = { ...rotatedPages }; // local copy for use in grading loop
     if (isAuto && !groups) {
       setProgress({ done: 0, total: 0, current: `Analyzing ${pageCount} pages — detecting student boundaries...` });
+      say(`Reading ${pageCount} pages — working out where each paper starts`);
 
       // Use deterministic fingerprinting first
       try {
@@ -1288,6 +1313,7 @@ export default function BatchGrading({
 
     if (keyPageNumbers.length === 0 && !effectiveAnswerKey && uploadedKeyImages.length) {
       setProgress({ done: 0, total, current: "Reading the answer key..." });
+      say(`Reading the answer key you uploaded (${uploadedKeyImages.length} page${uploadedKeyImages.length === 1 ? "" : "s"})`);
       answerKeyImages = uploadedKeyImages;
       try {
         const extractUrl = gradingUrl.replace(/\/grading$/, "/grading/extract-answer-key");
@@ -1312,6 +1338,7 @@ export default function BatchGrading({
 
     if (keyPageNumbers.length > 0 && !effectiveAnswerKey) {
       setProgress({ done: 0, total, current: "Extracting answer key..." });
+      say(`Reading the answer key from page${keyPageNumbers.length === 1 ? "" : "s"} ${keyPageNumbers.join(", ")} of the PDF`);
       try {
         const akImages = [];
         for (const p of keyPageNumbers) {
@@ -1348,15 +1375,20 @@ export default function BatchGrading({
       const startPage = group.startPage;
       const endPage = group.endPage;
 
+      const who = group.name ? `${group.name}` : `Student ${i + 1}`;
+      const began = Date.now();
+
       try {
         // Render pages to images (auto-rotate any upside-down pages)
         const images = [];
         const totalPages = doc ? doc.numPages : imgArr.length;
+        say(`${who}: rendering pages ${startPage}–${endPage}`);
         for (const p of group.pages) {
           if (p < 1 || p > totalPages) continue;
           const rotation = localRotatedPages[p] ? 180 : 0;
           const dataUrl = await renderPageToDataUrl(doc, p, 1.5, rotation, imgArr);
           images.push(dataUrl);
+          if (localRotatedPages[p]) say(`${who}: page ${p} was upside down — turned`);
         }
         if (images.length === 0) {
           return {
@@ -1402,6 +1434,10 @@ export default function BatchGrading({
           },
         };
 
+        const kb = Math.round(JSON.stringify(payload).length / 1024);
+        say(`${who}: sending ${images.length} page${images.length === 1 ? "" : "s"} (${kb} KB)` +
+            `${effectiveAnswerKey ? " with the answer key" : " — no key"}`);
+
         const res = await fetchWithRetry(gradingUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1410,6 +1446,8 @@ export default function BatchGrading({
         });
 
         const data = await res.json();
+        say(`${who}: marked in ${((Date.now() - began) / 1000).toFixed(1)}s` +
+            `${Number.isFinite(Number(data.overall_score)) ? ` — ${Math.round(Number(data.overall_score) * 10) / 10}/${Math.round(Number(data.overall_out_of))}` : ""}`);
 
         const rawScore = Number(data.overall_score);
         const rawOutOf = Number(data.overall_out_of);
@@ -1690,6 +1728,7 @@ export default function BatchGrading({
           fixed += changed.length; touched += 1;
         }
         if (fixed) {
+          say(`Your answer key re-marked ${fixed} item${fixed === 1 ? "" : "s"} across ${touched} paper${touched === 1 ? "" : "s"}`);
           console.log(`[batch] teacher's key applied directly: ${fixed} item(s) re-marked across ${touched} paper(s)`);
           setResults([...batchResults]);
         }
@@ -1715,6 +1754,7 @@ export default function BatchGrading({
           moved += changed.length;
         }
         setConsensusKey({ ...derived, applied: moved });
+        say(`No key given — built one from ${derived.papers} papers, corrected ${moved} mark${moved === 1 ? "" : "s"}`);
         console.log(`[batch] no answer key — derived one from ${derived.papers} papers,` +
           ` ${derived.sections.reduce((n, s) => n + s.items.length, 0)} items,` +
           ` ${derived.starredCount} starred, ${moved} marks corrected`);
@@ -1742,6 +1782,7 @@ export default function BatchGrading({
       }
 
       if (allRosterStudents.length > 0) {
+        say(`Matching names against ${allRosterStudents.length} students on your rosters`);
         const norm = (s) => (s || "").toLowerCase().replace(/[^a-z]/g, "").trim();
 
         // Levenshtein distance for fuzzy comparison (handles OCR/handwriting errors)
@@ -2372,6 +2413,7 @@ export default function BatchGrading({
     const validForAnalysis = batchResults.filter((r) => !r.error && r.raw);
     if (validForAnalysis.length >= 2) {
       setProgress({ done: total, total, current: "Generating class analysis..." });
+      say("All papers marked — writing the class analysis");
       try {
         const evidence = validForAnalysis.map((r) => {
           const a = r.raw || {};
@@ -2424,6 +2466,7 @@ export default function BatchGrading({
       }
     }
 
+    say("Done.");
     setProgress({ done: total, total, current: "Done!" });
 
     // Track this filename as processed (persisted in localStorage)
@@ -2463,6 +2506,7 @@ export default function BatchGrading({
       setGrading(false);
     }
   }, [
+    say,
     studentCount,
     pageCount,
     fixedPps,
@@ -4622,6 +4666,51 @@ export default function BatchGrading({
           <div style={{ fontSize: 12, opacity: 0.6, marginTop: 4 }}>
             {progress.done} / {progress.total} complete
           </div>
+
+          {/* One line of what is happening, scrolling up as it happens. */}
+          {activity.length > 0 && (
+            <div
+              style={{
+                marginTop: 8,
+                height: ACT_LINE,
+                overflow: "hidden",
+                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                fontSize: 11.5,
+                color: "#475569",
+                background: "#f8fafc",
+                border: "1px solid #e2e8f0",
+                borderRadius: 6,
+                padding: "0 8px",
+              }}
+              // The headline above already announces itself; a line a second
+              // read out on top of it would be unusable.
+              aria-hidden="true"
+            >
+              <div
+                style={{
+                  transform: `translateY(-${(activity.length - 1) * ACT_LINE}px)`,
+                  transition: "transform 280ms cubic-bezier(.22,.61,.36,1)",
+                  willChange: "transform",
+                }}
+              >
+                {activity.map((a) => (
+                  <div
+                    key={a.id}
+                    style={{
+                      height: ACT_LINE,
+                      lineHeight: `${ACT_LINE}px`,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    <span style={{ opacity: 0.45 }}>{a.stamp}</span>{"  "}{a.text}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <button
             onClick={() => { abortRef.current = true; abortControllerRef.current?.abort(); }}
             style={{ ...batchStyles.ghostBtn, marginTop: 8 }}
