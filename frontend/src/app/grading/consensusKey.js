@@ -655,3 +655,64 @@ export function withCorrectedAnswer(text, id, answer) {
     return `${m[1]}${m[2]}${m[3]}: ${String(answer).trim()}${m[5] ? ` ${m[5]}` : ""}`;
   }).join("\n");
 }
+
+/* ------------------------------------------------------------------
+ *  An answer key uploaded into the rubric box.
+ *
+ *  "Upload Rubric" is the only upload button on that panel, so a teacher
+ *  with an answer key presses it — and the key lands in rubricOverride,
+ *  which nothing in the key machinery reads. The deterministic matching,
+ *  the blind read and the mark scheme all take answerKeyOverride, so the
+ *  paper is graded as if no key existed and the banner says so. The text
+ *  is right there on the screen; it is simply in the wrong slot.
+ *
+ *  So the slot is corrected here, before anything is sent, rather than in
+ *  the backend — the frontend is the one place that holds both, and doing
+ *  it once means the backend, the blind read and the marking all agree
+ *  without a second copy of this rule to drift out of step.
+ * ------------------------------------------------------------------ */
+
+/**
+ * Does this text look like an answer key rather than a marking rubric?
+ *
+ * Deliberately two-gated. A heading that says so is enough on its own; a
+ * document without one has to look like a key — a run of numbered short
+ * answers, which is what a key is and what a rubric never is. A rubric
+ * describes levels and criteria in sentences.
+ */
+export function looksLikeAnswerKey(text) {
+  const s = String(text || "").trim();
+  if (s.length < 40) return false;
+
+  // Said outright, at the top where a title lives.
+  if (/\b(answer\s*key|marking\s*key|teacher\s*copy|solutions?\s*sheet)\b/i.test(s.slice(0, 300))) {
+    return true;
+  }
+
+  // Or it reads like one: numbered items whose answers are a letter, a
+  // truth value or a couple of words.
+  const short = (s.match(/(?:^|[\s;·])\d{1,2}\s*[.)]\s*(?:[A-J]\b|TRUE\b|FALSE\b|[TF]\b)/gi) || []).length;
+  if (short >= 6) return true;
+
+  // A key for a written paper states the marks per question throughout.
+  const perItem = (s.match(/\(\s*\/\s*\d+\s*\)/g) || []).length;
+  return perItem >= 6;
+}
+
+/**
+ * Work out what should be sent as the rubric and what as the answer key.
+ *
+ * A key already in the key slot is left alone. Otherwise a key-looking
+ * rubric is copied across — copied, not moved, because the teacher chose
+ * to attach it and the grader can still use a key as a rubric, and because
+ * a wrong guess then costs a repeated paragraph rather than a lost upload.
+ *
+ * @returns { rubric, answerKey, promoted }
+ */
+export function routeRubricAndKey(rubricText, answerKeyText) {
+  const rubric = String(rubricText || "").trim();
+  const key = String(answerKeyText || "").trim();
+  if (key || !rubric) return { rubric, answerKey: key, promoted: false };
+  if (!looksLikeAnswerKey(rubric)) return { rubric, answerKey: "", promoted: false };
+  return { rubric, answerKey: rubric, promoted: true };
+}

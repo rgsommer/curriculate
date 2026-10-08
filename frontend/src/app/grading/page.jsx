@@ -9,6 +9,7 @@ import AudioGrading from "./AudioGrading";
 import QuestWidget, { GRADING_QUESTS, completeQuest } from "../../components/QuestWidget";
 import PulseFeedbackButton from "./PulseFeedbackButton";
 import { buildResultsPdf, buildStripsPdf, buildMarkingGuidePdf, sessionItemToResult, buildSessionEdsbyCsv, preloadPdfLibs } from "./pdfReports";
+import { routeRubricAndKey } from "./consensusKey";
 
 /**
  * app/grading/page.jsx
@@ -3035,6 +3036,16 @@ export default function GradingPage() {
         const rubricForSubmission = manualRubric.length
           ? manualRubric
           : (stickyRubric.length ? stickyRubric : effectiveRubricFromImages);
+
+        // An answer key put in the rubric box belongs in the key slot.
+        // "Upload Rubric" is the only upload button on that panel, so that
+        // is where a teacher's key lands, and nothing in the key machinery
+        // reads the rubric — the paper is then graded as if no key existed.
+        const keyRouting = routeRubricAndKey(rubricForSubmission, effectiveAnswerKey);
+        if (keyRouting.promoted) {
+          effectiveAnswerKey = keyRouting.answerKey;
+          console.log("[submit] rubric looked like an answer key; promoted to the key slot");
+        }
 
         const payload = {
           anonId,

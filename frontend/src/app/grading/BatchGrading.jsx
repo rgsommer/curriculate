@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildResultsPdf, buildStripsPdf, buildMarkingGuidePdf, preloadPdfLibs } from "./pdfReports";
-import { deriveConsensusKey, keyIndex, keyIndexFromExtracted, applyKeyToGuide, applyBlindMarking, keyRowsForReview, withCorrectedAnswer, MIN_VOTERS } from "./consensusKey";
+import { deriveConsensusKey, keyIndex, keyIndexFromExtracted, applyKeyToGuide, applyBlindMarking, keyRowsForReview, withCorrectedAnswer, routeRubricAndKey, MIN_VOTERS } from "./consensusKey";
 import { completeQuest } from "../../components/QuestWidget";
 
 /**
@@ -1423,7 +1423,18 @@ export default function BatchGrading({
       }
     }
 
-    const effectiveRubric = (rubricOverride || "").trim();
+    // An answer key uploaded into the rubric box belongs in the key slot.
+    // "Upload Rubric" is the only upload button on that panel, so that is
+    // where a teacher's answer key lands — and nothing in the key machinery
+    // reads the rubric, so the run marks as if no key existed. See
+    // routeRubricAndKey in consensusKey.js.
+    const routed = routeRubricAndKey(rubricOverride, effectiveAnswerKey);
+    if (routed.promoted) {
+      effectiveAnswerKey = routed.answerKey;
+      say("That rubric upload is an answer key — marking against it");
+      console.log("[batch] rubric looked like an answer key; promoted to the key slot");
+    }
+    const effectiveRubric = routed.rubric;
 
     // Grade a single student — returns a result entry
     if (keyDoubt.length) {
@@ -2800,8 +2811,11 @@ export default function BatchGrading({
       }
       if (!images.length) throw new Error("No valid pages for this student");
 
-      const effectiveRubric = (rubricOverride || "").trim();
-      const effectiveAnswerKey = extractedAnswerKey || "";
+      // Same routing as the batch run, so a re-grade cannot quietly lose
+      // the key the original run used.
+      const regradeRouted = routeRubricAndKey(rubricOverride, extractedAnswerKey || "");
+      const effectiveRubric = regradeRouted.rubric;
+      const effectiveAnswerKey = regradeRouted.answerKey;
 
       const payload = {
         images,
