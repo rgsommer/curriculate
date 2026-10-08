@@ -28,7 +28,7 @@ import gradingFeedbackRouter from "./routes/gradingFeedback.js";
 import homeworkCheckRouter from "./routes/homeworkCheck.js";
 import gradingResetRouter from "./routes/gradingReset.js";
 import { RESULT_RETENTION_DAYS, RESULT_RETENTION_MS } from "./utils/retention.js";
-import { reconcileSectionsFromGuide, totalFromKey } from "./utils/sectionTotals.js";
+import { reconcileSectionsFromGuide, totalFromKey, markSchemeBrief } from "./utils/sectionTotals.js";
 import pulseBetaRouter, { isActiveBetaCode } from "./routes/pulseBeta.js";
 import cardsRouter from "./routes/cards.js";
 import avgsRouter from "./routes/avgs.js";
@@ -13776,7 +13776,23 @@ function buildRubricInstructions({
     ${answerKeyOverride ? `
       ANSWER KEY / SOLUTION SHEET (provided from previous detection):
       ${answerKeyOverride}
-
+${(() => {
+  // The key's own allocation for the written sections, written out plainly.
+  // It is already in the key — "D1: ... (/4)" — and the model was reading
+  // past it and inventing its own: seventeen sub-parts allocating 27 on a
+  // section worth 20 in one run, six allocating 13 in the next, on the same
+  // paper. State it as a constraint and the shape stops moving.
+  const brief = markSchemeBrief(answerKeyOverride);
+  return brief ? `
+      MARK SCHEME FOR THE WRITTEN SECTIONS — USE EXACTLY THESE ITEMS AND MARKS:
+${brief}
+      One marking_guide item per line above, numbered as above (D1 is "1").
+      Do not split a question into sub-parts of your own and do not invent
+      allocations: the marks are stated, and they already add to the section
+      total. Your job on these is how many of each item's marks this student
+      earned, nothing else.
+` : "";
+})()}
       ANSWER KEY GRADING PROCEDURE (MANDATORY — follow these steps in order):
 
       ${answerKeyOverride.includes("MULTIPLE TEST VERSIONS") ? `
@@ -14241,10 +14257,28 @@ function buildRubricInstructions({
       full allocation even if it is set out differently from the key, and a
       part left blank or abandoned earns nothing — "I'm not done" is 0, not a
       sympathetic half.
+    - The parts of a section must allocate the section's own total. If
+      "Show your work" is out of 20, its parts add to 20 — six parts of 3 and
+      one of 2, whatever the key says. Not 32 because each sub-part looked
+      like it was worth 4.
+    - AN EXTENDED OR MULTI-STEP PROBLEM IS MARKED ON WHERE IT ARRIVES. Before
+      giving it a mark, find two things and say them in the note: the answer
+      the key reaches, and the answer the student reaches. Then:
+        • Right answer, working shown — full marks.
+        • Right answer, no working — most of the marks, not all.
+        • Wrong answer from sound method, one slip — about half; name the slip.
+        • Wrong answer with no usable method, or no equation ever written —
+          a mark or two for what was attempted, not more.
+        • Nothing attempted, or abandoned part way ("I'm not done") — what is
+          actually on the page, which is usually nothing.
+      A long answer that is confidently written and wrong is still wrong. Do
+      not award marks for effort, neatness, or for restating the question.
     - Do not drift towards the middle. A paper where every part is right
       scores full marks on that section, and one where nothing works scores
       near nothing. Mark what is on the page, part by part, and let the total
-      fall where it falls.
+      fall where it falls. Half the class scoring between 60% and 80% on a
+      written section is a sign you are marking an impression rather than the
+      work: real papers spread much wider than that.
     - Leave marks and marks_out_of null on single-mark objective items
       (matching, true/false, fill in the blank). Those are settled by the key.
 
@@ -16327,7 +16361,7 @@ function buildRubricInstructions({
 
       // Remove bogus incorrect_items where student_answer == correct_answer (after normalization)
       scrubIncorrectItems(grade);
-      reconcileSectionsFromGuide(grade, (m) => console.log(m));
+      reconcileSectionsFromGuide(grade, (m) => console.log(m), effectiveAnswerKey);
       recomputeOverallFromSections(grade);
       reconcileAchievementSummary(grade);
 

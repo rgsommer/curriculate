@@ -47,7 +47,64 @@ export function totalFromKey(keyText, modelOutOf) {
   return totals.reduce((best, t) => (Math.abs(t - out) < Math.abs(best - out) ? t : best));
 }
 
+/**
+ * The mark scheme for each section, as the key states it.
+ *
+ * The extractor writes the marks on every line — "D1: 36 16 12 14 (/4)" —
+ * and for this paper D's six entries allocate exactly its 20. Left to
+ * itself the model does not use that: one run itemised D as seventeen
+ * invented sub-parts allocating 27, the next as six allocating 13, and the
+ * section score moved several marks between runs on the same paper for no
+ * reason but the shape it happened to choose.
+ *
+ * So the allocation is taken from here and only the earning is asked of the
+ * model. First paper only, for the same reason parseKeyAnswers stops there:
+ * a key covering an accommodated version restarts its numbering.
+ *
+ * @returns Map "D" -> [{ n: "1", outOf: 4 }, ...]
+ */
+export function markSchemeFromKey(keyText) {
+  const byLetter = new Map();
+  let started = false;
+  for (const raw of String(keyText || "").split("\n")) {
+    const line = raw.trim();
+    if (/^=+\s*ANSWER KEY/i.test(line)) {
+      if (started) break;
+      started = true;
+      continue;
+    }
+    // Greedy up to the LAST bracket, since an answer may carry its own.
+    const m = line.match(/^([A-Z])\s*(\d{1,2}[a-z]?)\s*[:.]\s*.*\(\/\s*([\d.]+)[^)]*\)\s*$/);
+    if (!m) continue;
+    const [, letter, n, marks] = m;
+    const outOf = Number(marks);
+    if (!Number.isFinite(outOf) || outOf <= 0) continue;
+    if (!byLetter.has(letter)) byLetter.set(letter, []);
+    const list = byLetter.get(letter);
+    if (!list.some((x) => x.n === n)) list.push({ n, outOf });
+  }
+  return byLetter;
+}
+
+/**
+ * The scheme written out for the prompt, so the model marks against the
+ * allocation rather than inventing one.
+ */
+export function markSchemeBrief(keyText) {
+  const scheme = markSchemeFromKey(keyText);
+  const lines = [];
+  for (const [letter, items] of scheme) {
+    const total = items.reduce((t, i) => t + i.outOf, 0);
+    // One mark an item is an objective section; it is settled against the
+    // key and needs no per-part marking.
+    if (items.length > 1 && items.every((i) => i.outOf <= 1)) continue;
+    lines.push(`  ${letter}: ${items.map((i) => `${letter}${i.n} (/${i.outOf})`).join(", ")} — ${total} in all`);
+  }
+  return lines.join("\n");
+}
+
 const norm = (s) => String(s || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const leadNum = (n) => (String(n ?? "").match(/^\s*(\d{1,2})/) || [])[1] || null;
 
 /**
  * A written section's score is the sum of its parts, not an impression.
@@ -67,10 +124,12 @@ const norm = (s) => String(s || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, 
  *
  * Mutates and returns the grade, matching the other reconcilers around it.
  */
-export function reconcileSectionsFromGuide(grade, log = () => {}) {
+export function reconcileSectionsFromGuide(grade, log = () => {}, keyText = "") {
   if (!grade || !Array.isArray(grade.sections)) return grade;
   const guideSections = grade.marking_guide?.sections;
   if (!Array.isArray(guideSections)) return grade;
+
+  const scheme = markSchemeFromKey(keyText);
 
   const byName = new Map();
   for (const gs of guideSections) {
@@ -96,18 +155,84 @@ export function reconcileSectionsFromGuide(grade, log = () => {}) {
     if (!gs && sameShape) gs = guideSections[i];
     if (!gs || !Array.isArray(gs.items) || gs.items.length < 2) return;
 
+    // The key's own allocation for this section, where it has one.
+    //
+    // Preferred over the model's, because the model's moves between runs on
+    // the same paper. Its parts are grouped onto the scheme's — sub-parts
+    // 1a, 1b, 1c count towards item 1 by the share of their own marks they
+    // earned — so whichever shape came back, the section is marked out of
+    // what the key says it is worth.
+    const letter = String(sec?.name || "").trim().match(/^([A-Z])[.)\s]/)?.[1]
+      || String(gs?.name || "").trim().match(/^([A-Z])[.)\s]/)?.[1]
+      || null;
+    let schemeItems = letter ? scheme.get(letter) : null;
+    // An objective section — every item worth one mark — is settled against
+    // the key by string comparison and is not marked part by part here.
+    if (schemeItems && schemeItems.length > 1 && schemeItems.every((i) => i.outOf <= 1)) {
+      schemeItems = null;
+    }
+    const schemeSum = schemeItems ? schemeItems.reduce((t, i) => t + i.outOf, 0) : 0;
+
+    // Only when the scheme is for this paper: a multi-version key states the
+    // first paper's marks, and an accommodated section is worth less.
+    if (schemeItems && Math.abs(schemeSum - outOf) <= 0.01) {
+      let earned = 0;
+      let covered = 0;
+      for (const si of schemeItems) {
+        let group = gs.items.filter((it) => leadNum(it?.n) === si.n);
+        // A single-item section the model labelled its own way — "Option 2"
+        // against the key's "E1" — still pairs when there is only one of each.
+        if (!group.length && schemeItems.length === 1 && gs.items.length === 1) group = gs.items;
+        const usable = group.filter(
+          (it) => Number.isFinite(Number(it.marks)) && Number(it.marks_out_of) > 0
+        );
+        if (!usable.length) continue;
+        const got = usable.reduce((t, it) => t + Number(it.marks), 0);
+        const avail = usable.reduce((t, it) => t + Number(it.marks_out_of), 0);
+        earned += Math.max(0, Math.min(1, got / avail)) * si.outOf;
+        covered += si.outOf;
+      }
+      if (covered >= schemeSum - 0.01) {
+        const marked = Math.round(earned * 100) / 100;
+        if (Math.abs(marked - Number(sec.score)) > 0.01) {
+          log(`[grading] "${sec.name}": ${sec.score} asserted, ${marked} against the key's own scheme — using the scheme`);
+          sec.score = marked;
+        }
+        if (Math.abs(marked - Number(gs.score)) > 0.01) gs.score = marked;
+        return;
+      }
+      log(`[grading] "${sec.name}": the key allocates ${schemeSum} but only ${covered} of it was marked — falling back`);
+    }
+
     const complete = gs.items.every(
       (it) => Number.isFinite(Number(it?.marks)) && Number.isFinite(Number(it?.marks_out_of))
     );
     if (!complete) return;
 
     const allocated = gs.items.reduce((t, it) => t + Number(it.marks_out_of), 0);
-    if (Math.abs(allocated - outOf) > 0.01) {
-      log(`[grading] "${sec.name}": parts allocate ${allocated} but the section is out of ${outOf} — left as marked`);
+    if (allocated <= 0) return;
+
+    // An itemisation that allocates a different total is scaled, not thrown
+    // away. Asked to mark "Show your work /20" part by part it came back with
+    // four parts of 4 and eight of 1 — 32 marks of allocation on a section
+    // worth 20 — while judging every part correctly. Discarding that put the
+    // section back on the holistic number the itemisation exists to replace.
+    // The proportion is the judgement; the denominator is bookkeeping.
+    //
+    // Within reason: an allocation less than half or more than three times
+    // the section is not a scale error but a misread of what the section is,
+    // and scaling it would turn nonsense into a plausible-looking mark.
+    const ratio = allocated / outOf;
+    if (ratio < 0.5 || ratio > 3) {
+      log(`[grading] "${sec.name}": parts allocate ${allocated} against a section of ${outOf} — too far out to scale, left as marked`);
       return;
     }
+    if (Math.abs(allocated - outOf) > 0.01) {
+      log(`[grading] "${sec.name}": parts allocate ${allocated}, section is out of ${outOf} — scaling`);
+    }
 
-    const earned = Math.round(gs.items.reduce((t, it) => t + Number(it.marks), 0) * 100) / 100;
+    const rawEarned = gs.items.reduce((t, it) => t + Number(it.marks), 0);
+    const earned = Math.round((rawEarned / allocated) * outOf * 100) / 100;
     const clamped = Math.max(0, Math.min(outOf, earned));
     if (Math.abs(clamped - Number(sec.score)) > 0.01) {
       log(`[grading] "${sec.name}": ${sec.score} asserted, ${clamped} from the parts — using the parts`);
