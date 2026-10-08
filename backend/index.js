@@ -17545,6 +17545,11 @@ Return valid JSON matching this exact schema.`;
       // reason to withhold an item from marking.
       const { sameKeyReading, normaliseAnswer: normKeyAns, isObjectiveSection } =
         await import("./utils/objectiveMarking.js");
+      const unverified = [];
+
+      // Handle both new multi-version format and legacy single-version format
+      const versions = extracted.versions || [{ version_label: "A", questions: extracted.questions || [], total_marks: extracted.total_marks || 0 }];
+
 
       // Which sections the marking will actually look answers up in.
       //
@@ -17569,10 +17574,6 @@ Return valid JSON matching this exact schema.`;
         for (const [l, items] of bySec) if (isObjectiveSection(items)) out.add(l);
         return out;
       });
-      const unverified = [];
-
-      // Handle both new multi-version format and legacy single-version format
-      const versions = extracted.versions || [{ version_label: "A", questions: extracted.questions || [], total_marks: extracted.total_marks || 0 }];
       const isMultiVersion = versions.length > 1;
 
       // Build a human-readable summary for use as answerKeyOverride in grading
