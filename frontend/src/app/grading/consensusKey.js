@@ -427,9 +427,23 @@ export function applyKeyToGuide(guide, index) {
  */
 export function parseExtractedKey(text) {
   const bySection = new Map();
+  const seen = new Set();
+  let started = false;
+
   for (const rawLine of String(text || "").split("\n")) {
     const line = rawLine.trim();
-    // Stop at a second paper's key; the caller picks which one applies.
+
+    // STOP at a second paper's key. This comment was here with no code under
+    // it, and the cost was severe: a key covering the Unit Test and an
+    // Accommodated paper restarts its numbering, so the second A1 overwrote
+    // the first and every paper was marked against the wrong answers. The
+    // best paper in a class of twenty came back 19 out of 50.
+    if (/^=+\s*ANSWER KEY/i.test(line)) {
+      if (started) break;
+      started = true;
+      continue;
+    }
+
     const m = line.match(/^([A-Z])\s*(\d{1,2}[a-z]?)\s*[:.]\s*(.+?)\s*(?:\(\/\s*[\d.]+[^)]*\))?\s*$/);
     if (!m) continue;
     const [, letter, n, answer] = m;
@@ -437,6 +451,10 @@ export function parseExtractedKey(text) {
     // "See Option 1 and 2 solutions provided" and similar are not answers
     // to compare against.
     if (!clean || clean.length > 40 || /^see\b/i.test(clean)) continue;
+    // First answer for an item wins, so a stray repeat cannot replace it.
+    const k = `${letter}\u0000${n}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
     if (!bySection.has(letter)) bySection.set(letter, []);
     bySection.get(letter).push({ n, answer: normaliseAnswer(clean) });
   }
