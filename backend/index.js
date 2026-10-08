@@ -17543,7 +17543,7 @@ Return valid JSON matching this exact schema.`;
       // Compared on meaning, not on typography: "×" and "x", "15 + 6n" and
       // "6n + 15" are one answer, and a disagreement about a space is not a
       // reason to withhold an item from marking.
-      const { normaliseAnswer: normKeyAns, answersMatch: keyAnsMatch } =
+      const { sameKeyReading, isCheckableAnswer } =
         await import("./utils/objectiveMarking.js");
       const unverified = [];
 
@@ -17585,13 +17585,20 @@ Return valid JSON matching this exact schema.`;
           // a student on an answer we are not sure of, and the teacher is
           // shown the pair so they can settle it in seconds.
           let suspect = false;
-          if (extractedB) {
+          const mine = String(q.correct_answer ?? "").trim();
+          // Only answers that could actually mark somebody wrong. A key's
+          // entry for "Show your work" is a method — no student is marked
+          // against it, parseKeyAnswers drops it for being long — so a note
+          // that the two readings punctuated it differently is noise, and
+          // ten lines of noise bury the one line that matters. On a real run
+          // this took the warning from eleven items to the two letters that
+          // were genuinely read two ways.
+          if (extractedB && isCheckableAnswer(mine)) {
             const other = secondAnswers.get(`${vi}\u0000${q.question_id}`);
-            const mine = String(q.correct_answer ?? "").trim();
             if (other === undefined) {
               suspect = true;
               unverified.push({ id: q.question_id, first: mine, second: "(not read)" });
-            } else if (!keyAnsMatch(normKeyAns(mine), normKeyAns(other))) {
+            } else if (!sameKeyReading(mine, other)) {
               suspect = true;
               unverified.push({ id: q.question_id, first: mine, second: other });
             }

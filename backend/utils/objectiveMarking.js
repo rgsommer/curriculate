@@ -212,3 +212,39 @@ export function markObjective(transcript, keyText) {
 
   return { sections: out, marked, skipped };
 }
+
+/**
+ * Is this key answer one that could actually mark a student wrong?
+ *
+ * Only short answers are ever used as a lookup: parseKeyAnswers drops
+ * anything longer, and isObjectiveSection drops a section whose answers are
+ * mostly long. A key's entry for "Show your work" is a method, and nobody is
+ * marked against it. So there is no point telling a teacher that the two
+ * readings punctuated a worked solution differently — it buries the one line
+ * that matters under ten that do not.
+ */
+export function isCheckableAnswer(v) {
+  const s = String(v ?? "").trim();
+  return s.length > 0 && s.length <= 24;
+}
+
+/**
+ * Do two readings of the same key entry say the same thing?
+ *
+ * Looser than answersMatch, which compares a student's answer to the key and
+ * should be strict. This compares the key with ITSELF, read twice, and the
+ * question is only whether the transcription differs in substance. "16x 15x
+ * 7x" and "16x, 15x, 7x" are one answer written two ways; flagging that as a
+ * disagreement makes the warning worthless, and a warning nobody reads is
+ * worse than no warning.
+ */
+export function sameKeyReading(a, b) {
+  const loose = (v) => String(v ?? "")
+    .toLowerCase()
+    .replace(/[→–—]/g, " ")     // arrows and dashes are punctuation here
+    .replace(/[^a-z0-9+=./]+/g, " ")           // keep what changes the meaning
+    .replace(/\s+/g, "");                      // "x = 6" and "x=6" are one reading
+  const x = loose(a), y = loose(b);
+  if (x === y) return true;
+  return answersMatch(normaliseAnswer(a), normaliseAnswer(b));
+}
