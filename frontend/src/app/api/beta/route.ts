@@ -102,6 +102,15 @@ export async function POST(req: Request) {
       typeof body?.subject === "string" ? body.subject.trim() : "";
     const intent = typeof body?.intent === "string" ? body.intent.trim() : "";
     const hp = typeof body?.company === "string" ? body.company.trim() : "";
+    // Promo code (QREWFREE on the business card, or future promo campaigns).
+    // Stored on the signup record so billing can grant the attached offer
+    // when this teacher later converts. Normalized to UPPERCASE, 32 chars max.
+    const ref =
+      typeof body?.ref === "string" ? body.ref.trim().slice(0, 500) : "";
+    const promoCode =
+      typeof body?.promoCode === "string"
+        ? body.promoCode.trim().toUpperCase().slice(0, 32)
+        : "";
 
     // Brand detection. qrewzi-web's proxy sets source:"qrewzi" in the body
     // and x-forwarded-source:"qrewzi-web" in the headers. Either matches.
@@ -146,6 +155,10 @@ export async function POST(req: Request) {
           createdAt: new Date(),
           source: isQrewzi ? "qrewzi-beta" : "beta-form",
           brand: isQrewzi ? "qrewzi" : "curriculate",
+          // Marketing attribution — ref carries utm_* tags, promoCode carries
+          // the business-card / promo-campaign code (e.g. QREWFREE).
+          ...(ref ? { ref } : {}),
+          ...(promoCode ? { promoCode } : {}),
         });
       } catch (mongoErr) {
         console.error("Mongo insert error:", mongoErr);

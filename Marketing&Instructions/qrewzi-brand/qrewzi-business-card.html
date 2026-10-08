@@ -1,11 +1,22 @@
 <!doctype html>
+<!--
+  Qrewzi business card (3.5" × 2" trim, 0.125" bleed, 2-sided).
+
+  Render to PDF with WeasyPrint, NOT Brave/Chromium headless:
+
+      ~/path/to/.venv/bin/weasyprint qrewzi-business-card.html qrewzi-business-card.pdf
+
+  Why: Chromium's --print-to-pdf outputs Type 3 fonts (its internal
+  glyph format), which commercial printers reject as "un-embedded".
+  WeasyPrint emits CID TrueType subsets, which every printer accepts.
+
+  Needs Unbounded.ttf + Nunito.ttf installed in ~/Library/Fonts/
+  (fetched from github.com/google/fonts) so Pango can resolve them.
+-->
 <html>
 <head>
 <meta charset="utf-8" />
 <title>Qrewzi — business card</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&family=Unbounded:wght@400;700;800&display=swap">
 <style>
   /* Standard US business card: 3.5" × 2". Includes a 0.125" bleed on each
      side, so the artboard renders at 3.75" × 2.25" and the printer trims
@@ -191,13 +202,17 @@
     line-height: 1.2;
   }
   .feat .dot {
-    width: 4pt;
-    height: 4pt;
-    border-radius: 50%;
-    background: #FF4D5B;
-    display: inline-block;
+    /* A bullet char rather than an empty element so every PDF renderer
+       (Chromium, WeasyPrint, Prince) draws it the same. Empty inline-blocks
+       with explicit width in a baseline-flex context are flaky. */
     flex: 0 0 auto;
-    transform: translateY(-1pt);
+    color: #FF4D5B;
+    font-size: 12pt;
+    line-height: 0.5;
+    font-family: "Nunito", sans-serif;
+    display: inline-flex;
+    align-items: center;
+    width: 7pt;
   }
   .feat b {
     font-family: "Nunito", sans-serif;
@@ -303,27 +318,27 @@
 
     <div class="features">
       <div class="feat">
-        <span class="dot"></span>
-        <span><b>Zero prep.</b> <span class="desc">Describe a lesson — AI builds the game.</span></span>
+        <span class="dot">&bull;</span>
+        <span><b>Zero prep.</b> <span class="desc">A sentence becomes a 45-minute game.</span></span>
       </div>
       <div class="feat">
-        <span class="dot"></span>
+        <span class="dot">&bull;</span>
         <span><b>30+ task types.</b> <span class="desc">Sort, mind-map, speech, movement.</span></span>
       </div>
       <div class="feat">
-        <span class="dot"></span>
+        <span class="dot">&bull;</span>
         <span><b>GameMaster projector.</b> <span class="desc">Live leaderboard, heat map, celebrations.</span></span>
       </div>
       <div class="feat">
-        <span class="dot"></span>
+        <span class="dot">&bull;</span>
         <span><b>Grades + reports.</b> <span class="desc">Parent-ready recap when the bell rings.</span></span>
       </div>
       <div class="feat">
-        <span class="dot"></span>
+        <span class="dot">&bull;</span>
         <span><b>Any device.</b> <span class="desc">Phones, Chromebooks, tablets together.</span></span>
       </div>
       <div class="feat">
-        <span class="dot"></span>
+        <span class="dot">&bull;</span>
         <span><b>Standards-aligned.</b> <span class="desc">Ontario today, more jurisdictions soon.</span></span>
       </div>
     </div>

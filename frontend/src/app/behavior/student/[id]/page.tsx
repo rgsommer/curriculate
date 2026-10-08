@@ -1011,6 +1011,7 @@ export default function StudentPage() {
                   {inc.behaviorSnapshot.name}
                   {inc.weight && inc.weight !== 1 ? <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">×{inc.weight.toFixed(1)}</span> : null}
                   {inc.behaviorSnapshot.triggerMode === "IMMEDIATE" && <span className="ml-2 text-xs text-amber-600">immediate</span>}
+                  {inc.behaviorSnapshot.triggerMode === "NOTE" && <span className="ml-2 text-xs text-slate-500">no strike</span>}
                   {inc.teacherName ? <span className="text-slate-500"> · {inc.teacherName}</span> : null}
                 </span>
                 <span className="flex shrink-0 items-center gap-2 pl-2 text-slate-500">

@@ -294,6 +294,23 @@ export function deriveConsensusKey(papers, { rounds = 3, graderOpinion = null } 
  * "unclear" where the class could not settle it, which is honest and leaves
  * the item for the teacher, rather than a cross the student did not earn.
  */
+// Two answers that mean the same thing.
+//
+// A key prints "\u00d7" and a student writes "x"; a key prints "\u00f7" and a
+// student writes "/". Marking those wrong over a glyph is pedantry no
+// teacher would apply. Handled here rather than in normaliseAnswer because
+// "x" is also a perfectly good option letter in a matching column, and
+// flattening it there would damage the commoner case.
+const SAME_THING = [
+  new Set(["X", "\u00d7", "*"]),
+  new Set(["\u00f7", "/"]),
+  new Set(["-", "\u2212"]),
+];
+export function answersMatch(a, b) {
+  if (a === b) return true;
+  return SAME_THING.some((group) => group.has(a) && group.has(b));
+}
+
 export function verdictAgainstKey(studentAnswer, keyItem) {
   const undecided = ["low", "not-votable", "disputed"];
   if (!keyItem || !keyItem.answer || undecided.includes(keyItem.confidence)) {
@@ -301,7 +318,7 @@ export function verdictAgainstKey(studentAnswer, keyItem) {
   }
   const a = normaliseAnswer(studentAnswer);
   if (!a) return "blank";
-  return a === keyItem.answer ? "correct" : "incorrect";
+  return answersMatch(a, keyItem.answer) ? "correct" : "incorrect";
 }
 
 /* ------------------------------------------------------------------
@@ -383,4 +400,258 @@ export function applyKeyToGuide(guide, index) {
     delta: Math.round(delta * 100) / 100,
     changed,
   };
+}
+
+/* ------------------------------------------------------------------
+ *  The teacher's own key, applied the same deterministic way.
+ *
+ *  The model reads a key accurately and then fails to USE it: holding a
+ *  key that says 4 is A it accepted G, and rejected A on question 6
+ *  while naming question 1's answer. Matching a letter to a row is a
+ *  lookup, and a lookup is not a thing to ask a language model for when
+ *  the table is already in hand.
+ *
+ *  /grading/extract-answer-key transcribes the key reliably — that part
+ *  it does well. So parse that text and mark the objective items here,
+ *  by string comparison, exactly as the class-derived key is applied.
+ * ------------------------------------------------------------------ */
+
+/**
+ * Parse the extracted key into sections of numbered answers.
+ *
+ * The extractor emits one line per question, labelled by the section
+ * letter and number as the paper prints them:
+ *     A1: F (/1)        B3: FALSE (/1)       C2: 6 (/1)
+ * Lines it cannot label that way (the working-out sections, the headers,
+ * the grading notes) are skipped — those are not lookups anyway.
+ */
+export function parseExtractedKey(text) {
+  const bySection = new Map();
+  const seen = new Set();
+  let started = false;
+
+  for (const rawLine of String(text || "").split("\n")) {
+    const line = rawLine.trim();
+
+    // STOP at a second paper's key. This comment was here with no code under
+    // it, and the cost was severe: a key covering the Unit Test and an
+    // Accommodated paper restarts its numbering, so the second A1 overwrote
+    // the first and every paper was marked against the wrong answers. The
+    // best paper in a class of twenty came back 19 out of 50.
+    if (/^=+\s*ANSWER KEY/i.test(line)) {
+      if (started) break;
+      started = true;
+      continue;
+    }
+
+    // An item the two readings of the key disagreed about — never used to
+    // mark. See parseKeyAnswers in backend/utils/objectiveMarking.js.
+    if (line.includes("[CHECK]")) continue;
+    const m = line.match(/^([A-Z])\s*(\d{1,2}[a-z]?)\s*[:.]\s*(.+?)\s*(?:\(\/\s*[\d.]+[^)]*\))?\s*$/);
+    if (!m) continue;
+    const [, letter, n, answer] = m;
+    const clean = answer.trim();
+    // "See Option 1 and 2 solutions provided" and similar are not answers
+    // to compare against.
+    if (!clean || clean.length > 40 || /^see\b/i.test(clean)) continue;
+    // First answer for an item wins, so a stray repeat cannot replace it.
+    const k = `${letter}\u0000${n}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    if (!bySection.has(letter)) bySection.set(letter, []);
+    bySection.get(letter).push({ n, answer: normaliseAnswer(clean) });
+  }
+  return [...bySection.entries()].map(([letter, items]) => ({ letter, items }));
+}
+
+/**
+ * Line the key's lettered sections up with the guide's named ones.
+ *
+ * The key says "A1"; the guide says "Key terms — matching". Where the
+ * guide's own name starts with that letter ("A. Key terms") they are
+ * matched on it; otherwise they are matched in order, which is the order
+ * both read the paper in. A section whose item numbers do not line up is
+ * left alone rather than forced.
+ */
+export function keyIndexFromExtracted(text, guideSections) {
+  const parsed = parseExtractedKey(text);
+  const index = new Map();
+  if (!parsed.length || !Array.isArray(guideSections) || !guideSections.length) return index;
+
+  const used = new Set();
+  const pairs = [];
+  for (const sec of guideSections) {
+    const lead = String(sec.name || "").trim().match(/^([A-Z])[.)\s]/);
+    const hit = lead && parsed.find((p) => p.letter === lead[1] && !used.has(p.letter));
+    if (hit) { used.add(hit.letter); pairs.push([sec, hit]); }
+  }
+  // Anything unmatched falls back to order, skipping what is already paired.
+  const leftoverGuide = guideSections.filter((sec) => !pairs.some(([g]) => g === sec));
+  const leftoverKey = parsed.filter((p) => !used.has(p.letter));
+  leftoverGuide.forEach((sec, i) => { if (leftoverKey[i]) pairs.push([sec, leftoverKey[i]]); });
+
+  for (const [sec, keySec] of pairs) {
+    // Only sections a key can actually settle.
+    //
+    // A key's entry for "Show your work" is a method — "x = 5 y = 8 z = 6
+    // m = 63", "add 5 -> 21, 26 multiply by 2 -> 40, 80" — not an answer to
+    // compare a string against. Applied as a lookup it marked correct
+    // working wrong whenever the student wrote it differently, and because
+    // that section is twenty marks over six items each miss cost 3.33. That
+    // is where the fractional totals and the five-to-eight mark losses on
+    // the strongest papers came from.
+    //
+    // A section qualifies when its answers are short: a letter, a truth
+    // value, a word, a term. Anything wordier is left to the model.
+    const answers = keySec.items.map((it) => it.answer).filter(Boolean);
+    const short = answers.filter((a) => a.length <= 20).length;
+    if (answers.length < 2 || short / answers.length < 0.8) continue;
+
+    const byN = new Map(keySec.items.map((it) => [String(it.n), it.answer]));
+    const names = (sec.items || []).map((it) => String(it.n));
+    // Only apply where the numbering actually corresponds. A section of
+    // eight items against a key of six is a different section.
+    const overlap = names.filter((n) => byN.has(n)).length;
+    if (!overlap || overlap < Math.min(names.length, keySec.items.length) * 0.6) continue;
+    for (const n of names) {
+      const answer = byN.get(n);
+      if (!answer) continue;
+      index.set(`${sec.name}\u0000${n}`, { answer, agreement: 1, confidence: "high", fromTeacherKey: true });
+    }
+  }
+  return index;
+}
+
+/* ------------------------------------------------------------------
+ *  The blind reading, put back into the grade.
+ *
+ *  A grader holding the answer key reports the student's answers AS the
+ *  key's answers. Against a hand-marked class of twenty the matching
+ *  section came back 22 marks over the teacher's own — "8 out of 8" on ten
+ *  papers where four earned it. On one of them the key read F C H A G D B E
+ *  and the student had written F C A G H D B E, three of them rotated; the
+ *  grader called it full marks, and the same model reading the same pages
+ *  with no key in front of it read all three correctly.
+ *
+ *  So /grading/transcribe reads the paper blind and marks it in code, and
+ *  what it returns replaces the grader's verdict on those sections. The
+ *  grader keeps the written sections and the feedback.
+ * ------------------------------------------------------------------ */
+
+const letterOf = (name) =>
+  (String(name || "").trim().match(/^([A-Z])[.)\s]/) || [])[1] || "";
+
+/**
+ * @param grade          the /grading response, mutated in place
+ * @param blindSections  marking.sections from /grading/transcribe
+ * @returns short descriptions of what moved, for the activity line
+ */
+export function applyBlindMarking(grade, blindSections) {
+  if (!grade || !Array.isArray(grade.sections) || !Array.isArray(blindSections)) return [];
+
+  const byLetter = new Map();
+  for (const b of blindSections) {
+    // Closed sets only: a letter from a matching column, a true or a false.
+    // Those a string comparison settles exactly, and taking the blind
+    // reading for them cut this class's matching error from 28 marks to 10.
+    // A fill-in-the-blank is not one — the key says one word and a student
+    // writes another that means the same — and taking it there put every
+    // paper in the class BELOW its real mark, 16 marks of error becoming 36.
+    // The grader keeps those, and keeps the written sections.
+    if (!b?.objective || !b?.closedSet) continue;
+    const l = String(b.letter || "").toUpperCase().slice(0, 1) || letterOf(b.name);
+    if (l && !byLetter.has(l)) byLetter.set(l, b);
+  }
+  if (!byLetter.size) return [];
+
+  const moved = [];
+  for (const sec of grade.sections) {
+    const l = letterOf(sec?.name);
+    const b = l ? byLetter.get(l) : null;
+    if (!b || !(Number(b.out_of) > 0) || !(Number(sec.out_of) > 0)) continue;
+
+    // The blind pass counts the items it could mark; the paper's section may
+    // be worth more or less than that. The proportion is what it knows.
+    const next = Math.round((Number(b.score) / Number(b.out_of)) * Number(sec.out_of) * 100) / 100;
+    const was = Number(sec.score);
+    if (!Number.isFinite(next)) continue;
+    if (Math.abs(next - was) > 0.01) moved.push(`${l} ${was}→${next}`);
+    sec.score = next;
+
+    // Keep the marking guide in step, or the teacher's guide would tick
+    // items the score says were wrong.
+    const gs = (grade.marking_guide?.sections || []).find((g) => letterOf(g?.name) === l);
+    if (gs) {
+      gs.score = next;
+      const byN = new Map((b.items || []).map((it) => [String(it.n), it]));
+      for (const it of gs.items || []) {
+        const bi = byN.get(String(it.n));
+        if (!bi || bi.verdict === "unmarked") continue;
+        it.verdict = bi.verdict === "blank" ? "blank" : bi.verdict;
+        it.student_answer = bi.written ?? it.student_answer;
+        it.correct_answer = bi.verdict === "correct" ? "" : (bi.answer || it.correct_answer || "");
+        it.readBlind = true;
+      }
+    }
+  }
+
+  if (moved.length) {
+    const sum = grade.sections.reduce((t, s) => t + (Number(s.score) || 0), 0);
+    const outOf = Number(grade.overall_out_of);
+    grade.overall_score = Number.isFinite(outOf) && outOf > 0
+      ? Math.max(0, Math.min(outOf, Math.round(sum * 100) / 100))
+      : Math.round(sum * 100) / 100;
+  }
+  return moved;
+}
+
+/* ------------------------------------------------------------------
+ *  The key, laid out so a teacher can check it in fifteen seconds.
+ *
+ *  An error in the key is not worth one mark, it is worth the class: it
+ *  crosses every student who answered that question correctly. On a real
+ *  Math 7 key the extractor shifted a whole section — C3 "×" came back as
+ *  "5", C4 "3" as "12x", C5 "12x" as "15 + 6n" — so three of the six blanks
+ *  were marked against the answer to the NEXT question. Reading the key
+ *  twice did not catch it, because both readings shifted the same way.
+ *
+ *  Verification cannot fix a systematic misread. The teacher can, and they
+ *  only have to do it once per test.
+ * ------------------------------------------------------------------ */
+
+/** The short, checkable answers of a key, in the order they appear. */
+export function keyRowsForReview(text) {
+  const rows = [];
+  let paper = "";
+  for (const raw of String(text || "").split("\n")) {
+    const line = raw.trim();
+    const banner = line.match(/^=+\s*ANSWER KEY:\s*(.+?)\s*\(Total/i);
+    if (banner) { paper = banner[1]; continue; }
+    const m = line.match(/^([A-Z])\s*(\d{1,2}[a-z]?)\s*[:.]\s*(.+?)\s*(?:\(\/\s*([\d.]+)[^)]*\))?\s*(\[CHECK\])?\s*$/);
+    if (!m) continue;
+    const [, letter, n, answer, marks, flagged] = m;
+    const clean = String(answer || "").trim();
+    // Only the ones a teacher can eyeball. A worked solution for an extended
+    // problem is not a row in a table, and marking it is a judgement anyway.
+    if (!clean || clean.length > 24) continue;
+    rows.push({ id: `${letter}${n}`, letter, n, answer: clean, marks: Number(marks) || 1, flagged: !!flagged, paper });
+  }
+  return rows;
+}
+
+/**
+ * Put a corrected answer back into the key text, on its own line only.
+ * The [CHECK] marker comes off: the teacher has just settled it.
+ */
+export function withCorrectedAnswer(text, id, answer) {
+  const want = String(id || "").match(/^([A-Z])(\d{1,2}[a-z]?)$/);
+  if (!want) return text;
+  let done = false;
+  return String(text || "").split("\n").map((raw) => {
+    if (done) return raw;
+    const m = raw.match(/^(\s*)([A-Z])\s*(\d{1,2}[a-z]?)\s*[:.]\s*(.+?)\s*(\(\/\s*[\d.]+[^)]*\))?\s*(\[CHECK\])?\s*$/);
+    if (!m || m[2] !== want[1] || m[3] !== want[2]) return raw;
+    done = true;
+    return `${m[1]}${m[2]}${m[3]}: ${String(answer).trim()}${m[5] ? ` ${m[5]}` : ""}`;
+  }).join("\n");
 }

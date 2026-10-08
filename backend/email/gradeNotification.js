@@ -2,7 +2,7 @@
 // Sends grade notification emails to students/parents
 import StudentAccount from "../models/StudentAccount.js";
 import { sendSystemEmail } from "./shareInviteEmailer.js";
-import { hidesGradesForResult, notifiesForResult, notifiesStudents } from "../utils/gradeVisibility.js";
+import { hidesGradesForResult, notifiesForResult, notifiesStudents, feedbackHiddenForStudent } from "../utils/gradeVisibility.js";
 
 /**
  * Send "new grade" notification to all opted-in emails for a student.
@@ -17,6 +17,13 @@ export async function notifyNewGrade(studentId, gradeInfo) {
 
     const account = await StudentAccount.findOne({ studentId }).lean();
     if (!account || !account.emails?.length) return;
+
+    // Opted out of the whole thing: no notification either, or the family is
+    // told there is something to look at and then shown nothing.
+    if (await feedbackHiddenForStudent(studentId)) {
+      console.log(`[grade-notify] ${studentId}: feedback withheld for this student — not sending`);
+      return;
+    }
 
     const prefs = account.emailPrefs || {};
     const recipients = account.emails.filter((em) => {
@@ -147,6 +154,7 @@ export async function sendWeeklyDigests(options = {}) {
     const prefs = account.emailPrefs || {};
     const weeklyRecipients = (account.emails || []).filter((em) => prefs[em] === "weekly");
     if (weeklyRecipients.length === 0) continue;
+    if (await feedbackHiddenForStudent(account.studentId)) continue;
 
     // Find this student's results from the past week
     // let, not const: results whose teacher has notifications off are

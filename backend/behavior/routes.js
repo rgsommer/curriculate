@@ -253,7 +253,7 @@ async function maybeAutoRecommendWhiteSlip({ req, student, config, incidents }) 
 // task ("write the following 10×", "hand-write an apology by 9am") from the
 // behaviour's consequenceText, plus the follow-up deadline. Deterministic: normal
 // logging is high-volume, so no AI cost.
-function buildConsequenceMessage({ studentName, behaviorName, detailText, consequenceText, when, followUpType, teacherName, schoolName, reported = false }) {
+function buildConsequenceMessage({ studentName, behaviorName, detailText, consequenceText, when, followUpType, teacherName, schoolName, reported = false, mode = "consequence" }) {
   const date = new Date(when || Date.now()).toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: SCHOOL_TZ });
   const deadline =
     followUpType === "next_school_day" ? "Please complete this and hand it in by 9:00 AM the next school day." :
@@ -262,10 +262,22 @@ function buildConsequenceMessage({ studentName, behaviorName, detailText, conseq
   lines.push(`Dear ${studentName} (and parents),`);
   lines.push("");
   const first = (studentName || "").split(" ")[0] || "your child";
-  if (reported) {
-    lines.push(`I have reason to believe that ${first} may have been involved in ${behaviorName} on ${date}.`);
+  if (mode === "parents_discuss") {
+    // No consequence: ask the family to talk it over at home.
+    lines.push(reported
+      ? `I am concerned that ${first} may have been involved in ${behaviorName} on ${date}.`
+      : `I want to let you know about ${behaviorName} on ${date}${detailText ? ` — ${detailText}` : ""}.`);
     lines.push("");
-    lines.push(`Unless my information is inaccurate, ${first} is required to:`);
+    lines.push(`Rather than assigning a consequence, I'd ask that you take a few minutes at home to talk with ${first} about it — just to be sure this doesn't happen going forward.`);
+    lines.push("");
+    lines.push(`Thank you for your partnership,`);
+    lines.push(`${teacherName}${schoolName ? `\n${schoolName}` : ""}`);
+    return lines.join("\n");
+  }
+  if (reported) {
+    lines.push(`I am concerned that ${first} may have been involved in ${behaviorName} on ${date}.`);
+    lines.push("");
+    lines.push(`If this turns out to be true, ${first} is required to:`);
   } else {
     lines.push(`This is to let you know about a consequence from ${date} for ${behaviorName}${detailText ? ` — ${detailText}` : ""}.`);
     lines.push("");
@@ -286,7 +298,7 @@ async function composeConsequenceMessageAI(opts) {
   // Protect other students named in the teacher's note, and word second-hand
   // reports tentatively. (opts.schoolId/studentId enable the roster scrub.)
   const scrub = opts.schoolId ? await familyNameScrubber(opts.schoolId, opts.studentId) : null;
-  const prep = prepareFamilyDetail(scrub, opts.detailText);
+  const prep = prepareFamilyDetail(scrub, opts.detailText, opts.evidence || "");
   opts = { ...opts, detailText: prep.detail, reported: prep.reported };
   // Template fallback: leave out a note that named another student entirely.
   const det = (scrub || ((t) => t))(buildConsequenceMessage({ ...opts, detailText: prep.mentionedOther ? "" : prep.detail }));
@@ -301,13 +313,17 @@ async function composeConsequenceMessageAI(opts) {
     `Write a brief, warm-but-firm message from a Christian-school teacher to a student (with parents reading too), to post in Edsby. Address the student directly as "you".`,
     `Begin with the greeting: "Dear ${first} and parents,".`,
     `The student's name is ${opts.studentName} — use it where natural; NEVER output a bracketed placeholder.`,
-    `Note that ${dayPhrase} there was a concern — ${opts.behaviorName}${opts.detailText ? `: ${opts.detailText}` : ""}. Then clearly state what the student must now do: ${opts.consequenceText}. ${deadline}`,
+    opts.mode === "parents_discuss"
+      ? `Note that ${dayPhrase} there was a concern — ${opts.behaviorName}${opts.detailText ? `: ${opts.detailText}` : ""}. There is NO consequence: do NOT mention any consequence, task, apology, lines, or deadline. Instead, kindly ask the parents to take a few minutes at home to talk with ${first} about it — "just to be sure this doesn't happen going forward". Thank them for their partnership.`
+      : `Note that ${dayPhrase} there was a concern — ${opts.behaviorName}${opts.detailText ? `: ${opts.detailText}` : ""}. Then clearly state what the student must now do: ${opts.consequenceText}. ${deadline}`,
     FAMILY_PRIVACY_RULES,
     opts.reported ? REPORTED_RULE(first) : "",
     `You are writing AS ${opts.teacherName}: write in the first person ("I"). Never refer to ${opts.teacherName} in the third person.`,
     `For any deadline, keep the wording EXACTLY "the next school day" — do NOT say "tomorrow", "Saturday", a weekday, or a date (the next school day may be after the weekend or a holiday).`,
     `Close with a brief encouraging "fresh start / from now on" line and sign off exactly as: ${opts.teacherName}.`,
-    `FORMAT: do NOT write one block. Use short paragraphs separated by a blank line: (1) the greeting on its own line; (2) a sentence on what happened; (3) the task SET OFF on its own line(s) — the action, the exact words to write in quotation marks, and the deadline; (4) the encouraging line; (5) the sign-off. Plain text with real line breaks, no bullets, no invented facts, no placeholders.`,
+    opts.mode === "parents_discuss"
+      ? `FORMAT: short paragraphs separated by a blank line: (1) the greeting; (2) a sentence on what happened; (3) the request to talk it over at home; (4) a brief encouraging line; (5) the sign-off. Plain text with real line breaks, no bullets, no invented facts, no placeholders.`
+      : `FORMAT: do NOT write one block. Use short paragraphs separated by a blank line: (1) the greeting on its own line; (2) a sentence on what happened; (3) the task SET OFF on its own line(s) — the action, the exact words to write in quotation marks, and the deadline; (4) the encouraging line; (5) the sign-off. Plain text with real line breaks, no bullets, no invented facts, no placeholders.`,
   ].filter(Boolean).join("\n");
   try {
     const out = await Promise.race([
@@ -344,30 +360,33 @@ async function recordLoggedConsequence({ req, student, behavior, detailText, at,
 
 // Email the logging teacher a rich, ready-to-paste Edsby message informing the
 // student/parents of the consequence. Never sent to a parent directly.
-async function sendConsequenceMessage({ req, student, config, behavior, detailText, at }) {
+async function sendConsequenceMessage({ req, student, config, behavior, detailText, at, mode = "consequence" }) {
   const teacherEmail = req.user?.email || "";
   if (!teacherEmail) return;
   const studentName = `${student.preferredName || student.firstName} ${student.lastName || ""}`.trim();
   const teacherName = (req.membership?.courtesyName || "").trim() || actorName(req);
   const schoolName = config?.branding?.schoolName || "";
   const message = await composeConsequenceMessageAI({
-    schoolId: req.schoolId, studentId: student._id,
+    schoolId: req.schoolId, studentId: student._id, mode, evidence: behavior.evidence || "",
     studentName, behaviorName: behavior.name, detailText,
-    consequenceText: behavior.consequenceText, when: at,
-    followUpType: behavior.followUpType, teacherName, schoolName, config,
+    consequenceText: mode === "parents_discuss" ? "" : behavior.consequenceText, when: at,
+    followUpType: mode === "parents_discuss" ? "none" : behavior.followUpType, teacherName, schoolName, config,
   });
+  const firstTime = mode === "parents_discuss";
   const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
   try {
     await sendEmail({
       from: fromAddr ? { name: "Compass", address: fromAddr } : undefined,
       to: teacherEmail,
-      subject: `Consequence to post — ${studentName} (${behavior.name})`,
+      subject: firstTime ? `Note to post — ${studentName} (${behavior.name}, first occasion)` : `Consequence to post — ${studentName} (${behavior.name})`,
       text: message,
       html: emailShell({
-        title: `Consequence — ${escapeHtml(studentName)}`,
+        title: firstTime ? `First occasion — ${escapeHtml(studentName)}` : `Consequence — ${escapeHtml(studentName)}`,
         schoolName: schoolName || "Compass",
         preheader: `Ready to paste into Edsby — ${behavior.name}`,
-        footnote: "This copy goes only to you. Paste it into Edsby so the student and parents see the consequence now, rather than waiting for a notice home.",
+        footnote: firstTime
+          ? "This copy goes only to you. First occasion, so no consequence: the note asks the parents to talk it over at home. A second occasion brings the consequence."
+          : "This copy goes only to you. Paste it into Edsby so the student and parents see the consequence now, rather than waiting for a notice home.",
         contentHtml: pasteableNote(noteToHtml(message)),
       }),
     });
@@ -381,7 +400,7 @@ async function sendConsequenceMessage({ req, student, config, behavior, detailTe
 function shouldSendConsequenceNote(behavior) {
   return (
     behavior?.kind !== "positive" &&
-    behavior?.triggerMode === "THRESHOLD" &&
+    (behavior?.triggerMode === "THRESHOLD" || behavior?.triggerMode === "NOTE") &&
     !behavior?.immediateWhiteSlip &&
     !!String(behavior?.consequenceText || "").trim()
   );
@@ -2849,7 +2868,7 @@ router.post("/behaviors", authAny, loadMembership, canLog, async (req, res, next
     // counts as a strike or notifies, so its mode is always INTERACTION.
     const triggerMode = kind === "positive"
       ? "INTERACTION"
-      : ["THRESHOLD", "IMMEDIATE", "INTERACTION"].includes(req.body?.triggerMode) ? req.body.triggerMode : "THRESHOLD";
+      : ["THRESHOLD", "IMMEDIATE", "INTERACTION", "NOTE"].includes(req.body?.triggerMode) ? req.body.triggerMode : "THRESHOLD";
     // Every offence must carry at least one category — it drives reporting + the
     // white-slip/GUDD rules. Positive behaviours never have categories.
     const categories = cleanCategories(withBehaviourIfWhiteSlip(req.body?.categories, req.body?.immediateWhiteSlip), kind);
@@ -2865,6 +2884,7 @@ router.post("/behaviors", authAny, loadMembership, canLog, async (req, res, next
       triggerMode,
       consequenceText: kind === "positive" ? "" : String(req.body?.consequenceText || ""),
       consequenceTiming: req.body?.consequenceTiming === "after_first" ? "after_first" : "first",
+      evidence: ["witnessed", "reported"].includes(req.body?.evidence) ? req.body.evidence : "",
       points: Number(req.body?.points) || 0,
       categories,
       uniform: kind === "negative" && Array.isArray(req.body?.categories) && req.body.categories.includes("uniform"),
@@ -2908,7 +2928,8 @@ router.put("/behaviors/:id", authAny, loadMembership, canLog, async (req, res, n
     if (b.kind === "positive" || b.kind === "negative") beh.kind = b.kind;
     if ("consequenceText" in b) beh.consequenceText = String(b.consequenceText || "");
     if (["first", "after_first"].includes(b.consequenceTiming)) beh.consequenceTiming = b.consequenceTiming;
-    if (["THRESHOLD", "IMMEDIATE", "INTERACTION"].includes(b.triggerMode)) beh.triggerMode = b.triggerMode;
+    if (["", "witnessed", "reported"].includes(b.evidence)) beh.evidence = b.evidence;
+    if (["THRESHOLD", "IMMEDIATE", "INTERACTION", "NOTE"].includes(b.triggerMode)) beh.triggerMode = b.triggerMode;
     if ("points" in b) beh.points = Number(b.points) || 0;
     if ("immediateWhiteSlip" in b) beh.immediateWhiteSlip = !!b.immediateWhiteSlip;
     if ("categories" in b || "immediateWhiteSlip" in b) {
@@ -3001,6 +3022,7 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
           points: behavior.points || 0,
           uniform: behavior.uniform || false,
           categories: behavior.categories || [],
+          evidence: behavior.evidence || "",
         },
         detailText,
         weight,
@@ -3027,6 +3049,10 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
           // about it now — not only if/when the threshold notice fires.
           await recordLoggedConsequence({ req, student, behavior, detailText, at: timestamp, incidentId: inc._id });
           consequenceNotes.push({ incidentId: inc._id, behavior, detailText, at: timestamp });
+        } else {
+          // First occasion: no consequence — the note asks the parents to talk it
+          // over at home ("just to be sure this doesn't happen going forward").
+          consequenceNotes.push({ incidentId: inc._id, behavior, detailText, at: timestamp, mode: "parents_discuss" });
         }
       }
 
@@ -3122,7 +3148,7 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
     for (const cn of consequenceNotes) {
       if (noticeCovered.has(String(cn.incidentId))) continue;
       // Fire-and-forget: the AI compose shouldn't delay the logging response.
-      sendConsequenceMessage({ req, student, config, behavior: cn.behavior, detailText: cn.detailText, at: cn.at }).catch(() => {});
+      sendConsequenceMessage({ req, student, config, behavior: cn.behavior, detailText: cn.detailText, at: cn.at, mode: cn.mode }).catch(() => {});
     }
 
     // Auto-recommend a white slip at the behaviour-strike threshold ONLY if the
@@ -3218,6 +3244,7 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
           points: behavior.points || 0,
           uniform: behavior.uniform || false,
           categories: behavior.categories || [],
+          evidence: behavior.evidence || "",
         },
         detailText,
         weight,
@@ -3236,9 +3263,16 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
       }
 
       const wantConsequenceNote = !behavior.immediateWhiteSlip && shouldSendConsequenceNote(behavior);
+      // "After first occasion": the first time carries no consequence — the note
+      // asks the parents to discuss it at home; the consequence starts next time.
+      let noteMode = "consequence";
+      if (wantConsequenceNote && behavior.consequenceTiming === "after_first") {
+        const priorSame = await BehaviorIncident.countDocuments({ schoolId: req.schoolId, studentId: student._id, behaviorId: behavior._id, _id: { $ne: inc._id } });
+        if (priorSame === 0) noteMode = "parents_discuss";
+      }
       if (behavior.immediateWhiteSlip) {
         await fireWhiteSlip({ req, student, config, behaviorName: behavior.name, detailText, at: timestamp, relatedIncidentId: inc._id });
-      } else if (wantConsequenceNote) {
+      } else if (wantConsequenceNote && noteMode === "consequence") {
         await recordLoggedConsequence({ req, student, behavior, detailText, at: timestamp, incidentId: inc._id });
       }
 
@@ -3272,7 +3306,7 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
       // carries this consequence (avoids telling the family twice).
       if (wantConsequenceNote) {
         const covered = notice && (notice.triggeringIncidentIds || []).some((x) => String(x) === String(inc._id));
-        if (!covered) sendConsequenceMessage({ req, student, config, behavior, detailText, at: timestamp }).catch(() => {}); // fire-and-forget (AI compose)
+        if (!covered) sendConsequenceMessage({ req, student, config, behavior, detailText, at: timestamp, mode: noteMode }).catch(() => {}); // fire-and-forget (AI compose)
       }
 
       // Auto-recommend a white slip at the threshold ONLY if opted in (see above).
@@ -3387,7 +3421,7 @@ async function composeAndCreateNotice({
   const personalize = (t) => String(t || "").replace(/\bnnn\b/gi, studentName);
   // Protect other students named in teachers' notes; flag second-hand reports.
   const famScrub = await familyNameScrubber(schoolId, student._id);
-  const famDetail = (t) => prepareFamilyDetail(famScrub, personalize(t));
+  const famDetail = (t, evidence = "") => prepareFamilyDetail(famScrub, personalize(t), evidence);
 
   // Background history + recent positives are only relevant to the disciplinary
   // note. A positive (good-news) note is built purely from its own incidents.
@@ -3433,7 +3467,7 @@ async function composeAndCreateNotice({
     history,
     positives,
     incidents: contextIncidents.map((i) => {
-      const fd = famDetail(i.detailText || "");
+      const fd = famDetail(i.detailText || "", i.behaviorSnapshot?.evidence || "");
       return {
         behaviorName: i.behaviorSnapshot?.name,
         teacherName: i.__teacherName || "",
@@ -4528,9 +4562,9 @@ router.post("/students/:id/parent-summary", authAny, loadMembership, async (req,
       const tid = String(i.teacherId);
       const who = tName[tid] || "a teacher";
       const what = i.behaviorSnapshot?.name || "";
-      const fd = prepareFamilyDetail(famScrub, (i.detailText || "").trim());
+      const fd = prepareFamilyDetail(famScrub, (i.detailText || "").trim(), i.behaviorSnapshot?.evidence || "");
       const detail = fd.detail;
-      const line = `${d} — ${what}${detail ? `: ${detail}` : ""}${fd.reported ? " [reported to the teacher, not witnessed — word tentatively, never mention the source]" : ""}`;
+      const line = `${d} — ${what}${detail ? `: ${detail}` : ""}${fd.reported ? " [reported to the teacher, not witnessed — word tentatively, say 'at school' rather than 'in class' unless stated, never mention the source]" : ""}`;
       if (isPositive) { positives.push(`${d} — ${what}${detail ? `: ${detail}` : ""} (noted by ${who})`); continue; }
       if (isInteraction) {
         // A teacher↔student conversation is often the very concern to convey —
@@ -5669,10 +5703,11 @@ router.post("/consequences/:id/message", authAny, loadMembership, async (req, re
     let incident = null;
     if (c.relatedIncidentId) incident = await BehaviorIncident.findOne({ _id: c.relatedIncidentId, schoolId: req.schoolId }).select("behaviorSnapshot detailText timestamp").lean();
     const behaviourName = incident?.behaviorSnapshot?.name || c.detail || c.type;
+    const evidence = incident?.behaviorSnapshot?.evidence || "";
     const incidentDetail = incident?.detailText || "";
 
     const message = await composeConsequenceMessageAI({
-      schoolId: req.schoolId, studentId: c.studentId,
+      schoolId: req.schoolId, studentId: c.studentId, evidence,
       studentName, behaviorName: behaviourName, detailText: incidentDetail,
       consequenceText: `${c.type}${c.detail ? ` — ${c.detail}` : ""}`,
       when: incident?.timestamp || c.at, followUpType: incident ? "next_school_day" : "none",
@@ -7834,13 +7869,17 @@ async function rosterNameScrubber(schoolId, { exceptStudentId = null, replacemen
 
 // Did the teacher LEARN of this second-hand (vs. witness it)? A note that names
 // another student or uses reporting language. Such incidents are written
-// tentatively to the family ("I suspect … may have", "Unless my information is
+// tentatively to the family ("I am concerned that … may have", "Unless my information is
 // inaccurate, … is required to …") and never say who reported it.
-const REPORTED_RX = /\b(report(?:ed|s|ing)?|told me|informed|heard|overheard|said that|according to|claim(?:ed|s)?|apparently|allegedly|witness(?:ed)?)\b/i;
-function prepareFamilyDetail(scrub, detail) {
+// The behaviour's own "How you know" setting (witnessed / reported) wins; the
+// note-based guess only applies when it isn't set. ("heard"/"overheard" are left
+// out of the guess — a teacher who heard it first-hand witnessed it.)
+const REPORTED_RX = /\b(report(?:ed|s|ing)?|told me|informed|said that|according to|claim(?:ed|s)?|apparently|allegedly)\b/i;
+function prepareFamilyDetail(scrub, detail, evidence = "") {
   const raw = String(detail || "");
   const mentionedOther = !!scrub?.mentions?.(raw);
-  return { detail: scrub ? scrub(raw) : raw, mentionedOther, reported: mentionedOther || REPORTED_RX.test(raw) };
+  const reported = evidence === "reported" ? true : evidence === "witnessed" ? false : (mentionedOther || REPORTED_RX.test(raw));
+  return { detail: scrub ? scrub(raw) : raw, mentionedOther, reported };
 }
 
 // Rules every family-facing AI message follows (consequence messages, notices).
@@ -7848,7 +7887,8 @@ const FAMILY_PRIVACY_RULES =
   `PRIVACY (overrides everything): Never name, describe, or hint at any OTHER student — not who reported it, who saw it, or who was affected — and never say how the teacher found out (no "I was informed by…", "a student reported…", "I received a report…"). ` +
   `Never quote slurs or crude words; describe them sensitively.`;
 const REPORTED_RULE = (first) =>
-  `This concern was REPORTED to the teacher, not witnessed first-hand. Word it tentatively — e.g. "I have reason to believe that ${first} may have…" or "I suspect that ${first} may have…" — and introduce the task with "Unless my information is inaccurate, ${first} is required to…". Do not mention the source.`;
+  `This concern was REPORTED to the teacher, not witnessed first-hand. Word it tentatively, opening with "I am concerned that ${first} may have…" (never "I suspect" or "I was told") — and make the task conditional: "If this turns out to be true, ${first} is required to…" (or "Unless my information is inaccurate, ${first} is required to…"). Do not mention the source. ` +
+  `Keep the setting broad: say "at school" (and "our school" rather than "our classroom") unless the teacher's note says exactly where it happened — never assume it was in class.`;
 
 // Composite breakdown of where a house's points came from (NEVER any names).
 // `includeNegatives`/`includePositives` gate what's returned: the public page

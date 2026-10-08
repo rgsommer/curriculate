@@ -28,6 +28,7 @@ import gradingFeedbackRouter from "./routes/gradingFeedback.js";
 import homeworkCheckRouter from "./routes/homeworkCheck.js";
 import gradingResetRouter from "./routes/gradingReset.js";
 import { RESULT_RETENTION_DAYS, RESULT_RETENTION_MS } from "./utils/retention.js";
+import { reconcileSectionsFromGuide, totalFromKey, markSchemeBrief } from "./utils/sectionTotals.js";
 import pulseBetaRouter, { isActiveBetaCode } from "./routes/pulseBeta.js";
 import cardsRouter from "./routes/cards.js";
 import avgsRouter from "./routes/avgs.js";
@@ -1386,6 +1387,19 @@ function getSessionByRoomCode(code) {
 // ------------------------------
 const AI_MODEL = process.env.AI_MODEL || "gpt-5.4-mini";
 const AI_MODEL_FULL = process.env.AI_MODEL_FULL || "gpt-4.1";
+// Reading a page is a different job from marking it, and the models are not
+// ranked the same way for it. Measured on a blank matching line: gpt-5.4 and
+// gpt-5.4-mini both reported the blank correctly; gpt-4.1 filled it in from
+// the key and called it right. So transcription does NOT default to the
+// "full" model — it follows AI_MODEL, and can be pointed somewhere cheaper
+// still, since the small model was accurate here and twice as fast.
+// Reading a paper is not the same job as marking one, and the smaller model
+// does it exactly: on the isolated reading task it got every blank right,
+// including the two the full grader kept filling in from the key. It is also
+// the faster of the two, and this call now runs on every paper. The whole
+// class was measured in this configuration — gpt-5.4 marking, mini reading —
+// at 2.3 marks mean error against the teacher's own marking.
+const AI_MODEL_TRANSCRIBE = process.env.AI_MODEL_TRANSCRIBE || "gpt-5.4-mini";
 
 const AWS_REGION = process.env.AWS_REGION || "us-east-2";
 const S3_BUCKET = process.env.S3_BUCKET || "";
@@ -13768,7 +13782,23 @@ function buildRubricInstructions({
     ${answerKeyOverride ? `
       ANSWER KEY / SOLUTION SHEET (provided from previous detection):
       ${answerKeyOverride}
-
+${(() => {
+  // The key's own allocation for the written sections, written out plainly.
+  // It is already in the key — "D1: ... (/4)" — and the model was reading
+  // past it and inventing its own: seventeen sub-parts allocating 27 on a
+  // section worth 20 in one run, six allocating 13 in the next, on the same
+  // paper. State it as a constraint and the shape stops moving.
+  const brief = markSchemeBrief(answerKeyOverride);
+  return brief ? `
+      MARK SCHEME FOR THE WRITTEN SECTIONS — USE EXACTLY THESE ITEMS AND MARKS:
+${brief}
+      One marking_guide item per line above, numbered as above (D1 is "1").
+      Do not split a question into sub-parts of your own and do not invent
+      allocations: the marks are stated, and they already add to the section
+      total. Your job on these is how many of each item's marks this student
+      earned, nothing else.
+` : "";
+})()}
       ANSWER KEY GRADING PROCEDURE (MANDATORY — follow these steps in order):
 
       ${answerKeyOverride.includes("MULTIPLE TEST VERSIONS") ? `
@@ -14219,6 +14249,44 @@ function buildRubricInstructions({
       Not a grade, not a percentage.
     - The verdicts must agree with the section scores. If Matching is 5 / 6,
       exactly one Matching item is not "correct".
+    - MARK EACH PART OF A WRITTEN SECTION SEPARATELY. For any section worth
+      more than one mark an item — "Show your work /20", an extended problem,
+      a long-answer question — give every item its own marks and marks_out_of:
+        • marks_out_of  what that part is worth. The answer key states it
+                        ("D1: … (/3)"); where it does not, divide the
+                        section's total evenly across its parts.
+        • marks         what this student earned on that part, 0 to
+                        marks_out_of. Half and part marks are fine.
+      Then make the section score the SUM of those marks. Add them up; do not
+      write down an impression of how the section went and fit the items to
+      it. A part that reaches the right answer with sound working earns its
+      full allocation even if it is set out differently from the key, and a
+      part left blank or abandoned earns nothing — "I'm not done" is 0, not a
+      sympathetic half.
+    - The parts of a section must allocate the section's own total. If
+      "Show your work" is out of 20, its parts add to 20 — six parts of 3 and
+      one of 2, whatever the key says. Not 32 because each sub-part looked
+      like it was worth 4.
+    - AN EXTENDED OR MULTI-STEP PROBLEM IS MARKED ON WHERE IT ARRIVES. Before
+      giving it a mark, find two things and say them in the note: the answer
+      the key reaches, and the answer the student reaches. Then:
+        • Right answer, working shown — full marks.
+        • Right answer, no working — most of the marks, not all.
+        • Wrong answer from sound method, one slip — about half; name the slip.
+        • Wrong answer with no usable method, or no equation ever written —
+          a mark or two for what was attempted, not more.
+        • Nothing attempted, or abandoned part way ("I'm not done") — what is
+          actually on the page, which is usually nothing.
+      A long answer that is confidently written and wrong is still wrong. Do
+      not award marks for effort, neatness, or for restating the question.
+    - Do not drift towards the middle. A paper where every part is right
+      scores full marks on that section, and one where nothing works scores
+      near nothing. Mark what is on the page, part by part, and let the total
+      fall where it falls. Half the class scoring between 60% and 80% on a
+      written section is a sign you are marking an impression rather than the
+      work: real papers spread much wider than that.
+    - Leave marks and marks_out_of null on single-mark objective items
+      (matching, true/false, fill in the blank). Those are settled by the key.
 
     INCORRECT_ITEMS RULE:
     - incorrect_items is ONLY for questions where the student's FINAL ANSWER is WRONG.
@@ -15632,8 +15700,25 @@ function buildRubricInstructions({
                           // Why it is wrong — the false half of a false
                           // statement, the step that went astray.
                           note: { type: "string", maxLength: 140 },
+                          // What this item is worth, and what it earned.
+                          //
+                          // A section score the model asserts is a judgement
+                          // about the paper as a whole, and it regresses to
+                          // the mean: measured against a hand-marked class of
+                          // twenty, the written sections came back inside a
+                          // band of 12 to 27 out of 30 where the truth ran 12
+                          // to 30 — the best papers short by four or five, the
+                          // weakest over by eight or ten, while the class mean
+                          // was right to half a mark. Marking each part
+                          // against its own allocation is a local judgement,
+                          // which is the kind it makes well, and the section
+                          // total is then arithmetic rather than an
+                          // impression. Null on an objective item: those are
+                          // one mark each and settled against the key.
+                          marks: { type: ["number", "null"], minimum: 0 },
+                          marks_out_of: { type: ["number", "null"], minimum: 0 },
                         },
-                        required: ["n", "verdict", "student_answer", "correct_answer", "note"],
+                        required: ["n", "verdict", "student_answer", "correct_answer", "note", "marks", "marks_out_of"],
                       },
                     },
                   },
@@ -16099,6 +16184,15 @@ function buildRubricInstructions({
 ` : "";
 
       const userContent = [{ type: "input_text", text: instructionsWithInferenceFinal + noKeyGuard }];
+      // Every call carries the whole instruction text and every image again.
+      // Logged so "it is taking too long" can be answered with a number
+      // rather than a guess about which half is the cost.
+      console.log(
+        `[grade] payload: prompt ${Math.round((instructionsWithInferenceFinal + noKeyGuard).length / 1000)}k chars, ` +
+        `${Array.isArray(images) ? images.length : 0} student image(s), ` +
+        `${hasAnswerKeyImages ? answerKeyImages.length : 0} key image(s), ` +
+        `key text ${String(effectiveAnswerKey || "").length} chars`
+      );
 
       // Add answer key images first (if teacher tagged any) with clear label.
       //
@@ -16273,6 +16367,7 @@ function buildRubricInstructions({
 
       // Remove bogus incorrect_items where student_answer == correct_answer (after normalization)
       scrubIncorrectItems(grade);
+      reconcileSectionsFromGuide(grade, (m) => console.log(m), effectiveAnswerKey);
       recomputeOverallFromSections(grade);
       reconcileAchievementSummary(grade);
 
@@ -16284,9 +16379,33 @@ function buildRubricInstructions({
       const hasTrustedCountedOutOf =
         Number.isFinite(countedOutOf) && countedOutOf > 0;
 
+      // The key knows what the paper is out of.
+      //
+      // With no teacher total and nothing counted off the pages, the model's
+      // own denominator stood unchallenged, and it invents: one paper in a
+      // class of twenty came back 84/100 on a test the key plainly heads
+      // "Total: /50". The extractor writes those totals into the key text, one
+      // per version, so they are already in hand — a declared total is better
+      // evidence than a number the model chose.
+      //
+      // Only applied when the model's answer matches no declared total: a
+      // multi-version key carries one per paper, and an accommodated /40 paper
+      // marked out of 40 is already right. See utils/sectionTotals.js.
+      let keyDeclaredOutOf = null;
+      if (!hasTeacherOverride && !hasTrustedCountedOutOf) {
+        const sectionOutOf = Array.isArray(enforced?.sections)
+          ? enforced.sections.reduce((t, sec) => t + (Number(sec?.out_of) || 0), 0)
+          : 0;
+        const modelOutOf = Number(enforced?.overall_out_of) || sectionOutOf || 0;
+        keyDeclaredOutOf = totalFromKey(effectiveAnswerKey, modelOutOf);
+        if (keyDeclaredOutOf) {
+          console.log(`[grading] marked out of ${modelOutOf} but the key declares /${keyDeclaredOutOf} — rescaling`);
+        }
+      }
+
       const finalFixedOutOf = hasTeacherOverride
         ? overrideFixedOutOf
-        : (hasTrustedCountedOutOf ? countedOutOf : null);
+        : (hasTrustedCountedOutOf ? countedOutOf : keyDeclaredOutOf);
 
       if (finalFixedOutOf) {
         // If the AI used a different denominator than the teacher override, rescale.
@@ -16493,6 +16612,14 @@ function buildRubricInstructions({
         textHead: keyTextForDebug.slice(0, 300) || undefined,
         multiPaper: /ANSWER KEY: /.test(keyTextForDebug) || undefined,
         rubricChars: String(rubricOverride || "").length || undefined,
+        // Whether the grader had ANYTHING authoritative to mark against.
+        //
+        // source only reports the answer-key channel, and a key attached
+        // under Rubric Options arrives as a rubric — so a run with the
+        // teacher's key in hand reported "none", which both cried wolf on
+        // screen and, worse, invited the class-consensus key to overwrite
+        // marks that had been made against the real thing.
+        hasReference: !!(keyTextForDebug || hasAnswerKeyImages || String(rubricOverride || "").trim()),
       };
       console.log(
         `[grading] ${submissionId} answer key: ${keyDiagnostics.source}` +
@@ -17133,6 +17260,142 @@ Do NOT include any text outside the JSON array.`,
   //  Sends ONLY the answer key image(s) to the AI for focused extraction
   //  of correct answers, point values, and KITA category annotations.
   // ====================================================================
+  // ------------------------------------------------------------------
+  //  POST /grading/transcribe
+  //
+  //  One job: what is written on each line. No marking, no rubric, no
+  //  feedback, no voice.
+  //
+  //  Asked to do everything at once the model marks a blank matching line as
+  //  correct by filling it from the key — measured on five of twenty papers —
+  //  and drifts generous on a weak script. Asked only to read, it reads
+  //  accurately and in a couple of seconds. So this pass reads, and
+  //  backend/utils/objectiveMarking.js does the marking by string comparison,
+  //  which cannot hallucinate and costs nothing.
+  // ------------------------------------------------------------------
+  app.post("/grading/transcribe", gradingLimiter, async (req, res) => {
+    try {
+      // answerKeyText is used to MARK what comes back. It is deliberately not
+      // put anywhere near the prompt: a grader shown the key reports the
+      // student's answers as the key's answers. Measured on a class of
+      // twenty, the matching section came back +22 marks over the teacher's
+      // own marking, "8 out of 8" on ten papers where only four earned it —
+      // and the same model reading the same pages with no key in front of it
+      // got that section right. So the paper is read blind here, and the
+      // comparison happens afterwards in code.
+      const { images, gradeBand, answerKeyText } = req.body || {};
+      if (!Array.isArray(images) || !images.length) {
+        return res.status(400).json({ error: "No images provided." });
+      }
+      const band = ["3-5", "6-8", "9-10", "11+"].includes(gradeBand) ? gradeBand : "6-8";
+
+      const schema = {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          student_name: { type: ["string", "null"] },
+          paper_title: { type: ["string", "null"] },
+          // The mark total printed on the paper, which is how a key covering
+          // more than one paper is told apart.
+          out_of: { type: ["number", "null"] },
+          sections: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                section: { type: "string" },
+                letter: { type: "string", maxLength: 2 },
+                items: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    additionalProperties: false,
+                    properties: {
+                      n: { type: "string", maxLength: 8 },
+                      written: { type: "string", maxLength: 200 },
+                    },
+                    required: ["n", "written"],
+                  },
+                },
+              },
+              required: ["section", "letter", "items"],
+            },
+          },
+        },
+        required: ["student_name", "paper_title", "out_of", "sections"],
+      };
+
+      const prompt = `Transcribe this student's test paper. Do NOT mark it, do NOT judge it, do NOT comment.
+
+For every section of the paper, in the order they appear, give its heading, its letter (A, B, C …) and every numbered item in it.
+
+For each item, "written" is EXACTLY what the student put, as they put it:
+- A letter on a matching line: just that letter.
+- A circled True/False: "T" or "F".
+- A word or number in a blank: that word or number.
+- Working out: the student's FINAL answer for that item, not the steps.
+- **If the line is empty, "written" MUST be the empty string.** Never fill in
+  what the answer should be. A blank is the single most important thing to
+  report correctly, and a blank reported as an answer takes a mark the student
+  did not earn.
+- If you genuinely cannot read it, use "?" — not a guess.
+
+Also give the student's name as written, the paper's title, and the mark total printed on it (e.g. 50).`;
+
+      const response = await openai.responses.create({
+        model: AI_MODEL_TRANSCRIBE,
+        input: [{ role: "user", content: [
+          { type: "input_text", text: prompt },
+          ...images.map((u) => ({ type: "input_image", image_url: u })),
+        ]}],
+        text: { format: { type: "json_schema", name: "transcript", strict: true, schema } },
+        max_output_tokens: 3000,
+      });
+
+      const out = safeJsonParse(response.output_text);
+      if (!out) return res.status(502).json({ error: "Could not read the paper." });
+      const items = (out.sections || []).reduce((n, s2) => n + (s2.items || []).length, 0);
+      console.log(`[transcribe] ${AI_MODEL_TRANSCRIBE} ${out.student_name || "?"}: ${(out.sections || []).length} sections, ${items} items, band ${band}`);
+
+      // Marked here, against the key, by string comparison — the same code
+      // /grading/mark-objective runs, so there is one implementation of it.
+      let marking = null;
+      if (String(answerKeyText || "").trim()) {
+        const { markObjective } = await import("./utils/objectiveMarking.js");
+        marking = markObjective(out.sections || [], answerKeyText);
+        const scored = marking.sections.filter((s2) => s2.objective)
+          .map((s2) => `${s2.letter || s2.name}=${s2.score}/${s2.out_of}`).join(" ");
+        console.log(`[transcribe] marked blind against the key: ${scored || "nothing objective"}`);
+      }
+
+      return res.json({ ok: true, ...out, marking });
+    } catch (err) {
+      console.error("POST /grading/transcribe error:", err?.message || err);
+      return res.status(500).json({ error: "Transcription failed." });
+    }
+  });
+
+  // POST /grading/mark-objective  { transcript, answerKeyText }
+  //
+  // No model at all. Separate from /transcribe so it can be called on a
+  // transcript the caller already holds, and so it is obvious from the
+  // outside that these marks involve no judgement.
+  app.post("/grading/mark-objective", gradingLimiter, async (req, res) => {
+    try {
+      const { transcript, answerKeyText } = req.body || {};
+      if (!Array.isArray(transcript)) return res.status(400).json({ error: "transcript required." });
+      if (!String(answerKeyText || "").trim()) return res.status(400).json({ error: "answerKeyText required." });
+      const { markObjective } = await import("./utils/objectiveMarking.js");
+      const result = markObjective(transcript, answerKeyText);
+      console.log(`[mark-objective] ${result.marked} item(s) marked, ${result.skipped} left to the model`);
+      return res.json({ ok: true, ...result });
+    } catch (err) {
+      console.error("POST /grading/mark-objective error:", err?.message || err);
+      return res.status(500).json({ error: "Marking failed." });
+    }
+  });
+
   app.post("/grading/extract-answer-key", gradingLimiter, async (req, res) => {
     try {
       const { answerKeyImages, standards: rawStandards, gradeBand } = req.body || {};
@@ -17230,20 +17493,87 @@ Return valid JSON matching this exact schema.`;
 
       console.log(`[extract-answer-key] images=${answerKeyImages.length} standards=${standards} band=${band} kita=${isKitaBand}`);
 
-      const response = await openai.responses.create({
+      // THE KEY IS READ TWICE, AND ONLY WHAT BOTH READINGS AGREE ON IS USED
+      // TO MARK.
+      //
+      // A mistake here is not worth one mark, it is worth the whole class: a
+      // key entry read wrongly marks every student who got that question
+      // right as having got it wrong. On this very test the key says C3 is
+      // "×" and C4 is "3", and a single reading returned "5x" and "4" — two
+      // items, twenty students, forty wrong crosses, each one a child being
+      // told they are wrong when they are right. It also mangled D1 from
+      // "6 36 16 12" to "36 16 12 14" and dropped "y = 8" from D2.
+      //
+      // The key is extracted once per batch, not once per paper, so a second
+      // reading costs a fortieth of a twenty-paper run. There is no cheaper
+      // mark in the whole pipeline.
+      const readKeyOnce = () => openai.responses.create({
         model: AI_MODEL_FULL,
         input: [{ role: "user", content }],
         text: { format: { type: "json_schema", name: "answer_key_extraction", strict: true, schema: extractionSchema } },
         max_output_tokens: 4000, // increased for multi-version answer keys
       });
 
+      const [response, second] = await Promise.all([
+        readKeyOnce(),
+        readKeyOnce().catch((e) => {
+          // A failed second reading must not cost the teacher the key. It
+          // costs the verification instead, and that is said out loud below.
+          console.warn("[extract-answer-key] second reading failed:", e?.message || e);
+          return null;
+        }),
+      ]);
+
       const extracted = safeJsonParse(response.output_text);
       if (!extracted) {
         return res.status(500).json({ error: "Failed to parse extraction response." });
       }
+      const extractedB = second ? safeJsonParse(second.output_text) : null;
+
+      // question_id -> the answer the second reading gave, for comparison.
+      const secondAnswers = new Map();
+      if (extractedB) {
+        const vb = extractedB.versions || [{ version_label: "A", questions: extractedB.questions || [] }];
+        vb.forEach((v, vi) => {
+          for (const q of v.questions || []) {
+            if (q?.question_id) secondAnswers.set(`${vi}\u0000${q.question_id}`, String(q.correct_answer ?? "").trim());
+          }
+        });
+      }
+      // Compared on meaning, not on typography: "×" and "x", "15 + 6n" and
+      // "6n + 15" are one answer, and a disagreement about a space is not a
+      // reason to withhold an item from marking.
+      const { sameKeyReading, normaliseAnswer: normKeyAns, isObjectiveSection } =
+        await import("./utils/objectiveMarking.js");
+      const unverified = [];
 
       // Handle both new multi-version format and legacy single-version format
       const versions = extracted.versions || [{ version_label: "A", questions: extracted.questions || [], total_marks: extracted.total_marks || 0 }];
+
+
+      // Which sections the marking will actually look answers up in.
+      //
+      // The length of one answer is the wrong test, and warning on it kept
+      // the panel useless: "x = 6 kg" is short, so D6 was reported when one
+      // reading gave the answer and the other the whole method, and E was
+      // reported four times because one reading did not enumerate the
+      // extended problem at all. Nobody is marked against either. What
+      // matters is whether the SECTION is one markObjective will use, which
+      // is the same question isObjectiveSection answers for the marking —
+      // so the warning is now about exactly the items that can produce a
+      // wrongly crossed answer, and silent about the rest.
+      const objectiveLetters = versions.map((v) => {
+        const bySec = new Map();
+        for (const q of v.questions || []) {
+          const l = String(q?.question_id || "").trim().match(/^([A-Z])/)?.[1];
+          if (!l) continue;
+          if (!bySec.has(l)) bySec.set(l, new Map());
+          bySec.get(l).set(String(q.question_id), normKeyAns(q.correct_answer));
+        }
+        const out = new Set();
+        for (const [l, items] of bySec) if (isObjectiveSection(items)) out.add(l);
+        return out;
+      });
       const isMultiVersion = versions.length > 1;
 
       // Build a human-readable summary for use as answerKeyOverride in grading
@@ -17269,13 +17599,33 @@ Return valid JSON matching this exact schema.`;
         summaryLines.push("");
       }
 
-      for (const version of versions) {
+      for (const [vi, version] of versions.entries()) {
         if (isMultiVersion) {
           summaryLines.push(`========== ANSWER KEY: ${version.version_label} (Total /${version.total_marks}) ==========`);
         }
 
         for (const q of version.questions || []) {
-          const line = `${q.question_id}: ${q.correct_answer} (/${q.marks}${q.kita_category ? ` ${q.kita_category}` : ""})`;
+          // An item the two readings disagree about is marked [CHECK]. The
+          // deterministic marking skips those entirely rather than crossing
+          // a student on an answer we are not sure of, and the teacher is
+          // shown the pair so they can settle it in seconds.
+          let suspect = false;
+          const mine = String(q.correct_answer ?? "").trim();
+          // Only sections the marking looks answers up in — see
+          // objectiveLetters above.
+          const letter = String(q.question_id || "").trim().match(/^([A-Z])/)?.[1] || "";
+          if (extractedB && objectiveLetters[vi]?.has(letter)) {
+            const other = secondAnswers.get(`${vi}\u0000${q.question_id}`);
+            if (other === undefined) {
+              suspect = true;
+              unverified.push({ id: q.question_id, first: mine, second: "(not read)" });
+            } else if (!sameKeyReading(mine, other)) {
+              suspect = true;
+              unverified.push({ id: q.question_id, first: mine, second: other });
+            }
+          }
+          const line = `${q.question_id}: ${q.correct_answer} (/${q.marks}${q.kita_category ? ` ${q.kita_category}` : ""})`
+            + (suspect ? "  [CHECK]" : "");
           summaryLines.push(line);
 
           if (q.kita_category) {
@@ -17325,6 +17675,13 @@ Return valid JSON matching this exact schema.`;
       console.log(`[extract-answer-key] extracted ${totalQuestions} questions across ${versions.length} version(s), ${Object.keys(categoryGroups).length} KITA categories`);
       console.log(`[extract-answer-key] summary:\n${answerKeyText}`);
 
+      if (unverified.length) {
+        console.warn(`[extract-answer-key] ${unverified.length} item(s) the two readings disagreed about, excluded from marking: `
+          + unverified.map((u) => `${u.id} "${u.first}" vs "${u.second}"`).join("; "));
+      } else if (extractedB) {
+        console.log("[extract-answer-key] both readings agree on every item");
+      }
+
       res.json({
         extraction: extracted,
         answerKeyText,
@@ -17332,6 +17689,11 @@ Return valid JSON matching this exact schema.`;
         hasKita: Object.keys(categoryGroups).length > 0,
         isMultiVersion,
         versionCount: versions.length,
+        // Items the two readings of the key disagreed about. They are not
+        // used to mark anyone — a wrong key entry crosses every student who
+        // got that question right — and the teacher is shown both readings.
+        unverified,
+        verified: Boolean(extractedB),
       });
     } catch (err) {
       console.error("[extract-answer-key] error:", err);

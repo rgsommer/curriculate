@@ -121,6 +121,58 @@ export async function hidesGradesForResult(meta) {
   return views.some(Boolean);
 }
 
+/* ------------------------------------------------------------------
+ *  Whether a student's family is shown anything at all.
+ *
+ *  Separate from hiding the mark. That one says "feedback without a
+ *  number"; this says "nothing" — for a family who does not want their
+ *  child's work put through this at all. Checked on the way out, like
+ *  everything else here, so it reaches work already published and can be
+ *  undone.
+ * ------------------------------------------------------------------ */
+const hiddenCache = new Map(); // studentId -> { value, expires }
+
+export function invalidateStudentVisibility(studentId) {
+  hiddenCache.delete(String(studentId || "").trim());
+}
+
+export async function feedbackHiddenForStudent(studentId) {
+  const id = String(studentId || "").trim();
+  if (!id) return false;
+
+  const hit = hiddenCache.get(id);
+  if (hit && hit.expires > Date.now()) return hit.value;
+
+  let value = false;
+  try {
+    const { default: StudentVisibility } = await import("../models/StudentVisibility.js");
+    // Any teacher who has opted this student out is respected. A parent's
+    // objection is to the whole thing, not to one teacher's subject, and
+    // erring towards not showing is the safer way round.
+    const off = await StudentVisibility.findOne({ studentId: id, showFeedback: false })
+      .select("_id").lean();
+    value = !!off;
+  } catch (err) {
+    // Fail to showing, as everywhere else here — a database hiccup must not
+    // silently blank a family's page.
+    console.warn("[gradeVisibility] student visibility lookup failed:", err?.message || err);
+    value = false;
+  }
+  if (hiddenCache.size > 1000) hiddenCache.clear();
+  hiddenCache.set(id, { value, expires: Date.now() + CACHE_MS });
+  return value;
+}
+
+/** For a published result, via whichever student ids it names. */
+export async function feedbackHiddenForResult(meta) {
+  const ids = [];
+  if (meta?.studentId) ids.push(String(meta.studentId));
+  if (Array.isArray(meta?.studentIds)) for (const i of meta.studentIds) if (i) ids.push(String(i));
+  if (!ids.length) return false;
+  const checks = await Promise.all([...new Set(ids)].map((i) => feedbackHiddenForStudent(i)));
+  return checks.some(Boolean);
+}
+
 export function invalidateGradeVisibility(teacherEmail) {
   cache.delete(String(teacherEmail || "").trim().toLowerCase());
 }

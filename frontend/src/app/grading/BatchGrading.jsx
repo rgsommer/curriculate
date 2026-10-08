@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildResultsPdf, buildStripsPdf, buildMarkingGuidePdf, preloadPdfLibs } from "./pdfReports";
-import { deriveConsensusKey, keyIndex, applyKeyToGuide, MIN_VOTERS } from "./consensusKey";
+import { deriveConsensusKey, keyIndex, keyIndexFromExtracted, applyKeyToGuide, applyBlindMarking, keyRowsForReview, withCorrectedAnswer, MIN_VOTERS } from "./consensusKey";
 import { completeQuest } from "../../components/QuestWidget";
 
 /**
@@ -93,6 +93,34 @@ export function loadPdfJs() {
 
 // Render a single page to a JPEG data URL.
 // For image-mode batches, `imageDataArr` supplies pre-loaded data URLs — pdfDoc may be null.
+// The answer key is rendered larger than the student pages, on purpose.
+//
+// A mistake in a student's page costs that student a mark. A mistake in the
+// KEY costs the whole class: it crosses every student who answered that
+// question correctly. And the key is one or two pages read once per batch,
+// where resolution is nearly free, against eighty pages where it is not.
+//
+// The default 1.5 put a 598pt page on screen at 897px — about 110 dpi, a
+// seventh of the pixels in the 300 dpi scan behind it — and at that size the
+// extractor lost the numbering of a compact list: on a real Math 7 key it
+// read "x" as "5", "3" as "12x" and "12x" as "15 + 6n", shifting a whole
+// section onto the next question's answers. Measured on that key, at this
+// width every one of the twenty objective answers comes back right.
+const KEY_TARGET_PX = 2000;
+async function renderKeyPageToDataUrl(pdfDoc, pageNum, rotation, imageDataArr) {
+  let scale = 3;
+  try {
+    if (pdfDoc && !(imageDataArr && imageDataArr[pageNum - 1])) {
+      const page = await pdfDoc.getPage(pageNum);
+      const base = page.getViewport({ scale: 1 });
+      // Never below the student-page scale, and capped so a poster-sized
+      // page does not turn into a twenty-megabyte upload.
+      scale = Math.min(4, Math.max(1.5, KEY_TARGET_PX / (base.width || 1)));
+    }
+  } catch { /* fall back to the fixed scale below */ }
+  return renderPageToDataUrl(pdfDoc, pageNum, scale, rotation, imageDataArr);
+}
+
 async function renderPageToDataUrl(pdfDoc, pageNum, scale = 1.5, extraRotation = 0, imageDataArr = null) {
   // ── Image mode: return stored data URL (optionally scaled) ──
   if (imageDataArr && imageDataArr[pageNum - 1]) {
@@ -614,16 +642,36 @@ export default function BatchGrading({
   const [pagesPerStudent, setPagesPerStudent] = useState("auto"); // number, "auto", or "tap"
   const [precisionMode, setPrecisionMode] = useState(false); // multi-pass median scoring
   const PRECISION_PASSES = 3; // number of AI passes per student in precision mode
+  const ACT_LINE = 18; // one row of the activity ticker, in px
   const [answerKeyPages, setAnswerKeyPages] = useState(0); // leading pages that are the answer key
   // The answer key worked out from the class, when the teacher gave none.
   // Declared here, above runBatch, not beside the other result state far
   // below it: a dependency array is evaluated during render, and a const
   // read there before its declaration throws.
   const [consensusKey, setConsensusKey] = useState(null);
+  // What the run could see when it started. Twice now a key has been
+  // attached and not arrived, and both times the screen could only say it
+  // was missing, not what was in reach — so it was argued from screenshots.
+  const [keySeen, setKeySeen] = useState(null);
   const [tapMarkedPages, setTapMarkedPages] = useState(new Set()); // pages marked as "first page" in tap mode
   const [thumbnails, setThumbnails] = useState([]); // [{page, dataUrl}] for tap mode
 
   const [extractedAnswerKey, setExtractedAnswerKey] = useState(answerKeyOverride || "");
+
+  // The key, laid out for the teacher to check before it marks anyone. An
+  // error in the key is not worth one mark, it is worth the class.
+  const [keyReviewOpen, setKeyReviewOpen] = useState(false);
+  const keyReviewRows = useMemo(
+    () => keyRowsForReview(extractedAnswerKey),
+    [extractedAnswerKey]
+  );
+  const keyFlagged = useMemo(
+    () => keyReviewRows.filter((r) => r.flagged).length,
+    [keyReviewRows]
+  );
+  const correctKeyAnswer = useCallback((id, value) => {
+    setExtractedAnswerKey((prev) => withCorrectedAnswer(prev, id, value));
+  }, []);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
   // Set when a grade comes back with a deployment-level fault, which halts the
@@ -632,6 +680,28 @@ export default function BatchGrading({
 
   const [grading, setGrading] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0, current: "" });
+
+  // A running account of what the batch is doing.
+  //
+  // Twenty papers take minutes, and a progress bar that moves once a student
+  // looks like a page that has stopped. The headline says which student; this
+  // says what is happening to them right now — the key going in, the pages
+  // going up, the mark coming back — so the wait reads as work rather than as
+  // a hang.
+  const [activity, setActivity] = useState([]);
+  const activitySeq = useRef(0);
+  const say = useCallback((text) => {
+    if (!text) return;
+    const at = new Date();
+    const stamp = `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}:${String(at.getSeconds()).padStart(2, "0")}`;
+    setActivity((prev) => {
+      const next = [...prev, { id: ++activitySeq.current, stamp, text }];
+      // Trimming from the front is invisible: the ticker's offset is
+      // -(length - 1) lines, so dropping n lines moves the content up by n
+      // and the offset down by n, and the two cancel exactly.
+      return next.length > 160 ? next.slice(next.length - 120) : next;
+    });
+  }, []);
   // Read at the moment of use, never captured. runBatch is a useCallback with
   // 23 dependencies and the email was not among them, so gradeOneStudent
   // published with whatever the prop held when that callback was last built —
@@ -1153,6 +1223,7 @@ export default function BatchGrading({
     abortRef.current = false;
     abortControllerRef.current = new AbortController();
     setServiceFault(null); // a fresh run gets a fresh verdict on the service
+    setActivity([]);       // and a fresh account of itself
     setGrading(true);
     // Wrap the whole run so an unexpected throw (or early return) can never leave
     // the UI stuck in the "grading" state — finally always clears it.
@@ -1172,6 +1243,7 @@ export default function BatchGrading({
     let localRotatedPages = { ...rotatedPages }; // local copy for use in grading loop
     if (isAuto && !groups) {
       setProgress({ done: 0, total: 0, current: `Analyzing ${pageCount} pages — detecting student boundaries...` });
+      say(`Reading ${pageCount} pages — working out where each paper starts`);
 
       // Use deterministic fingerprinting first
       try {
@@ -1259,6 +1331,10 @@ export default function BatchGrading({
     // --- Extract answer key from leading pages OR auto-detected key pages ---
     let effectiveAnswerKey = extractedAnswerKey || "";
     let answerKeyImages = null;
+    // Key answers the two readings disagreed about. Shown to the teacher and
+    // excluded from marking: a wrong key entry crosses every student who got
+    // that question right.
+    let keyDoubt = [];
 
     // Determine which pages to use as answer key
     const keyPageNumbers = answerKeyPages > 0
@@ -1269,9 +1345,22 @@ export default function BatchGrading({
     // batch PDF and it has no text, so neither of the two routes below could
     // see it — which is how a batch ran against an invented answer key.
     const uploadedKeyImages = Array.isArray(keyImages) ? keyImages.filter(Boolean) : [];
+    setKeySeen({
+      uploadedPages: uploadedKeyImages.length,
+      keyPagesInPdf: keyPageNumbers.length,
+      keyText: (effectiveAnswerKey || "").length,
+      rubricText: String(rubricOverride || "").trim().length,
+    });
+    console.log("[batch] key in reach at run:", {
+      uploadedPages: uploadedKeyImages.length,
+      keyPagesInPdf: keyPageNumbers.length,
+      keyTextChars: (effectiveAnswerKey || "").length,
+      rubricChars: String(rubricOverride || "").trim().length,
+    });
 
     if (keyPageNumbers.length === 0 && !effectiveAnswerKey && uploadedKeyImages.length) {
       setProgress({ done: 0, total, current: "Reading the answer key..." });
+      say(`Reading the answer key you uploaded (${uploadedKeyImages.length} page${uploadedKeyImages.length === 1 ? "" : "s"})`);
       answerKeyImages = uploadedKeyImages;
       try {
         const extractUrl = gradingUrl.replace(/\/grading$/, "/grading/extract-answer-key");
@@ -1286,6 +1375,10 @@ export default function BatchGrading({
             effectiveAnswerKey = extractData.answerKeyText;
             setExtractedAnswerKey(effectiveAnswerKey);
           }
+          keyDoubt = Array.isArray(extractData.unverified) ? extractData.unverified : [];
+          if (keyDoubt.length) {
+            say(`${keyDoubt.length} key answer${keyDoubt.length === 1 ? "" : "s"} read two different ways — not used to mark anyone`);
+          }
         }
       } catch (e) {
         // The images still go with the request, so a failed extraction costs
@@ -1296,12 +1389,13 @@ export default function BatchGrading({
 
     if (keyPageNumbers.length > 0 && !effectiveAnswerKey) {
       setProgress({ done: 0, total, current: "Extracting answer key..." });
+      say(`Reading the answer key from page${keyPageNumbers.length === 1 ? "" : "s"} ${keyPageNumbers.join(", ")} of the PDF`);
       try {
         const akImages = [];
         for (const p of keyPageNumbers) {
           if (p >= 1 && p <= pageCount) {
             const rotation = localRotatedPages[p] ? 180 : 0;
-            akImages.push(await renderPageToDataUrl(doc, p, 1.5, rotation, imgArr));
+            akImages.push(await renderKeyPageToDataUrl(doc, p, rotation, imgArr));
           }
         }
         answerKeyImages = akImages;
@@ -1319,6 +1413,10 @@ export default function BatchGrading({
             effectiveAnswerKey = extractData.answerKeyText;
             setExtractedAnswerKey(effectiveAnswerKey);
           }
+          keyDoubt = Array.isArray(extractData.unverified) ? extractData.unverified : [];
+          if (keyDoubt.length) {
+            say(`${keyDoubt.length} key answer${keyDoubt.length === 1 ? "" : "s"} read two different ways — not used to mark anyone`);
+          }
         }
       } catch (e) {
         console.warn("[batch] answer key extraction failed:", e);
@@ -1328,19 +1426,28 @@ export default function BatchGrading({
     const effectiveRubric = (rubricOverride || "").trim();
 
     // Grade a single student — returns a result entry
+    if (keyDoubt.length) {
+      setKeySeen((prev) => ({ ...(prev || {}), unverified: keyDoubt }));
+    }
+
     const gradeOneStudent = async (i, group) => {
       const startPage = group.startPage;
       const endPage = group.endPage;
+
+      const who = group.name ? `${group.name}` : `Student ${i + 1}`;
+      const began = Date.now();
 
       try {
         // Render pages to images (auto-rotate any upside-down pages)
         const images = [];
         const totalPages = doc ? doc.numPages : imgArr.length;
+        say(`${who}: rendering pages ${startPage}–${endPage}`);
         for (const p of group.pages) {
           if (p < 1 || p > totalPages) continue;
           const rotation = localRotatedPages[p] ? 180 : 0;
           const dataUrl = await renderPageToDataUrl(doc, p, 1.5, rotation, imgArr);
           images.push(dataUrl);
+          if (localRotatedPages[p]) say(`${who}: page ${p} was upside down — turned`);
         }
         if (images.length === 0) {
           return {
@@ -1356,10 +1463,16 @@ export default function BatchGrading({
 
         const payload = {
           images,
-          // When the key was a picture, send the picture as well as whatever
-          // text came out of it. A matching column reads as "1 F 2 C 3 H" and
-          // survives extraction badly; the model should be able to look.
-          answerKeyImages: answerKeyImages || undefined,
+          // The key's pages ride along ONLY when no text came out of them.
+          //
+          // They were sent with every student, from when the model had to do
+          // the lookup itself and a transcription of a matching column was
+          // not good enough to trust. The objective sections are now marked
+          // here by string comparison against the key text, so the pages are
+          // two extra full-page scans on every call, buying nothing: what
+          // the model still needs from the key is the mark scheme for the
+          // written sections, and that is text.
+          answerKeyImages: (effectiveAnswerKey ? undefined : answerKeyImages) || undefined,
           rubricOverride: effectiveRubric || null,
           answerKeyOverride: effectiveAnswerKey || null,
           gradeBand,
@@ -1380,6 +1493,38 @@ export default function BatchGrading({
           },
         };
 
+        const kb = Math.round(JSON.stringify(payload).length / 1024);
+        say(`${who}: sending ${images.length} page${images.length === 1 ? "" : "s"} (${kb} KB)` +
+            `${effectiveAnswerKey ? " with the answer key" : " — no key"}`);
+
+        // Two readings of the same paper, at the same time.
+        //
+        // A grader holding the answer key reports the student's answers AS
+        // the key's answers. Measured against a hand-marked class of twenty,
+        // the matching section came back 22 marks over the teacher's own
+        // across the class — "8 out of 8" on ten papers where four earned it
+        // — and on one paper the key read F C H A G D B E while the student
+        // had written F C A G H D B E, three of them rotated. The grader
+        // called it eight out of eight. The same model, reading the same
+        // pages with no key in front of it, read all three correctly.
+        //
+        // So the objective sections are read blind and marked in code, and
+        // the grader's own verdict on them is discarded. It still does the
+        // written sections and the feedback, which is what it is for. The
+        // two calls go together, so this costs latency only when the blind
+        // read is the slower of the two.
+        const blindRead = effectiveAnswerKey
+          ? fetchWithRetry(gradingUrl.replace(/\/grading$/, "/grading/transcribe"), {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ images, gradeBand, answerKeyText: effectiveAnswerKey }),
+              signal: abortControllerRef.current?.signal,
+            }).then((r) => r.json()).catch((e) => {
+              console.warn("[batch] blind read failed:", e);
+              return null;
+            })
+          : Promise.resolve(null);
+
         const res = await fetchWithRetry(gradingUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1388,6 +1533,17 @@ export default function BatchGrading({
         });
 
         const data = await res.json();
+        say(`${who}: marked in ${((Date.now() - began) / 1000).toFixed(1)}s` +
+            `${Number.isFinite(Number(data.overall_score)) ? ` — ${Math.round(Number(data.overall_score) * 10) / 10}/${Math.round(Number(data.overall_out_of))}` : ""}`);
+
+        const blind = await blindRead;
+        if (blind?.marking?.sections?.length) {
+          const moved = applyBlindMarking(data, blind.marking.sections);
+          if (moved.length) {
+            say(`${who}: read blind — ${moved.join(", ")}` +
+                `${Number.isFinite(Number(data.overall_score)) ? ` → ${Math.round(Number(data.overall_score) * 10) / 10}/${Math.round(Number(data.overall_out_of))}` : ""}`);
+          }
+        }
 
         const rawScore = Number(data.overall_score);
         const rawOutOf = Number(data.overall_out_of);
@@ -1534,8 +1690,12 @@ export default function BatchGrading({
       return mergeMultiPassResults(passes);
     };
 
-    // Grade first student solo for fast initial feedback, then batches of 3
-    const CONCURRENCY = precisionMode ? 1 : 3; // serialize in precision mode to avoid API overload
+    // Grade the first student solo for fast initial feedback, then in
+    // parallel. Three at a time meant seven rounds for a class of twenty and
+    // most of the wait was spent waiting. Six is still well inside a normal
+    // rate limit, and a call that does get limited is retried by
+    // fetchWithRetry rather than failing the run.
+    const CONCURRENCY = precisionMode ? 1 : 6; // serialize in precision mode to avoid API overload
     let start = 0;
     // Distinct from abortRef, which means the teacher pressed Stop. This means
     // the service itself is down and continuing is pointless.
@@ -1619,7 +1779,13 @@ export default function BatchGrading({
     // grader left it, and the whole derived key is shown for review.
     try {
       const keyUsed = batchResults.find((r) => !r.error && r.raw?.answer_key_used)?.raw?.answer_key_used;
-      const hadKey = keyUsed ? keyUsed.source !== "none" : !!effectiveAnswerKey || !!answerKeyImages;
+      // Anything authoritative counts, not just the answer-key channel. A key
+      // attached under Rubric Options reaches the grader as a rubric, and
+      // deriving a key from the class on top of that would overwrite marks
+      // made against the teacher's own.
+      const hadKey = keyUsed
+        ? (keyUsed.hasReference ?? (keyUsed.source !== "none" || !!keyUsed.rubricChars))
+        : !!effectiveAnswerKey || !!answerKeyImages || !!effectiveRubric;
       const papers = batchResults
         .filter((r) => !r.error && Array.isArray(r.raw?.marking_guide?.sections))
         .map((r) => ({
@@ -1631,6 +1797,38 @@ export default function BatchGrading({
             items: (sec.items || []).map((it) => ({ n: it.n, answer: it.student_answer })),
           })),
         }));
+
+      // The teacher's own key, applied by string comparison rather than by
+      // asking the model to look a letter up. Holding a key that said 4 is A
+      // it accepted G, and rejected A on 6 while naming question 1's answer.
+      // It transcribes a key well and applies one badly, so the transcription
+      // is what gets used and the comparison happens here.
+      if (hadKey && effectiveAnswerKey) {
+        let fixed = 0, touched = 0;
+        for (const r of batchResults) {
+          const g = r.raw?.marking_guide;
+          if (r.error || !Array.isArray(g?.sections)) continue;
+          const idx = keyIndexFromExtracted(effectiveAnswerKey, g.sections);
+          if (!idx.size) continue;
+          const { guide, delta, changed } = applyKeyToGuide(g, idx);
+          if (!changed.length) continue;
+          r.raw = { ...r.raw, marking_guide: guide };
+          r.keyChanges = changed.length;
+          if (typeof r.score === "number" && delta) {
+            r.score = Math.max(0, Math.round((r.score + delta) * 100) / 100);
+            if (typeof r.outOf === "number" && r.outOf > 0) {
+              r.pct = Math.round((r.score / r.outOf) * 100);
+              r.letter = letterGrade(r.pct);
+            }
+          }
+          fixed += changed.length; touched += 1;
+        }
+        if (fixed) {
+          say(`Your answer key re-marked ${fixed} item${fixed === 1 ? "" : "s"} across ${touched} paper${touched === 1 ? "" : "s"}`);
+          console.log(`[batch] teacher's key applied directly: ${fixed} item(s) re-marked across ${touched} paper(s)`);
+          setResults([...batchResults]);
+        }
+      }
 
       if (!hadKey && papers.length >= MIN_VOTERS) {
         const derived = deriveConsensusKey(papers);
@@ -1652,6 +1850,7 @@ export default function BatchGrading({
           moved += changed.length;
         }
         setConsensusKey({ ...derived, applied: moved });
+        say(`No key given — built one from ${derived.papers} papers, corrected ${moved} mark${moved === 1 ? "" : "s"}`);
         console.log(`[batch] no answer key — derived one from ${derived.papers} papers,` +
           ` ${derived.sections.reduce((n, s) => n + s.items.length, 0)} items,` +
           ` ${derived.starredCount} starred, ${moved} marks corrected`);
@@ -1679,6 +1878,7 @@ export default function BatchGrading({
       }
 
       if (allRosterStudents.length > 0) {
+        say(`Matching names against ${allRosterStudents.length} students on your rosters`);
         const norm = (s) => (s || "").toLowerCase().replace(/[^a-z]/g, "").trim();
 
         // Levenshtein distance for fuzzy comparison (handles OCR/handwriting errors)
@@ -1803,12 +2003,29 @@ export default function BatchGrading({
           return matches;
         }
 
+        // How good a match is, lower being better. Hoisted out of pass 1 so
+        // the class-context pass below can ask the same question of a match
+        // pass 1 already accepted.
+        function matchQuality(s, aiName) {
+          const first = norm(s.firstName);
+          const last = norm(s.lastName);
+          const full = first + last;
+          if (aiName === full || aiName === last + first) return 0; // exact full name
+          if (aiName === first) return 1; // exact first name
+          if (aiName === last) return 2; // exact last name
+          if (first.length >= 3 && aiName.startsWith(first) && aiName.length <= first.length + 2) return 3; // first + initial
+          if (first.length >= 2 && last.length >= 2 && aiName.includes(first) && aiName.includes(last)) return 3; // contains both
+          return 5; // partial/fuzzy/substring
+        }
+        const GUESS = 5; // the fuzzy bucket: a resemblance, not a reading
+
         // --- PASS 1: resolve matches, tally roster votes ---
         // Vote by rosterId (unique per uploaded CSV) not className, because
         // className may be identical across files (e.g. all "Gradebook").
         // A student in multiple rosters with the same edsbyId is the same person.
         const rosterVotes = {}; // { rosterId: count }
         const pendingAmbiguous = []; // results that had >1 distinct student
+        const resolvedInPass1 = []; // { result, aiName, quality } — revisited below
 
         for (const r of batchResults) {
           if (r.error) continue;
@@ -1835,19 +2052,7 @@ export default function BatchGrading({
           // Exact full name > exact first name > partial/fuzzy match.
           let resolved = uniqueStudents;
           if (uniqueStudents.length > 1) {
-            // Score each candidate: lower = better
-            function matchQuality(s) {
-              const first = norm(s.firstName);
-              const last = norm(s.lastName);
-              const full = first + last;
-              if (aiName === full || aiName === last + first) return 0; // exact full name
-              if (aiName === first) return 1; // exact first name
-              if (aiName === last) return 2; // exact last name
-              if (first.length >= 3 && aiName.startsWith(first) && aiName.length <= first.length + 2) return 3; // first + initial
-              if (first.length >= 2 && last.length >= 2 && aiName.includes(first) && aiName.includes(last)) return 3; // contains both
-              return 5; // partial/fuzzy/substring
-            }
-            const scored = uniqueStudents.map((s) => ({ s, q: matchQuality(s) }));
+            const scored = uniqueStudents.map((s) => ({ s, q: matchQuality(s, aiName) }));
             const bestQ = Math.min(...scored.map((x) => x.q));
             const bestMatches = scored.filter((x) => x.q === bestQ);
             if (bestMatches.length === 1) {
@@ -1869,7 +2074,9 @@ export default function BatchGrading({
               rosterClassName: m.className,
               rosterRosterId: m.rosterId,
             });
+            const readAs = r.studentName; // before the roster name replaces it
             r.studentName = `${m.firstName} ${m.lastName}`.trim() || r.studentName;
+            resolvedInPass1.push({ result: r, aiName, readAs, quality: matchQuality(m, aiName) });
             // Vote for every roster this student appears in
             for (const match of nameMatches) {
               rosterVotes[match.rosterId] = (rosterVotes[match.rosterId] || 0) + 1;
@@ -1922,6 +2129,96 @@ export default function BatchGrading({
               r.rosterStudentId = correctEntry.studentId;
               r.rosterClassName = correctEntry.className;
               r.rosterRosterId = correctEntry.rosterId;
+            }
+          }
+        }
+
+        // --- PASS 1C: a guess from another class is not good enough ---
+        //
+        // Pass 1 accepts a lone match the moment only one student answers to
+        // the name, and never asks which class the batch is. So one paper in
+        // a stack of twenty 7A tests went to a 7B student: the name read
+        // "Franco", the fuzzy first-name rule allows two characters, and
+        // "Frank" is two from "Franco". Nineteen papers had voted 7A and the
+        // vote was never consulted.
+        //
+        // Only guesses are reconsidered — the fuzzy bucket, a resemblance
+        // rather than a reading. An exact name from another roster stands,
+        // because a stack really can hold a visiting student. If the batch's
+        // own roster has a candidate, it wins; if it has none, the match is
+        // dropped and the teacher picks. A paper handed to the wrong child
+        // publishes to the wrong progress page, and an empty name on the
+        // screen says so where a plausible wrong one does not.
+        if (batchRosterId) {
+          const batchRoster = allRosterStudents.filter((s) => s.rosterId === batchRosterId);
+
+          // The read name against this one class's list, token by token.
+          //
+          // Across eight rosters this would be reckless — "Franko" is one
+          // letter from "Franco" and close to half a dozen other names — but
+          // inside the single class nineteen other papers have voted for, it
+          // is decisive. Which is the whole of the Franco case: the paper read
+          // "Franko Gafani", no rule could get from that to "Franco Gopaul"
+          // because the general rules compare the name run together, and the
+          // substring rule reached "Frank" in another class instead.
+          function nearestInClass(read) {
+            const tokens = String(read || "").toLowerCase().split(/\s+/)
+              .map((t) => t.replace(/[^a-z]/g, ""))
+              .filter((t) => t.length >= 4);
+            if (!tokens.length) return [];
+            const scored = [];
+            for (const s of batchRoster) {
+              const first = norm(s.firstName);
+              const last = norm(s.lastName);
+              let d = Infinity;
+              for (const t of tokens) {
+                if (first.length >= 4) d = Math.min(d, levenshtein(t, first));
+                if (last.length >= 4) d = Math.min(d, levenshtein(t, last));
+              }
+              // Two characters on a whole name, not on a fragment of one.
+              // Ranked just better than a guess, so it is taken over the
+              // other class's match and still loses to any real reading.
+              if (d <= 2) scored.push({ s, q: 4 + d / 10 });
+            }
+            return scored.sort((a, b) => a.q - b.q);
+          }
+
+          for (const { result: r, aiName, readAs, quality } of resolvedInPass1) {
+            if (quality < GUESS) continue;
+            if (r.rosterRosterId === batchRosterId) continue;
+
+            let inBatch = findNameMatches(aiName)
+              .filter((s) => s.rosterId === batchRosterId)
+              .map((s) => ({ s, q: matchQuality(s, aiName) }))
+              .sort((a, b) => a.q - b.q);
+            if (!inBatch.length) inBatch = nearestInClass(readAs);
+
+            if (inBatch.length && inBatch[0].q <= quality &&
+                (inBatch.length === 1 || inBatch[0].q < inBatch[1].q)) {
+              const m = inBatch[0].s;
+              console.log(`[match] "${aiName}" was ${r.rosterFirstName} ${r.rosterLastName} (${r.rosterClassName}) — taking ${m.firstName} ${m.lastName} from this batch's own class instead`);
+              Object.assign(r, {
+                rosterFirstName: m.firstName,
+                rosterLastName: m.lastName,
+                rosterEdsbyId: m.edsbyId,
+                rosterStudentId: m.studentId,
+                rosterClassName: m.className,
+                rosterRosterId: m.rosterId,
+              });
+              r.studentName = `${m.firstName} ${m.lastName}`.trim() || r.studentName;
+            } else {
+              console.log(`[match] "${aiName}" only resembled ${r.rosterFirstName} ${r.rosterLastName} in ${r.rosterClassName}, and this batch is ${batchClass} — leaving it for the teacher`);
+              // Back to what was read off the paper. Showing the roster name
+              // of a student we have just decided this is not would be the
+              // same wrong answer with the warning taken off.
+              if (readAs) r.studentName = readAs;
+              r.nameConfirmed = false;
+              delete r.rosterFirstName;
+              delete r.rosterLastName;
+              delete r.rosterEdsbyId;
+              delete r.rosterStudentId;
+              delete r.rosterClassName;
+              delete r.rosterRosterId;
             }
           }
         }
@@ -2309,6 +2606,7 @@ export default function BatchGrading({
     const validForAnalysis = batchResults.filter((r) => !r.error && r.raw);
     if (validForAnalysis.length >= 2) {
       setProgress({ done: total, total, current: "Generating class analysis..." });
+      say("All papers marked — writing the class analysis");
       try {
         const evidence = validForAnalysis.map((r) => {
           const a = r.raw || {};
@@ -2361,6 +2659,7 @@ export default function BatchGrading({
       }
     }
 
+    say("Done.");
     setProgress({ done: total, total, current: "Done!" });
 
     // Track this filename as processed (persisted in localStorage)
@@ -2400,6 +2699,7 @@ export default function BatchGrading({
       setGrading(false);
     }
   }, [
+    say,
     studentCount,
     pageCount,
     fixedPps,
@@ -2417,6 +2717,9 @@ export default function BatchGrading({
     feedbackVoice,
     voiceMode,
     answerKeyOverride,
+    // Was missing, so runBatch closed over the empty array from before the
+    // teacher uploaded a key and the pages never reached the request.
+    keyImages,
     rosterClasses,
     rotatedPages,
     perQuestionAudit,
@@ -4476,6 +4779,90 @@ export default function BatchGrading({
             </div>
           )}
 
+          {/* CHECK THE KEY BEFORE IT MARKS ANYONE.
+              A wrong entry here is not worth one mark, it is worth the class:
+              it crosses every student who got that question right. On a real
+              Math 7 key the extractor shifted a whole section — C3 "x" read
+              as "5", C4 "3" as "12x", C5 "12x" as "15 + 6n" — so three of
+              the six blanks were marked against the NEXT question's answer.
+              Reading the key twice did not catch it; both readings shifted
+              the same way. Only the teacher can catch that, and only once
+              per test. */}
+          {keyReviewRows.length > 0 && (
+            <div style={{
+              marginTop: 10, border: "1px solid #e2e8f0", borderRadius: 10,
+              background: "#fff", overflow: "hidden",
+            }}>
+              <button
+                type="button"
+                onClick={() => setKeyReviewOpen((v) => !v)}
+                style={{
+                  width: "100%", textAlign: "left", padding: "9px 12px", fontSize: 12.5,
+                  border: 0, background: keyFlagged > 0 ? "#fffbeb" : "#f8fafc",
+                  color: keyFlagged > 0 ? "#78350f" : "#334155", cursor: "pointer", fontWeight: 600,
+                }}
+              >
+                {keyReviewOpen ? "▾" : "▸"} Check the answer key ({keyReviewRows.length} answers)
+                {keyFlagged > 0 && (
+                  <span style={{ fontWeight: 700 }}>
+                    {" "}— {keyFlagged} read two different ways
+                  </span>
+                )}
+                <span style={{ fontWeight: 400, opacity: 0.75 }}>
+                  {" "}· a wrong answer here marks the whole class wrong
+                </span>
+              </button>
+
+              {keyReviewOpen && (
+                <div style={{ padding: "4px 12px 12px" }}>
+                  {[...new Set(keyReviewRows.map((r) => r.paper))].map((paper) => (
+                    <div key={paper || "only"}>
+                      {paper && (
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", margin: "8px 0 4px" }}>
+                          {paper}
+                        </div>
+                      )}
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {keyReviewRows.filter((r) => r.paper === paper).map((r) => (
+                          <label
+                            key={r.id}
+                            style={{
+                              display: "flex", alignItems: "center", gap: 5,
+                              border: `1px solid ${r.flagged ? "#fcd34d" : "#e2e8f0"}`,
+                              background: r.flagged ? "#fffbeb" : "#fff",
+                              borderRadius: 7, padding: "3px 7px",
+                            }}
+                            title={r.flagged
+                              ? "The two readings of your key disagreed here — it is not being used to mark anyone until you set it"
+                              : `${r.marks} mark${r.marks === 1 ? "" : "s"}`}
+                          >
+                            <span style={{
+                              fontFamily: "ui-monospace, Menlo, monospace", fontSize: 11,
+                              color: "#64748b", minWidth: 22,
+                            }}>{r.id}</span>
+                            <input
+                              value={r.answer}
+                              onChange={(e) => correctKeyAnswer(r.id, e.target.value)}
+                              style={{
+                                width: Math.max(42, Math.min(130, r.answer.length * 8 + 16)),
+                                border: 0, borderBottom: "1px solid #cbd5e1", outline: "none",
+                                fontSize: 12.5, padding: "1px 2px", background: "transparent",
+                              }}
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  <div style={{ fontSize: 11, color: "#64748b", marginTop: 9 }}>
+                    Typing here changes only the key, and only for this run. Anything left
+                    highlighted is skipped rather than guessed — no student is marked wrong on it.
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <div style={{ marginTop: 14 }}>
             <button
               onClick={runBatch}
@@ -4556,6 +4943,51 @@ export default function BatchGrading({
           <div style={{ fontSize: 12, opacity: 0.6, marginTop: 4 }}>
             {progress.done} / {progress.total} complete
           </div>
+
+          {/* One line of what is happening, scrolling up as it happens. */}
+          {activity.length > 0 && (
+            <div
+              style={{
+                marginTop: 8,
+                height: ACT_LINE,
+                overflow: "hidden",
+                fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                fontSize: 11.5,
+                color: "#475569",
+                background: "#f8fafc",
+                border: "1px solid #e2e8f0",
+                borderRadius: 6,
+                padding: "0 8px",
+              }}
+              // The headline above already announces itself; a line a second
+              // read out on top of it would be unusable.
+              aria-hidden="true"
+            >
+              <div
+                style={{
+                  transform: `translateY(-${(activity.length - 1) * ACT_LINE}px)`,
+                  transition: "transform 280ms cubic-bezier(.22,.61,.36,1)",
+                  willChange: "transform",
+                }}
+              >
+                {activity.map((a) => (
+                  <div
+                    key={a.id}
+                    style={{
+                      height: ACT_LINE,
+                      lineHeight: `${ACT_LINE}px`,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    <span style={{ opacity: 0.45 }}>{a.stamp}</span>{"  "}{a.text}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <button
             onClick={() => { abortRef.current = true; abortControllerRef.current?.abort(); }}
             style={{ ...batchStyles.ghostBtn, marginTop: 8 }}
@@ -4881,22 +5313,71 @@ export default function BatchGrading({
           {/* What the grader was given. A batch marked against no answer key,
               or against a key that came through as 40 characters of noise, is
               worth knowing before the marks are released rather than after. */}
+          {/* The key is read twice and only what both readings agree on is
+              used to mark. A wrong key entry is not worth one mark, it is
+              worth the class: it crosses every student who got that question
+              right. These are the ones to settle by eye. */}
+          {Array.isArray(keySeen?.unverified) && keySeen.unverified.length > 0 && (
+            <div style={{
+              margin: "0 0 10px", padding: "9px 12px", borderRadius: 8, fontSize: 12,
+              background: "#fffbeb", border: "1px solid #fcd34d", color: "#78350f",
+            }}>
+              <strong>
+                {keySeen.unverified.length} answer{keySeen.unverified.length === 1 ? "" : "s"} on your key
+                {keySeen.unverified.length === 1 ? " was" : " were"} read two different ways.
+              </strong>{" "}
+              {keySeen.unverified.length === 1 ? "It has" : "They have"} been left out of the marking
+              entirely — nobody has been marked wrong on {keySeen.unverified.length === 1 ? "it" : "them"}.
+              Check {keySeen.unverified.length === 1 ? "it" : "them"} against your key and mark
+              {keySeen.unverified.length === 1 ? " it" : " them"} by hand:
+              <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                {keySeen.unverified.slice(0, 12).map((u) => (
+                  <li key={u.id} style={{ fontFamily: "ui-monospace, Menlo, monospace", fontSize: 11.5 }}>
+                    <strong>{u.id}</strong>: read as &ldquo;{u.first}&rdquo; and as &ldquo;{u.second}&rdquo;
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {(() => {
             const used = results.find((r) => !r.error && r.raw?.answer_key_used)?.raw?.answer_key_used;
             if (!used) return null;
-            const none = used.source === "none";
+            const none = used.source === "none" && !used.rubricChars;
+            const rubricOnly = used.source === "none" && !!used.rubricChars;
             return (
               <div style={{
                 margin: "0 0 10px", padding: "7px 12px", borderRadius: 8, fontSize: 12,
-                background: none ? "rgba(220,38,38,0.07)" : "rgba(100,116,139,0.07)",
-                border: `1px solid ${none ? "rgba(220,38,38,0.3)" : "rgba(100,116,139,0.2)"}`,
-                color: none ? "#991b1b" : "#475569",
+                background: none ? "rgba(220,38,38,0.07)" : rubricOnly ? "rgba(217,119,6,0.07)" : "rgba(100,116,139,0.07)",
+                border: `1px solid ${none ? "rgba(220,38,38,0.3)" : rubricOnly ? "rgba(217,119,6,0.3)" : "rgba(100,116,139,0.2)"}`,
+                color: none ? "#991b1b" : rubricOnly ? "#92400e" : "#475569",
               }}>
                 {none ? (
                   <>
                     <strong>No answer key reached the grader.</strong> Matching, True/False
                     and fill-in-the-blank cannot be checked without one — those items are
                     left unmarked rather than guessed.
+                    {keySeen && (
+                      <div style={{ marginTop: 4, fontSize: 11, opacity: 0.85 }}>
+                        When the run started it could see:{" "}
+                        {keySeen.uploadedPages} uploaded key page{keySeen.uploadedPages === 1 ? "" : "s"},{" "}
+                        {keySeen.keyPagesInPdf} key page{keySeen.keyPagesInPdf === 1 ? "" : "s"} inside the stack,{" "}
+                        {keySeen.keyText} characters of key text,{" "}
+                        {keySeen.rubricText} of rubric.
+                        {keySeen.uploadedPages === 0 && keySeen.keyPagesInPdf === 0 && (
+                          <> Nothing was attached when grading began — if you uploaded the key
+                          after pressing Grade, it was not in reach. Attach it first, then run.</>
+                        )}
+                      </div>
+                    )}
+                  </>
+                ) : rubricOnly ? (
+                  <>
+                    <strong>Your key came through as a rubric</strong> ({used.rubricChars} characters).
+                    It was in front of the grader and used, but as marking guidance rather than
+                    as the answers — so a matching letter is weighed rather than looked up. For
+                    an answer key, set <em>Answer key pages</em> if it is part of the scanned
+                    stack, and the letters will be read off it directly.
                   </>
                 ) : (
                   <>

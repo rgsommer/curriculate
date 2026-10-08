@@ -34,7 +34,10 @@ const BehaviorSchema = new mongoose.Schema(
     // IMMEDIATE   → notifies the parent on a single occurrence, regardless of count.
     // INTERACTION → documentable interaction; never notifies and never counts,
     //               but IS included in the AI Admin Summary.
-    triggerMode: { type: String, enum: ["THRESHOLD", "IMMEDIATE", "INTERACTION"], default: "THRESHOLD" },
+    // NOTE        → a concern with a note home (consequence / "please discuss at
+    //               home" message) that never counts toward strikes and never
+    //               fires a notice — e.g. an offence REPORTED by another student.
+    triggerMode: { type: String, enum: ["THRESHOLD", "IMMEDIATE", "INTERACTION", "NOTE"], default: "THRESHOLD" },
 
     // Consequence wording included in the note home automatically (§5a).
     consequenceText: { type: String, default: "" },
@@ -43,6 +46,12 @@ const BehaviorSchema = new mongoose.Schema(
     // "after_first" = the first occasion is a warning only, the consequence kicks
     // in from the second occurrence of THIS behaviour for the student onward.
     consequenceTiming: { type: String, enum: ["first", "after_first"], default: "first" },
+
+    // How the teacher knows: "witnessed" first-hand, or "reported" by someone
+    // else (e.g. another student). Reported ones are worded tentatively to the
+    // family ("I suspect that X may have…", "If this turns out to be true…") and
+    // never reveal the source. "" = not set (Compass infers from the note).
+    evidence: { type: String, enum: ["", "witnessed", "reported"], default: "" },
 
     // Offence categories (multi-select): "preparedness" (class preparedness),
     // "behaviour", "uniform". Teachers don't pick these when logging — admins set

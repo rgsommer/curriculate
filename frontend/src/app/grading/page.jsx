@@ -662,6 +662,14 @@ function extractDetectedAnswerKey(anyObj) {
 // Only allow http(s) URLs to be rendered as clickable links. AI-generated
 // assessment content could otherwise smuggle a javascript:/data: URL that would
 // execute on click. Returns the URL if safe, else null.
+// The UI writes a bracketed summary into stickyRubricText so the teacher can
+// see what is attached — "[Answer key: 2 scanned pages]". It is a caption,
+// never content, and must not be sent to the grader as a rubric.
+function isPlaceholderLabel(t) {
+  const s = String(t || "").trim();
+  return s.startsWith("[") && s.endsWith("]") && s.length < 120;
+}
+
 function safeHttpUrl(url) {
   const s = String(url || "").trim();
   if (!s) return null;
@@ -1044,6 +1052,16 @@ const SESSION_KEY = "curriculate_grading_session_v1";
 const RUBRIC_STICKY_TEXT_KEY = "curriculate_grading_rubric_sticky_text_v1";
 const RUBRIC_STICKY_SRC_KEY = "curriculate_grading_rubric_sticky_src_v1"; // "captured" | "manual"
 const RUBRIC_STICKY_TS_KEY = "curriculate_grading_rubric_sticky_ts_v1";
+// The key's own pages. Everything else about a sticky rubric was persisted —
+// its caption, its source, when it was captured — and the pictures were not,
+// so a scanned answer key survived a reload as the words "[Answer key: 2
+// scanned pages]" with nothing behind them. The screen said a key was
+// attached; the grader got none and invented the answers.
+const RUBRIC_STICKY_IMAGES_KEY = "curriculate_grading_rubric_sticky_images_v1";
+// localStorage is a few megabytes and shared with everything else here. Two
+// or three scanned pages fit comfortably; a whole booklet does not, and the
+// honest thing then is to say so rather than to half-save it.
+const RUBRIC_IMAGES_MAX_BYTES = 3_000_000;
 
 const ANSWERKEY_STICKY_TEXT_KEY = "curriculate_grading_answerkey_sticky_text_v1";
 const ANSWERKEY_STICKY_TS_KEY = "curriculate_grading_answerkey_sticky_ts_v1";
@@ -1458,7 +1476,71 @@ export default function GradingPage() {
     useEffect(() => saveLS(RUBRIC_STICKY_TS_KEY, stickyRubricCapturedAt || ""), [stickyRubricCapturedAt]);
 
     // Rubric page preview images (from DOCX/image uploads converted to page images)
-    const [rubricPreviewPages, setRubricPreviewPages] = useState([]);
+    const [rubricPreviewPages, setRubricPreviewPages] = useState(() => {
+      // loadLS hands back the raw string — it does not parse. Treating its
+      // return as an array meant the restore always saw nothing, and the
+      // effect below then deleted the pages it was supposed to be keeping.
+      try {
+        const raw = loadLS(RUBRIC_STICKY_IMAGES_KEY, "");
+        const saved = raw ? JSON.parse(raw) : null;
+        return Array.isArray(saved) ? saved.filter((p) => p?.src) : [];
+      } catch { return []; }
+    });
+    // Set when the caption claims a key but its pages could not be kept, so
+    // the UI can ask for it again instead of quietly grading without it.
+    const [stickyImagesLost, setStickyImagesLost] = useState(false);
+
+    // Keep the pages with the caption, and put them back into `photos` on
+    // load so the grader actually receives them. Without this the caption
+    // outlived the pictures and the batch ran against nothing.
+    useEffect(() => {
+      const pages = (rubricPreviewPages || []).filter((p) => p?.src);
+      if (!pages.length) {
+        try { localStorage.removeItem(RUBRIC_STICKY_IMAGES_KEY); } catch {}
+        return;
+      }
+      const payload = JSON.stringify(pages);
+      if (payload.length > RUBRIC_IMAGES_MAX_BYTES) {
+        // Too big to keep. Say so rather than storing a caption with nothing
+        // behind it — the teacher can re-attach, which is a small cost next
+        // to a class marked against invented answers.
+        try { localStorage.removeItem(RUBRIC_STICKY_IMAGES_KEY); } catch {}
+        return;
+      }
+      try { localStorage.setItem(RUBRIC_STICKY_IMAGES_KEY, payload); }
+      catch { try { localStorage.removeItem(RUBRIC_STICKY_IMAGES_KEY); } catch {} }
+    }, [rubricPreviewPages]);
+
+    // Restored pages are previews; the grader needs them in `photos`, tagged,
+    // the same as a fresh upload. Runs once, and only for pages that are not
+    // already there.
+    const restoredKeyRef = useRef(false);
+    useEffect(() => {
+      if (restoredKeyRef.current) return;
+      const pages = (rubricPreviewPages || []).filter((p) => p?.src);
+      if (!pages.length) return;
+      restoredKeyRef.current = true;
+      const objs = pages.map((pg, i) => ({
+        id: `restored_rubric_${i}_${Math.random().toString(36).slice(2, 6)}`,
+        dataUrl: pg.src, rawDataUrl: pg.src, createdAt: Date.now(),
+      }));
+      setPhotos((prev) => [...prev, ...objs]);
+      setPhotoTags((prev) => {
+        const m = new Map(prev);
+        for (const o of objs) m.set(o.id, "rubric");
+        return m;
+      });
+      console.log(`[rubric] restored ${objs.length} key page(s) from the last session`);
+    }, [rubricPreviewPages]);
+
+    // The caption says a key is attached but nothing is in reach: the pages
+    // were lost with the tab. Surfaced rather than silently graded around.
+    useEffect(() => {
+      const claimsKey = /^\[Answer key:/i.test(String(stickyRubricText || ""));
+      const hasPages = (rubricPreviewPages || []).some((p) => p?.src);
+      const hasText = !!String(rubricOverride || "").trim();
+      setStickyImagesLost(claimsKey && !hasPages && !hasText);
+    }, [stickyRubricText, rubricPreviewPages, rubricOverride]);
     const [enlargedRubricPage, setEnlargedRubricPage] = useState(null);
 
     // ✅ Sticky answer key captured from solution sheet (session-level)
@@ -1593,7 +1675,13 @@ export default function GradingPage() {
         // Scale to a readable width rather than a fixed zoom: a page scanned
         // at A4 and one at letter should arrive the same size.
         const base = page.getViewport({ scale: 1 });
-        const scale = Math.min(2.5, Math.max(1, 1700 / (base.width || 1)));
+        // 2000px wide, not 1700. An answer key is read once and marks the
+        // whole class against it, and at ~110 dpi the extractor lost the
+        // numbering of a compact list — reading "x" as "5" and "3" as "12x",
+        // shifting a section onto the next question's answers. At this width
+        // every objective answer on that key came back right. A page or two
+        // per batch, so the extra pixels cost almost nothing.
+        const scale = Math.min(4, Math.max(1, 2000 / (base.width || 1)));
         const viewport = page.getViewport({ scale });
         const canvas = document.createElement("canvas");
         canvas.width = Math.ceil(viewport.width);
@@ -1615,6 +1703,20 @@ export default function GradingPage() {
     async function handleRubricFileUpload(e) {
       const files = Array.from(e.target.files || []);
       if (!files.length) return;
+
+      // A new upload REPLACES the key, it does not add to it. Pages used to
+      // be appended, so a key restored from the last session plus the same
+      // key attached again went to the grader as four pages of a two-page
+      // key — the same answers twice, on every student in the stack.
+      setPhotos((prev) => prev.filter((p) => photoTags.get(p.id) !== "rubric"));
+      setPhotoTags((prev) => {
+        const m = new Map(prev);
+        for (const [id, tag] of prev) if (tag === "rubric") m.delete(id);
+        return m;
+      });
+      setRubricPreviewPages([]);
+      restoredKeyRef.current = true;   // do not re-restore over the new upload
+
       setUploadingRubricFile(true);
       try {
         const textParts = [];
@@ -1849,6 +1951,18 @@ export default function GradingPage() {
         setNotifyBusy(false);
       }
     }
+
+    // The key pages, as a stable array. Built inline in the JSX it was a new
+    // array every render, which cannot go in a dependency list — and leaving
+    // it out of runBatch's is why the batch ran with the empty value from
+    // before the upload.
+    const keyImagesForBatch = useMemo(
+      () => photos
+        .filter((p) => photoTags.get(p.id) === "rubric")
+        .map((p) => p.rawDataUrl || p.dataUrl)
+        .filter(Boolean),
+      [photos, photoTags]
+    );
 
     const rubricsSyncedRef = useRef("");   // teacherEmail whose library we've pulled
     useEffect(() => {
@@ -3553,26 +3667,20 @@ export default function GradingPage() {
           </div>
         ` : "";
 
-        // Build HTML body from session summary
-        const summaryHtml = `
-          <div style="font-family:sans-serif;max-width:640px;margin:0 auto;">
-            ${wellbeingBlock}
-            <h2 style="color:#1e293b;margin-bottom:8px;">Session Summary</h2>
-            <p style="color:#334155;line-height:1.6;">${(sessionSummary || "").replace(/\n/g, "<br>")}</p>
-            <hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0;">
-            <p style="color:#64748b;font-size:13px;">${sessionItems.length} submission${sessionItems.length === 1 ? "" : "s"} graded this session. Full reports and cut strips are attached as PDFs${guideBase64 ? ", along with your marking guide — every item ticked or crossed, with a mark per section and a total" : ""}.</p>
-          </div>
-        `;
-
-        // Generate both PDFs in parallel
+        // Declared before the body is built, because the body mentions the
+        // marking guide and reading a `let` above its declaration throws —
+        // which it did, on every session email, from the moment the guide
+        // was added.
         let pdfBase64 = null;
         let stripsBase64 = null;
         let guideBase64 = null;
+
+        // Generate the PDFs first, so the body can say truthfully what is
+        // attached rather than guessing before they exist.
         try {
           // These attachments go to whoever the teacher addresses the email
           // to — parents included, which is what the field's own placeholder
-          // suggests. They follow the setting like every other copy; batch
-          // grading's email already did, and this one was printing the marks.
+          // suggests. They follow the setting like every other copy.
           const pdfOpts = { hideGrades: !!hideGrades };
           // The marking guide goes to the teacher only and keeps the marks
           // whatever hideGrades says — they are the one marking from it.
@@ -3594,6 +3702,18 @@ export default function GradingPage() {
             return;
           }
         }
+
+        // Build HTML body from session summary
+        const summaryHtml = `
+          <div style="font-family:sans-serif;max-width:640px;margin:0 auto;">
+            ${wellbeingBlock}
+            <h2 style="color:#1e293b;margin-bottom:8px;">Session Summary</h2>
+            <p style="color:#334155;line-height:1.6;">${(sessionSummary || "").replace(/\n/g, "<br>")}</p>
+            <hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0;">
+            <p style="color:#64748b;font-size:13px;">${sessionItems.length} submission${sessionItems.length === 1 ? "" : "s"} graded this session. Full reports and cut strips are attached as PDFs${guideBase64 ? ", along with your marking guide — every item ticked or crossed, with a mark per section and a total" : ""}.</p>
+          </div>
+        `;
+
 
         const sendUrl = gradingUrl.replace(/\/grading$/, "/grading/send-email");
         const payload = { to, subject: emailSubject, html: summaryHtml, pdfAttachments: [], csvAttachments: [] };
@@ -4294,7 +4414,12 @@ export default function GradingPage() {
               feedbackVoice={voiceOverrideOn ? voiceOverride : voice}
               rubricOverride={
                 (rubricOverride || "").trim() ||
-                (stickyRubricText || "").trim() ||
+                // Real rubric text only. stickyRubricText is the caption the
+                // UI shows for what is attached — "[Answer key: 2 scanned
+                // pages]" — and sending that put 29 characters of
+                // placeholder in front of the grader as its marking
+                // guidance, while the pages themselves went nowhere.
+                (isPlaceholderLabel(stickyRubricText) ? "" : (stickyRubricText || "").trim()) ||
                 ""
               }
               subjectArea={subjectArea}
@@ -4310,7 +4435,12 @@ export default function GradingPage() {
               feedbackVoice={voiceOverrideOn ? voiceOverride : voice}
               rubricOverride={
                 (rubricOverride || "").trim() ||
-                (stickyRubricText || "").trim() ||
+                // Real rubric text only. stickyRubricText is the caption the
+                // UI shows for what is attached — "[Answer key: 2 scanned
+                // pages]" — and sending that put 29 characters of
+                // placeholder in front of the grader as its marking
+                // guidance, while the pages themselves went nowhere.
+                (isPlaceholderLabel(stickyRubricText) ? "" : (stickyRubricText || "").trim()) ||
                 ""
               }
               subjectArea={subjectArea}
@@ -4330,7 +4460,12 @@ export default function GradingPage() {
               perQuestionAudit={perQuestionAudit}
               rubricOverride={
                 (rubricOverride || "").trim() ||
-                (stickyRubricText || "").trim() ||
+                // Real rubric text only. stickyRubricText is the caption the
+                // UI shows for what is attached — "[Answer key: 2 scanned
+                // pages]" — and sending that put 29 characters of
+                // placeholder in front of the grader as its marking
+                // guidance, while the pages themselves went nowhere.
+                (isPlaceholderLabel(stickyRubricText) ? "" : (stickyRubricText || "").trim()) ||
                 ""
               }
               answerKeyOverride={(stickyAnswerKeyText || "").trim() || ""}
@@ -4341,10 +4476,7 @@ export default function GradingPage() {
                  dropped and the grader marked a matching column with letters
                  it had invented. These are the photos tagged "rubric", which
                  is where both a rubric image and a scanned key land. */
-              keyImages={photos
-                .filter((p) => photoTags.get(p.id) === "rubric")
-                .map((p) => p.rawDataUrl || p.dataUrl)
-                .filter(Boolean)}
+              keyImages={keyImagesForBatch}
               teacherEmail={teacherEmail}
               setTeacherEmail={setTeacherEmail}
               rosterClasses={rosterClasses}
@@ -4838,6 +4970,17 @@ export default function GradingPage() {
               >
                 <div style={{ display: "flex", flexDirection: "column", gap: 2, textAlign: "left" }}>
                   <div style={{ fontWeight: 900 }}>Rubric Options</div>
+                  {stickyImagesLost && (
+                    <div style={{
+                      marginTop: 6, padding: "7px 10px", borderRadius: 8, fontSize: 12,
+                      background: "rgba(220,38,38,0.08)", border: "1px solid rgba(220,38,38,0.35)",
+                      color: "#991b1b", lineHeight: 1.45,
+                    }}>
+                      <strong>Your answer key needs re-attaching.</strong> It was uploaded in an
+                      earlier session and the pages did not survive. The label above is all that
+                      is left — grading now would mark matching and True/False against nothing.
+                    </div>
+                  )}
                   <div style={{ fontSize: 12, opacity: 0.75 }}>
                     {(() => {
                       const manual = (rubricOverride || "").trim();
