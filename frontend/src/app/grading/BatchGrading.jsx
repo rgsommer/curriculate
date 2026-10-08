@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildResultsPdf, buildStripsPdf, buildMarkingGuidePdf, preloadPdfLibs } from "./pdfReports";
-import { deriveConsensusKey, keyIndex, keyIndexFromExtracted, applyKeyToGuide, applyBlindMarking, MIN_VOTERS } from "./consensusKey";
+import { deriveConsensusKey, keyIndex, keyIndexFromExtracted, applyKeyToGuide, applyBlindMarking, keyRowsForReview, withCorrectedAnswer, MIN_VOTERS } from "./consensusKey";
 import { completeQuest } from "../../components/QuestWidget";
 
 /**
@@ -657,6 +657,21 @@ export default function BatchGrading({
   const [thumbnails, setThumbnails] = useState([]); // [{page, dataUrl}] for tap mode
 
   const [extractedAnswerKey, setExtractedAnswerKey] = useState(answerKeyOverride || "");
+
+  // The key, laid out for the teacher to check before it marks anyone. An
+  // error in the key is not worth one mark, it is worth the class.
+  const [keyReviewOpen, setKeyReviewOpen] = useState(false);
+  const keyReviewRows = useMemo(
+    () => keyRowsForReview(extractedAnswerKey),
+    [extractedAnswerKey]
+  );
+  const keyFlagged = useMemo(
+    () => keyReviewRows.filter((r) => r.flagged).length,
+    [keyReviewRows]
+  );
+  const correctKeyAnswer = useCallback((id, value) => {
+    setExtractedAnswerKey((prev) => withCorrectedAnswer(prev, id, value));
+  }, []);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
   // Set when a grade comes back with a deployment-level fault, which halts the
