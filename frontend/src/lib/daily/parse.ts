@@ -2519,7 +2519,17 @@ function dayFromCell(v: string): Date | null {
   const text = String(v || "").trim();
   if (!text) return null;
   const serial = /^(\d{5})(?:\s+\d+)?$/.exec(text);
-  if (serial) return new Date(Date.UTC(1899, 11, 30) + Number(serial[1]) * 86400000);
+  if (serial) {
+    // The serial's own midnight is UTC, and the board's clock is the room's: in
+    // Toronto that is eight in the evening the day before, so a date read this
+    // way came out a day early. The parts are taken off the UTC date and a
+    // local one built from them.
+    const utc = new Date(Date.UTC(1899, 11, 30) + Number(serial[1]) * 86400000);
+    return new Date(utc.getUTCFullYear(), utc.getUTCMonth(), utc.getUTCDate());
+  }
+  // "2026-10-08" is parsed by Date.parse as UTC midnight — the same day early.
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (iso) return new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
   // A date has to look like one. new Date("12") is the first of December in a
   // browser, and a cell holding a week number is not a date.
   if (!/\d{1,4}[-/]\d{1,2}[-/]\d{1,4}/.test(text) && !/[A-Za-z]{3}/.test(text)) return null;
@@ -2568,6 +2578,105 @@ function bdayKeyColumn(values: string[][]): number {
   return best;
 }
 
+/**
+ * The roster layout, read by its own header row.
+ *
+ * The BDays tab in this sheet is not a list of keys at all: it is the school's
+ * roster, a row per student, with a header row naming the columns — Last,
+ * Formal, First, Common, (the full name, in a column with no heading), F, Class,
+ * DOB, **Next BD**, **Celebrate BD**, **BD is on**. No cell on it carries the
+ * "<serial> n" key the board was built to match, which is why every row fell
+ * through: the guard that keeps a column heading off the projector ("Happy
+ * birthday, Billing!") asks for a key the tab does not have.
+ *
+ * So the columns are taken from the header row by name. Celebrate BD decides
+ * where it carries a date — that is the whole point of it, a weekend birthday
+ * kept on a school day — else Next BD, else the day and month of the DOB, so a
+ * roster whose formulas have not been rolled over still puts the balloons up.
+ */
+type Roster = {
+  at: number;        // the header row, in this grid
+  last: number; first: number; common: number; full: number;
+  klass: number; dob: number; next: number; keep: number; note: number;
+};
+
+const ROSTER_HEADS: Record<keyof Omit<Roster, "at">, RegExp> = {
+  last: /^last( ?name)?$/i,
+  first: /^first( ?name)?$/i,
+  common: /^(common|preferred|goes by)$/i,
+  full: /^(full ?name|name)$/i,
+  klass: /^(class|homeroom|grade|section)$/i,
+  dob: /^(dob|birth ?date|date of birth|birthday)$/i,
+  next: /^next ?bd(ay)?$/i,
+  keep: /^(celebrate|celebrate ?bd(ay)?|kept|observed)$/i,
+  note: /^(bd is on|note|notes|when)$/i,
+};
+
+function rosterColumns(values: string[][]): Roster | null {
+  const rows = values || [];
+  for (let r = 0; r < Math.min(rows.length, 20); r += 1) {
+    const cells = (rows[r] || []).map((c) => String(c ?? "").trim());
+    const find = (re: RegExp) => cells.findIndex((c) => re.test(c));
+    const out = { at: r } as Roster;
+    (Object.keys(ROSTER_HEADS) as (keyof typeof ROSTER_HEADS)[]).forEach((k) => {
+      out[k] = find(ROSTER_HEADS[k]);
+    });
+    // A header row worth trusting names a surname and either a class or a date
+    // of birth. Anything less is a row that happens to hold the word "Name".
+    if (out.last >= 0 && (out.klass >= 0 || out.dob >= 0)) {
+      // The full name often sits in the unheaded column after "Common", which
+      // is where this sheet keeps it.
+      if (out.full < 0 && out.common >= 0 && !cells[out.common + 1]) out.full = out.common + 1;
+      return out;
+    }
+  }
+  return null;
+}
+
+/** "8A", "7", "Gr. 8" → "8"; anything that is not junior high → "". */
+function gradeOfClass(cell: string): string {
+  const m = /(^|\D)([78])\s*[A-C]?\s*$/.exec(String(cell || "").trim());
+  return m ? m[2] : "";
+}
+
+function birthdaysFromRoster(
+  values: string[][], top: number, cols: Roster, midnight: Date
+): Birthday[] {
+  const out: Birthday[] = [];
+  const md = (d: Date) => `${d.getMonth()}-${d.getDate()}`;
+  for (let r = cols.at + 1; r < (values || []).length; r += 1) {
+    const cells = (values[r] || []).map((c) => String(c ?? "").trim());
+    const at = (i: number) => (i >= 0 ? cells[i] || "" : "");
+    // The class column is the whole school's; the board is the junior high's.
+    const grade = cols.klass >= 0 ? gradeOfClass(at(cols.klass)) : "";
+    if (cols.klass >= 0 && !grade) continue;
+
+    const keep = dayFromCell(at(cols.keep));
+    const next = dayFromCell(at(cols.next));
+    const dob = dayFromCell(at(cols.dob));
+    // Whichever of them the sheet has filled in, in that order: the day it is
+    // kept on decides where it is written, and the birthday's own date only
+    // decides when it is not.
+    const on = keep || next || null;
+    if (on ? !sameDay(on, midnight) : !(dob && md(dob) === md(midnight))) continue;
+
+    const name = at(cols.common) && at(cols.last)
+      ? `${at(cols.common)} ${at(cols.last)}`
+      : at(cols.first) && at(cols.last)
+        ? `${at(cols.first)} ${at(cols.last)}`
+        : at(cols.full) || at(cols.first) || at(cols.last);
+    if (!looksLikeName(name.replace(/["']/g, ""))) continue;
+
+    out.push({
+      name,
+      grade,
+      note: at(cols.note),
+      where: `row ${top + r} · ${keep ? `kept on ${columnName(cols.keep + 1)}` : next ? `next in ${columnName(cols.next + 1)}` : "the day and month of the DOB"}`,
+    });
+  }
+  return out;
+}
+
 export function birthdaysToday(book: Book, at: Date): Birthday[] {
   const grids = (book || {})["bdays"] || [];
   const midnight = new Date(at.getFullYear(), at.getMonth(), at.getDate());
@@ -2577,6 +2686,18 @@ export function birthdaysToday(book: Book, at: Date): Birthday[] {
   for (const g of grids) {
     const left = g.left || 1;
     const top = g.top || 1;
+    // A tab with a header row is the school's roster and is read by its own
+    // headings; one without is the keyed block the sheet's own lookups match on.
+    const roster = rosterColumns(g.values || []);
+    if (roster) {
+      for (const b of birthdaysFromRoster(g.values || [], top, roster, midnight)) {
+        const id = `${b.name}|${b.grade}`;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        out.push(b);
+      }
+      continue;
+    }
     const keyCol = bdayKeyColumn(g.values || []);
     (g.values || []).forEach((row, r) => {
       const cells = (row || []).map((c) => String(c ?? "").trim());
