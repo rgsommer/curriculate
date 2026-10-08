@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { api, getToken, loginHref, getMyTemplates, generateParentMessage, type Me, type GuddStatus, type ParentTemplate } from "../../_lib/api";
@@ -79,16 +79,24 @@ export default function StudentPage() {
   const [openNotice, setOpenNotice] = useState<string | null>(null);
   // Incident edit/delete
   const [editIncId, setEditIncId] = useState<string | null>(null);
-  // Arriving from a dashboard offence row (#inc-<id>): highlight that offence
-  // for a few seconds (ClientGate does the scrolling).
+  // Arriving from a dashboard offence row (#inc-<id>): once the history has
+  // loaded, scroll to that offence and highlight it for a few seconds. (Done
+  // here, not just in ClientGate, because tapping a row is a client-side
+  // navigation — the layout's one-time anchor scroll has already run.)
   const [focusInc, setFocusInc] = useState<string | null>(null);
+  const focusDone = useRef(false);
   useEffect(() => {
     const m = window.location.hash.match(/^#inc-([a-f0-9]{24})$/i);
-    if (!m) return;
-    setFocusInc(m[1]);
-    const t = setTimeout(() => setFocusInc(null), 4000);
-    return () => clearTimeout(t);
+    if (m) setFocusInc(m[1]);
   }, []);
+  useEffect(() => {
+    if (!focusInc || !data || focusDone.current) return;
+    const el = document.getElementById(`inc-${focusInc}`);
+    if (!el) return;
+    focusDone.current = true;
+    requestAnimationFrame(() => el.scrollIntoView({ block: "center", behavior: "smooth" }));
+    setTimeout(() => setFocusInc(null), 4000); // not cleared on re-render: the highlight always fades
+  }, [focusInc, data]);
   // Removing an offence: "entered in error" (no trace) vs "withdrawn" (the
   // teacher's judgment — a record of the reversal is kept).
   const [removeIncId, setRemoveIncId] = useState<string | null>(null);
