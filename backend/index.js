@@ -1386,6 +1386,13 @@ function getSessionByRoomCode(code) {
 // ------------------------------
 const AI_MODEL = process.env.AI_MODEL || "gpt-5.4-mini";
 const AI_MODEL_FULL = process.env.AI_MODEL_FULL || "gpt-4.1";
+// Reading a page is a different job from marking it, and the models are not
+// ranked the same way for it. Measured on a blank matching line: gpt-5.4 and
+// gpt-5.4-mini both reported the blank correctly; gpt-4.1 filled it in from
+// the key and called it right. So transcription does NOT default to the
+// "full" model — it follows AI_MODEL, and can be pointed somewhere cheaper
+// still, since the small model was accurate here and twice as fast.
+const AI_MODEL_TRANSCRIBE = process.env.AI_MODEL_TRANSCRIBE || AI_MODEL;
 
 const AWS_REGION = process.env.AWS_REGION || "us-east-2";
 const S3_BUCKET = process.env.S3_BUCKET || "";
@@ -17141,6 +17148,122 @@ Do NOT include any text outside the JSON array.`,
   //  Sends ONLY the answer key image(s) to the AI for focused extraction
   //  of correct answers, point values, and KITA category annotations.
   // ====================================================================
+  // ------------------------------------------------------------------
+  //  POST /grading/transcribe
+  //
+  //  One job: what is written on each line. No marking, no rubric, no
+  //  feedback, no voice.
+  //
+  //  Asked to do everything at once the model marks a blank matching line as
+  //  correct by filling it from the key — measured on five of twenty papers —
+  //  and drifts generous on a weak script. Asked only to read, it reads
+  //  accurately and in a couple of seconds. So this pass reads, and
+  //  backend/utils/objectiveMarking.js does the marking by string comparison,
+  //  which cannot hallucinate and costs nothing.
+  // ------------------------------------------------------------------
+  app.post("/grading/transcribe", gradingLimiter, async (req, res) => {
+    try {
+      const { images, gradeBand } = req.body || {};
+      if (!Array.isArray(images) || !images.length) {
+        return res.status(400).json({ error: "No images provided." });
+      }
+      const band = ["3-5", "6-8", "9-10", "11+"].includes(gradeBand) ? gradeBand : "6-8";
+
+      const schema = {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          student_name: { type: ["string", "null"] },
+          paper_title: { type: ["string", "null"] },
+          // The mark total printed on the paper, which is how a key covering
+          // more than one paper is told apart.
+          out_of: { type: ["number", "null"] },
+          sections: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                section: { type: "string" },
+                letter: { type: "string", maxLength: 2 },
+                items: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    additionalProperties: false,
+                    properties: {
+                      n: { type: "string", maxLength: 8 },
+                      written: { type: "string", maxLength: 200 },
+                    },
+                    required: ["n", "written"],
+                  },
+                },
+              },
+              required: ["section", "letter", "items"],
+            },
+          },
+        },
+        required: ["student_name", "paper_title", "out_of", "sections"],
+      };
+
+      const prompt = `Transcribe this student's test paper. Do NOT mark it, do NOT judge it, do NOT comment.
+
+For every section of the paper, in the order they appear, give its heading, its letter (A, B, C …) and every numbered item in it.
+
+For each item, "written" is EXACTLY what the student put, as they put it:
+- A letter on a matching line: just that letter.
+- A circled True/False: "T" or "F".
+- A word or number in a blank: that word or number.
+- Working out: the student's FINAL answer for that item, not the steps.
+- **If the line is empty, "written" MUST be the empty string.** Never fill in
+  what the answer should be. A blank is the single most important thing to
+  report correctly, and a blank reported as an answer takes a mark the student
+  did not earn.
+- If you genuinely cannot read it, use "?" — not a guess.
+
+Also give the student's name as written, the paper's title, and the mark total printed on it (e.g. 50).`;
+
+      const response = await openai.responses.create({
+        model: AI_MODEL_TRANSCRIBE,
+        input: [{ role: "user", content: [
+          { type: "input_text", text: prompt },
+          ...images.map((u) => ({ type: "input_image", image_url: u })),
+        ]}],
+        text: { format: { type: "json_schema", name: "transcript", strict: true, schema } },
+        max_output_tokens: 3000,
+      });
+
+      const out = safeJsonParse(response.output_text);
+      if (!out) return res.status(502).json({ error: "Could not read the paper." });
+      const items = (out.sections || []).reduce((n, s2) => n + (s2.items || []).length, 0);
+      console.log(`[transcribe] ${AI_MODEL_TRANSCRIBE} ${out.student_name || "?"}: ${(out.sections || []).length} sections, ${items} items, band ${band}`);
+      return res.json({ ok: true, ...out });
+    } catch (err) {
+      console.error("POST /grading/transcribe error:", err?.message || err);
+      return res.status(500).json({ error: "Transcription failed." });
+    }
+  });
+
+  // POST /grading/mark-objective  { transcript, answerKeyText }
+  //
+  // No model at all. Separate from /transcribe so it can be called on a
+  // transcript the caller already holds, and so it is obvious from the
+  // outside that these marks involve no judgement.
+  app.post("/grading/mark-objective", gradingLimiter, async (req, res) => {
+    try {
+      const { transcript, answerKeyText } = req.body || {};
+      if (!Array.isArray(transcript)) return res.status(400).json({ error: "transcript required." });
+      if (!String(answerKeyText || "").trim()) return res.status(400).json({ error: "answerKeyText required." });
+      const { markObjective } = await import("./utils/objectiveMarking.js");
+      const result = markObjective(transcript, answerKeyText);
+      console.log(`[mark-objective] ${result.marked} item(s) marked, ${result.skipped} left to the model`);
+      return res.json({ ok: true, ...result });
+    } catch (err) {
+      console.error("POST /grading/mark-objective error:", err?.message || err);
+      return res.status(500).json({ error: "Marking failed." });
+    }
+  });
+
   app.post("/grading/extract-answer-key", gradingLimiter, async (req, res) => {
     try {
       const { answerKeyImages, standards: rawStandards, gradeBand } = req.body || {};
