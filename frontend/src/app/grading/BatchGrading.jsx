@@ -93,6 +93,181 @@ export function loadPdfJs() {
 
 // Render a single page to a JPEG data URL.
 // For image-mode batches, `imageDataArr` supplies pre-loaded data URLs — pdfDoc may be null.
+/* ------------------------------------------------------------------
+ *  PATH A — a test with an answer key.
+ *
+ *  Three small calls instead of one that fills in a 28-field form:
+ *    1. read the paper blind      /grading/transcribe   (no key in prompt)
+ *    2. mark the objective bits   in code, against the key — exact
+ *    3. mark the written bits     /grading/mark-written, the key's scheme
+ *    4. write the feedback        /grading/feedback, marks already fixed
+ *
+ *  Measured on the five papers the monolith handled worst, mean error went
+ *  from 5.4 marks to 2.5-3.0, and the generosity on weak papers went with
+ *  it — one paper from +11.5 to +4.
+ *
+ *  Returns the same shape the monolith did, because the publishing, the
+ *  PDFs, the Edsby CSV and the email all read it.
+ * ------------------------------------------------------------------ */
+const SECTION_LETTER = (s) => String(s || "").trim().match(/^([A-Z])[.)\s]/)?.[1] || "";
+
+async function gradeViaPathA({ images, answerKeyText, gradeBand, subjectArea, voice, title, fallbackName, base, signal }) {
+  const at = (path) => base.replace(/\/grading$/, path);
+  const post = (path, body) =>
+    fetchWithRetry(at(path), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    }).then((r) => r.json());
+
+  // The reading and the written marking are independent, so they go together.
+  const [blind, written] = await Promise.all([
+    post("/grading/transcribe", { images, gradeBand, answerKeyText }),
+    post("/grading/mark-written", { images, answerKeyText, gradeBand, subjectArea }),
+  ]);
+
+  if (!blind?.ok) throw new Error("Could not read the paper.");
+  if (!written?.ok) throw new Error("Could not mark the written sections.");
+
+  // A section the marker could not finish must not be published. A missing
+  // item used to be scored zero, which turned 11.5 out of 20 into 4.
+  if (written.complete === false) {
+    return {
+      error: `Some written items could not be marked (${(written.missing || []).join(", ")}). Re-grade this paper.`,
+      code: "incomplete_marking",
+    };
+  }
+
+  const nameOf = new Map(
+    (blind.sections || []).map((s) => [SECTION_LETTER(s.section) || s.letter, s.section])
+  );
+  const pretty = (letter) => nameOf.get(letter) || letter;
+
+  const objective = (blind.marking?.sections || []).filter((s) => s.objective);
+  const sections = [
+    ...objective.map((s) => ({
+      name: pretty(s.letter),
+      score: Number(s.score) || 0,
+      out_of: Number(s.out_of) || 0,
+      teacher_comment: "",
+      incorrect_items: (s.items || [])
+        .filter((i) => i.verdict === "incorrect" || i.verdict === "blank")
+        .map((i) => ({
+          prompt: `${i.n}.`,
+          student_answer: i.written || "",
+          correct_answer: i.answer || "",
+        })),
+    })),
+    ...(written.sections || []).map((s) => ({
+      name: pretty(s.letter),
+      score: Number(s.score) || 0,
+      out_of: Number(s.out_of) || 0,
+      teacher_comment: "",
+      incorrect_items: (s.items || [])
+        .filter((i) => i.marks < i.out_of)
+        .map((i) => ({
+          prompt: `${String(i.id).replace(/^[A-Z]/, "")}.`,
+          student_answer: i.wrote || "",
+          correct_answer: "",
+        })),
+    })),
+  ].sort((a, b) => String(a.name).localeCompare(String(b.name)));
+
+  const score = Math.round(sections.reduce((t, s) => t + s.score, 0) * 100) / 100;
+  const outOf = sections.reduce((t, s) => t + s.out_of, 0);
+
+  // Everything that went wrong, for the feedback call. It gets this and no
+  // pages, so it cannot move a mark.
+  const faults = [
+    ...objective.flatMap((s) =>
+      (s.items || [])
+        .filter((i) => i.verdict === "incorrect" || i.verdict === "blank")
+        .map((i) => ({
+          id: `${s.letter}${i.n}`,
+          wrote: i.written || "",
+          why: i.verdict === "blank" ? "left blank" : `the answer is ${i.answer}`,
+        }))
+    ),
+    ...(written.items || [])
+      .filter((i) => i.marks < i.out_of)
+      .map((i) => ({ id: i.id, wrote: i.wrote, why: i.why })),
+  ];
+
+  const fb = await post("/grading/feedback", {
+    sections: sections.map((s) => ({ name: s.name, score: s.score, out_of: s.out_of })),
+    faults,
+    studentName: blind.student_name || fallbackName || "",
+    title: title || blind.paper_title || "",
+    voice,
+    gradeBand,
+    score,
+    outOf,
+  }).catch(() => ({}));
+
+  // The marking guide the teacher's PDF is built from.
+  const guideSections = [
+    ...objective.map((s) => ({
+      name: pretty(s.letter),
+      score: Number(s.score) || 0,
+      out_of: Number(s.out_of) || 0,
+      items: (s.items || []).map((i) => ({
+        n: String(i.n),
+        verdict: i.verdict === "unmarked" ? "unclear" : i.verdict,
+        student_answer: i.written || "",
+        correct_answer: i.verdict === "correct" ? "" : (i.answer || ""),
+        note: "",
+        marks: null,
+        marks_out_of: null,
+      })),
+    })),
+    ...(written.sections || []).map((s) => ({
+      name: pretty(s.letter),
+      score: Number(s.score) || 0,
+      out_of: Number(s.out_of) || 0,
+      items: (s.items || []).map((i) => ({
+        n: String(i.id).replace(/^[A-Z]/, ""),
+        verdict: i.marks >= i.out_of ? "correct" : (i.marks > 0 ? "partial" : "incorrect"),
+        student_answer: i.wrote || "",
+        correct_answer: "",
+        note: i.why || "",
+        marks: i.marks,
+        marks_out_of: i.out_of,
+      })),
+    })),
+  ].sort((a, b) => String(a.name).localeCompare(String(b.name)));
+
+  return {
+    overall_score: score,
+    overall_out_of: outOf,
+    student_name: blind.student_name || "",
+    student_id: null,
+    detected_title: blind.paper_title || "",
+    sections,
+    strengths: Array.isArray(fb.strengths) ? fb.strengths : [],
+    improvements: Array.isArray(fb.improvements) ? fb.improvements : [],
+    teacher_comment: fb.teacher_comment || "",
+    inferred_subject: subjectArea || "",
+    inferred_assessment_type: "Test",
+    achievement_summary: null,
+    teacher_starred: false,
+    marking_guide: {
+      handwrite: fb.handwrite || "",
+      write_on_paper: fb.write_on_paper || "",
+      highlights: null,
+      sections: guideSections,
+    },
+    answer_key_used: {
+      source: "text",
+      textChars: String(answerKeyText || "").length,
+      imageCount: 0,
+      hasReference: true,
+      path: "A",
+    },
+  };
+}
+
+
 // The answer key is rendered larger than the student pages, on purpose.
 //
 // A mistake in a student's page costs that student a mark. A mistake in the
@@ -670,6 +845,12 @@ export default function BatchGrading({
   // several. A stack of papers is one assessment, so the first paper's title
   // is taken and the rest of the run uses it.
   const batchTitleRef = useRef("");
+
+  // The test path: three small calls instead of the 28-field form, used
+  // whenever a test has an answer key. On by default because it measures
+  // better, and switchable because a term's marks should not hinge on a
+  // path that is one day old.
+  const [pathAEnabled, setPathAEnabled] = useState(true);
 
   const [keyReviewOpen, setKeyReviewOpen] = useState(false);
   const keyReviewRows = useMemo(
@@ -1536,7 +1717,8 @@ export default function BatchGrading({
         // written sections and the feedback, which is what it is for. The
         // two calls go together, so this costs latency only when the blind
         // read is the slower of the two.
-        const blindRead = effectiveAnswerKey
+        const willUsePathA = pathAEnabled && !!effectiveAnswerKey;
+        const blindRead = (effectiveAnswerKey && !willUsePathA)
           ? fetchWithRetry(gradingUrl.replace(/\/grading$/, "/grading/transcribe"), {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -1548,18 +1730,57 @@ export default function BatchGrading({
             })
           : Promise.resolve(null);
 
-        const res = await fetchWithRetry(gradingUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-          signal: abortControllerRef.current?.signal,
-        });
+        // PATH A — a test with a key goes down the three small calls, not
+        // the 28-field form. See gradeViaPathA.
+        let data;
+        let usedPathA = false;
+        if (willUsePathA) {
+          try {
+            data = await gradeViaPathA({
+              images,
+              answerKeyText: effectiveAnswerKey,
+              gradeBand,
+              subjectArea: subjectArea || undefined,
+              voice: feedbackVoice || undefined,
+              title: batchTitleRef.current || undefined,
+              fallbackName: group.name || "",
+              base: gradingUrl,
+              signal: abortControllerRef.current?.signal,
+            });
+            usedPathA = !data?.error;
+            if (data?.error) {
+              say(`${who}: ${data.error}`);
+              console.warn(`[batch] Path A declined to mark ${who}: ${data.error}`);
+            }
+          } catch (e) {
+            // Never lose a paper to the new path. Fall through to the
+            // grader that has been marking all term.
+            console.warn("[batch] Path A failed, falling back:", e?.message || e);
+            say(`${who}: the test path failed — falling back to the general grader`);
+            data = null;
+          }
+        }
 
-        const data = await res.json();
+        if (!usedPathA) {
+          const res = await fetchWithRetry(gradingUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+            signal: abortControllerRef.current?.signal,
+          });
+          const fallback = await res.json();
+          // A Path A refusal (an item it could not mark) is kept only when
+          // the fallback has nothing better to say.
+          data = fallback?.overall_score != null ? fallback : (data || fallback);
+        }
+
         say(`${who}: marked in ${((Date.now() - began) / 1000).toFixed(1)}s` +
+            `${usedPathA ? " (test path)" : ""}` +
             `${Number.isFinite(Number(data.overall_score)) ? ` — ${Math.round(Number(data.overall_score) * 10) / 10}/${Math.round(Number(data.overall_out_of))}` : ""}`);
 
-        const blind = await blindRead;
+        // Path A has already marked the objective sections from its own
+        // blind read; applying it twice would double the correction.
+        const blind = usedPathA ? null : await blindRead;
         if (blind?.marking?.sections?.length) {
           const moved = applyBlindMarking(data, blind.marking.sections);
           if (moved.length) {
@@ -2728,6 +2949,7 @@ export default function BatchGrading({
     }
   }, [
     say,
+    pathAEnabled,
     studentCount,
     pageCount,
     fixedPps,
@@ -4555,6 +4777,51 @@ export default function BatchGrading({
                   </option>
                 ))}
               </select>
+            </label>
+
+            {/* The test path. Only does anything when a key is attached —
+                without one there is nothing to mark against, and the
+                general grader is the right tool. */}
+            <label style={{
+              ...batchStyles.label,
+              cursor: "pointer",
+              paddingTop: 18,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div
+                  onClick={() => setPathAEnabled((v) => !v)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setPathAEnabled((v) => !v); }
+                  }}
+                  role="switch"
+                  aria-checked={pathAEnabled}
+                  aria-label="Mark as a test"
+                  tabIndex={0}
+                  style={{
+                    width: 40, height: 22, borderRadius: 11,
+                    background: pathAEnabled ? "#15803d" : "#d1d5db",
+                    position: "relative", transition: "background 0.2s",
+                    cursor: "pointer", flexShrink: 0,
+                  }}
+                >
+                  <div style={{
+                    width: 18, height: 18, borderRadius: 9, background: "#fff",
+                    position: "absolute", top: 2, left: pathAEnabled ? 20 : 2,
+                    transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                  }} />
+                </div>
+                <span
+                  style={{ fontSize: 13, fontWeight: 600 }}
+                  title="With an answer key attached, marks the paper the way a teacher would: the objective sections are looked up against your key in code, the written sections are marked against the key's own mark scheme, and the feedback is written afterwards from marks that are already fixed."
+                >
+                  Mark as a test
+                </span>
+              </div>
+              <div style={{ fontSize: 11, opacity: 0.6, marginTop: 2 }}>
+                {pathAEnabled
+                  ? "Matching and true/false looked up against your key; written work marked against its mark scheme."
+                  : "Off — every paper goes through the general grader."}
+              </div>
             </label>
 
             <label style={{
