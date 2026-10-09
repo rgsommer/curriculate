@@ -7,11 +7,13 @@ var MT_ROWS = [[2, -2], [3, 0], [4, -2], [5, -2], [6, 0]]; // [row, size offset]
 var MT_BOTTOM_OFFSET = 6;          // the bottom cards are the same rows + 6
 var MT_TEXT_COLUMNS = ['B', 'E'];  // left and right card
 var MT_CONTROLS = 'A7:E7';         // the switches that trigger a refit
-var MT_MAX_PT = 20;
+var MT_MAX_PT = 24;
 var MT_MIN_PT = 9;
+var MT_MIN_WIDTH = 420;            // narrowest and widest the text columns may be
+var MT_MAX_WIDTH = 800;
 // The page as printed: letter, portrait, fit to width, margins in inches
 // (top 1.5 cm, bottom 1 cm, sides 0.635 cm). slack < 1 leaves room for error.
-var MT_PAGE = { w: 8.5, h: 11, top: 0.59, bottom: 0.39, side: 0.25, slack: 0.92 };
+var MT_PAGE = { w: 8.5, h: 11, top: 0.59, bottom: 0.39, side: 0.25, slack: 0.97 };
 
 function onOpenMemoryTest() {
   SpreadsheetApp.getUi()
@@ -63,16 +65,14 @@ function fitMemoryTest() {
     SpreadsheetApp.flush(); // let the formulas catch up with the switch just pressed
     var cells = mtCells_(sh);
 
-    var mode = 'all', layout = mtLayout_(sh, 'all');
-    var pt = mtLargestFitting_(cells, layout);
-    if (pt === null) {
-      mode = 'one';
-      layout = mtLayout_(sh, 'one');
-      pt = mtLargestFitting_(cells, layout);
-    }
-    var tooLong = pt === null;
-    if (tooLong) pt = MT_MIN_PT;
+    var mode = 'all', best = mtBestFit_(sh, cells, 'all');
+    if (!best) { mode = 'one'; best = mtBestFit_(sh, cells, 'one'); }
+    var tooLong = !best;
+    if (tooLong) best = { pt: MT_MIN_PT, width: MT_MAX_WIDTH };
+    var pt = best.pt, layout = mtLayout_(sh, mode);
 
+    sh.setColumnWidth(2, best.width);
+    sh.setColumnWidth(5, best.width);
     MT_TEXT_COLUMNS.forEach(function (col) {
       MT_ROWS.forEach(function (pair) {
         var size = Math.max(MT_MIN_PT - 2, pt + pair[1]);
@@ -81,7 +81,8 @@ function fitMemoryTest() {
       });
     });
 
-    sh.getRange('G1').setValue('Print ' + layout.range + ' · portrait · ' + pt + ' pt · ' +
+    sh.getRange('G1').setValue('Print ' + layout.range + ' · portrait · ' + pt + ' pt · columns ' +
+      best.width + ' px · ' +
       (mode === 'one' ? 'one card (long verse)' : 'four cards') +
       (tooLong ? ' · STILL TOO LONG' : ''));
     var props = PropertiesService.getDocumentProperties();
@@ -113,24 +114,44 @@ function printMemoryTest() {
   SpreadsheetApp.getUi().showModelessDialog(html, 'Memory test');
 }
 
-/** Four cards (A1:E12) or one (A1:B6): which rows count, how wide the text
- *  column is, and how tall those rows may be once the range's width is
- *  scaled to the page's printable width. */
+/** Four cards (A1:E12) or one (A1:B6): the range, how many cards are stacked
+ *  down the page, the width of the columns that are not text columns, and the
+ *  rows the fit does not touch (row 1, and row 7, the cut line). */
 function mtLayout_(sh, mode) {
-  var cols = mode === 'one' ? 2 : 5;
-  var width = 0;
-  for (var c = 1; c <= cols; c++) width += sh.getColumnWidth(c);
-  var scale = (MT_PAGE.w - 2 * MT_PAGE.side) * 96 / width;
-  var maxHeight = (MT_PAGE.h - MT_PAGE.top - MT_PAGE.bottom) * 96 / scale * MT_PAGE.slack;
-  var fixed = 0; // rows the fit does not touch: 1, and 7 (the cut line) for four cards
-  fixed += sh.getRowHeight(1);
-  if (mode !== 'one') fixed += sh.getRowHeight(7);
+  var one = mode === 'one';
   return {
-    range: mode === 'one' ? 'A1:B6' : 'A1:E12',
-    cards: mode === 'one' ? 1 : 2,          // stacked card heights to add up
-    textWidth: Math.min(sh.getColumnWidth(2), sh.getColumnWidth(5)),
-    maxHeight: maxHeight - fixed
+    range: one ? 'A1:B6' : 'A1:E12',
+    cards: one ? 1 : 2,
+    textColumns: one ? 1 : 2,
+    otherWidth: one ? sh.getColumnWidth(1)
+                    : sh.getColumnWidth(1) + sh.getColumnWidth(3) + sh.getColumnWidth(4),
+    fixedHeight: sh.getRowHeight(1) + (one ? 0 : sh.getRowHeight(7))
   };
+}
+
+/** The text size and column width that print the text largest while the
+ *  cards still fit the page, preferring the one that fills it most. Printing
+ *  is fit to width, so narrower columns print bigger but wrap into more lines;
+ *  trying widths as well as sizes is what lets the cards fill the page rather
+ *  than stop a size short of it. Null when nothing fits. */
+function mtBestFit_(sh, cells, mode) {
+  var l = mtLayout_(sh, mode);
+  var pageW = (MT_PAGE.w - 2 * MT_PAGE.side) * 96;
+  var pageH = (MT_PAGE.h - MT_PAGE.top - MT_PAGE.bottom) * 96 * MT_PAGE.slack;
+  var best = null;
+  for (var pt = MT_MIN_PT; pt <= MT_MAX_PT; pt++) {
+    for (var w = MT_MIN_WIDTH; w <= MT_MAX_WIDTH; w += 10) {
+      var scale = pageW / (l.otherWidth + l.textColumns * w);
+      var printed = (l.cards * mtCardHeight_(cells, pt, w) + l.fixedHeight) * scale;
+      if (printed > pageH) continue;
+      var size = pt * scale, fill = printed / pageH;
+      if (!best || size > best.size + 0.05 ||
+          (Math.abs(size - best.size) <= 0.05 && fill > best.fill)) {
+        best = { pt: pt, width: w, size: size, fill: fill };
+      }
+    }
+  }
+  return best;
 }
 
 /** The text of one card, row by row (the four copies are the same). */
@@ -176,16 +197,35 @@ function mtLines_(text, px, width) {
   return lines;
 }
 
+var MT_ARIAL = (function () {
+  // Arial advance widths, in ems.
+  var w = {}, set = function (chars, v) { for (var i = 0; i < chars.length; i++) w[chars.charAt(i)] = v; };
+  set('abdeghnopqu0123456789_?$#', 0.556);
+  set('ckszvxy', 0.5);
+  set('ijl\'|', 0.222);
+  set('ft ,.;:!/[]()-', 0.278);
+  set('r', 0.333);
+  set('m', 0.833);
+  set('w', 0.722);
+  set('"', 0.355);
+  set('ABEKPSVXY', 0.667);
+  set('CDHNRU', 0.722);
+  set('FTZ', 0.611);
+  set('GOQ', 0.778);
+  set('J', 0.5);
+  set('L', 0.556);
+  set('M', 0.833);
+  set('W', 0.944);
+  set('I', 0.278);
+  set('\u2014', 1.0);
+  return w;
+})();
+
 function mtTextWidth_(s, px) {
   var w = 0;
   for (var i = 0; i < s.length; i++) {
-    var ch = s.charAt(i);
-    if (ch === '_') w += 0.556;
-    else if (ch === ' ') w += 0.278;
-    else if ('.,;:\'"!|il'.indexOf(ch) >= 0) w += 0.25;
-    else if (ch >= 'A' && ch <= 'Z') w += 0.67;
-    else if (ch === 'm' || ch === 'w' || ch === 'M' || ch === 'W') w += 0.83;
-    else w += 0.53;
+    var v = MT_ARIAL[s.charAt(i)];
+    w += v === undefined ? 0.556 : v;
   }
   return w * px;
 }
