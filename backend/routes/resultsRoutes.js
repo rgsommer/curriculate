@@ -113,8 +113,28 @@ router.post("/", createLimiter, async (req, res) => {
     const canScopeTeacher = !!(teacherId || teacherEmail);
     if (pdfName && isBatch && canScopeTeacher) {
       try {
+        // The scan, not the filename the teacher gave it.
+        //
+        // Matching the whole filename as a string meant a rename defeated
+        // this completely: the same stack was graded as
+        //   "20261006_111613 Math 7A Test.pdf"
+        // and then, after the label was corrected, as
+        //   "20261006_111613 Math 7B Test.pdf"
+        // so every student in that class ended up with two results on
+        // /progress, with different marks and different titles. Correcting a
+        // mislabelled filename is a normal thing to do between runs.
+        //
+        // The scanner writes the leading YYYYMMDD_HHMMSS and nothing the
+        // teacher does afterwards changes it, so that is the identity of the
+        // paper stack. Everything after it is a label. Where a file has no
+        // such stamp the whole name is used, as before.
+        const stamp = pdfName.match(/^\s*(\d{8}_\d{6})/)?.[1] || "";
+        const sameScan = stamp
+          ? { "meta.pdfName": { $regex: `^\\s*${stamp}` } }
+          : { "meta.pdfName": pdfName };
+
         const supersede = await PublishedResult.deleteMany({
-          "meta.pdfName": pdfName,
+          ...sameScan,
           ...(teacherId ? { teacherId } : { "meta.teacherEmail": teacherEmail }),
           // Earlier batch runs only. Never this run's own students, and never
           // a single-photo grade that happens to share the filename.

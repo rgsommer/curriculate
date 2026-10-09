@@ -660,6 +660,17 @@ export default function BatchGrading({
 
   // The key, laid out for the teacher to check before it marks anyone. An
   // error in the key is not worth one mark, it is worth the class.
+  // One title for the whole batch.
+  //
+  // Each paper's title came from that paper's own grading call, and the
+  // model renames the same test every time it reads it: one 21-student run
+  // produced eight titles — "Unit Test - Number Sense and Algebra", "Unit
+  // Test Number Sense and Patterns and Algebra", "Unit Test on Number Sense
+  // and Patterns and Algebra" — so /progress listed one assessment as
+  // several. A stack of papers is one assessment, so the first paper's title
+  // is taken and the rest of the run uses it.
+  const batchTitleRef = useRef("");
+
   const [keyReviewOpen, setKeyReviewOpen] = useState(false);
   const keyReviewRows = useMemo(
     () => keyRowsForReview(extractedAnswerKey),
@@ -1224,6 +1235,7 @@ export default function BatchGrading({
     abortControllerRef.current = new AbortController();
     setServiceFault(null); // a fresh run gets a fresh verdict on the service
     setActivity([]);       // and a fresh account of itself
+    batchTitleRef.current = "";  // and settles on its own title
     setGrading(true);
     // Wrap the whole run so an unexpected throw (or early return) can never leave
     // the UI stuck in the "grading" state — finally always clears it.
@@ -1556,6 +1568,11 @@ export default function BatchGrading({
           }
         }
 
+        if (!batchTitleRef.current && String(data.detected_title || "").trim()) {
+          batchTitleRef.current = String(data.detected_title).trim();
+          say(`Title for this batch: "${batchTitleRef.current}"`);
+        }
+
         const rawScore = Number(data.overall_score);
         const rawOutOf = Number(data.overall_out_of);
         // Round score to 1 decimal, outOf to nearest whole number (tests are always /N)
@@ -1591,7 +1608,7 @@ export default function BatchGrading({
           sections: data.sections || null,
           subject: data.inferred_subject || "",
           assessmentType: data.inferred_assessment_type || "",
-          detectedTitle: data.detected_title || "",
+          detectedTitle: batchTitleRef.current || data.detected_title || "",
           pageImages: images,
           refCode: null,
           // Surface the server's error code and correlation id, not just the
