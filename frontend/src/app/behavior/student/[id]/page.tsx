@@ -53,7 +53,7 @@ type StudentDetail = {
     deliveries?: Array<{ channel: string; ok: boolean; error?: string }>;
     fromTeachers: Array<{ name: string; behaviorName: string }>;
   }>;
-  consequences?: Array<{ _id: string; type: string; detail?: string; byName?: string; at: string; kind?: "encouraging" | "corrective"; completed?: boolean; completedByName?: string; completedAt?: string; resolution?: "" | "completed" | "discussed"; notifiedAt?: string | null; notifiedByName?: string }>;
+  consequences?: Array<{ _id: string; type: string; detail?: string; byName?: string; at: string; kind?: "encouraging" | "corrective"; completed?: boolean; completedByName?: string; completedAt?: string; resolution?: "" | "completed" | "discussed" | "lapsed"; lapsedAt?: string | null; notifiedAt?: string | null; notifiedByName?: string }>;
 };
 
 const fmtDT = (d: string) =>
@@ -834,6 +834,7 @@ export default function StudentPage() {
                 const notified = !!c.notifiedAt;
                 const done = !!c.completed;
                 const discussed = c.resolution === "discussed";
+                const lapsed = !done && !!c.lapsedAt;
                 // A conversation in place of the consequence needs no note home.
                 const resolved = done && (notified || discussed);
                 return (
@@ -874,6 +875,12 @@ export default function StudentPage() {
                       </span>
                     ) : (
                       <span className="inline-flex flex-wrap items-center gap-1.5">
+                        {lapsed && (
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600"
+                            title="Still open 7 days after it was given, so it was retired from the dashboard. The offence still counts; record it below if it was actually carried out.">
+                            No consequence recorded by the teacher
+                          </span>
+                        )}
                         <button onClick={() => markConsequenceDone(c._id, true)}
                           title="The student has carried this out (e.g. handed in the lines / served the detention)"
                           className="rounded-lg border border-green-300 px-2 py-0.5 text-xs font-medium text-green-700 hover:bg-green-50">

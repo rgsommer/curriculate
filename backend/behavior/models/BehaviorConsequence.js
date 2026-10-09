@@ -51,7 +51,12 @@ const BehaviorConsequenceSchema = new mongoose.Schema(
     completed: { type: Boolean, default: false, index: true },
     // How it was resolved: "completed" (carried out) or "discussed" (the teacher
     // chose a conversation with the student instead — logged as an intervention).
-    resolution: { type: String, enum: ["", "completed", "discussed"], default: "" },
+    // "lapsed": still open after 7 days with no follow-up recorded — retired off
+    // the dashboard automatically. The offence (strike) stays on the record; the
+    // consequence reads "No consequence recorded by the teacher". Never counts as
+    // completed. Marking it done later clears it.
+    resolution: { type: String, enum: ["", "completed", "discussed", "lapsed"], default: "" },
+    lapsedAt: { type: Date, default: null },
     completedByTeacherId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorTeacher", default: null },
     completedByName: { type: String, default: "" },
     completedAt: { type: Date, default: null },

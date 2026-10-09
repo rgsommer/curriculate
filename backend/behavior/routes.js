@@ -472,6 +472,22 @@ function periodStartMs(config, now = Date.now()) {
   const y = d.getMonth() >= 8 ? d.getFullYear() : d.getFullYear() - 1; // Sept (month 8) = school-year start
   return new Date(y, 8, 1).getTime();
 }
+// Consequences still open 7 days after they were given, with no follow-up
+// recorded, retire on their own: they leave the dashboard, and the record shows
+// the strike with "No consequence recorded by the teacher". Applied lazily
+// whenever the dashboard / a student / the digest loads.
+const CONSEQUENCE_LAPSE_DAYS = 7;
+async function retireStaleConsequences(schoolId) {
+  try {
+    await BehaviorConsequence.updateMany({
+      schoolId, kind: "corrective", completed: false, lapsedAt: null,
+      status: { $in: ["issued", "other"] },
+      type: { $not: /^Parent message/i },
+      at: { $lt: new Date(Date.now() - CONSEQUENCE_LAPSE_DAYS * DAY_MS) },
+    }, { $set: { resolution: "lapsed", lapsedAt: new Date() } });
+  } catch (e) { console.warn("[behavior] retire stale consequences failed:", e?.message || e); }
+}
+
 // Count of disciplinary notices actually sent home THIS PERIOD for one student.
 async function countPeriodNotices(schoolId, studentId, config) {
   return BehaviorNotice.countDocuments({
@@ -2425,6 +2441,7 @@ router.post("/roster/import", authAny, loadMembership, requireAdmin, upload.sing
 // Search any student in the school (no teacher↔student permission layer).
 router.get("/students", authAny, loadMembership, async (req, res, next) => {
   try {
+    await retireStaleConsequences(req.schoolId);
     const q = String(req.query.query || "").trim();
     const cls = String(req.query.class || "").trim();
     const filter = { schoolId: req.schoolId };
@@ -2494,6 +2511,7 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
       studentId: { $in: students.map((s) => s._id) },
       kind: "corrective",
       completed: false,
+      lapsedAt: null,
       status: { $in: ["issued", "other"] },
       type: { $not: /^Parent message/i },
     }).select("studentId type at").sort({ at: -1 }).lean();
@@ -2546,6 +2564,7 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
 // Full cross-teacher status + history for a student.
 router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
   try {
+    await retireStaleConsequences(req.schoolId);
     const student = await BehaviorStudent.findOne({ _id: req.params.id, schoolId: req.schoolId }).lean();
     if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
 
@@ -3644,6 +3663,7 @@ async function fireNotice({ req, student, config, decision, awaitDecision = fals
   const recByInc = new Map(consRecs.map((r) => [String(r.relatedIncidentId), r]));
   const consequenceTexts = [...new Set(contributing.map((i) => {
     const rec = recByInc.get(String(i._id));
+    if (rec?.lapsedAt) return ""; // retired with no consequence recorded — don't state one
     const base = String(rec?.type || i.behaviorSnapshot?.consequenceText || "").trim();
     if (!base) return "";
     return rec?.completed ? `${base} (already completed)` : base;
@@ -4613,7 +4633,7 @@ router.post("/students/:id/parent-summary", authAny, loadMembership, async (req,
         kind: isConvo ? "conversation" : "offense",
         offense: isConvo ? "Conversation" : (i.behaviorSnapshot?.name || "—"),
         teacher: tName[String(i.teacherId)] || "a teacher",
-        consequence: isConvo ? "" : famScrub(c ? (c.detail && c.detail.length <= 70 ? `${c.type} — ${c.detail}` : c.type) : ""),
+        consequence: isConvo || c?.lapsedAt ? "" : famScrub(c ? (c.detail && c.detail.length <= 70 ? `${c.type} — ${c.detail}` : c.type) : ""),
       });
     }
     const historyText = history
@@ -5574,6 +5594,7 @@ router.post("/consequence-action/log", async (req, res, next) => {
     } else {
       if (!c.completed) {
         c.completed = true; c.completedByName = byName || "Confirmed via email"; c.completedAt = new Date();
+        c.resolution = "completed"; c.lapsedAt = null;
         await c.save();
         await audit(schoolId, "consequence.completed_via_link", { userId: null, user: { email: "" } }, { studentId: String(c.studentId), meta: { type: c.type } });
       }
@@ -5727,7 +5748,7 @@ router.post("/consequences/:id/discussed", authAny, loadMembership, canLog, asyn
     if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
     const who = actorName(req);
     const inc = await logDiscussedWithStudent({ schoolId: req.schoolId, student, teacherId: req.membership._id, byName: who, insteadOf: c.type });
-    c.completed = true; c.resolution = "discussed";
+    c.completed = true; c.resolution = "discussed"; c.lapsedAt = null;
     c.completedByTeacherId = req.membership._id; c.completedByName = who; c.completedAt = new Date();
     await c.save();
     await audit(req.schoolId, "consequence.discussed", req, { studentId: String(c.studentId), incidentId: String(inc._id), meta: { type: c.type } });
@@ -5745,6 +5766,7 @@ router.post("/consequences/:id/complete", authAny, loadMembership, canLog, async
     const who = req.membership.name || req.user?.name || "";
     c.completed = done;
     c.resolution = done ? "completed" : "";
+    c.lapsedAt = null; // recording it (or reopening it) takes it out of "lapsed"
     c.completedByTeacherId = done ? req.membership._id : null;
     c.completedByName = done ? who : "";
     c.completedAt = done ? new Date() : null;
@@ -6338,8 +6360,9 @@ export async function sendConsequenceDigestForSchool(schoolId, { force = false }
   const lookback = new Date(now - 10 * DAY_MS); // show recent outstanding only
   const missedCutoff = now - fadeDays * DAY_MS;
 
+  await retireStaleConsequences(schoolId);
   const cons = await BehaviorConsequence.find({
-    schoolId, kind: "corrective", completed: false,
+    schoolId, kind: "corrective", completed: false, lapsedAt: null,
     status: { $in: ["issued", "recommended", "other"] },
     type: { $not: /^Parent message/i },
     at: { $gte: lookback },
