@@ -113,13 +113,28 @@ const SECTION_LETTER = (s) => String(s || "").trim().match(/^([A-Z])[.)\s]/)?.[1
 
 async function gradeViaPathA({ images, answerKeyText, gradeBand, subjectArea, voice, title, fallbackName, base, signal }) {
   const at = (path) => base.replace(/\/grading$/, path);
-  const post = (path, body) =>
-    fetchWithRetry(at(path), {
+  const post = async (path, body) => {
+    const r = await fetchWithRetry(at(path), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal,
-    }).then((r) => r.json());
+    });
+    // Say what actually went wrong. A 404 here means the backend has not
+    // deployed these endpoints yet, which is a different problem from the
+    // marking failing, and the teacher should not have to guess which.
+    if (!r.ok) {
+      const e = new Error(
+        r.status === 404
+          ? `${path} is not on the server yet (404) — the backend has not deployed`
+          : `${path} returned ${r.status}`
+      );
+      e.status = r.status;
+      e.missingEndpoint = r.status === 404;
+      throw e;
+    }
+    return r.json().catch(() => { throw new Error(`${path} did not return JSON`); });
+  };
 
   // The reading and the written marking are independent, so they go together.
   const [blind, written] = await Promise.all([
@@ -845,6 +860,10 @@ export default function BatchGrading({
   // several. A stack of papers is one assessment, so the first paper's title
   // is taken and the rest of the run uses it.
   const batchTitleRef = useRef("");
+  // Set once if the test-path endpoints are not deployed, so a 404 is
+  // reported once for the run rather than twenty times and is not retried
+  // on every remaining paper.
+  const pathAUnavailableRef = useRef(false);
 
   // The test path: three small calls instead of the 28-field form, used
   // whenever a test has an answer key. On by default because it measures
@@ -1417,6 +1436,7 @@ export default function BatchGrading({
     setServiceFault(null); // a fresh run gets a fresh verdict on the service
     setActivity([]);       // and a fresh account of itself
     batchTitleRef.current = "";  // and settles on its own title
+    pathAUnavailableRef.current = false;  // and tries the test path again
     setGrading(true);
     // Wrap the whole run so an unexpected throw (or early return) can never leave
     // the UI stuck in the "grading" state — finally always clears it.
@@ -1717,7 +1737,7 @@ export default function BatchGrading({
         // written sections and the feedback, which is what it is for. The
         // two calls go together, so this costs latency only when the blind
         // read is the slower of the two.
-        const willUsePathA = pathAEnabled && !!effectiveAnswerKey;
+        const willUsePathA = pathAEnabled && !!effectiveAnswerKey && !pathAUnavailableRef.current;
         const blindRead = (effectiveAnswerKey && !willUsePathA)
           ? fetchWithRetry(gradingUrl.replace(/\/grading$/, "/grading/transcribe"), {
               method: "POST",
@@ -1754,9 +1774,20 @@ export default function BatchGrading({
             }
           } catch (e) {
             // Never lose a paper to the new path. Fall through to the
-            // grader that has been marking all term.
-            console.warn("[batch] Path A failed, falling back:", e?.message || e);
-            say(`${who}: the test path failed — falling back to the general grader`);
+            // grader that has been marking all term — and say why, because
+            // "the test path failed" across twenty rows tells nobody
+            // anything.
+            const why = e?.message || String(e);
+            console.warn("[batch] Path A failed, falling back:", why);
+            if (e?.missingEndpoint) {
+              // One line for the run, not one per paper, and stop trying.
+              if (!pathAUnavailableRef.current) {
+                pathAUnavailableRef.current = true;
+                say(`The test path is not on the server yet — grading the whole stack the usual way`);
+              }
+            } else {
+              say(`${who}: test path failed (${why}) — falling back`);
+            }
             data = null;
           }
         }
