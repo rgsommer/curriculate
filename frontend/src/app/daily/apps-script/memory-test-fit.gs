@@ -1,6 +1,7 @@
 // Memory test: sizes the MemoryCards text so A1:E12 (four cards) prints on one
 // portrait page, or A1:B6 (one card) when the verse is too long for that.
 // Install: run installMemoryTestFit once. Notes at the end of this file.
+// It sets the text size AND the width of columns B and E.
 
 var MT_SHEET = 'MemoryCards';
 var MT_ROWS = [[2, -2], [3, 0], [4, -2], [5, -2], [6, 0]]; // [row, size offset]
@@ -161,13 +162,6 @@ function mtCells_(sh) {
   });
 }
 
-function mtLargestFitting_(cells, layout) {
-  for (var pt = MT_MAX_PT; pt >= MT_MIN_PT; pt--) {
-    if (layout.cards * mtCardHeight_(cells, pt, layout.textWidth) <= layout.maxHeight) return pt;
-  }
-  return null;
-}
-
 /** How tall one card comes out, in sheet pixels. Sheets cannot report a
  *  wrapped row's height to a script, so the text is wrapped here, word by
  *  word, with Arial's character widths. */
@@ -241,9 +235,11 @@ function mtFingerprint_(sh) {
  * NOTES
  * The test is four copies of one card, A1:E12, two across and two down, cut
  * apart after printing. A card's height depends on the week's verse and on the
- * review under it, so the script picks the largest text size (9 to 20 pt for
- * the verse rows; rows 2, 4 and 5 two points smaller) at which the four cards
- * fit on a portrait letter page printed fit to width. Where none does (Psalm 1
+ * review under it, so the script picks the text size (9 to 24 pt for the verse
+ * rows; rows 2, 4 and 5 two points smaller) and the width of columns B and E
+ * (420 to 800 px) that print the text largest while the four cards still fit
+ * a portrait letter page printed fit to width, filling the page as fully as
+ * it can. Where none does (Psalm 1
  * with a review) it fits one card, A1:B6, instead. G1 says which.
  *
  * It runs when A7:E7 change (C7 test/practice, D7 week, E7 review), hourly when
