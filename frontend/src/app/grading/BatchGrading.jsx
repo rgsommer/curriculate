@@ -3448,9 +3448,35 @@ export default function BatchGrading({
     const rubricNote = (rubricOverride || "").trim();
     if (rubricNote) {
       const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+      // A rubric or key that came from a file is named, not reprinted.
+      //
+      // Reading a .docx puts "--- Name.docx ---" at the head of the text it
+      // extracted, and the whole of an answer key was then pasted into the
+      // summary email — pages of it, in markdown, above the marks. The
+      // teacher attached that file and already has it; what they need is to
+      // know which one the run used.
+      // Everything before the first file header is what the teacher typed;
+      // from the header on it is the file's own contents.
+      const headers = [...rubricNote.matchAll(/^---[ \t]*(.+?)[ \t]*---[ \t]*$/gm)];
+      const files = headers.map((m) => m[1]);
+      const typed = (headers.length ? rubricNote.slice(0, headers[0].index) : rubricNote).trim();
+
       html += `<div style="background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px;">`;
-      html += `<div style="font-weight: 800; font-size: 12px; color: #92400e; margin-bottom: 4px;">Rubric</div>`;
-      html += `<div style="font-size: 13px; line-height: 1.5; color: #78350f; white-space: pre-wrap;">${esc(rubricNote)}</div>`;
+      html += `<div style="font-weight: 800; font-size: 12px; color: #92400e; margin-bottom: 4px;">Marked against</div>`;
+      if (files.length) {
+        html += `<div style="font-size: 13px; line-height: 1.6; color: #78350f;">`
+          + files.map((f) => `&#128206; ${esc(f)}`).join("<br/>")
+          + `<div style="font-size: 11px; opacity: 0.75; margin-top: 4px;">`
+          + `${files.length === 1 ? "This file was" : "These files were"} attached when the stack was graded.</div>`
+          + `</div>`;
+      }
+      if (typed) {
+        // Anything the teacher actually typed still belongs in the email,
+        // but a long paste is trimmed — this is a summary, not the key.
+        const short = typed.length > 600 ? `${typed.slice(0, 600)}…` : typed;
+        html += `<div style="font-size: 13px; line-height: 1.5; color: #78350f; white-space: pre-wrap;${files.length ? " margin-top: 8px;" : ""}">${esc(short)}</div>`;
+      }
       html += `</div>`;
     }
 
