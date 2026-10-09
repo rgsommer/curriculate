@@ -17456,10 +17456,6 @@ Also give the student's name as written, the paper's title, and the mark total p
         if (items.length > 1 && items.every((i) => i.outOf <= 1)) continue;
         written.push({ letter, items });
       }
-      if (!written.length) {
-        console.log("[mark-written] no written sections in this key — nothing to judge");
-        return res.json({ ok: true, sections: [], items: [], note: "no written sections" });
-      }
 
       // An "alternatives" section — one extended problem offered as Option
       // 1 or Option 2 — lists each option at the section's full value, so
@@ -17476,6 +17472,29 @@ Also give the student's name as written, the paper's title, and the mark total p
       // confirmation.
       const { declaredTotals } = await import("./utils/sectionTotals.js");
       const paperTotal = declaredTotals(answerKeyText)[0] || 0;
+      const collapsed = new Set();
+
+      // The scheme read out of the key, sent back whole. The caller adds up
+      // what the two halves of Path A actually marked and checks it against
+      // this before publishing anything: a key that parses only in PART
+      // yields a scheme that is short, and the paper then comes back marked
+      // out of the fragment — one went out as 6 out of 7 when the test was
+      // out of 30. A short scheme must look like a failure, not a low mark.
+      const schemeOut = () => [...scheme.entries()].map(([letter, items]) => ({
+        letter,
+        items: items.length,
+        out_of: collapsed.has(letter) ? (items[0]?.outOf || 0)
+                                      : items.reduce((t, i) => t + i.outOf, 0),
+      }));
+      if (!written.length) {
+        console.log("[mark-written] no written sections in this key — nothing to judge");
+        return res.json({
+          ok: true, sections: [], items: [], note: "no written sections",
+          complete: true, missing: [],
+          paperTotal, scheme: schemeOut(),
+        });
+      }
+
       const allSections = [...scheme.entries()].map(([letter, items]) => ({
         letter,
         sum: items.reduce((t, i) => t + i.outOf, 0),
@@ -17483,7 +17502,6 @@ Also give the student's name as written, the paper's title, and the mark total p
         one: items[0]?.outOf || 0,
       }));
       let over = allSections.reduce((t, s) => t + s.sum, 0) - paperTotal;
-      const collapsed = new Set();
       if (paperTotal > 0 && over > 0) {
         // Largest first: an extended problem is the big section, and a
         // six-item objective section of 1s is not what is being offered as
@@ -17660,9 +17678,11 @@ Return ONLY these items, every one of them: ${missing.join(", ")}.` },
         ok: true,
         sections,
         items: [...byId.values()],
-        // The caller checks this before using any of it.
+        // The caller checks these before using any of it.
         complete: incomplete.length === 0,
         missing: incomplete.flatMap((s) => s.missing),
+        paperTotal,
+        scheme: schemeOut(),
       });
     } catch (err) {
       console.error("POST /grading/mark-written error:", err?.message || err);

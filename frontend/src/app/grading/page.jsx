@@ -3041,10 +3041,15 @@ export default function GradingPage() {
         // "Upload Rubric" is the only upload button on that panel, so that
         // is where a teacher's key lands, and nothing in the key machinery
         // reads the rubric — the paper is then graded as if no key existed.
+        // Taken whether or not it was promoted — routeRubricAndKey also puts
+        // a key into the shape the markers parse, and a key uploaded into the
+        // key slot was keeping Word's markdown and parsing to a fragment.
         const keyRouting = routeRubricAndKey(rubricForSubmission, effectiveAnswerKey);
-        if (keyRouting.promoted) {
+        if (keyRouting.answerKey !== effectiveAnswerKey) {
+          console.log(keyRouting.promoted
+            ? "[submit] rubric looked like an answer key; promoted to the key slot"
+            : "[submit] answer key re-written into the canonical form the markers parse");
           effectiveAnswerKey = keyRouting.answerKey;
-          console.log("[submit] rubric looked like an answer key; promoted to the key slot");
         }
 
         const payload = {

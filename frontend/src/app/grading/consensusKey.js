@@ -681,7 +681,7 @@ export function withCorrectedAnswer(text, id, answer) {
  * describes levels and criteria in sentences.
  */
 export function looksLikeAnswerKey(text) {
-  const s = String(text || "").trim();
+  const s = String(text || "").split("\n").map(plainLine).join("\n").trim();
   if (s.length < 40) return false;
 
   // Said outright, at the top where a title lives.
@@ -737,16 +737,57 @@ export function routeRubricAndKey(rubricText, answerKeyText) {
  *  table all receive the canonical form and already agree on it.
  * ------------------------------------------------------------------ */
 
-/** Items written along a line: "1. E  2. I  3. C". */
+/**
+ * Markdown off, words left.
+ *
+ * A key exported from Word arrives as markdown: the headings in **bold**,
+ * the answers inside block quotes, the teacher's notes in *italic*. None of
+ * it survived the shapes below, so a real answer key parsed to nothing and
+ * the paper was marked as if no key existed at all.
+ */
+function plainLine(raw) {
+  return String(raw)
+    .replace(/^[>\s]*/, "")          // block quote markers, however nested
+    .replace(/^#{1,6}\s*/, "")       // a heading
+    .replace(/\*\*/g, "")           // bold
+    .replace(/__/g, "")              // bold, the other way
+    .replace(/(^|[\s(])[*_](?=\S)/g, "$1")   // opening italic
+    .replace(/(?<=\S)[*_](?=[\s).,;:]|$)/g, "") // closing italic
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Items written along a line: "1. E  2. I  3. C", and also "1 → A, 2 → D".
+ *
+ * An arrow is how a Word key writes a matching pair. "=" is deliberately
+ * not a separator: the teacher's own note "you multiply first, so 10 - 6 =
+ * 4" would otherwise read as item 6 answered "4".
+ */
 function numberedItemsOn(line) {
-  const re = /(?:^|\s)(\d{1,2})\s*[.)]\s+/g;
+  const re = /(?:^|[\s,;])(\d{1,2})\s*([.)]|→|->|⟶)\s*/g;
   const hits = [];
   let m;
-  while ((m = re.exec(line))) hits.push({ n: m[1], at: m.index, from: m.index + m[0].length });
+  let style = null;
+  while ((m = re.exec(line))) {
+    const sep = m[2] === "." || m[2] === ")" ? "dot" : "arrow";
+    // One line, one way of numbering. "3. add 5 → 23, 28" is a single item
+    // whose answer happens to contain an arrow — read loosely it became a
+    // phantom item 5 and took the rest of item 3's answer with it.
+    if (style === null) style = sep;
+    else if (sep !== style) continue;
+    hits.push({ n: m[1], at: m.index, from: m.index + m[0].length });
+  }
   return hits.map((h, i) => ({
     n: h.n,
     // An answer runs to the next numbered item, or to the end of the line.
-    answer: line.slice(h.from, i + 1 < hits.length ? hits[i + 1].at : line.length).trim(),
+    // The separator that led to the next one comes off: "1 → A, 2 → D"
+    // leaves "A," for the first, and "A," does not match a student's "A".
+    answer: line
+      .slice(h.from, i + 1 < hits.length ? hits[i + 1].at : line.length)
+      .trim()
+      .replace(/[,;]+$/, "")
+      .trim(),
   }));
 }
 
@@ -782,7 +823,7 @@ export function canonicaliseKeyText(text) {
   };
 
   for (const line of raw.split("\n")) {
-    const s = line.trim();
+    const s = plainLine(line);
     if (!s) continue;
 
     // "A. Matching ( 10 marks )" — a section, not an answer.
@@ -790,7 +831,9 @@ export function canonicaliseKeyText(text) {
     if (head && !/^\d/.test(s)) {
       flush();
       letter = head[1];
-      const marks = s.match(/\(\s*(\d{1,3})\s*marks?\s*\)/i);
+      // "( 8 marks )" on the paper, "(5)" in a Word key — both are what
+      // the section is worth.
+      const marks = s.match(/\(\s*(\d{1,3})\s*(?:marks?)?\s*\)/i);
       marksForSection = marks ? Number(marks[1]) : 0;
       // A heading may carry its items on the same line.
       const rest = s.slice(head[0].indexOf(head[1]) + 1).replace(/^\s*[.)]\s*/, "");
@@ -804,7 +847,9 @@ export function canonicaliseKeyText(text) {
 
   if (out.length < 4) return raw;   // not enough to be worth rewriting
   const total = raw.match(/total\s*(?:of\s*)?(\d{1,3})\s*marks?/i)
-    || raw.match(/total[:\s]*\/\s*(\d{1,3})/i);
+    || raw.match(/total[:\s]*\/\s*(\d{1,3})/i)
+    // "Unit Test --- Accommodated / 30 marks" — the heading of a Word key.
+    || raw.match(/\/\s*(\d{1,3})\s*marks\b/i);
   if (total) out.push(`Total: /${total[1]}`);
   return out.join("\n");
 }

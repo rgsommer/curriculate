@@ -190,7 +190,53 @@ async function gradeViaPathA({ images, answerKeyText, gradeBand, subjectArea, vo
   ].sort((a, b) => String(a.name).localeCompare(String(b.name)));
 
   const score = Math.round(sections.reduce((t, s) => t + s.score, 0) * 100) / 100;
-  const outOf = sections.reduce((t, s) => t + s.out_of, 0);
+  let outOf = sections.reduce((t, s) => t + s.out_of, 0);
+
+  // A paper must be marked out of what the key says the paper is out of.
+  //
+  // Nothing checked that, and a key that parsed only in PART therefore
+  // published quietly: a Word key written in markdown ("**A. Key terms ---
+  // matching (5)**", "> **1 -> A**") yielded a mark scheme of one section,
+  // and a 30-mark test went out as 6 out of 7. A low mark and a marked
+  // fragment look identical on the report, so the teacher has no way to tell
+  // them apart — and 6/7 reads as a good paper.
+  //
+  // The scheme comes back from the server that used it, rather than being
+  // re-derived here: this file and backend/utils have drifted apart three
+  // times this week, and each time the drift was the bug.
+  const declared = Number(written.paperTotal) || 0;
+  // No scheme at all is the loudest version of the same fault, and it was
+  // the quietest: with nothing parsed there is no total to disagree with, so
+  // every check below passes and the paper goes out marked against whatever
+  // the model made up.
+  if (!(written.scheme || []).length || !outOf) {
+    return {
+      error: "No mark scheme could be read from the key — not marking against a guess.",
+      code: "scheme_mismatch",
+    };
+  }
+  const markedLetters = new Set([
+    ...objective.map((s) => s.letter),
+    ...(written.sections || []).map((s) => s.letter),
+  ]);
+  const unmarked = (written.scheme || [])
+    .map((s) => s.letter)
+    .filter((l) => !markedLetters.has(l));
+  if (unmarked.length) {
+    return {
+      error: `Section ${unmarked.join(", ")} of the key was never marked — re-check the key.`,
+      code: "scheme_mismatch",
+    };
+  }
+  if (declared && Math.abs(outOf - declared) > 0.51) {
+    return {
+      error: `The key reads as a ${outOf}-mark paper but says it is out of ${declared}`
+           + ` — the key did not parse fully, so this is not being marked against a fragment.`,
+      code: "scheme_mismatch",
+    };
+  }
+  // Within half a mark, the key's own figure is the one to show: /50, not /49.5.
+  if (declared) outOf = declared;
 
   // Everything that went wrong, for the feedback call. It gets this and no
   // pages, so it cannot move a mark.
@@ -864,6 +910,10 @@ export default function BatchGrading({
   // reported once for the run rather than twenty times and is not retried
   // on every remaining paper.
   const pathAUnavailableRef = useRef(false);
+  // A key that yields no usable mark scheme is one fault for the whole batch,
+  // not twenty — the stack shares a key. Said once, then the run goes the
+  // usual way rather than repeating the same refusal per paper.
+  const keyUnusableRef = useRef(false);
 
   // The test path: three small calls instead of the 28-field form, used
   // whenever a test has an answer key. On by default because it measures
@@ -1437,6 +1487,7 @@ export default function BatchGrading({
     setActivity([]);       // and a fresh account of itself
     batchTitleRef.current = "";  // and settles on its own title
     pathAUnavailableRef.current = false;  // and tries the test path again
+    keyUnusableRef.current = false;
     setGrading(true);
     // Wrap the whole run so an unexpected throw (or early return) can never leave
     // the UI stuck in the "grading" state — finally always clears it.
@@ -1641,11 +1692,22 @@ export default function BatchGrading({
     // where a teacher's answer key lands — and nothing in the key machinery
     // reads the rubric, so the run marks as if no key existed. See
     // routeRubricAndKey in consensusKey.js.
+    //
+    // Take the routed key whether or not it was promoted. It is also where a
+    // key gets put into the shape the markers parse, and that half was being
+    // thrown away: a key uploaded into the KEY slot kept whatever markdown
+    // Word gave it ("**A. Key terms --- matching (5)**", "> **1 -> A**"), so
+    // the mark scheme read as one section and a 30-mark test went out marked
+    // 6 out of 7. Only a key that arrived in the rubric box was ever tidied.
     const routed = routeRubricAndKey(rubricOverride, effectiveAnswerKey);
-    if (routed.promoted) {
+    if (routed.answerKey !== effectiveAnswerKey) {
+      if (routed.promoted) {
+        say("That rubric upload is an answer key — marking against it");
+        console.log("[batch] rubric looked like an answer key; promoted to the key slot");
+      } else {
+        console.log("[batch] answer key re-written into the canonical form the markers parse");
+      }
       effectiveAnswerKey = routed.answerKey;
-      say("That rubric upload is an answer key — marking against it");
-      console.log("[batch] rubric looked like an answer key; promoted to the key slot");
     }
     const effectiveRubric = routed.rubric;
 
@@ -1737,7 +1799,8 @@ export default function BatchGrading({
         // written sections and the feedback, which is what it is for. The
         // two calls go together, so this costs latency only when the blind
         // read is the slower of the two.
-        const willUsePathA = pathAEnabled && !!effectiveAnswerKey && !pathAUnavailableRef.current;
+        const willUsePathA = pathAEnabled && !!effectiveAnswerKey
+          && !pathAUnavailableRef.current && !keyUnusableRef.current;
         const blindRead = (effectiveAnswerKey && !willUsePathA)
           ? fetchWithRetry(gradingUrl.replace(/\/grading$/, "/grading/transcribe"), {
               method: "POST",
@@ -1768,7 +1831,15 @@ export default function BatchGrading({
               signal: abortControllerRef.current?.signal,
             });
             usedPathA = !data?.error;
-            if (data?.error) {
+            if (data?.code === "scheme_mismatch") {
+              // The key is the same for every paper in the stack, so this is
+              // one line for the run and the test path stops being tried.
+              if (!keyUnusableRef.current) {
+                keyUnusableRef.current = true;
+                say(`${data.error} Grading the stack the usual way.`);
+              }
+              console.warn(`[batch] the key gave no usable mark scheme: ${data.error}`);
+            } else if (data?.error) {
               say(`${who}: ${data.error}`);
               console.warn(`[batch] Path A declined to mark ${who}: ${data.error}`);
             }
