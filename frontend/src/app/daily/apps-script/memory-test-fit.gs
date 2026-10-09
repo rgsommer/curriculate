@@ -1,43 +1,6 @@
-/**
- * Fit the memory verse test (MemoryCards) onto one printed page.
- *
- * WHAT IT DOES
- * The test is four copies of the same card — A1:E12, two across and two down,
- * cut apart after printing. How tall a card is depends on the week's verse and
- * on whether there is a review under it, so one font size cannot suit every
- * week: a short verse leaves half the page empty and a long one runs onto a
- * second page.
- *
- * So the script sizes the type to the page. It sets the cards' text size,
- * lets Sheets fit the rows to it, adds up how tall the four cards came out and
- * compares that with how tall the page is (letter, landscape, narrow margins,
- * fit to width — the MT_PAGE settings below). It takes the largest size that fits.
- *
- * Where even the smallest size will not fit four on a page — Psalm 1, the
- * longest verse of the year, plus a review — it fits ONE card (A1:B6) to a
- * portrait page instead, and says so in G1.
- *
- * WHEN IT RUNS
- *   - when C7 (test / practice), D7 (week offset) or E7 (review) is changed,
- *     and A7 / B7 (which words are kept) for good measure;
- *   - every hour, but it only does anything when the week's text has changed,
- *     so the new week is fitted the morning it comes round;
- *   - from the menu, Memory test > Fit to one page, whenever you like.
- *
- * PRINTING
- * G1 says which range to print. Memory test > Print (PDF) opens a PDF of
- * exactly that range with the same page settings the fit assumed, which is the
- * dependable way to print it. From File > Print, choose Selected cells, the
- * orientation G1 names, Scale: Fit to width, Margins: Narrow.
- *
- * HOW TO INSTALL
- *   1. Extensions > Apps Script, add a file, paste this in, Save.
- *   2. Choose `installMemoryTestFit` in the function list and press Run. Grant
- *      the permissions it asks for. It sets up its triggers (on open for the
- *      menu, on edit, hourly) and fits the test once. It defines no onOpen of
- *      its own, so it cannot collide with one the project already has.
- *   3. Reload the sheet to see the Memory test menu.
- */
+// Memory test: fits MemoryCards A1:E12 (four cards) onto one page, or A1:B6
+// (one card) when the verse is too long. Install: run installMemoryTestFit once.
+// How it works and how to print: see the notes at the end of this file.
 
 var MT_SHEET = 'MemoryCards';
 
@@ -226,3 +189,44 @@ function mtFingerprint_(sh) {
   var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, text);
   return Utilities.base64Encode(bytes);
 }
+
+/**
+ * Fit the memory verse test (MemoryCards) onto one printed page.
+ *
+ * WHAT IT DOES
+ * The test is four copies of the same card — A1:E12, two across and two down,
+ * cut apart after printing. How tall a card is depends on the week's verse and
+ * on whether there is a review under it, so one font size cannot suit every
+ * week: a short verse leaves half the page empty and a long one runs onto a
+ * second page.
+ *
+ * So the script sizes the type to the page. It sets the cards' text size,
+ * lets Sheets fit the rows to it, adds up how tall the four cards came out and
+ * compares that with how tall the page is (letter, landscape, narrow margins,
+ * fit to width — the MT_PAGE settings below). It takes the largest size that fits.
+ *
+ * Where even the smallest size will not fit four on a page — Psalm 1, the
+ * longest verse of the year, plus a review — it fits ONE card (A1:B6) to a
+ * portrait page instead, and says so in G1.
+ *
+ * WHEN IT RUNS
+ *   - when C7 (test / practice), D7 (week offset) or E7 (review) is changed,
+ *     and A7 / B7 (which words are kept) for good measure;
+ *   - every hour, but it only does anything when the week's text has changed,
+ *     so the new week is fitted the morning it comes round;
+ *   - from the menu, Memory test > Fit to one page, whenever you like.
+ *
+ * PRINTING
+ * G1 says which range to print. Memory test > Print (PDF) opens a PDF of
+ * exactly that range with the same page settings the fit assumed, which is the
+ * dependable way to print it. From File > Print, choose Selected cells, the
+ * orientation G1 names, Scale: Fit to width, Margins: Narrow.
+ *
+ * HOW TO INSTALL
+ *   1. Extensions > Apps Script, add a file, paste this in, Save.
+ *   2. Choose `installMemoryTestFit` in the function list and press Run. Grant
+ *      the permissions it asks for. It sets up its triggers (on open for the
+ *      menu, on edit, hourly) and fits the test once. It defines no onOpen of
+ *      its own, so it cannot collide with one the project already has.
+ *   3. Reload the sheet to see the Memory test menu.
+ */
