@@ -11,7 +11,7 @@
  * So the script sizes the type to the page. It sets the cards' text size,
  * lets Sheets fit the rows to it, adds up how tall the four cards came out and
  * compares that with how tall the page is (letter, landscape, narrow margins,
- * fit to width — the PAGE settings below). It takes the largest size that fits.
+ * fit to width — the MT_PAGE settings below). It takes the largest size that fits.
  *
  * Where even the smallest size will not fit four on a page — Psalm 1, the
  * longest verse of the year, plus a review — it fits ONE card (A1:B6) to a
@@ -59,8 +59,8 @@ var MT_MIN_PT = 9;
 
 /** The page the fit aims at, in inches, and how much slack to leave: Sheets'
  *  row fitting is an estimate and the printer's text can run a little wider. */
-var PAGE = { longIn: 11, shortIn: 8.5, marginIn: 0.25, slack: 0.94 };
-var PX_PER_IN = 96;
+var MT_PAGE = { longIn: 11, shortIn: 8.5, marginIn: 0.25, slack: 0.94 };
+var MT_PX_PER_IN = 96;
 
 function onOpenMemoryTest() {
   SpreadsheetApp.getUi()
@@ -100,7 +100,7 @@ function fitMemoryTestIfChanged() {
   var sh = SpreadsheetApp.getActive().getSheetByName(MT_SHEET);
   if (!sh) return;
   var props = PropertiesService.getDocumentProperties();
-  var print = fingerprint_(sh);
+  var print = mtFingerprint_(sh);
   if (props.getProperty('memoryTestFingerprint') === print) return;
   fitMemoryTest();
 }
@@ -113,26 +113,26 @@ function fitMemoryTest() {
     if (!sh) return;
     SpreadsheetApp.flush(); // let the formulas catch up with the switch just pressed
 
-    var all = layout_(sh, 'all');
-    var one = layout_(sh, 'one');
+    var all = mtLayout_(sh, 'all');
+    var one = mtLayout_(sh, 'one');
 
-    var pt = largestFitting_(sh, all.maxHeight, all.rows);
+    var pt = mtLargestFitting_(sh, all.maxHeight, all.rows);
     var mode = 'all';
     if (pt === null) {
       mode = 'one';
-      pt = largestFitting_(sh, one.maxHeight, one.rows);
+      pt = mtLargestFitting_(sh, one.maxHeight, one.rows);
       if (pt === null) pt = MT_MIN_PT; // nothing fits: smallest, and G1 says so
     }
-    setSize_(sh, pt);
+    mtSetSize_(sh, pt);
     var used = mode === 'all' ? all : one;
-    var over = measure_(sh, used.rows) > used.maxHeight;
+    var over = mtMeasure_(sh, used.rows) > used.maxHeight;
 
     sh.getRange('G1').setValue(
       'Print ' + used.range + ' · ' + used.orientation + ' · ' + pt + ' pt' +
       (mode === 'one' ? ' · one card (long verse)' : ' · four cards') +
       (over ? ' · STILL TOO LONG' : ''));
     PropertiesService.getDocumentProperties()
-      .setProperty('memoryTestFingerprint', fingerprint_(sh));
+      .setProperty('memoryTestFingerprint', mtFingerprint_(sh));
     PropertiesService.getDocumentProperties().setProperty('memoryTestMode', mode);
   } finally {
     lock.releaseLock();
@@ -144,14 +144,14 @@ function printMemoryTest() {
   var ss = SpreadsheetApp.getActive();
   var sh = ss.getSheetByName(MT_SHEET);
   var mode = PropertiesService.getDocumentProperties().getProperty('memoryTestMode') || 'all';
-  var l = layout_(sh, mode);
+  var l = mtLayout_(sh, mode);
   var url = 'https://docs.google.com/spreadsheets/d/' + ss.getId() + '/export' +
     '?format=pdf&gid=' + sh.getSheetId() +
     '&range=' + encodeURIComponent(l.range) +
     '&size=letter&portrait=' + (l.orientation === 'portrait') +
     '&scale=4' + // fit to page, so a row the estimate missed cannot spill over
-    '&top_margin=' + PAGE.marginIn + '&bottom_margin=' + PAGE.marginIn +
-    '&left_margin=' + PAGE.marginIn + '&right_margin=' + PAGE.marginIn +
+    '&top_margin=' + MT_PAGE.marginIn + '&bottom_margin=' + MT_PAGE.marginIn +
+    '&left_margin=' + MT_PAGE.marginIn + '&right_margin=' + MT_PAGE.marginIn +
     '&gridlines=false&printtitle=false&sheetnames=false&pagenum=UNDEFINED' +
     '&horizontal_alignment=CENTER&vertical_alignment=TOP&fzr=false';
   var html = HtmlService.createHtmlOutput(
@@ -165,38 +165,38 @@ function printMemoryTest() {
 /** The two ways of printing: four cards landscape, or one card portrait. The
  *  tallest the rows may be follows from fitting the range's width to the
  *  page's printable width. */
-function layout_(sh, mode) {
+function mtLayout_(sh, mode) {
   var colWidth = function (from, to) {
     var w = 0;
     for (var c = from; c <= to; c++) w += sh.getColumnWidth(c);
     return w;
   };
-  var printable = function (inches) { return (inches - 2 * PAGE.marginIn) * PX_PER_IN; };
+  var printable = function (inches) { return (inches - 2 * MT_PAGE.marginIn) * MT_PX_PER_IN; };
   if (mode === 'one') {
     var w1 = colWidth(1, 2);                                   // A:B
-    var scale1 = printable(PAGE.shortIn) / w1;                 // portrait
+    var scale1 = printable(MT_PAGE.shortIn) / w1;                 // portrait
     return { range: 'A1:B6', orientation: 'portrait', rows: [1, 6],
-             maxHeight: printable(PAGE.longIn) / scale1 * PAGE.slack };
+             maxHeight: printable(MT_PAGE.longIn) / scale1 * MT_PAGE.slack };
   }
   var w = colWidth(1, 5);                                      // A:E
-  var scale = printable(PAGE.longIn) / w;                      // landscape
+  var scale = printable(MT_PAGE.longIn) / w;                      // landscape
   return { range: 'A1:E12', orientation: 'landscape', rows: [1, 12],
-           maxHeight: printable(PAGE.shortIn) / scale * PAGE.slack };
+           maxHeight: printable(MT_PAGE.shortIn) / scale * MT_PAGE.slack };
 }
 
 /** The largest verse size whose rows fit maxHeight, or null if none does. */
-function largestFitting_(sh, maxHeight, rows) {
+function mtLargestFitting_(sh, maxHeight, rows) {
   var lo = MT_MIN_PT, hi = MT_MAX_PT, best = null;
   while (lo <= hi) {
     var mid = Math.floor((lo + hi) / 2);
-    setSize_(sh, mid);
-    if (measure_(sh, rows) <= maxHeight) { best = mid; lo = mid + 1; }
+    mtSetSize_(sh, mid);
+    if (mtMeasure_(sh, rows) <= maxHeight) { best = mid; lo = mid + 1; }
     else hi = mid - 1;
   }
   return best;
 }
 
-function setSize_(sh, pt) {
+function mtSetSize_(sh, pt) {
   MT_TEXT_COLUMNS.forEach(function (col) {
     MT_ROWS.forEach(function (pair) {
       var size = Math.max(MT_MIN_PT - 2, pt + pair[1]);
@@ -208,7 +208,7 @@ function setSize_(sh, pt) {
 
 /** Fit the text rows to their contents and add up rows[0]..rows[1]. Row 7, the
  *  gap the cards are cut along, keeps its own height. */
-function measure_(sh, rows) {
+function mtMeasure_(sh, rows) {
   SpreadsheetApp.flush();
   var top = MT_TOP_CARD_ROWS;
   sh.autoResizeRows(top[0], top[1] - top[0] + 1);
@@ -220,7 +220,7 @@ function measure_(sh, rows) {
 }
 
 /** What the cards say, plus the switches — a new week changes it. */
-function fingerprint_(sh) {
+function mtFingerprint_(sh) {
   var text = sh.getRange('B2:B6').getDisplayValues().join('\n') + '|' +
              sh.getRange(MT_CONTROLS).getDisplayValues().join(',');
   var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, text);
