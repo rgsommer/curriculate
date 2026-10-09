@@ -94,7 +94,7 @@ export default function StudentPage() {
     const el = document.getElementById(`inc-${focusInc}`);
     if (!el) return;
     focusDone.current = true;
-    requestAnimationFrame(() => el.scrollIntoView({ block: "center", behavior: "smooth" }));
+    setTimeout(() => el.scrollIntoView({ block: "center" }), 0); // instant: works even before the tab is painted
     setTimeout(() => setFocusInc(null), 4000); // not cleared on re-render: the highlight always fades
   }, [focusInc, data]);
   // Removing an offence: "entered in error" (no trace) vs "withdrawn" (the
