@@ -712,7 +712,99 @@ export function looksLikeAnswerKey(text) {
 export function routeRubricAndKey(rubricText, answerKeyText) {
   const rubric = String(rubricText || "").trim();
   const key = String(answerKeyText || "").trim();
-  if (key || !rubric) return { rubric, answerKey: key, promoted: false };
-  if (!looksLikeAnswerKey(rubric)) return { rubric, answerKey: "", promoted: false };
-  return { rubric, answerKey: rubric, promoted: true };
+  // Whichever slot it arrives in, a key is put into the shape the markers
+  // read — canonicaliseKeyText returns it untouched when it is already in
+  // that shape, or when it is not a key at all.
+  if (key) return { rubric, answerKey: canonicaliseKeyText(key), promoted: false };
+  if (!rubric || !looksLikeAnswerKey(rubric)) return { rubric, answerKey: "", promoted: false };
+  return { rubric, answerKey: canonicaliseKeyText(rubric), promoted: true };
+}
+
+/* ------------------------------------------------------------------
+ *  A pasted key, put into the shape the markers already understand.
+ *
+ *  /grading/extract-answer-key emits "A1: E (/1)", and both the blind
+ *  read's marker and applyKeyToGuide parse that and nothing else. A key a
+ *  teacher pastes or uploads as a document is prose —
+ *
+ *      A. Matching ( 10 marks )
+ *      1. E  2. I  3. C  4. H  5. D
+ *
+ *  — so the deterministic marking finds no items at all and twenty-five of
+ *  a fifty-mark Geography paper go back to being judged rather than looked
+ *  up. Translating here, once, means neither parser has to learn a second
+ *  format: the prompt, the blind read, the mark scheme and the key review
+ *  table all receive the canonical form and already agree on it.
+ * ------------------------------------------------------------------ */
+
+/** Items written along a line: "1. E  2. I  3. C". */
+function numberedItemsOn(line) {
+  const re = /(?:^|\s)(\d{1,2})\s*[.)]\s+/g;
+  const hits = [];
+  let m;
+  while ((m = re.exec(line))) hits.push({ n: m[1], at: m.index, from: m.index + m[0].length });
+  return hits.map((h, i) => ({
+    n: h.n,
+    // An answer runs to the next numbered item, or to the end of the line.
+    answer: line.slice(h.from, i + 1 < hits.length ? hits[i + 1].at : line.length).trim(),
+  }));
+}
+
+/**
+ * Turn a pasted answer key into the extractor's own lines.
+ * Returns the text unchanged when it is already canonical, or when it does
+ * not read like a key at all — this must never make a key worse.
+ */
+export function canonicaliseKeyText(text) {
+  const raw = String(text || "");
+  if (!raw.trim()) return raw;
+  // Already in the labelled form the markers read.
+  if (/^\s*[A-Z]\s*\d{1,2}[a-z]?\s*:/m.test(raw)) return raw;
+
+  const out = [];
+  let letter = null;
+  let marksForSection = 0;
+  let pending = [];
+
+  const flush = () => {
+    if (!letter || !pending.length) { pending = []; return; }
+    // Marks per item from the section heading where it gives a total.
+    const per = marksForSection > 0
+      ? Math.round((marksForSection / pending.length) * 100) / 100
+      : 1;
+    for (const it of pending) {
+      // "FALSE — Canada is sparsely populated" is the answer plus the
+      // teacher's reason; the answer is the part before the dash.
+      const answer = it.answer.split(/\s+[—–-]\s+/)[0].trim();
+      if (answer) out.push(`${letter}${it.n}: ${answer} (/${per})`);
+    }
+    pending = [];
+  };
+
+  for (const line of raw.split("\n")) {
+    const s = line.trim();
+    if (!s) continue;
+
+    // "A. Matching ( 10 marks )" — a section, not an answer.
+    const head = s.match(/^([A-Z])\s*[.)]\s+[A-Za-z][^\n]*$/);
+    if (head && !/^\d/.test(s)) {
+      flush();
+      letter = head[1];
+      const marks = s.match(/\(\s*(\d{1,3})\s*marks?\s*\)/i);
+      marksForSection = marks ? Number(marks[1]) : 0;
+      // A heading may carry its items on the same line.
+      const rest = s.slice(head[0].indexOf(head[1]) + 1).replace(/^\s*[.)]\s*/, "");
+      pending = numberedItemsOn(" " + rest);
+      continue;
+    }
+    if (!letter) continue;
+    pending = pending.concat(numberedItemsOn(" " + s));
+  }
+  flush();
+
+  if (out.length < 4) return raw;   // not enough to be worth rewriting
+  const total = raw.match(/total\s*(?:of\s*)?(\d{1,3})\s*marks?/i)
+    || raw.match(/total[:\s]*\/\s*(\d{1,3})/i);
+  if (total) out.push(`Total: /${total[1]}`);
+  return out.join("\n");
 }
