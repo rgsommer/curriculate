@@ -1,29 +1,17 @@
-// Memory test: fits MemoryCards A1:E12 (four cards) onto one page, or A1:B6
-// (one card) when the verse is too long. Install: run installMemoryTestFit once.
-// How it works and how to print: see the notes at the end of this file.
+// Memory test: sizes the MemoryCards text so A1:E12 (four cards) prints on one
+// portrait page, or A1:B6 (one card) when the verse is too long for that.
+// Install: run installMemoryTestFit once. Notes at the end of this file.
 
 var MT_SHEET = 'MemoryCards';
-
-/** Text cells of the four cards, by row: [row, sizeOffset]. Rows 3 and 6 are
- *  the verse and the review (the full size); 2, 4 and 5 — the question and
- *  name line, the review heading, the practice text — sit two points smaller,
- *  which is how the sheet was set up by hand. */
-var MT_ROWS = [[2, -2], [3, 0], [4, -2], [5, -2], [6, 0]];
-var MT_TOP_CARD_ROWS = [2, 6];       // first and last text row of the top cards
-var MT_BOTTOM_OFFSET = 6;            // the bottom cards are the same rows + 6
-var MT_TEXT_COLUMNS = ['B', 'E'];    // left and right card
-
-/** The cells whose change changes the cards' size. */
-var MT_CONTROLS = 'A7:E7';
-
-/** Font sizes tried for the verse rows. */
+var MT_ROWS = [[2, -2], [3, 0], [4, -2], [5, -2], [6, 0]]; // [row, size offset]
+var MT_BOTTOM_OFFSET = 6;          // the bottom cards are the same rows + 6
+var MT_TEXT_COLUMNS = ['B', 'E'];  // left and right card
+var MT_CONTROLS = 'A7:E7';         // the switches that trigger a refit
 var MT_MAX_PT = 20;
 var MT_MIN_PT = 9;
-
-/** The page the fit aims at, in inches, and how much slack to leave: Sheets'
- *  row fitting is an estimate and the printer's text can run a little wider. */
-var MT_PAGE = { longIn: 11, shortIn: 8.5, marginIn: 0.25, slack: 0.94 };
-var MT_PX_PER_IN = 96;
+// The page as printed: letter, portrait, fit to width, margins in inches
+// (top 1.5 cm, bottom 1 cm, sides 0.635 cm). slack < 1 leaves room for error.
+var MT_PAGE = { w: 8.5, h: 11, top: 0.59, bottom: 0.39, side: 0.25, slack: 0.92 };
 
 function onOpenMemoryTest() {
   SpreadsheetApp.getUi()
@@ -46,26 +34,24 @@ function installMemoryTestFit() {
   fitMemoryTest();
 }
 
-/** Installable on-edit trigger: refit when one of the switches in row 7 moves. */
+/** On edit: refit when one of the switches in row 7 changes. */
 function onEditMemoryTest(e) {
   if (!e || !e.range) return;
   var sh = e.range.getSheet();
   if (sh.getName() !== MT_SHEET) return;
-  var c = sh.getRange(MT_CONTROLS);
-  var r = e.range;
-  var overlaps = r.getRow() <= c.getLastRow() && r.getLastRow() >= c.getRow() &&
-                 r.getColumn() <= c.getLastColumn() && r.getLastColumn() >= c.getColumn();
-  if (overlaps) fitMemoryTest();
+  var c = sh.getRange(MT_CONTROLS), r = e.range;
+  if (r.getRow() <= c.getLastRow() && r.getLastRow() >= c.getRow() &&
+      r.getColumn() <= c.getLastColumn() && r.getLastColumn() >= c.getColumn()) {
+    fitMemoryTest();
+  }
 }
 
-/** Hourly trigger: refit only when the cards' text has changed — a new week. */
+/** Hourly: refit only when the cards' text has changed (a new week). */
 function fitMemoryTestIfChanged() {
   var sh = SpreadsheetApp.getActive().getSheetByName(MT_SHEET);
   if (!sh) return;
-  var props = PropertiesService.getDocumentProperties();
-  var print = mtFingerprint_(sh);
-  if (props.getProperty('memoryTestFingerprint') === print) return;
-  fitMemoryTest();
+  var saved = PropertiesService.getDocumentProperties().getProperty('memoryTestFingerprint');
+  if (saved !== mtFingerprint_(sh)) fitMemoryTest();
 }
 
 function fitMemoryTest() {
@@ -75,158 +61,157 @@ function fitMemoryTest() {
     var sh = SpreadsheetApp.getActive().getSheetByName(MT_SHEET);
     if (!sh) return;
     SpreadsheetApp.flush(); // let the formulas catch up with the switch just pressed
+    var cells = mtCells_(sh);
 
-    var all = mtLayout_(sh, 'all');
-    var one = mtLayout_(sh, 'one');
-
-    var pt = mtLargestFitting_(sh, all.maxHeight, all.rows);
-    var mode = 'all';
+    var mode = 'all', layout = mtLayout_(sh, 'all');
+    var pt = mtLargestFitting_(cells, layout);
     if (pt === null) {
       mode = 'one';
-      pt = mtLargestFitting_(sh, one.maxHeight, one.rows);
-      if (pt === null) pt = MT_MIN_PT; // nothing fits: smallest, and G1 says so
+      layout = mtLayout_(sh, 'one');
+      pt = mtLargestFitting_(cells, layout);
     }
-    mtSetSize_(sh, pt);
-    var used = mode === 'all' ? all : one;
-    var over = mtMeasure_(sh, used.rows) > used.maxHeight;
+    var tooLong = pt === null;
+    if (tooLong) pt = MT_MIN_PT;
 
-    sh.getRange('G1').setValue(
-      'Print ' + used.range + ' · ' + used.orientation + ' · ' + pt + ' pt' +
-      (mode === 'one' ? ' · one card (long verse)' : ' · four cards') +
-      (over ? ' · STILL TOO LONG' : ''));
-    PropertiesService.getDocumentProperties()
-      .setProperty('memoryTestFingerprint', mtFingerprint_(sh));
-    PropertiesService.getDocumentProperties().setProperty('memoryTestMode', mode);
+    MT_TEXT_COLUMNS.forEach(function (col) {
+      MT_ROWS.forEach(function (pair) {
+        var size = Math.max(MT_MIN_PT - 2, pt + pair[1]);
+        sh.getRange(col + pair[0]).setFontSize(size);
+        sh.getRange(col + (pair[0] + MT_BOTTOM_OFFSET)).setFontSize(size);
+      });
+    });
+
+    sh.getRange('G1').setValue('Print ' + layout.range + ' · portrait · ' + pt + ' pt · ' +
+      (mode === 'one' ? 'one card (long verse)' : 'four cards') +
+      (tooLong ? ' · STILL TOO LONG' : ''));
+    var props = PropertiesService.getDocumentProperties();
+    props.setProperty('memoryTestFingerprint', mtFingerprint_(sh));
+    props.setProperty('memoryTestMode', mode);
   } finally {
     lock.releaseLock();
   }
 }
 
-/** Opens a PDF of the range G1 names, printed the way the fit assumed. */
+/** Opens a PDF of the range G1 names, with the page settings the fit assumed. */
 function printMemoryTest() {
   var ss = SpreadsheetApp.getActive();
   var sh = ss.getSheetByName(MT_SHEET);
   var mode = PropertiesService.getDocumentProperties().getProperty('memoryTestMode') || 'all';
   var l = mtLayout_(sh, mode);
   var url = 'https://docs.google.com/spreadsheets/d/' + ss.getId() + '/export' +
-    '?format=pdf&gid=' + sh.getSheetId() +
-    '&range=' + encodeURIComponent(l.range) +
-    '&size=letter&portrait=' + (l.orientation === 'portrait') +
-    '&scale=4' + // fit to page, so a row the estimate missed cannot spill over
-    '&top_margin=' + MT_PAGE.marginIn + '&bottom_margin=' + MT_PAGE.marginIn +
-    '&left_margin=' + MT_PAGE.marginIn + '&right_margin=' + MT_PAGE.marginIn +
+    '?format=pdf&gid=' + sh.getSheetId() + '&range=' + encodeURIComponent(l.range) +
+    '&size=letter&portrait=true&scale=4' + // scale=4: fit to page
+    '&top_margin=' + MT_PAGE.top + '&bottom_margin=' + MT_PAGE.bottom +
+    '&left_margin=' + MT_PAGE.side + '&right_margin=' + MT_PAGE.side +
     '&gridlines=false&printtitle=false&sheetnames=false&pagenum=UNDEFINED' +
     '&horizontal_alignment=CENTER&vertical_alignment=TOP&fzr=false';
   var html = HtmlService.createHtmlOutput(
-    '<p style="font:14px Arial">' +
-    '<a href="' + url + '" target="_blank">Open the memory test PDF (' + l.range + ')</a></p>' +
+    '<p style="font:14px Arial"><a href="' + url + '" target="_blank">' +
+    'Open the memory test PDF (' + l.range + ')</a></p>' +
     '<script>window.open(' + JSON.stringify(url) + ', "_blank");</script>')
     .setWidth(360).setHeight(80);
   SpreadsheetApp.getUi().showModelessDialog(html, 'Memory test');
 }
 
-/** The two ways of printing: four cards landscape, or one card portrait. The
- *  tallest the rows may be follows from fitting the range's width to the
- *  page's printable width. */
+/** Four cards (A1:E12) or one (A1:B6): which rows count, how wide the text
+ *  column is, and how tall those rows may be once the range's width is
+ *  scaled to the page's printable width. */
 function mtLayout_(sh, mode) {
-  var colWidth = function (from, to) {
-    var w = 0;
-    for (var c = from; c <= to; c++) w += sh.getColumnWidth(c);
-    return w;
+  var cols = mode === 'one' ? 2 : 5;
+  var width = 0;
+  for (var c = 1; c <= cols; c++) width += sh.getColumnWidth(c);
+  var scale = (MT_PAGE.w - 2 * MT_PAGE.side) * 96 / width;
+  var maxHeight = (MT_PAGE.h - MT_PAGE.top - MT_PAGE.bottom) * 96 / scale * MT_PAGE.slack;
+  var fixed = 0; // rows the fit does not touch: 1, and 7 (the cut line) for four cards
+  fixed += sh.getRowHeight(1);
+  if (mode !== 'one') fixed += sh.getRowHeight(7);
+  return {
+    range: mode === 'one' ? 'A1:B6' : 'A1:E12',
+    cards: mode === 'one' ? 1 : 2,          // stacked card heights to add up
+    textWidth: Math.min(sh.getColumnWidth(2), sh.getColumnWidth(5)),
+    maxHeight: maxHeight - fixed
   };
-  var printable = function (inches) { return (inches - 2 * MT_PAGE.marginIn) * MT_PX_PER_IN; };
-  if (mode === 'one') {
-    var w1 = colWidth(1, 2);                                   // A:B
-    var scale1 = printable(MT_PAGE.shortIn) / w1;                 // portrait
-    return { range: 'A1:B6', orientation: 'portrait', rows: [1, 6],
-             maxHeight: printable(MT_PAGE.longIn) / scale1 * MT_PAGE.slack };
-  }
-  var w = colWidth(1, 5);                                      // A:E
-  var scale = printable(MT_PAGE.longIn) / w;                      // landscape
-  return { range: 'A1:E12', orientation: 'landscape', rows: [1, 12],
-           maxHeight: printable(MT_PAGE.shortIn) / scale * MT_PAGE.slack };
 }
 
-/** The largest verse size whose rows fit maxHeight, or null if none does. */
-function mtLargestFitting_(sh, maxHeight, rows) {
-  var lo = MT_MIN_PT, hi = MT_MAX_PT, best = null;
-  while (lo <= hi) {
-    var mid = Math.floor((lo + hi) / 2);
-    mtSetSize_(sh, mid);
-    if (mtMeasure_(sh, rows) <= maxHeight) { best = mid; lo = mid + 1; }
-    else hi = mid - 1;
-  }
-  return best;
-}
-
-function mtSetSize_(sh, pt) {
-  MT_TEXT_COLUMNS.forEach(function (col) {
-    MT_ROWS.forEach(function (pair) {
-      var size = Math.max(MT_MIN_PT - 2, pt + pair[1]);
-      sh.getRange(col + pair[0]).setFontSize(size);
-      sh.getRange(col + (pair[0] + MT_BOTTOM_OFFSET)).setFontSize(size);
-    });
+/** The text of one card, row by row (the four copies are the same). */
+function mtCells_(sh) {
+  return MT_ROWS.map(function (pair) {
+    return { text: sh.getRange('B' + pair[0]).getDisplayValue(), offset: pair[1] };
   });
 }
 
-/** Fit the text rows to their contents and add up rows[0]..rows[1]. Row 7, the
- *  gap the cards are cut along, keeps its own height. */
-function mtMeasure_(sh, rows) {
-  SpreadsheetApp.flush();
-  var top = MT_TOP_CARD_ROWS;
-  sh.autoResizeRows(top[0], top[1] - top[0] + 1);
-  sh.autoResizeRows(top[0] + MT_BOTTOM_OFFSET, top[1] - top[0] + 1);
-  SpreadsheetApp.flush();
-  var h = 0;
-  for (var r = rows[0]; r <= rows[1]; r++) h += sh.getRowHeight(r);
-  return h;
+function mtLargestFitting_(cells, layout) {
+  for (var pt = MT_MAX_PT; pt >= MT_MIN_PT; pt--) {
+    if (layout.cards * mtCardHeight_(cells, pt, layout.textWidth) <= layout.maxHeight) return pt;
+  }
+  return null;
 }
 
-/** What the cards say, plus the switches — a new week changes it. */
+/** How tall one card comes out, in sheet pixels. Sheets cannot report a
+ *  wrapped row's height to a script, so the text is wrapped here, word by
+ *  word, with Arial's character widths. */
+function mtCardHeight_(cells, pt, width) {
+  var total = 0;
+  cells.forEach(function (cell) {
+    var size = Math.max(MT_MIN_PT - 2, pt + cell.offset);
+    var px = size * 96 / 72;
+    var lines = cell.text === '' ? 0 : mtLines_(cell.text, px, width - 8);
+    total += Math.max(21, Math.ceil(lines * px * 1.2 + 6));
+  });
+  return total;
+}
+
+function mtLines_(text, px, width) {
+  var lines = 0;
+  text.split('\n').forEach(function (para) {
+    var line = 0, words = para.split(' ');
+    lines++;
+    words.forEach(function (word, i) {
+      var w = mtTextWidth_(word, px), gap = i === 0 ? 0 : 0.278 * px;
+      if (line > 0 && line + gap + w > width) { lines++; line = w; }
+      else line += gap + w;
+      while (line > width) { lines++; line -= width; } // a word wider than the cell
+    });
+  });
+  return lines;
+}
+
+function mtTextWidth_(s, px) {
+  var w = 0;
+  for (var i = 0; i < s.length; i++) {
+    var ch = s.charAt(i);
+    if (ch === '_') w += 0.556;
+    else if (ch === ' ') w += 0.278;
+    else if ('.,;:\'"!|il'.indexOf(ch) >= 0) w += 0.25;
+    else if (ch >= 'A' && ch <= 'Z') w += 0.67;
+    else if (ch === 'm' || ch === 'w' || ch === 'M' || ch === 'W') w += 0.83;
+    else w += 0.53;
+  }
+  return w * px;
+}
+
+/** What the cards say plus the switches; a new week changes it. */
 function mtFingerprint_(sh) {
   var text = sh.getRange('B2:B6').getDisplayValues().join('\n') + '|' +
              sh.getRange(MT_CONTROLS).getDisplayValues().join(',');
-  var bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, text);
-  return Utilities.base64Encode(bytes);
+  return Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, text));
 }
 
-/**
- * Fit the memory verse test (MemoryCards) onto one printed page.
+/*
+ * NOTES
+ * The test is four copies of one card, A1:E12, two across and two down, cut
+ * apart after printing. A card's height depends on the week's verse and on the
+ * review under it, so the script picks the largest text size (9 to 20 pt for
+ * the verse rows; rows 2, 4 and 5 two points smaller) at which the four cards
+ * fit on a portrait letter page printed fit to width. Where none does (Psalm 1
+ * with a review) it fits one card, A1:B6, instead. G1 says which.
  *
- * WHAT IT DOES
- * The test is four copies of the same card — A1:E12, two across and two down,
- * cut apart after printing. How tall a card is depends on the week's verse and
- * on whether there is a review under it, so one font size cannot suit every
- * week: a short verse leaves half the page empty and a long one runs onto a
- * second page.
+ * It runs when A7:E7 change (C7 test/practice, D7 week, E7 review), hourly when
+ * the verse has changed, and from the Memory test menu.
  *
- * So the script sizes the type to the page. It sets the cards' text size,
- * lets Sheets fit the rows to it, adds up how tall the four cards came out and
- * compares that with how tall the page is (letter, landscape, narrow margins,
- * fit to width — the MT_PAGE settings below). It takes the largest size that fits.
+ * Print with Memory test > Print (PDF), or File > Print: Selected cells (the
+ * range in G1), portrait, Fit to width, the margins in MT_PAGE.
  *
- * Where even the smallest size will not fit four on a page — Psalm 1, the
- * longest verse of the year, plus a review — it fits ONE card (A1:B6) to a
- * portrait page instead, and says so in G1.
- *
- * WHEN IT RUNS
- *   - when C7 (test / practice), D7 (week offset) or E7 (review) is changed,
- *     and A7 / B7 (which words are kept) for good measure;
- *   - every hour, but it only does anything when the week's text has changed,
- *     so the new week is fitted the morning it comes round;
- *   - from the menu, Memory test > Fit to one page, whenever you like.
- *
- * PRINTING
- * G1 says which range to print. Memory test > Print (PDF) opens a PDF of
- * exactly that range with the same page settings the fit assumed, which is the
- * dependable way to print it. From File > Print, choose Selected cells, the
- * orientation G1 names, Scale: Fit to width, Margins: Narrow.
- *
- * HOW TO INSTALL
- *   1. Extensions > Apps Script, add a file, paste this in, Save.
- *   2. Choose `installMemoryTestFit` in the function list and press Run. Grant
- *      the permissions it asks for. It sets up its triggers (on open for the
- *      menu, on edit, hourly) and fits the test once. It defines no onOpen of
- *      its own, so it cannot collide with one the project already has.
- *   3. Reload the sheet to see the Memory test menu.
+ * If a printed page still runs over, lower MT_PAGE.slack (say 0.85); if the
+ * text comes out smaller than it needs to, raise it.
  */
