@@ -12,6 +12,7 @@ import {
   contestWinnerEmail,
   cardRevealEmail,
   newEngagementEmail,
+  cardEmailInfo,
   cardLiveEmail,
   buildJoinUrl,
   inviteEmail,
@@ -650,6 +651,7 @@ export async function GET(req: Request) {
         deadline: e.deadline as string | null,
         holdUntilDeadline: !!e.hold_until_deadline,
         url: engUrl,
+        ...cardEmailInfo(e),
       });
       for (let i = 0; i < memEmails.length; i += 100) {
         await sendCampfireBatch(
@@ -948,6 +950,7 @@ export async function GET(req: Request) {
               type: e.type as string,
               config: e.config as { occasion?: string } | null,
             }),
+            imageUrl: cardEmailInfo(e).card?.imageUrl,
           });
           return { from, to: [to], subject: cm.subject, text: cm.text, html: cm.html, ...mailDefaults() };
         });

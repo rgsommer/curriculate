@@ -9,6 +9,7 @@ import {
   getCardRecipients,
   revealEmail,
   cardRevealEmail,
+  cardEmailInfo,
   campfireFrom,
   mailDefaults,
   campfireSiteUrl,
@@ -184,6 +185,7 @@ export async function POST(req: Request) {
             type: eng.type as string,
             config: eng.config as { occasion?: string } | null,
           }),
+          imageUrl: cardEmailInfo(eng).card?.imageUrl,
         });
         return { from, to: [to], subject: m.subject, text: m.text, html: m.html, ...mailDefaults() };
       });

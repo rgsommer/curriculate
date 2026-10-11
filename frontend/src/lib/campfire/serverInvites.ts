@@ -409,8 +409,12 @@ export function cardRevealEmail(opts: {
   url: string;
   forRecipient: boolean;
   icon?: string; // 🎂 for a birthday; 💐/👔/🎉 for other celebration cards
+  imageUrl?: string; // the card picture (cardEmailInfo) — the email then reads like a card
 }) {
   const { groupName, title, recipientName, count, url, forRecipient, icon = "🎂" } = opts;
+  const img = opts.imageUrl
+    ? `${opts.imageUrl}?for=${forRecipient ? "recipient" : "delivered"}&n=${count}`
+    : null;
   const wishes = `${count} ${count === 1 ? "wish" : "wishes"}`;
   const subject = forRecipient
     ? `${icon} Your card is here — ${wishes} inside!`
@@ -428,11 +432,16 @@ export function cardRevealEmail(opts: {
     : `"${title}" just opened in ${groupName}. ${recipientName} received the card with ${wishes} — each message is private to them.\n\n${cta}: ${url}`) + pass.text;
   const html = `
 <div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
-  <div style="font-size:40px;">${icon}</div>
-  <h1 style="font-size:22px; margin:8px 0;">${escapeHtml(headline)}</h1>
+  ${
+    img
+      ? `<a href="${url}" style="display:block; text-decoration:none;"><img src="${img}" width="480" alt="${escapeHtml(`${title} — ${cta}`)}" style="display:block; width:100%; max-width:480px; height:auto; border:0; border-radius:16px;"></a>
+  <h1 style="font-size:22px; margin:16px 0 6px;">${escapeHtml(headline)}</h1>`
+      : `<div style="font-size:40px;">${icon}</div>
+  <h1 style="font-size:22px; margin:8px 0;">${escapeHtml(headline)}</h1>`
+  }
   <p style="color:#475569; margin:0 0 12px;">${lead}</p>
   ${emailButton(url, `${cta}`)}
-  <p style="margin:0;"><a href="${url}" style="color:#64748b; font-size:12px; word-break:break-all;">${url}</a></p>
+  ${img ? "" : `<p style="margin:0;"><a href="${url}" style="color:#64748b; font-size:12px; word-break:break-all;">${url}</a></p>`}
   ${pass.html}
 </div>`.trim();
   return { subject, text, html };
@@ -659,6 +668,21 @@ function formatRevealWhen(iso: string): string {
   return `${day} at ${time}`;
 }
 
+// A card's invite shows the card itself (rendered by /api/campfire/card-image/[id])
+// and its real occasion ("Pastor Appreciation card", not the internal "Birthday").
+// Spread into newEngagementEmail's options; {} for anything that isn't a card.
+export function cardEmailInfo(e: {
+  id?: string | null;
+  type?: string | null;
+  config?: unknown;
+}): { card?: { imageUrl: string; label: string } } {
+  if (e.type !== "birthday" || !e.id) return {};
+  const occ = (e.config as { occasion?: string } | null)?.occasion?.trim();
+  const label = !occ ? "birthday card" : /\bcard$/i.test(occ) ? occ : `${occ} card`;
+  const base = campfireSiteUrl().replace(/\/$/, "");
+  return { card: { imageUrl: `${base}/api/campfire/card-image/${e.id}`, label } };
+}
+
 // Sent when a new engagement is posted (if the creator opted into emailing the
 // group). Describes what makes THIS engagement fun, in plain, inviting language.
 export function newEngagementEmail(opts: {
@@ -676,8 +700,10 @@ export function newEngagementEmail(opts: {
   cardGuest?: boolean; // invited to ONLY this engagement (a guest, not the group)
   recipientName?: string; // greet them by name if we have it
   note?: string; // optional one-line personal note from the member nudging
+  card?: { imageUrl: string; label: string }; // a card → short layout with its picture
 }) {
-  const { creator, groupName, title, typeLabel, typeIcon, isBlind, reveal, deadline, holdUntilDeadline, url, invited, cardGuest, recipientName, note } = opts;
+  const { creator, groupName, title, typeLabel, typeIcon, isBlind, reveal, deadline, holdUntilDeadline, url, invited, cardGuest, recipientName, note, card } = opts;
+  if (card) return cardInviteEmail({ creator, title, deadline, url, recipientName, note, card });
   const noteText = note ? `\n💬 "${note}"\n` : "";
   const noteHtml = note
     ? `<blockquote style="margin:0 0 16px; padding:10px 14px; border-left:3px solid #f97316; background:#fff7ed; color:#9a3412; font-style:italic; border-radius:6px;">💬 "${escapeHtml(
@@ -747,6 +773,48 @@ ${cta}: ${url}${appPromoBlock(url).text}`;
   ${appPromoBlock(url).html}
 </div>`.trim();
 
+  return { subject, text, html };
+}
+
+// The card invite: the card's picture (tap to sign), one line of who/what, when it
+// opens, one button. Deliberately short — the picture does the explaining.
+function cardInviteEmail(opts: {
+  creator: string;
+  title: string;
+  deadline: string | null;
+  url: string;
+  recipientName?: string;
+  note?: string;
+  card: { imageUrl: string; label: string };
+}) {
+  const { creator, title, deadline, url, recipientName, note, card } = opts;
+  const hi = firstName(recipientName);
+  const subject = `✍️ ${creator} invited you to sign "${title}"`;
+  const lead = `${hi ? `Hi ${hi}, ` : ""}${creator} invited you to sign this ${card.label} — just your name and a short note.`;
+  const when = deadline
+    ? `🎁 It opens ${formatRevealWhen(deadline)}. Your note stays hidden until then.`
+    : "🎁 Your note stays hidden until the card opens.";
+  const trust = "No account, app or password needed.";
+  const text = `${lead}
+
+"${title}"${note ? `
+
+💬 "${note}"` : ""}
+
+${when}
+
+✍️ Sign the card: ${url}
+
+${trust}`;
+  const html = `
+<div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.55; color:#0f172a;">
+  <a href="${url}" style="display:block; text-decoration:none;"><img src="${card.imageUrl}" width="480" alt="${escapeHtml(`${title} — tap to sign`)}" style="display:block; width:100%; max-width:480px; height:auto; border:0; border-radius:16px;"></a>
+  <p style="color:#334155; margin:16px 0 8px;">${escapeHtml(lead)}</p>
+  ${note ? `<blockquote style="margin:0 0 10px; padding:8px 12px; border-left:3px solid #f97316; background:#fff7ed; color:#9a3412; font-style:italic; border-radius:6px;">💬 "${escapeHtml(note)}"</blockquote>` : ""}
+  <p style="color:#475569; margin:0; font-size:14px;">${escapeHtml(when)}</p>
+  ${emailButton(url, "✍️ Sign the card")}
+  <p style="color:#94a3b8; font-size:12px; margin:0; text-align:center;">${escapeHtml(trust)}</p>
+</div>`.trim();
   return { subject, text, html };
 }
 

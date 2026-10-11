@@ -5,6 +5,7 @@ import {
   authorizeGroupRequester,
   getGroupMemberEmails,
   newEngagementEmail,
+  cardEmailInfo,
   campfireFrom,
   mailDefaults,
   campfireSiteUrl,
@@ -33,7 +34,7 @@ export async function POST(req: Request) {
     const svc = createClient(url, serviceKey);
     const { data: eng } = await svc
       .from("engagements")
-      .select("group_id, creator_id, title, type, config, is_blind, reveal, deadline, hold_until_deadline, scheduled_open_at, excluded_user_ids, excluded_emails, birth_year, paused")
+      .select("id, group_id, creator_id, title, type, config, is_blind, reveal, deadline, hold_until_deadline, scheduled_open_at, excluded_user_ids, excluded_emails, birth_year, paused")
       .eq("id", engagementId)
       .single();
     if (!eng) {
@@ -122,6 +123,7 @@ export async function POST(req: Request) {
       reveal: eng.reveal as string,
       deadline: eng.deadline as string | null,
       holdUntilDeadline: !!eng.hold_until_deadline,
+      ...cardEmailInfo(eng),
     };
 
     // Members → notification that links straight to the engagement.

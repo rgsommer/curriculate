@@ -6,6 +6,7 @@ import {
   getNonResponderEmails,
   reminderEmail,
   newEngagementEmail,
+  cardEmailInfo,
   buildJoinUrl,
   mailDefaults,
   campfireFrom,
@@ -41,7 +42,7 @@ export async function POST(req: Request) {
     const { data: eng } = await svc
       .from("engagements")
       .select(
-        "group_id, title, total_expected, birth_year, deadline, hold_until_deadline, type, is_blind, reveal, share_code, excluded_emails, paused, deadline_nudged_at"
+        "id, group_id, title, total_expected, birth_year, deadline, hold_until_deadline, type, config, is_blind, reveal, share_code, excluded_emails, paused, deadline_nudged_at"
       )
       .eq("id", engagementId)
       .single();
@@ -144,6 +145,7 @@ export async function POST(req: Request) {
         reveal: eng.reveal as string,
         deadline: eng.deadline as string | null,
         holdUntilDeadline: !!eng.hold_until_deadline,
+        ...cardEmailInfo(eng),
       };
       const msgs = invitees.map((p) => {
         const joinUrl = eng.share_code
