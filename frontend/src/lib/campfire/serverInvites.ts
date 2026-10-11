@@ -2,7 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import { firstName } from "./parseInvites";
 import { campfireTeaserText, campfireTeaserHtml } from "./types";
-import { passItOnCard } from "./templates";
+import { passItOnCard, payItForward } from "./templates";
 
 export const EMAIL_RE = /^[^\s@<>,;"']+@[^\s@<>,;"']+\.[^\s@<>,;"']+$/;
 export const MAX_INVITES = 50;
@@ -201,17 +201,18 @@ function passItOnBlock(
   } catch {
     /* keep default */
   }
+  // The recipient gets a "pay it forward" idea for someone in their world (and no
+  // season line — "start a card for your pastor" makes no sense to the pastor).
   const pass = passItOnCard(context);
-  const link = `${origin}/campfirelive?start=${pass.templateId}`;
-  const lead = forRecipient
-    ? "Pay it forward — start a card for a colleague"
-    : "Know someone else who deserves one? Start a card";
-  const season = pass.seasonLine ? `${pass.seasonLine}. ` : "";
+  const fwd = payItForward(context);
+  const link = `${origin}/campfirelive?start=${forRecipient ? fwd.templateId : pass.templateId}`;
+  const lead = forRecipient ? fwd.lead : "Know someone else who deserves one? Start a card";
+  const season = !forRecipient && pass.seasonLine ? `${pass.seasonLine}. ` : "";
   const html = `
   <p style="margin:20px 0 0; padding:12px 14px; background:#fff7ed; border:1px solid #fed7aa; border-radius:12px; font-size:14px; color:#7c2d12; text-align:center;">${
-    forRecipient ? "💛" : pass.emoji
+    forRecipient ? fwd.emoji : pass.emoji
   } ${escapeHtml(season)}<a href="${link}" style="color:#c2410c; font-weight:700; text-decoration:underline;">${lead} &rarr;</a><br><span style="font-size:12px; color:#9a3412;">Takes 30 seconds — everyone signs from one link.</span></p>`;
-  const text = `\n\n${forRecipient ? "💛" : pass.emoji} ${season}${lead}: ${link}`;
+  const text = `\n\n${forRecipient ? fwd.emoji : pass.emoji} ${season}${lead}: ${link}`;
   return { html, text };
 }
 
@@ -399,8 +400,8 @@ export async function getCardRecipients(
   return { label: names.join(" & ") || fallback, emails };
 }
 
-// Birthday card just opened. The wishes are private to the recipient, but everyone
-// who signed gets told the card was delivered + how many wishes went in.
+// A card just opened. The notes are private to the recipient, but everyone who signed
+// gets told the card was delivered + how many notes went in.
 export function cardRevealEmail(opts: {
   groupName: string;
   title: string;
@@ -415,7 +416,7 @@ export function cardRevealEmail(opts: {
   const img = opts.imageUrl
     ? `${opts.imageUrl}?for=${forRecipient ? "recipient" : "delivered"}&n=${count}`
     : null;
-  const wishes = `${count} ${count === 1 ? "wish" : "wishes"}`;
+  const wishes = `${count} ${count === 1 ? "note" : "notes"}`;
   const subject = forRecipient
     ? `${icon} Your card is here — ${wishes} inside!`
     : `💌 ${recipientName} just got the card (${wishes})`;
@@ -424,12 +425,12 @@ export function cardRevealEmail(opts: {
     ? `Open "${escapeHtml(title)}" in ${escapeHtml(groupName)} — ${wishes} written just for you.`
     : `"${escapeHtml(title)}" just opened in ${escapeHtml(groupName)}. <strong>${escapeHtml(
         recipientName
-      )}</strong> received the card with <strong>${wishes}</strong> — each message is private to them.`;
+      )}</strong> received the card with <strong>${wishes}</strong> — each note is private to them.`;
   const cta = forRecipient ? "Open my card" : "See the card";
   const pass = passItOnBlock(url, title, forRecipient);
   const text = (forRecipient
     ? `Your card is here! Open "${title}" in ${groupName} — ${wishes} written just for you.\n\n${cta}: ${url}`
-    : `"${title}" just opened in ${groupName}. ${recipientName} received the card with ${wishes} — each message is private to them.\n\n${cta}: ${url}`) + pass.text;
+    : `"${title}" just opened in ${groupName}. ${recipientName} received the card with ${wishes} — each note is private to them.\n\n${cta}: ${url}`) + pass.text;
   const html = `
 <div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
   ${

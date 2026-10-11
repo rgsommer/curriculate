@@ -20,7 +20,7 @@ import { hasProfanity } from "@/lib/campfire/profanity";
 import { formatWhen } from "@/lib/campfire/dates";
 import { cfAlert, cfConfirm, cfPrompt } from "@/lib/campfire/dialogs";
 import { CF_PRIMARY, CF_PRIMARY_SM, CF_SECONDARY, CF_SECONDARY_SM, chipClass } from "@/lib/campfire/ui";
-import { passItOnCard, startShareCopy, QUICK_STARTS } from "@/lib/campfire/templates";
+import { passItOnCard, payItForward, startShareCopy, QUICK_STARTS } from "@/lib/campfire/templates";
 import MoveActivity from "./MoveActivity";
 import { copyRich, inviteHtml } from "@/lib/campfire/richCopy";
 import { campfireAppLinksText } from "@/lib/campfire/appLinks";
@@ -9238,7 +9238,12 @@ export default function EngagementDetailPage() {
           (students who came in on a card link) and the recipient start their own group
           via ?start= — the group page itself would be a dead end for them. */}
       {isBirthdayCard && (hasResponded || isRevealed || isCreator) && (() => {
-        const pass = passItOnCard(engagement.title);
+        // The recipient is pointed at someone in their world (a pastor → the people
+        // who serve alongside him), not a copy of their own card.
+        const fwd = payItForward(engagement.title);
+        const pass = isRecipient
+          ? { templateId: fwd.templateId, emoji: fwd.emoji, seasonLine: null }
+          : passItOnCard(engagement.title);
         const inThisGroup = !isGuest && !isRecipient;
         const href = inThisGroup
           ? `/campfirelive/group/${groupId}/engagement/new?template=${pass.templateId}`
@@ -9292,11 +9297,9 @@ export default function EngagementDetailPage() {
         };
         return (
           <div className="mb-6 rounded-2xl border-2 border-rose-200 bg-gradient-to-br from-rose-50 to-orange-50 p-5 text-center shadow-sm">
-            <div className="mb-1 text-3xl">{isRecipient ? "💛" : pass.emoji}</div>
+            <div className="mb-1 text-3xl">{pass.emoji}</div>
             <div className="text-lg font-extrabold text-slate-900">
-              {isRecipient
-                ? "Pay it forward — start a card for a colleague"
-                : "Know someone else who deserves one?"}
+              {isRecipient ? fwd.lead : "Know someone else who deserves one?"}
             </div>
             {pass.seasonLine && (
               <p className="mt-1 text-sm font-semibold text-rose-700">{pass.seasonLine}</p>
