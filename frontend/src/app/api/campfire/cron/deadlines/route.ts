@@ -9,7 +9,6 @@ import {
   reminderEmail,
   revealEmail,
   contestVoteEmail,
-  contestWinnerEmail,
   cardRevealEmail,
   newEngagementEmail,
   cardEmailInfo,
@@ -28,6 +27,7 @@ import { runRaffleDraw } from "@/lib/campfire/raffleDraw";
 import { awardHallOfFameGift } from "@/lib/campfire/hallOfFame";
 import { sendCampfireBatch } from "@/lib/campfire/serverInvites";
 import { pushToUsers } from "@/lib/campfire/push";
+import { announceContestWinner, contestWinnerName } from "@/lib/campfire/contestAnnounce";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -299,35 +299,7 @@ export async function GET(req: Request) {
     prizeText: string | null = null
   ) => {
     try {
-      const engUrl = `${base}/campfirelive/group/${e.group_id}/engagement/${e.id}`;
-      const { data: g } = await admin.from("groups").select("name").eq("id", e.group_id).single();
-      const groupName = (g?.name as string) ?? "your group";
-      const who = winnerName || "The winner";
-      const shared = { groupName, title: e.title, url: engUrl, winnerName: who, byScore, prize, prizeText };
-      // Winner: the celebration.
-      if (winnerEmail) {
-        const w = contestWinnerEmail({ forWinner: true, ...shared });
-        await sendCampfireBatch([
-          { from, to: [winnerEmail], subject: w.subject, text: w.text, html: w.html, ...mailDefaults() },
-        ]);
-      }
-      // Everyone else: the announcement.
-      const others = (await getGroupMemberEmails(admin, e.group_id)).filter(
-        (x) => !winnerEmail || x.toLowerCase() !== winnerEmail.toLowerCase()
-      );
-      const a = contestWinnerEmail({ forWinner: false, ...shared });
-      for (let i = 0; i < others.length; i += 100) {
-        await sendCampfireBatch(
-          others.slice(i, i + 100).map((to) => ({
-            from, to: [to], subject: a.subject, text: a.text, html: a.html, ...mailDefaults(),
-          }))
-        );
-      }
-      // Phones too.
-      const { data: gm } = await admin.from("group_members").select("user_id").eq("group_id", e.group_id);
-      const rest = ((gm ?? []) as { user_id: string }[]).map((m) => m.user_id).filter((u) => u !== winnerUid);
-      await pushToUsers([winnerUid], { title: "🏆 You won!", body: `Your entry won "${e.title}" 🎉`, link: engUrl });
-      await pushToUsers(rest, { title: "🏆 We have a winner", body: `${who} won "${e.title}" — see the winning entry.`, link: engUrl });
+      await announceContestWinner(admin, { base, from, e, winnerUid, winnerEmail, winnerName, prize, byScore, prizeText });
     } catch (err) {
       console.error("Contest winner announce failed:", err);
     }
@@ -473,7 +445,10 @@ export async function GET(req: Request) {
       .eq("user_id", winnerUid)
       .maybeSingle();
     if (!winnerEmail) winnerEmail = (wGm?.notify_email as string | null) || null;
-    winnerName = winnerName || (wGm?.display_name as string | undefined) || undefined;
+    winnerName =
+      (wGm?.display_name as string | undefined) ||
+      winnerName ||
+      (await contestWinnerName(admin, e.group_id as string, winnerUid));
 
     // Pool = paid contributions on this engagement.
     const { data: contribs } = await admin

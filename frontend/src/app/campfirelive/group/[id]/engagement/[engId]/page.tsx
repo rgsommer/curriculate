@@ -233,6 +233,9 @@ export default function EngagementDetailPage() {
     }
   }, [revealAnswer]);
   const [textInput, setTextInput] = useState("");
+  // Photo entries: who's pictured, when it isn't the person entering (a parent
+  // entering for their child) — the winner card and emails name them.
+  const [subjectInput, setSubjectInput] = useState("");
   // Open-ended poll: free-text answer per question (keyed by question index).
   const [openPollAnswers, setOpenPollAnswers] = useState<Record<number, string>>({});
   // Truth or Dare: which one the responder picked + an optional photo (proof).
@@ -2099,6 +2102,32 @@ export default function EngagementDetailPage() {
   };
 
   // Host: re-send the reveal email (e.g. if a first send went out with a bad link).
+  // Contest host: re-send the winner celebration (winner) + announcement (everyone).
+  const [announcing, setAnnouncing] = useState(false);
+  const announceWinnerAgain = async () => {
+    if (announcing || !session) return;
+    if (!(await cfConfirm("Re-send the winner celebration to the winner and the announcement to everyone in the group?")))
+      return;
+    setAnnouncing(true);
+    try {
+      const res = await fetch("/api/campfire/engagement/announce-winner", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ engagementId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      cfAlert(
+        res.ok
+          ? `🏆 Sent — ${data?.winnerName ?? "the winner"} got the celebration, and ${Math.max(0, (data?.sent ?? 1) - 1)} others got the announcement.`
+          : data?.error || "Couldn't send."
+      );
+    } catch {
+      cfAlert("Couldn't send.");
+    } finally {
+      setAnnouncing(false);
+    }
+  };
+
   // recipientOnly: a card's host re-sends just the "your card is here" email to the
   // guest of honour, without emailing every signer again.
   const resendReveal = async (recipientOnly = false) => {
@@ -2481,6 +2510,7 @@ export default function EngagementDetailPage() {
     }
     if (typeof c.text === "string") setTextInput(c.text);
     if (typeof c.caption === "string") setTextInput(c.caption);
+    if (typeof c.subject === "string") setSubjectInput(c.subject);
     if (engagement.type === "poll" && isOpenPoll) {
       const ans = (c.answers ?? {}) as Record<string, string>;
       const init: Record<number, string> = {};
@@ -2973,9 +3003,11 @@ export default function EngagementDetailPage() {
       media_url: mediaItems[0]?.url,
       media_type: mediaItems[0]?.type,
       caption: textInput.trim() || undefined,
+      subject: subjectInput.trim().slice(0, 60) || undefined,
     });
     setSubmitting(false);
     setTextInput("");
+    setSubjectInput("");
     setMediaItems([]);
   };
 
@@ -3533,6 +3565,14 @@ export default function EngagementDetailPage() {
       case "photo_pose":
         return (
           <div className="space-y-3">
+            <input
+              type="text"
+              value={subjectInput}
+              onChange={(e) => setSubjectInput(e.target.value)}
+              maxLength={60}
+              placeholder="Who's in the photo? (optional — e.g. your child's name)"
+              className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 outline-none"
+            />
             <textarea
               value={textInput}
               onChange={(e) => setTextInput(e.target.value)}
@@ -5990,6 +6030,11 @@ export default function EngagementDetailPage() {
                         )
                     )}
                   </div>
+                  {content.subject ? (
+                    <p className="mt-1 text-sm font-semibold text-slate-800">
+                      📸 {content.subject as string}
+                    </p>
+                  ) : null}
                   {content.caption ? (
                     <p className="mt-1 text-sm text-slate-600">
                       {content.caption as string}
@@ -6011,6 +6056,11 @@ export default function EngagementDetailPage() {
                       className="w-full max-h-64 object-cover"
                     />
                   )}
+                  {content.subject ? (
+                    <p className="mt-1 text-sm font-semibold text-slate-800">
+                      📸 {content.subject as string}
+                    </p>
+                  ) : null}
                   {content.caption && (
                     <p className="text-sm text-slate-600 mt-1">{content.caption as string}</p>
                   )}
@@ -8197,6 +8247,15 @@ export default function EngagementDetailPage() {
             >
               {resendingReveal ? "Sending…" : "📨 Re-send the reveal email to everyone"}
             </button>
+            {raffleWinnerUserId && (
+              <button
+                onClick={announceWinnerAgain}
+                disabled={announcing}
+                className="ml-3 text-xs font-medium text-amber-700 underline hover:text-amber-800 disabled:opacity-50"
+              >
+                {announcing ? "Sending…" : "🏆 Re-send the winner announcement"}
+              </button>
+            )}
             {isBirthdayCard && (
               <button
                 onClick={() => resendReveal(true)}

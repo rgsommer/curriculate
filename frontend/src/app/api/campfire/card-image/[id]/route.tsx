@@ -44,7 +44,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 
   const res = await fetch(
     `${url}/rest/v1/engagements?id=eq.${id}&select=type,title,birth_year,deadline,config,cover_image_url`,
-    { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+    { headers: { apikey: key, Authorization: `Bearer ${key}` }, cache: "no-store" }
   );
   const rows = res.ok ? ((await res.json()) as Array<Record<string, unknown>>) : [];
   const e = rows[0];

@@ -557,20 +557,38 @@ export function contestWinnerEmail(opts: {
   byScore: boolean; // score tournament (best total) vs a group vote
   prize: "paid" | "pending" | "none";
   prizeText?: string | null; // host-described prize the host delivers themselves
+  imageUrl?: string; // the winner card (/api/campfire/winner-image/[id])
+  giftCents?: number; // paid into the prize pot
+  giftCurrency?: string | null;
+  subject?: string | null; // who's in the winning photo, when not the entrant ("Pippin")
 }) {
-  const { forWinner, groupName, title, url, winnerName, byScore, prize, prizeText } = opts;
+  const { forWinner, groupName, title, url, winnerName, byScore, prize, prizeText, imageUrl, giftCents = 0, giftCurrency } = opts;
+  const subj = opts.subject?.trim() || null;
+  const star = subj ?? winnerName; // who the group cheers for
   const why = byScore ? "posted the best total score" : "got the most votes from the group";
+  // The prize pot, stated as what was actually collected ("a $10 gift card").
+  const cur = (giftCurrency || "usd").toUpperCase();
+  const amt = giftCents > 0
+    ? `$${(giftCents / 100).toFixed(giftCents % 100 ? 2 : 0)}${cur === "USD" ? "" : ` ${cur}`}`
+    : null;
+  const giftAll = amt ? `🎁 Plus a ${amt} gift card from the prize pot to go with it!` : "";
   const subject = forWinner
     ? `🏆 You won "${title}"!`
-    : `🏆 We have a winner — ${winnerName} won "${title}"`;
-  const headline = forWinner ? "You won! 🎉" : `${winnerName} won! 🏆`;
+    : `🏆 We have a winner — ${star} won "${title}"`;
+  const headline = forWinner ? (subj ? `${subj} won! 🎉` : "You won! 🎉") : `${star} won! 🏆`;
   const lead = forWinner
-    ? `Congratulations — your entry in "${title}" (${groupName}) ${why}.`
-    : `The ${byScore ? "scores" : "votes"} are in for "${title}" in ${groupName} — ${winnerName}'s entry ${why}.${
+    ? `Congratulations — your entry${subj ? ` of ${subj}` : ""} in "${title}" (${groupName}) ${why}.`
+    : `The ${byScore ? "scores" : "votes"} are in for "${title}" in ${groupName} — ${
+        subj ? `the photo of ${subj} (entered by ${winnerName})` : `${winnerName}'s entry`
+      } ${why}.${
         prizeText ? ` They win: ${prizeText}.` : ""
       } Go cheer them on!`;
   const prizeLine = !forWinner
-    ? ""
+    ? giftAll
+    : amt
+    ? `Your prize: a ${amt} gift card from the prize pot${prizeText ? `, plus ${prizeText}` : ""} — ${
+        prize === "paid" ? "it's on its way to your inbox." : "the host will send it to you."
+      }`
     : prizeText
     ? `Your prize: ${prizeText} — the host will get it to you.${
         prize === "paid" ? " Your gift card from the prize pot is on its way to your inbox too." : ""
@@ -584,16 +602,20 @@ export function contestWinnerEmail(opts: {
   const text = `${headline}\n\n${lead}${prizeLine ? `\n\n${prizeLine}` : ""}\n\n${cta}: ${url}`;
   const html = `
 <div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
-  <div style="font-size:44px;">🏆</div>
-  <h1 style="font-size:24px; margin:8px 0;">${escapeHtml(headline)}</h1>
+  ${
+    imageUrl
+      ? `<a href="${url}" style="display:block; text-decoration:none;"><img src="${imageUrl}" width="480" alt="${escapeHtml(`${star} won ${title}`)}" style="display:block; width:100%; max-width:480px; height:auto; border:0; border-radius:16px;"></a>`
+      : `<div style="font-size:44px;">🏆</div>`
+  }
+  <h1 style="font-size:24px; margin:${imageUrl ? "16px" : "8px"} 0 8px;">${escapeHtml(headline)}</h1>
   <p style="color:#475569; margin:0 0 12px;">${escapeHtml(lead)}</p>
   ${
     prizeLine
-      ? `<p style="margin:0 0 12px; padding:12px 14px; background:#fffbeb; border:1px solid #fde68a; border-radius:12px; color:#92400e;">🎁 ${escapeHtml(prizeLine)}</p>`
+      ? `<p style="margin:0 0 12px; padding:12px 14px; background:#fffbeb; border:1px solid #fde68a; border-radius:12px; color:#92400e; font-weight:600;">${prizeLine.startsWith("🎁") ? "" : "🎁 "}${escapeHtml(prizeLine)}</p>`
       : ""
   }
   ${emailButton(url, escapeHtml(cta))}
-  <p style="margin:0;"><a href="${url}" style="color:#64748b; font-size:12px; word-break:break-all;">${url}</a></p>
+  ${imageUrl ? "" : `<p style="margin:0;"><a href="${url}" style="color:#64748b; font-size:12px; word-break:break-all;">${url}</a></p>`}
 </div>`.trim();
   return { subject, text, html };
 }
