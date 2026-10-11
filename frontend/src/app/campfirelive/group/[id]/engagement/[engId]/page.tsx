@@ -584,6 +584,7 @@ export default function EngagementDetailPage() {
   // Photo challenge: up to 3 photos/videos per response.
   const [mediaItems, setMediaItems] = useState<{ url: string; type: string }[]>([]);
   const [resendingReveal, setResendingReveal] = useState(false);
+  const [announcing, setAnnouncing] = useState(false); // contest: re-send the winner
   // Un-reveal asks when it should reveal again (one tap: +7 days).
   const [resealOpen, setResealOpen] = useState(false);
   const [resealDate, setResealDate] = useState("");
@@ -2103,7 +2104,6 @@ export default function EngagementDetailPage() {
 
   // Host: re-send the reveal email (e.g. if a first send went out with a bad link).
   // Contest host: re-send the winner celebration (winner) + announcement (everyone).
-  const [announcing, setAnnouncing] = useState(false);
   const announceWinnerAgain = async () => {
     if (announcing || !session) return;
     if (!(await cfConfirm("Re-send the winner celebration to the winner and the announcement to everyone in the group?")))
