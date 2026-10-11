@@ -2099,11 +2099,17 @@ export default function EngagementDetailPage() {
   };
 
   // Host: re-send the reveal email (e.g. if a first send went out with a bad link).
-  const resendReveal = async () => {
+  // recipientOnly: a card's host re-sends just the "your card is here" email to the
+  // guest of honour, without emailing every signer again.
+  const resendReveal = async (recipientOnly = false) => {
     if (resendingReveal || !session) return;
     if (
       typeof window !== "undefined" &&
-      !(await cfConfirm("Re-send the reveal email to everyone in the group?"))
+      !(await cfConfirm(
+        recipientOnly
+          ? "Re-send the card to the recipient only? Nobody else is emailed."
+          : "Re-send the reveal email to everyone in the group?"
+      ))
     )
       return;
     setResendingReveal(true);
@@ -2118,10 +2124,18 @@ export default function EngagementDetailPage() {
           engagementId,
           origin: window.location.origin,
           force: true,
+          recipientOnly,
         }),
       });
       const data = await res.json();
-      if (!res.ok || data?.sendError) {
+      if (recipientOnly && res.ok && !data?.sendError) {
+        const reached: string[] = data?.recipientsReached ?? [];
+        cfAlert(
+          reached.length
+            ? `🎉 Card re-sent to ${reached.join(", ")}.`
+            : data?.error || "⚠️ This card has no recipient email on file."
+        );
+      } else if (!res.ok || data?.sendError) {
         cfAlert(data?.error || data?.sendError || "Couldn't re-send.");
       } else {
         const reached: string[] = data?.recipientsReached ?? [];
@@ -8177,12 +8191,21 @@ export default function EngagementDetailPage() {
             })()}
           <div className="mt-3 border-t border-slate-100 pt-3">
             <button
-              onClick={resendReveal}
+              onClick={() => resendReveal()}
               disabled={resendingReveal}
               className="text-xs font-medium text-sky-600 underline hover:text-sky-700 disabled:opacity-50"
             >
               {resendingReveal ? "Sending…" : "📨 Re-send the reveal email to everyone"}
             </button>
+            {isBirthdayCard && (
+              <button
+                onClick={() => resendReveal(true)}
+                disabled={resendingReveal}
+                className="ml-3 text-xs font-medium text-sky-600 underline hover:text-sky-700 disabled:opacity-50"
+              >
+                💌 Re-send to {recipientLabel} only
+              </button>
+            )}
             <p className="mt-0.5 text-xs text-slate-500">
               Use this if an earlier email went out with a broken link.
             </p>

@@ -29,6 +29,8 @@ export async function POST(req: Request) {
     const originIn = typeof body?.origin === "string" ? body.origin : "";
     // Host re-send (e.g. the first send had a bad link) — bypass the once-only lock.
     const force = body?.force === true;
+    // Host re-send to the card's recipient(s) only — signers aren't emailed again.
+    const recipientOnly = force && body?.recipientOnly === true;
     if (!engagementId) {
       return NextResponse.json({ error: "Missing engagement." }, { status: 400 });
     }
@@ -41,7 +43,7 @@ export async function POST(req: Request) {
     const svc = createClient(url, serviceKey);
     const { data: eng } = await svc
       .from("engagements")
-      .select("id, group_id, title, status, reveal_notified_at, birth_year, deadline, type, config, excluded_user_ids, excluded_emails")
+      .select("id, group_id, creator_id, title, status, reveal_notified_at, birth_year, deadline, type, config, excluded_user_ids, excluded_emails")
       .eq("id", engagementId)
       .single();
     if (!eng) {
@@ -57,6 +59,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
     const { admin } = auth;
+    if (recipientOnly && (eng.type !== "birthday" || auth.requesterId !== eng.creator_id)) {
+      return NextResponse.json({ error: "Only the card's host can do that." }, { status: 403 });
+    }
 
     if (!force && eng.reveal_notified_at) {
       return NextResponse.json({ ok: true, skipped: "already sent" });
@@ -125,7 +130,8 @@ export async function POST(req: Request) {
     );
 
     // Native push (no-op until FCM is configured) — nudge devices to open the reveal.
-    try {
+    // A recipient-only re-send skips it (it would ping every signer).
+    if (!recipientOnly) try {
       const [{ data: gmP }, { data: egP }, { count: nResp }] = await Promise.all([
         admin.from("group_members").select("user_id").eq("group_id", eng.group_id),
         admin.from("engagement_guests").select("user_id").eq("engagement_id", engagementId),
@@ -173,7 +179,13 @@ export async function POST(req: Request) {
         ...Array.from(recipientEmails),
         ...recipientByEmail,
       ]);
-      const msgs = emails.map((to) => {
+      const targets = recipientOnly
+        ? Array.from(recipientSet)
+        : emails;
+      if (targets.length === 0) {
+        return NextResponse.json({ ok: false, sent: 0, card: true, error: "This card has no recipient email." });
+      }
+      const msgs = targets.map((to) => {
         const m = cardRevealEmail({
           groupName: group?.name ?? "your group",
           title: engTitle,
@@ -196,7 +208,7 @@ export async function POST(req: Request) {
       }
       // Diagnostics: which recipients actually got an email, and how many can't be
       // reached (guest accounts with no email on file).
-      const recipientsReached = emails.filter((e) =>
+      const recipientsReached = targets.filter((e) =>
         recipientSet.has(e.toLowerCase())
       );
       const noEmailCount = Math.max(
@@ -207,7 +219,7 @@ export async function POST(req: Request) {
       );
       return NextResponse.json({
         ok: !sendErr,
-        sent: emails.length,
+        sent: targets.length,
         card: true,
         recipientsReached,
         noEmailCount,
