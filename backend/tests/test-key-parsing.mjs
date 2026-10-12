@@ -22,7 +22,7 @@ const { routeRubricAndKey, canonicaliseKeyText } =
   await import(path.join(repo, "frontend/src/app/grading/consensusKey.js"));
 const { markSchemeFromKey, declaredTotals } =
   await import(path.join(repo, "backend/utils/sectionTotals.js"));
-const { parseKeyAnswers, isClosedSetSection, answersMatch, normaliseAnswer } =
+const { parseKeyAnswers, isClosedSetSection, answersMatch, normaliseAnswer, arguablyRight } =
   await import(path.join(repo, "backend/utils/objectiveMarking.js"));
 
 let failed = 0;
@@ -191,6 +191,62 @@ console.log("\nleft alone");
 
   check("empty stays empty", canonicaliseKeyText(""), "");
   check("whitespace stays whitespace", canonicaliseKeyText("   "), "   ");
+}
+
+/* ---------------------------------------------------------------- *
+ * 4. A key whose line breaks are gone.
+ *
+ * This app's own PDF reader joined every text run with a space, so an
+ * uploaded key arrived as one paragraph and parsed to nothing: "no mark
+ * scheme could be read from the key" on a perfectly good 50-mark paper.
+ * The reader is fixed, but a key copied out of a PDF viewer by hand arrives
+ * the same way, so the parser handles the shape too.
+ * ---------------------------------------------------------------- */
+console.log("\na key whose line breaks are gone");
+{
+  const FLAT = "Answer Key — Chapter Test  Geography 8 · Chapter 1: Population Patterns and Growth · pp. 16–43  "
+    + "Teacher copy. Total 40 marks.  A. Matching  ( 10 marks )  1. E   2. I   3. C   4. H   5. D   6. B   7. J   "
+    + "8. A   9. G   10. F  B. True or false  ( 10 marks )  1.   FALSE  — Distribution is WHERE people are; "
+    + "density   is HOW MANY per km².  2.   TRUE  3.   TRUE  4.   FALSE  — Canada is sparsely populated — about   "
+    + "4 people per km².  5.   TRUE  6.   FALSE  — Africa grows at about 2.6% a year, Europe   at about 0.2%.  "
+    + "7.   FALSE  — Most Nigerians live on the fertile southern  coast and delta.  8.   TRUE  9.   TRUE  "
+    + "10.   TRUE  C. Fill in the blank  ( 5 marks )  1.   where · there · care  2.   area (in km²)  "
+    + "3.   choropleth  4.   9.1 billion  5.   Carrying  D. Short answer   ( 15 marks )  "
+    + "1. Explain the difference between distribution and density. Distribution is the pattern of where people "
+    + "are — Canadians sit in a narrow band along the southern border. Density is how many per km².";
+
+  const s = schemeOf(FLAT);
+  check("one run-on line still yields the sections",
+    s.sections.map((x) => `${x.letter}/${x.outOf}`), ["A/10", "B/10", "C/5", "D/15"]);
+  check("the parts add to the stated total", s.total, 40);
+  check("matching is a closed set", isClosedSetSection(s.answers.get("A")), true);
+  check("true/false is a closed set", isClosedSetSection(s.answers.get("B")), true);
+  check("A10 survives", s.answers.get("A").get("10"), "F");
+
+  // "2.6% a year" read as item 2 answered "6% a year" and "0.2%" as item 0,
+  // which put eleven items in a ten-item section and made each worth 0.83.
+  check("ten true/false items, not eleven", s.answers.get("B").size, 10);
+  check("a decimal is not an item", s.answers.get("B").has("0"), false);
+  check("B6 is FALSE, not the reason", s.answers.get("B").get("6"), "F");
+
+  // The teacher's reason comes off a truth value, but a short-answer key
+  // states the whole response it wants and must not be cut at its dash.
+  // It is read from the key's own text, not from parseKeyAnswers, which
+  // drops anything over 40 characters on purpose — a model answer is not a
+  // lookup, and the written marker is what reads it.
+  const d1 = s.key.split("\n").find((l) => l.startsWith("D1:")) || "";
+  check("the model answer is kept whole", d1.includes("Density is how many per km²"), true);
+  check("and is not cut at its first dash", d1.includes("narrow band along the southern border"), true);
+
+  // A blank with more than one acceptable filler. The mark is given and the
+  // teacher sees it flagged — never a cross on an answer that may be right.
+  const arg = (wrote, L, n) =>
+    arguablyRight(normaliseAnswer(wrote), s.answers.get(L).get(n));
+  check("one of the listed answers is accepted", arg("where", "C", "1"), true);
+  check("another of them too", arg("care", "C", "1"), true);
+  check("a wrong one is still wrong", arg("density", "C", "1"), false);
+  check("a single-answer blank is unaffected",
+    answersMatch(normaliseAnswer("choropleth"), s.answers.get("C").get("3")), true);
 }
 
 console.log(`\n${failed ? `${failed} check(s) FAILED` : "all checks passed"}`);

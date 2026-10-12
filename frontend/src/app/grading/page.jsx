@@ -1623,6 +1623,52 @@ export default function GradingPage() {
       return mammothPromise;
     }
 
+    // pdf.js returns one item per text-showing operator. That is a run, not a
+    // line, and frequently not even a whole word — a ligature arrives as its
+    // own item. Joining the items with a space therefore did two things at
+    // once: it turned "difference" into "di ff erence", and it flattened the
+    // whole document onto a single line.
+    //
+    // Which is how an uploaded answer key became unmarkable. Every parser
+    // here is line-based, so a 50-mark Geography key arrived as one run-on
+    // paragraph, no mark scheme could be read from it, and the batch refused
+    // to mark rather than publish against a guess.
+    //
+    // Lines come from the items' own end-of-line flag where the file sets
+    // them, and from a change of baseline where it does not. A space goes in
+    // only where the page has a real gap wide enough to be one at that font
+    // size — so a ligature rejoins its word, and a superscript does not start
+    // a new line and split "km²" in two.
+    function linesFromTextContent(content) {
+      const items = (content?.items || []).filter((it) => typeof it?.str === "string");
+      const marksEOL = items.some((it) => it.hasEOL);
+      const lines = [];
+      let line = "";
+      let endX = null;
+      let baseline = null;
+      const flush = () => {
+        const t = line.replace(/\s+/g, " ").trim();
+        if (t) lines.push(t);
+        line = "";
+        endX = null;
+      };
+      for (const it of items) {
+        const tr = Array.isArray(it.transform) ? it.transform : null;
+        const x = tr ? tr[4] : null;
+        const y = tr ? tr[5] : null;
+        if (!marksEOL && baseline !== null && y !== null && Math.abs(y - baseline) > 1) flush();
+        const gap = Math.max(0.5, (Number(it.height) || 0) * 0.2);
+        if (line && x !== null && endX !== null && x - endX > gap
+            && !/\s$/.test(line) && !/^\s/.test(it.str)) line += " ";
+        line += it.str;
+        if (x !== null) endX = x + (Number(it.width) || 0);
+        if (y !== null) baseline = y;
+        if (it.hasEOL) flush();
+      }
+      flush();
+      return lines;
+    }
+
     async function extractTextFromFile(file) {
       const name = file.name.toLowerCase();
 
@@ -1642,7 +1688,7 @@ export default function GradingPage() {
         for (let i = 1; i <= doc.numPages; i++) {
           const page = await doc.getPage(i);
           const content = await page.getTextContent();
-          pages.push(content.items.map((it) => it.str).join(" "));
+          pages.push(linesFromTextContent(content).join("\n"));
         }
         return pages.join("\n\n");
       }

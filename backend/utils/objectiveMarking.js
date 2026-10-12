@@ -131,6 +131,29 @@ export function arguablyRight(studentAnswer, keyAnswer) {
   // sit nearby. Not decidable by comparison.
   if (sameWord(asWord(s), asWord(k), 2)) return true;
 
+  // A key that offers more than one answer for the blank — "where · there ·
+  // care", "choropleth / shaded" — is a list, not a string. A student who
+  // writes any one of them has answered it, and a student who writes the
+  // lot has too, so the comparison is made against each part and against
+  // the whole. It comes through here rather than through answersMatch
+  // because which of those two the key meant cannot be told from the text:
+  // the mark is given and the teacher sees it flagged, which is the way
+  // round that never tells a student they are wrong when they are not.
+  // A slash or an "or" counts as a separator only with space around it:
+  // "choropleth / shaded" is a choice, "3/4" is a fraction and "km/h" is a
+  // unit, and splitting those would accept a student who wrote 3 for 3/4.
+  const parts = k.split(/\s*[·•|]\s*|\s+\/\s+|\s+or\s+/).map((x) => x.trim()).filter(Boolean);
+  if (parts.length > 1) {
+    if (parts.some((p) => p === s || answersMatch(s, p))) return true;
+    // Or the student wrote the lot, which is the other thing a list like
+    // this can mean — one blank per part.
+    const inReply = (p) => {
+      const esc = p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(`(^|[^a-z0-9])${esc}([^a-z0-9]|$)`).test(s);
+    };
+    if (parts.every(inReply)) return true;
+  }
+
   // The key's answer standing as a whole word inside a longer reply —
   // "Start at 4 and multiply 3" against a key of "3". The answer is in
   // there, and so is a 4.

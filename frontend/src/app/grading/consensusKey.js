@@ -765,7 +765,11 @@ function plainLine(raw) {
  * 4" would otherwise read as item 6 answered "4".
  */
 function numberedItemsOn(line) {
-  const re = /(?:^|[\s,;])(\d{1,2})\s*([.)]|→|->|⟶)\s*/g;
+  // A digit straight after the point means a number, not an item: "Africa
+  // grows at about 2.6% a year, Europe at about 0.2%" was read as item 2
+  // answered "6% a year, Europe at about" and item 0 answered "2%", which
+  // put eleven items in a ten-item section and shifted the marks per item.
+  const re = /(?:^|[\s,;])(\d{1,2})\s*([.)]|→|->|⟶)(?!\d)\s*/g;
   const hits = [];
   let m;
   let style = null;
@@ -792,6 +796,28 @@ function numberedItemsOn(line) {
 }
 
 /**
+ * A key that arrived with its line breaks gone, put back on lines.
+ *
+ * Copying out of a PDF viewer flattens a document into one paragraph, and so
+ * did this app's own PDF reader until it was taught otherwise. Everything
+ * below works a line at a time, so a flattened key parsed to nothing at all.
+ *
+ * Only a line long enough to be plainly a flattened document is touched, and
+ * only at two places: before a section heading that states its marks, and
+ * before a numbered item. "2.6% a year" has no space after the point and
+ * "pp. 16-43" no digit before it, so neither is mistaken for one.
+ */
+function unflatten(text) {
+  return String(text).split("\n").flatMap((line) => {
+    if (line.length < 180) return [line];
+    return line
+      .replace(/\s+(?=[A-Z][.)]\s+[A-Z][^.()]{2,40}\(\s*\d{1,3}\s*(?:marks?)?\s*\))/g, "\n")
+      .replace(/\s+(?=\d{1,2}[.)]\s)/g, "\n")
+      .split("\n");
+  });
+}
+
+/**
  * Turn a pasted answer key into the extractor's own lines.
  * Returns the text unchanged when it is already canonical, or when it does
  * not read like a key at all — this must never make a key worse.
@@ -815,14 +841,21 @@ export function canonicaliseKeyText(text) {
       : 1;
     for (const it of pending) {
       // "FALSE — Canada is sparsely populated" is the answer plus the
-      // teacher's reason; the answer is the part before the dash.
-      const answer = it.answer.split(/\s+[—–-]\s+/)[0].trim();
+      // teacher's reason, so the answer is the part before the dash. Only
+      // where the head is a letter or a truth value, though: a short-answer
+      // key sets out the full response it is looking for, and cutting that
+      // at its first dash handed the written marker half of what the key
+      // actually said.
+      const whole = it.answer.trim();
+      const answer = /^(TRUE|FALSE|[A-J])\b/i.test(whole)
+        ? whole.split(/\s+[—–-]\s+/)[0].trim()
+        : whole;
       if (answer) out.push(`${letter}${it.n}: ${answer} (/${per})`);
     }
     pending = [];
   };
 
-  for (const line of raw.split("\n")) {
+  for (const line of unflatten(raw)) {
     const s = plainLine(line);
     if (!s) continue;
 
