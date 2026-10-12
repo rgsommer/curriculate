@@ -249,5 +249,33 @@ console.log("\na key whose line breaks are gone");
     answersMatch(normaliseAnswer("choropleth"), s.answers.get("C").get("3")), true);
 }
 
+/* ---------------------------------------------------------------- *
+ * 5. A section that numbers nothing.
+ *
+ * "E. Paragraph ( 10 marks )" is marked against a rubric, not a list of
+ * answers. It yielded no scheme at all, so a 50-mark paper read as a
+ * 40-mark one and the guard refused the whole stack.
+ * ---------------------------------------------------------------- */
+console.log("\na section marked against a rubric, not a list");
+{
+  const KEY = [
+    "Answer Key — Chapter Test. Teacher copy. Total 20 marks.",
+    "A. Matching  ( 10 marks )",
+    "1. E   2. I   3. C   4. H   5. D   6. B   7. J   8. A   9. G   10. F",
+    "E. Paragraph  ( 10 marks )",
+    "Mark out of 10: position stated clearly (2) · at least two accurate facts from the chapter (4) ·",
+    "explanation that connects the facts to the position (3) · writing that can be followed (1).",
+  ].join("\n");
+
+  const s = schemeOf(KEY);
+  check("the unnumbered section is still a section",
+    s.sections.map((x) => `${x.letter}/${x.outOf}`), ["A/10", "E/10"]);
+  check("it is one item worth the section", s.sections[1].items, 1);
+  check("the paper adds to its stated total",
+    s.sections.reduce((t, x) => t + x.outOf, 0), s.total);
+  check("and it carries its own standard for the marker",
+    (s.key.split("\n").find((l) => l.startsWith("E1:")) || "").includes("two accurate facts"), true);
+}
+
 console.log(`\n${failed ? `${failed} check(s) FAILED` : "all checks passed"}`);
 process.exit(failed ? 1 : 0);

@@ -832,8 +832,23 @@ export function canonicaliseKeyText(text) {
   let letter = null;
   let marksForSection = 0;
   let pending = [];
+  let prose = [];
 
   const flush = () => {
+    // A section that states its marks but numbers nothing is one question:
+    // a paragraph, an essay, an extended problem. The Geography key's "E.
+    // Paragraph ( 10 marks )" is marked out of a rubric — "position stated
+    // clearly (2) · two accurate facts (4) · explanation (3) · writing (1)"
+    // — with no items to list, so it produced no scheme at all and a
+    // 50-mark paper read as a 40-mark one. It becomes a single item worth
+    // the section, carrying its own standard for the marker to read.
+    if (letter && !pending.length && marksForSection > 0 && prose.length) {
+      const standard = prose.join(" ").slice(0, 400).trim();
+      if (standard) out.push(`${letter}1: ${standard} (/${marksForSection})`);
+      prose = [];
+      return;
+    }
+    prose = [];
     if (!letter || !pending.length) { pending = []; return; }
     // Marks per item from the section heading where it gives a total.
     const per = marksForSection > 0
@@ -871,10 +886,13 @@ export function canonicaliseKeyText(text) {
       // A heading may carry its items on the same line.
       const rest = s.slice(head[0].indexOf(head[1]) + 1).replace(/^\s*[.)]\s*/, "");
       pending = numberedItemsOn(" " + rest);
+      prose = [];
       continue;
     }
     if (!letter) continue;
-    pending = pending.concat(numberedItemsOn(" " + s));
+    const found = numberedItemsOn(" " + s);
+    if (found.length) pending = pending.concat(found);
+    else prose.push(s);
   }
   flush();
 
