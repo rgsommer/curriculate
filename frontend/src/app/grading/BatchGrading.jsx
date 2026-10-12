@@ -96,22 +96,36 @@ export function loadPdfJs() {
 /* ------------------------------------------------------------------
  *  PATH A — a test with an answer key.
  *
- *  Three small calls instead of one that fills in a 28-field form:
- *    1. read the paper blind      /grading/transcribe   (no key in prompt)
- *    2. mark the objective bits   in code, against the key — exact
- *    3. mark the written bits     /grading/mark-written, the key's scheme
+ *    1. read the paper blind      /grading/transcribe  (no key in prompt)
+ *    2. mark the closed sets      in code, against the key — exact
+ *    3. mark the rest             /grading/mark-paper: the whole paper and
+ *                                 the key AS THE TEACHER WROTE IT, together
  *    4. write the feedback        /grading/feedback, marks already fixed
  *
- *  Measured on the five papers the monolith handled worst, mean error went
- *  from 5.4 marks to 2.5-3.0, and the generosity on weak papers went with
- *  it — one paper from +11.5 to +4.
+ *  Step 3 used to compile the key into a lookup table and mark each section
+ *  against the table. On a Geography class of twenty, marked by hand for
+ *  comparison, that came back 7.9 marks LOW on twenty papers out of twenty
+ *  — and every cause was the compiling rather than the judging:
+ *
+ *    - thirteen students wrote "area" and were crossed, because the key
+ *      reads "area (in km²)" and a parenthetical meant for the marker had
+ *      become text the student was required to produce;
+ *    - a key offering "where · there · care" for one question gave nothing
+ *      to a student who got two of the three blanks;
+ *    - five papers published with whole sections missing, scored as
+ *      nothing, and they were the five worst results in the class.
+ *
+ *  A teacher reading their own key has none of those problems, so the key
+ *  is no longer compiled. What stays in code is what is mechanical: the
+ *  closed sets, the arithmetic, and the check that every section the key
+ *  declares actually came back.
  *
  *  Returns the same shape the monolith did, because the publishing, the
  *  PDFs, the Edsby CSV and the email all read it.
  * ------------------------------------------------------------------ */
 const SECTION_LETTER = (s) => String(s || "").trim().match(/^([A-Z])[.)\s]/)?.[1] || "";
 
-async function gradeViaPathA({ images, answerKeyText, gradeBand, subjectArea, voice, title, fallbackName, base, signal }) {
+async function gradeViaPathA({ images, answerKeyText, rawAnswerKeyText, gradeBand, subjectArea, voice, title, fallbackName, base, signal }) {
   const at = (path) => base.replace(/\/grading$/, path);
   const post = async (path, body) => {
     const r = await fetchWithRetry(at(path), {
@@ -136,20 +150,46 @@ async function gradeViaPathA({ images, answerKeyText, gradeBand, subjectArea, vo
     return r.json().catch(() => { throw new Error(`${path} did not return JSON`); });
   };
 
-  // The reading and the written marking are independent, so they go together.
-  const [blind, written] = await Promise.all([
+  // Two calls, side by side, and neither of them is given a fragment.
+  //
+  //   the blind read  — the paper with the key NOWHERE in the prompt, so a
+  //                     model cannot report the key's answers as the
+  //                     student's; matching and true/false are then settled
+  //                     in code by string comparison, which is exact;
+  //   mark-paper      — the whole paper and the KEY AS THE TEACHER WROTE IT,
+  //                     read together, for everything else.
+  //
+  // The key used to be compiled into a lookup table first and every section
+  // marked against the table. On a class of twenty that came back 7.9 marks
+  // low on twenty papers out of twenty, and the compiling was the cause:
+  // "area" crossed against a key reading "area (in km²)", nothing given for
+  // two blanks of three, and five papers published with whole sections
+  // missing. The teacher's own document does not have those problems.
+  //
+  // The canonical key still goes along, for the one job it is good at:
+  // deciding which sections are closed sets. Both calls work that out with
+  // the same function, so neither waits for the other.
+  const theKey = String(rawAnswerKeyText || "").trim() || answerKeyText;
+  const [blind, marked] = await Promise.all([
     post("/grading/transcribe", { images, gradeBand, answerKeyText }),
-    post("/grading/mark-written", { images, answerKeyText, gradeBand, subjectArea }),
+    post("/grading/mark-paper", {
+      images,
+      answerKeyText: theKey,
+      canonicalKeyText: answerKeyText,
+      gradeBand,
+      subjectArea,
+    }),
   ]);
 
   if (!blind?.ok) throw new Error("Could not read the paper.");
-  if (!written?.ok) throw new Error("Could not mark the written sections.");
+  if (!marked?.ok) throw new Error("Could not mark the paper against the key.");
 
   // A section the marker could not finish must not be published. A missing
-  // item used to be scored zero, which turned 11.5 out of 20 into 4.
-  if (written.complete === false) {
+  // section used to be scored zero, which is what put five papers of twenty
+  // between 11 and 19 marks below what they had earned.
+  if (marked.complete === false) {
     return {
-      error: `Some written items could not be marked (${(written.missing || []).join(", ")}). Re-grade this paper.`,
+      error: `Section ${(marked.missing || []).join(", ")} could not be marked. Re-grade this paper.`,
       code: "incomplete_marking",
     };
   }
@@ -159,7 +199,12 @@ async function gradeViaPathA({ images, answerKeyText, gradeBand, subjectArea, vo
   );
   const pretty = (letter) => nameOf.get(letter) || letter;
 
-  const objective = (blind.marking?.sections || []).filter((s) => s.objective);
+  // Closed sets ONLY — a letter from a column, or true/false. Measured on a
+  // hand-marked class, settling those in code cut their error from 28 marks
+  // to 10 and from 11 to 8; doing the same to the fill-in-the-blanks raised
+  // theirs from 16 to 36, because a blank has a dozen right wordings and a
+  // string comparison knows one. Those now go to the marker with the key.
+  const objective = (blind.marking?.sections || []).filter((s) => s.objective && s.closedSet);
   const sections = [
     ...objective.map((s) => ({
       name: pretty(s.letter),
@@ -174,8 +219,8 @@ async function gradeViaPathA({ images, answerKeyText, gradeBand, subjectArea, vo
           correct_answer: i.answer || "",
         })),
     })),
-    ...(written.sections || []).map((s) => ({
-      name: pretty(s.letter),
+    ...(marked.sections || []).map((s) => ({
+      name: pretty(s.letter) === s.letter ? (s.name || s.letter) : pretty(s.letter),
       score: Number(s.score) || 0,
       out_of: Number(s.out_of) || 0,
       teacher_comment: "",
@@ -201,15 +246,15 @@ async function gradeViaPathA({ images, answerKeyText, gradeBand, subjectArea, vo
   // fragment look identical on the report, so the teacher has no way to tell
   // them apart — and 6/7 reads as a good paper.
   //
-  // The scheme comes back from the server that used it, rather than being
-  // re-derived here: this file and backend/utils have drifted apart three
-  // times this week, and each time the drift was the bug.
-  const declared = Number(written.paperTotal) || 0;
-  // No scheme at all is the loudest version of the same fault, and it was
-  // the quietest: with nothing parsed there is no total to disagree with, so
+  // The sections the key declares come back from the server that read them,
+  // rather than being re-derived here: this file and backend/utils have
+  // drifted apart three times this week, and each time the drift was the bug.
+  const declared = Number(marked.paperTotal) || 0;
+  // No sections at all is the loudest version of the same fault, and it was
+  // the quietest: with nothing read there is no total to disagree with, so
   // every check below passes and the paper goes out marked against whatever
   // the model made up.
-  if (!(written.scheme || []).length || !outOf) {
+  if (!(marked.declared || []).length || !outOf) {
     return {
       error: "No mark scheme could be read from the key — not marking against a guess.",
       code: "scheme_mismatch",
@@ -217,9 +262,9 @@ async function gradeViaPathA({ images, answerKeyText, gradeBand, subjectArea, vo
   }
   const markedLetters = new Set([
     ...objective.map((s) => s.letter),
-    ...(written.sections || []).map((s) => s.letter),
+    ...(marked.sections || []).map((s) => s.letter),
   ]);
-  const unmarked = (written.scheme || [])
+  const unmarked = (marked.declared || [])
     .map((s) => s.letter)
     .filter((l) => !markedLetters.has(l));
   if (unmarked.length) {
@@ -250,7 +295,7 @@ async function gradeViaPathA({ images, answerKeyText, gradeBand, subjectArea, vo
           why: i.verdict === "blank" ? "left blank" : `the answer is ${i.answer}`,
         }))
     ),
-    ...(written.items || [])
+    ...(marked.items || [])
       .filter((i) => i.marks < i.out_of)
       .map((i) => ({ id: i.id, wrote: i.wrote, why: i.why })),
   ];
@@ -282,8 +327,8 @@ async function gradeViaPathA({ images, answerKeyText, gradeBand, subjectArea, vo
         marks_out_of: null,
       })),
     })),
-    ...(written.sections || []).map((s) => ({
-      name: pretty(s.letter),
+    ...(marked.sections || []).map((s) => ({
+      name: pretty(s.letter) === s.letter ? (s.name || s.letter) : pretty(s.letter),
       score: Number(s.score) || 0,
       out_of: Number(s.out_of) || 0,
       items: (s.items || []).map((i) => ({
@@ -1700,6 +1745,10 @@ export default function BatchGrading({
     // the mark scheme read as one section and a 30-mark test went out marked
     // 6 out of 7. Only a key that arrived in the rubric box was ever tidied.
     const routed = routeRubricAndKey(rubricOverride, effectiveAnswerKey);
+    // The key as it arrived, kept beside the canonical one. The marker is
+    // given the teacher's own document; only the closed-set lookup and the
+    // key-review table read the canonical form.
+    const rawAnswerKey = routed.promoted ? String(rubricOverride || "") : effectiveAnswerKey;
     if (routed.answerKey !== effectiveAnswerKey) {
       if (routed.promoted) {
         say("That rubric upload is an answer key — marking against it");
@@ -1822,6 +1871,7 @@ export default function BatchGrading({
             data = await gradeViaPathA({
               images,
               answerKeyText: effectiveAnswerKey,
+              rawAnswerKeyText: rawAnswerKey,
               gradeBand,
               subjectArea: subjectArea || undefined,
               voice: feedbackVoice || undefined,
@@ -3805,7 +3855,23 @@ export default function BatchGrading({
     if (!csv) { alert("No graded results to export yet."); return; }
     // Names are normalised to the roster spelling on email; do the same here,
     // or the gradebook gets whatever the handwriting was read as.
-    const safeTitle = String(effectiveTitle || "grades").replace(/[^\w.-]+/g, "-").slice(0, 40);
+    //
+    // The FILE is named after the stack it came from rather than after what
+    // the grader inferred the subject to be. Three classes exported in one
+    // afternoon all arrived as "edsby-Geography-Worksheet-<today>.csv" with
+    // nothing to tell them apart, when the scan they came from was called
+    // "Geo8B Ch Review Handouts". The teacher's own title still wins where
+    // they have typed one, and the scanner's timestamp comes off the front
+    // since the date is already on the end.
+    const fromScan = String(pdfName || "")
+      .replace(/\.pdf$/i, "")
+      .replace(/^\s*\d{8}[_-]\d{6}\s*[-—–]?\s*/, "")
+      .trim();
+    const base = emailTitle.trim() || fromScan || effectiveTitle || "grades";
+    const safeTitle = String(base)
+      .replace(/[^\w.-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60) || "grades";
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -3817,7 +3883,7 @@ export default function BatchGrading({
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     setEdsbyExported(true);
     setTimeout(() => setEdsbyExported(false), 2500);
-  }, [buildEdsbyCsv, effectiveTitle]);
+  }, [buildEdsbyCsv, effectiveTitle, pdfName, emailTitle]);
 
   const sendEmail = useCallback(async () => {
     // An array, so the backend does not have to re-split it and a trailing

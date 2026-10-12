@@ -887,6 +887,14 @@ export function canonicaliseKeyText(text) {
       const rest = s.slice(head[0].indexOf(head[1]) + 1).replace(/^\s*[.)]\s*/, "");
       pending = numberedItemsOn(" " + rest);
       prose = [];
+      // A heading that numbers nothing may still carry the section's standard
+      // on its own line — "E. Paragraph ( 10 marks ) Mark out of 10: position
+      // (2) · two facts (4) ...". Keep whatever follows the marks bracket, or
+      // the section is lost on a key whose line breaks are gone.
+      if (!pending.length && marks) {
+        const after = rest.slice(rest.indexOf(marks[0]) + marks[0].length).trim();
+        if (after) prose.push(after);
+      }
       continue;
     }
     if (!letter) continue;

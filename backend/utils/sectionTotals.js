@@ -90,6 +90,44 @@ export function markSchemeFromKey(keyText) {
 }
 
 /**
+ * What each section is worth, as the key's own headings state it.
+ *
+ * "A. Matching ( 10 marks )", "E. Paragraph ( 10 marks )". This is the key
+ * read as a document rather than compiled into a lookup table, and it is
+ * used only as a CHECKLIST — which sections exist and what each is worth —
+ * never as the answers. The answers go to the marker as the teacher wrote
+ * them, because compiling them is what crossed a student who answered
+ * "area" against a key reading "area (in km²)".
+ *
+ * Works on a key whose line breaks are gone, since the pattern does not
+ * depend on them. Falls back to summing the per-item allocation for a key
+ * already in the extractor's canonical form, which has no headings.
+ *
+ * @returns Map "A" -> { title: "Matching", outOf: 10 }
+ */
+export function sectionMarksFromKey(keyText) {
+  const text = String(keyText || "");
+  // A second paper's key restarts the lettering; stop before it.
+  const second = text.search(/={2,}\s*ANSWER\s*KEY/i);
+  const head = second > 0 ? text.slice(0, second) : text;
+
+  const out = new Map();
+  const re = /(?:^|\s)([A-Z])[.)]\s+([A-Za-z][^()\n]{1,60}?)\s*\(\s*(\d{1,3})\s*marks?\s*\)/g;
+  let m;
+  while ((m = re.exec(head))) {
+    const outOf = Number(m[3]);
+    if (!Number.isFinite(outOf) || outOf <= 0) continue;
+    if (!out.has(m[1])) out.set(m[1], { title: m[2].trim(), outOf });
+  }
+  if (out.size) return out;
+
+  for (const [letter, items] of markSchemeFromKey(keyText)) {
+    out.set(letter, { title: "", outOf: items.reduce((t, i) => t + i.outOf, 0) });
+  }
+  return out;
+}
+
+/**
  * The scheme written out for the prompt, so the model marks against the
  * allocation rather than inventing one.
  */
