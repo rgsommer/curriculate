@@ -17804,8 +17804,22 @@ How the key means to be read — it assumes a teacher and does not spell these o
   naming it, one for explaining it, one for evidence" — apply that breakdown.
 - A right answer reached by sound work the key does not show earns full
   marks. The key shows one route, not the only one.
+- For a longer question the key gives ONE good answer, not a checklist.
+  Where it lists possibilities — "Natural: arable land, fresh water, a mild
+  climate, resources" — the list shows the KIND of answer wanted, and
+  another answer of that kind earns the mark just as well. Never take a
+  mark off because the student chose a different example, a different
+  figure, or different wording from the key.
+- The evidence mark is earned by the student's own example. It does not
+  require the key's example. A student who illustrates Canada's density
+  with Toronto against the Yukon has given evidence; they do not also have
+  to say "4 people per km²".
+- Where the key says in words what to accept — "accept any answer that
+  meets the same standard" — that is an instruction to you, and it governs
+  everything above.
 - A long answer confidently written and wrong is still wrong. No marks for
-  effort, neatness, or restating the question.
+  effort, neatness, or restating the question. But wrong means wrong, not
+  "not how the key put it".
 
 Mark what is on the page, question by question, and let the total fall where
 it falls. Return every question in those sections and nothing else.
