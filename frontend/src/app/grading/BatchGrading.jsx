@@ -255,8 +255,18 @@ async function gradeViaPathA({ images, answerKeyText, rawAnswerKeyText, gradeBan
   // every check below passes and the paper goes out marked against whatever
   // the model made up.
   if (!(marked.declared || []).length || !outOf) {
+    // Say what was looked at and what was looked for. "No mark scheme
+    // could be read from the key" told a teacher nothing: not which key,
+    // not what shape was missing, not what to do about it — and the one
+    // thing it implied, that the key was bad, was usually wrong.
+    const chars = Number(marked.keyChars) || 0;
     return {
-      error: "No mark scheme could be read from the key — not marking against a guess.",
+      error: chars
+        ? `The key was read (${chars} characters) but nothing in it says how the paper is`
+          + ` marked — no question numbers the marker could use, and no total.`
+          + ` A line such as "Total: /50", or headings such as "A. Matching (10 marks)",`
+          + ` is enough.`
+        : "The answer key came through empty, so there is nothing to mark against.",
       code: "scheme_mismatch",
     };
   }
@@ -274,9 +284,11 @@ async function gradeViaPathA({ images, answerKeyText, rawAnswerKeyText, gradeBan
     };
   }
   if (declared && Math.abs(outOf - declared) > 0.51) {
+    const got = (marked.declared || []).map((d) => `${d.letter || "the paper"} /${d.out_of}`).join(", ");
     return {
-      error: `The key reads as a ${outOf}-mark paper but says it is out of ${declared}`
-           + ` — the key did not parse fully, so this is not being marked against a fragment.`,
+      error: `The key says the paper is out of ${declared}, but the sections read from it`
+           + ` add to ${outOf}${got ? ` (${got})` : ""} — so part of the key did not come`
+           + ` through, and this is not being marked against a fragment.`,
       code: "scheme_mismatch",
     };
   }

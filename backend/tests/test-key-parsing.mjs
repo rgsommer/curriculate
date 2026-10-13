@@ -317,5 +317,46 @@ console.log("\na short quiz key with no heading");
     declaredTotals("Total 99 marks\nA1: E (/1)\nTotal: /30")[0], 30);
 }
 
+/* ---------------------------------------------------------------- *
+ * 7. What mark-paper decides about a key, before any model is called.
+ *
+ * The three shapes a key arrives in, and what each gives the marker.
+ * A key that states nothing must still be MARKED — the guard is there to
+ * catch a key that parsed in PART, not one that never declared its
+ * structure. Refusing those sent a whole stack to the general grader
+ * with "No mark scheme could be read from the key".
+ * ---------------------------------------------------------------- */
+console.log("\nwhat the marker is given, by key shape");
+{
+  // The same decision mark-paper makes.
+  const decide = (raw) => {
+    const canon = routeRubricAndKey("", raw).answerKey;
+    let declared = sectionMarksFromKey(raw);
+    if (!declared.size && canon && canon !== raw) declared = sectionMarksFromKey(canon);
+    const total = declaredTotals(raw)[0] || declaredTotals(canon)[0] || 0;
+    if (!declared.size && total > 0) return { kind: "sectionless", total, sections: 0 };
+    if (!declared.size) return { kind: "open-ended", total: 0, sections: 0 };
+    return { kind: "sectioned", total, sections: declared.size };
+  };
+
+  check("a sectioned key",
+    decide(["Teacher copy. Total 50 marks.", "A. Matching ( 10 marks )", "1. E 2. I",
+            "B. Short answer ( 40 marks )", "1. Because..."].join("\n")),
+    { kind: "sectioned", total: 50, sections: 2 });
+
+  check("a short quiz stating only a total",
+    decide(["/6", "1  √81 → 9", "2  √64 → 8", "3  4² + √25 → 21"].join("\n")),
+    { kind: "sectionless", total: 6, sections: 0 });
+
+  // The commonest key there is, and the one that was being refused.
+  check("a bare list of answers is marked, not refused",
+    decide("1. E\n2. I\n3. C\n4. H\n5. D\n6. B\n7. J\n8. A"),
+    { kind: "open-ended", total: 0, sections: 0 });
+
+  check("an extracted key still works through its items",
+    decide("A1: E (/1)\nA2: I (/1)\nB1: TRUE (/1)\nTotal: /3"),
+    { kind: "sectioned", total: 3, sections: 2 });
+}
+
 console.log(`\n${failed ? `${failed} check(s) FAILED` : "all checks passed"}`);
 process.exit(failed ? 1 : 0);

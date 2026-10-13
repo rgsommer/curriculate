@@ -17752,7 +17752,8 @@ Return ONLY these items, every one of them: ${missing.join(", ")}.` },
       if (!want.length) {
         return res.json({
           ok: true, sections: [], items: [], complete: true, missing: [],
-          paperTotal, note: "every section the key declares is marked in code",
+          paperTotal, openEnded, keyChars: key.length,
+          note: "every section the key declares is marked in code",
           declared: [...declared.entries()].map(([letter, d]) => ({ letter, out_of: d.outOf })),
         });
       }
@@ -17937,6 +17938,8 @@ Grade band ${band}.`;
         complete: incomplete.length === 0,
         missing: incomplete,
         paperTotal,
+        openEnded,
+        keyChars: key.length,
         reallocated: offBy,
         declared: [...declared.entries()].map(([letter, d]) => ({ letter, out_of: d.outOf, title: d.title })),
       });
