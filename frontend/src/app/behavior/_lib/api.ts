@@ -256,4 +256,5 @@ export type Behavior = {
   immediateWhiteSlip?: boolean;
   points?: number;
   kind?: "negative" | "positive";
+  isCustom?: boolean;
 };

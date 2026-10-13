@@ -49,6 +49,24 @@ function SimilarList({ items }: { items: Similar[] }) {
   );
 }
 
+// The "✏️ Custom" picker option: the teacher describes it in a few words, which
+// becomes the incident's name (logged under the school's built-in Custom
+// behaviour). Hidden built-in Custom behaviours never show in the list itself.
+const CUSTOM = "__custom__";
+function CustomNameInput({ value, onChange, positive }: { value: string; onChange: (v: string) => void; positive?: boolean }) {
+  return (
+    <label className="mt-2 block">
+      <span className="mb-1 block text-sm font-medium text-slate-600">In a few words, what happened?</span>
+      <input value={value} onChange={(e) => onChange(e.target.value)} maxLength={80} autoFocus
+        placeholder={positive ? "e.g. Helped a new student find their classes" : "e.g. Threw an eraser across the room"}
+        className="w-full rounded-xl border border-slate-300 px-4 py-3" />
+      <span className="mt-1 block text-xs text-slate-500">
+        {positive ? "Recorded as an encouraging behaviour." : "Recorded as a correcting behaviour — it counts as a strike, with no set consequence."} Add details in the note below if needed.
+      </span>
+    </label>
+  );
+}
+
 function gradeLabel(g?: string) {
   const v = (g || "").trim();
   return v ? `Grade ${v}` : "";
@@ -201,6 +219,7 @@ export default function LogIncidentPage() {
   const [keywordFilter, setKeywordFilter] = useState("");
   const [occurredAt, setOccurredAt] = useState("");
   const [note, setNote] = useState("");
+  const [customName, setCustomName] = useState("");
   const [weight, setWeight] = useState(1);
   const [sendImmediately, setSendImmediately] = useState(false);
   const [requestMeeting, setRequestMeeting] = useState(false);
@@ -238,7 +257,7 @@ export default function LogIncidentPage() {
       })
       .catch((e) => setError(e.message));
     api<{ behaviors: Behavior[] }>("/behaviors")
-      .then((d) => setBehaviors(d.behaviors || []))
+      .then((d) => setBehaviors((d.behaviors || []).filter((b) => !b.isCustom)))
       .catch((e) => setError(e.message));
   }, []);
 
@@ -345,6 +364,8 @@ export default function LogIncidentPage() {
   async function submit(e?: React.FormEvent) {
     e?.preventDefault();
     if (!student || !behaviorId) return;
+    const isCustom = behaviorId === CUSTOM;
+    if (isCustom && !customName.trim()) { setError("Describe the behaviour in a few words."); return; }
     if (weight !== 1 && !note.trim()) { setError(`Add a note explaining the changed intensity (×${weight.toFixed(1)}).`); return; }
     setSubmitting(true);
     setError(null);
@@ -352,14 +373,14 @@ export default function LogIncidentPage() {
       const res = await api<{ notice: NoticeResult; positiveNotice: { _id: string; status: string } | null; incidents?: { _id: string }[]; triggerIncidents: any[]; triggerCount: number }>("/incidents", {
         body: {
           studentId: student._id,
-          behaviorIds: [behaviorId],
+          ...(isCustom ? { customName: customName.trim(), custom: kindFilter } : { behaviorIds: [behaviorId] }),
           detailText: note.trim(),
           weight,
           occurredAt: occurredAt ? new Date(occurredAt).toISOString() : undefined,
           sendImmediately,
         },
       });
-      recordRecent([behaviorId]); // bubble this behaviour to the top of the picker
+      if (!isCustom) recordRecent([behaviorId]); // bubble this behaviour to the top of the picker
       setNotice(res.notice);
       setPositiveNotice(res.positiveNotice || null);
       setCreatedIds((res.incidents || []).map((i) => i._id));
@@ -436,6 +457,7 @@ export default function LogIncidentPage() {
   function reset() {
     setStudent(null);
     setBehaviorId("");
+    setCustomName("");
     setKeywordFilter("");
     setOccurredAt("");
     setNote("");
@@ -689,6 +711,7 @@ export default function LogIncidentPage() {
             className="w-full rounded-xl border border-slate-300 px-4 py-3 text-lg"
           >
             <option value="">{kindFilter === "positive" ? "Choose a positive behaviour…" : "Choose a behaviour…"}</option>
+            <option value={CUSTOM}>✏️ Custom — describe it in a few words…</option>
             {offenseOptions.map((b) => (
               <option key={b._id} value={b._id}>
                 {b.name}
@@ -701,6 +724,7 @@ export default function LogIncidentPage() {
               No {kindFilter} behaviours yet — <Link href="/behavior/behaviours" className="underline">add one</Link>.
             </p>
           )}
+          {behaviorId === CUSTOM && <CustomNameInput value={customName} onChange={setCustomName} positive={kindFilter === "positive"} />}
           {behaviorId && (
             <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
               {!!incidentPoints && (
@@ -902,6 +926,7 @@ function BatchLog({
   const [picked, setPicked] = useState<Record<string, boolean>>({});
   const [occurredAt, setOccurredAt] = useState(nowLocal());
   const [note, setNote] = useState("");
+  const [customName, setCustomName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ logged: number; behaviorName: string; results: any[] } | null>(null);
@@ -978,20 +1003,22 @@ function BatchLog({
 
   async function submit() {
     if (!behaviorId || pickedIds.length === 0) return;
+    const isCustom = behaviorId === CUSTOM;
+    if (isCustom && !customName.trim()) { setError("Describe the behaviour in a few words."); return; }
     if (weight !== 1 && !note.trim()) { setError(`Add a note explaining the changed intensity (×${weight.toFixed(1)}).`); return; }
     setSubmitting(true);
     setError(null);
     try {
       const r = await api<{ logged: number; behaviorName: string; results: any[] }>("/incidents/batch", {
         body: {
-          behaviorId,
+          ...(isCustom ? { customName: customName.trim(), custom: "negative" } : { behaviorId }),
           studentIds: pickedIds,
           detailText: note.trim(),
           weight,
           occurredAt: occurredAt ? new Date(occurredAt).toISOString() : undefined,
         },
       });
-      recordRecent([behaviorId]); // bubble this behaviour to the top of the picker
+      if (!isCustom) recordRecent([behaviorId]); // bubble this behaviour to the top of the picker
       setResult(r);
     } catch (e: any) {
       setError(e.message);
@@ -1075,6 +1102,7 @@ function BatchLog({
         )}
         <select value={behaviorId} onChange={(e) => setBehaviorId(e.target.value)} className="w-full rounded-xl border border-slate-300 px-4 py-3 text-lg">
           <option value="">Choose an incident…</option>
+          <option value={CUSTOM}>✏️ Custom — describe it in a few words…</option>
           {offenseOptions.map((b) => (
             <option key={b._id} value={b._id}>
               {b.name}
@@ -1082,6 +1110,7 @@ function BatchLog({
             </option>
           ))}
         </select>
+        {behaviorId === CUSTOM && <CustomNameInput value={customName} onChange={setCustomName} />}
         {behaviorId && (
           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
             <span className="text-slate-600">Intensity</span>

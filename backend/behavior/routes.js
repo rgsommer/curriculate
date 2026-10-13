@@ -3030,14 +3030,42 @@ router.delete("/behaviors/:id", authAny, loadMembership, canLog, async (req, res
 
 // ── Incident logging + trigger (§6, §7) ──────────────────────────────────────
 
+// The school's built-in Custom behaviour for a kind, created on first use.
+// Correcting: counts toward strikes, no consequence. Encouraging: 0 points.
+// (Admins can adjust either on the Behaviours page.)
+async function customBehaviorFor(schoolId, kind) {
+  const k = kind === "positive" ? "positive" : "negative";
+  const found = await Behavior.findOne({ schoolId, isCustom: true, kind: k }).lean();
+  if (found) return found;
+  const b = await Behavior.create({
+    schoolId, isCustom: true, kind: k, keyword: "custom", scope: "standard", active: true,
+    name: k === "positive" ? "Custom (encouraging)" : "Custom (correcting)",
+    triggerMode: k === "positive" ? "INTERACTION" : "THRESHOLD",
+    consequenceText: "", points: 0,
+    description: "Logged with the teacher's own few words describing what happened.",
+  });
+  return b.toObject();
+}
+// "A few words" from the teacher for a Custom incident (trimmed, capped).
+const cleanCustomName = (v) => String(v || "").replace(/\s+/g, " ").trim().slice(0, 80);
+
 router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next) => {
   try {
     const studentId = req.body?.studentId;
-    const behaviorIds = Array.isArray(req.body?.behaviorIds)
+    let behaviorIds = Array.isArray(req.body?.behaviorIds)
       ? req.body.behaviorIds
       : req.body?.behaviorId
       ? [req.body.behaviorId]
       : [];
+    // Custom: the teacher describes it in a few words.
+    const customNames = {};
+    if (req.body?.customName !== undefined) {
+      const cn = cleanCustomName(req.body.customName);
+      if (!cn) return res.status(400).json({ ok: false, error: "Describe the behaviour in a few words." });
+      const cb = await customBehaviorFor(req.schoolId, req.body?.custom);
+      behaviorIds = [String(cb._id)];
+      customNames[String(cb._id)] = cn;
+    }
     const detailText = String(req.body?.detailText || "");
     const weight = clampWeight(req.body?.weight);
     // Optional event time (teacher may set/adjust when the incident occurred).
@@ -3064,8 +3092,9 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
     const createdIncidents = [];
     const consequenceNotes = []; // non-white-slip consequences to post to Edsby
     for (const bId of behaviorIds) {
-      const behavior = await Behavior.findOne({ _id: bId, schoolId: req.schoolId }).lean();
+      let behavior = await Behavior.findOne({ _id: bId, schoolId: req.schoolId }).lean();
       if (!behavior) continue;
+      if (customNames[String(bId)]) behavior = { ...behavior, name: customNames[String(bId)] };
       const inc = await BehaviorIncident.create({
         schoolId: req.schoolId,
         studentId: student._id,
@@ -3265,7 +3294,13 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
 // that fires is queued for review on that student's page (no inline send dance).
 router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res, next) => {
   try {
-    const behaviorId = req.body?.behaviorId;
+    let behaviorId = req.body?.behaviorId;
+    let customName = "";
+    if (req.body?.customName !== undefined) {
+      customName = cleanCustomName(req.body.customName);
+      if (!customName) return res.status(400).json({ ok: false, error: "Describe the behaviour in a few words." });
+      behaviorId = String((await customBehaviorFor(req.schoolId, req.body?.custom))._id);
+    }
     const studentIds = Array.isArray(req.body?.studentIds) ? req.body.studentIds : [];
     const detailText = String(req.body?.detailText || "");
     const weight = clampWeight(req.body?.weight);
@@ -3278,8 +3313,9 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
       return res.status(400).json({ ok: false, error: "Please add a note explaining the changed intensity (×" + weight + ")." });
     }
 
-    const behavior = await Behavior.findOne({ _id: behaviorId, schoolId: req.schoolId }).lean();
+    let behavior = await Behavior.findOne({ _id: behaviorId, schoolId: req.schoolId }).lean();
     if (!behavior) return res.status(404).json({ ok: false, error: "Behaviour not found" });
+    if (customName) behavior = { ...behavior, name: customName };
     const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
 
     const results = [];

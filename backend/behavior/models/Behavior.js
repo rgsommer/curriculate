@@ -63,6 +63,11 @@ const BehaviorSchema = new mongoose.Schema(
     // Good Uniform Dress Down. GUDD threshold / fade / ladder live in BehaviorConfig.
     uniform: { type: Boolean, default: false },
 
+    // The built-in "Custom" behaviours (one correcting, one encouraging), created
+    // on first use. When logging, the teacher types a few words and that becomes
+    // the incident's name. Hidden from the normal picker (shown as "✏️ Custom").
+    isCustom: { type: Boolean, default: false },
+
     // Immediate white slip: logging this behaviour emails the teacher (CC VP) a
     // "White Slip: reason, teacher, date" notice and records it as a consequence.
     // A serious-enough offence that warrants a white slip on a single occurrence.
