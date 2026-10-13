@@ -21,6 +21,9 @@ const HousePointEventSchema = new mongoose.Schema(
     // Set when these points came from a scored house competition (placement
     // points), so re-scoring can delete-then-reaward idempotently.
     competitionId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorCompetition", default: null, index: true },
+    // Set when these points came from a Tally import event (food drive etc.),
+    // so correcting a count can delete-then-reaward idempotently.
+    tallyEventId: { type: mongoose.Schema.Types.ObjectId, ref: "TallyEvent", default: null, index: true },
     awardedByTeacherId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorTeacher", default: null },
     at: { type: Date, default: () => new Date(), index: true },
   },

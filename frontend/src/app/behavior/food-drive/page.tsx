@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, getToken, loginHref, type Me } from "../_lib/api";
 import { cardCls, Button } from "../_components/ui";
+import TallyEditor from "./TallyEditor";
 
 type Row = { name: string; items: number | null; studentId: string | null; studentLabel: string | null; house: string | null; houseColor: string | null };
 type RosterOpt = { id: string; label: string; house: string };
@@ -29,7 +30,7 @@ export default function FoodDrivePage() {
   const INSTRUCTIONS = [
     "TALLY IMPORT — how to run a counted event in Compass (food drive, cleanup, read-a-thon, etc.)",
     "",
-    "1. Give each homeroom the printed class list (names only).",
+    "1. In Compass → Tally import, click “Print class sheets” and give each homeroom its sheet (typed names, blank count column).",
     "2. During the event window, the class rep writes the COUNT beside each student's name (items brought, bags collected, books read, laps run, …).",
     "3. Collect the sheets at the end of the window.",
     "4. Photograph or scan each sheet (or save them as one PDF).",
@@ -37,10 +38,50 @@ export default function FoodDrivePage() {
     "6. Check the read-back: fix any unmatched name (dropdown) or wrong count, set the points, then “Award points.”",
     "   • Top contributors overall get bonus points (default 30 / 20 / 10).",
     "   • The houses with the highest total place 1st/2nd/3rd (default 100 / 60 / 30).",
-    "7. Anything handed in after the counting window can still be accepted but isn't counted (it can't be recorded on the sheets).",
+    "7. Late items? In Compass → Tally import → “Correct a past event”, add them to the student's count and save — placements and points are recalculated.",
     "",
     "Tip: decide the scale and keep a consistent event name for a clean record.",
   ].join("\n");
+
+  // Step 1 sheets: one page per homeroom, typed names (so the read-back matches
+  // reliably) with a blank count column. Staff-only printout.
+  const [printBusy, setPrintBusy] = useState(false);
+  async function printSheets() {
+    setPrintBusy(true); setErr("");
+    try {
+      const d = await api<{ students: Array<{ firstName: string; lastName: string; preferredName?: string; classGroup?: string }> }>("/students");
+      const byRoom: Record<string, string[]> = {};
+      for (const st of d.students || []) {
+        const room = (st.classGroup || "").trim() || "No homeroom";
+        (byRoom[room] ||= []).push(`${st.lastName}, ${st.preferredName || st.firstName}`);
+      }
+      const rooms = Object.keys(byRoom).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      if (!rooms.length) { setErr("No students on the roster yet."); return; }
+      const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c] as string));
+      const title = esc(label.trim() || "Tally");
+      const pages = rooms.map((room) => {
+        const names = byRoom[room].sort((a, b) => a.localeCompare(b));
+        const rows = names.map((n) => `<tr><td>${esc(n)}</td><td class="c"></td></tr>`).join("");
+        return `<section><h1>${title} — ${esc(room)}</h1><p>Write the count beside each name. Leave blank if none.</p>` +
+          `<table><thead><tr><th>Student</th><th class="c">Count</th></tr></thead><tbody>${rows}</tbody></table></section>`;
+      }).join("");
+      const w = window.open("", "_blank");
+      if (!w) { setErr("Your browser blocked the print window — allow pop-ups for this site and try again."); return; }
+      w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title} — class sheets</title><style>
+        body{font-family:Arial,Helvetica,sans-serif;color:#0f172a;margin:24px}
+        section{page-break-after:always}section:last-child{page-break-after:auto}
+        h1{font-size:20px;margin:0 0 4px}p{font-size:12px;color:#475569;margin:0 0 12px}
+        table{width:100%;border-collapse:collapse;font-size:15px}
+        th,td{border:1px solid #94a3b8;padding:8px 10px;text-align:left}
+        th{background:#f1f5f9}.c{width:28%;text-align:center}
+      </style></head><body>${pages}<script>window.onload=function(){window.print()}<\/script></body></html>`);
+      w.document.close();
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setPrintBusy(false);
+    }
+  }
 
   async function copyInstructions() {
     try { await navigator.clipboard.writeText(INSTRUCTIONS); setCopied(true); setTimeout(() => setCopied(false), 2500); }
@@ -90,7 +131,11 @@ export default function FoodDrivePage() {
       </div>
 
       <section className={cardCls}>
-        <label className="block text-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2.5">
+          <p className="text-sm text-slate-700"><span className="font-semibold">Step 1:</span> print a class sheet for each homeroom (typed names + a blank count column).</p>
+          <Button onClick={printSheets} disabled={printBusy} variant="secondary" size="sm">{printBusy ? "Preparing…" : "🖨 Print class sheets"}</Button>
+        </div>
+        <label className="mt-3 block text-sm">
           <span className="font-medium text-slate-700">What is this for?</span>
           <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Food Drive, Garbage Cleanup, Read-a-thon"
             className="mt-1 w-full max-w-md rounded-lg border border-slate-300 px-3 py-2 text-sm" />
@@ -175,6 +220,8 @@ export default function FoodDrivePage() {
           <Link href="/behavior" className="mt-3 inline-block text-sm underline">Back to dashboard</Link>
         </section>
       )}
+
+      <TallyEditor />
     </div>
   );
 }

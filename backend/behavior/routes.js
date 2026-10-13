@@ -32,6 +32,7 @@ import { HonourRollSnapshot, HonourRollConfig } from "./models/HonourRoll.js";
 import { edsbyGetJson, extractZoomStudentsRaw, buildIxlRoster } from "./lib/edsbyRead.js";
 import BehaviorHouse from "./models/BehaviorHouse.js";
 import HousePointEvent from "./models/HousePointEvent.js";
+import TallyEvent from "./models/TallyEvent.js";
 import HousesVisit from "./models/HousesVisit.js";
 import MerchRedemption from "./models/MerchRedemption.js";
 import { awardGuddAndReset } from "./lib/guddAward.js";
@@ -472,6 +473,22 @@ function periodStartMs(config, now = Date.now()) {
   const y = d.getMonth() >= 8 ? d.getFullYear() : d.getFullYear() - 1; // Sept (month 8) = school-year start
   return new Date(y, 8, 1).getTime();
 }
+// Consequences still open 7 days after they were given, with no follow-up
+// recorded, retire on their own: they leave the dashboard, and the record shows
+// the strike with "No consequence recorded by the teacher". Applied lazily
+// whenever the dashboard / a student / the digest loads.
+const CONSEQUENCE_LAPSE_DAYS = 7;
+async function retireStaleConsequences(schoolId) {
+  try {
+    await BehaviorConsequence.updateMany({
+      schoolId, kind: "corrective", completed: false, lapsedAt: null,
+      status: { $in: ["issued", "other"] },
+      type: { $not: /^Parent message/i },
+      at: { $lt: new Date(Date.now() - CONSEQUENCE_LAPSE_DAYS * DAY_MS) },
+    }, { $set: { resolution: "lapsed", lapsedAt: new Date() } });
+  } catch (e) { console.warn("[behavior] retire stale consequences failed:", e?.message || e); }
+}
+
 // Count of disciplinary notices actually sent home THIS PERIOD for one student.
 async function countPeriodNotices(schoolId, studentId, config) {
   return BehaviorNotice.countDocuments({
@@ -2425,6 +2442,7 @@ router.post("/roster/import", authAny, loadMembership, requireAdmin, upload.sing
 // Search any student in the school (no teacher↔student permission layer).
 router.get("/students", authAny, loadMembership, async (req, res, next) => {
   try {
+    await retireStaleConsequences(req.schoolId);
     const q = String(req.query.query || "").trim();
     const cls = String(req.query.class || "").trim();
     const filter = { schoolId: req.schoolId };
@@ -2494,6 +2512,7 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
       studentId: { $in: students.map((s) => s._id) },
       kind: "corrective",
       completed: false,
+      lapsedAt: null,
       status: { $in: ["issued", "other"] },
       type: { $not: /^Parent message/i },
     }).select("studentId type at").sort({ at: -1 }).lean();
@@ -2518,6 +2537,45 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
     const wsLadderOn = !!config?.whiteSlipLadder?.enabled;
     const wsPeriod = wsLadderOn ? await periodWhiteSlipsByStudent(req.schoolId, students.map((s) => s._id), config) : {};
 
+    // URGENT re-direction: recent, serious, or escalating patterns, so the
+    // dashboard can highlight who needs attention first. Counts real strikes /
+    // immediate offences only (not documentation-only interactions, and not
+    // unconfirmed "note home, no strike" reports).
+    const urgentSince = new Date(Date.now() - 14 * DAY_MS);
+    const weekAgo = Date.now() - 7 * DAY_MS;
+    const recentIncs = await BehaviorIncident.find({
+      schoolId: req.schoolId,
+      studentId: { $in: students.map((s) => s._id) },
+      timestamp: { $gte: urgentSince },
+      "behaviorSnapshot.triggerMode": { $in: ["THRESHOLD", "IMMEDIATE"] },
+      "behaviorSnapshot.kind": { $ne: "positive" },
+    }).select("studentId behaviorId timestamp weight whiteSlip behaviorSnapshot.triggerMode behaviorSnapshot.points behaviorSnapshot.name").lean();
+    const urgentStats = {};
+    for (const i of recentIncs) {
+      if ((i.behaviorSnapshot?.points || 0) > 0) continue; // a positive, legacy-style
+      const k = String(i.studentId);
+      const st = (urgentStats[k] ||= { week: 0, serious: [], same: {} });
+      const t = new Date(i.timestamp).getTime();
+      if (t >= weekAgo) {
+        st.week += 1;
+        if (i.behaviorSnapshot?.triggerMode === "IMMEDIATE" || i.whiteSlip || (i.weight || 1) >= 1.5) st.serious.push(i.behaviorSnapshot?.name || "offence");
+      }
+      const bk = String(i.behaviorId || i.behaviorSnapshot?.name);
+      st.same[bk] = st.same[bk] || { n: 0, name: i.behaviorSnapshot?.name || "" };
+      st.same[bk].n += 1;
+    }
+    const urgentReasonsFor = (sid, periodNotices, active) => {
+      const st = urgentStats[sid];
+      const r = [];
+      if (st?.serious.length) r.push(`Serious offence this week (${[...new Set(st.serious)].slice(0, 2).join(", ")})`);
+      if ((st?.week || 0) >= 3) r.push(`${st.week} offences in the last 7 days`);
+      if (periodNotices >= 1 && active >= triggerCount) r.push("Back at the strike limit after a notice home");
+      if (periodNotices >= 2) r.push(`${periodNotices} notices home this term`);
+      const rep = st ? Object.values(st.same).sort((a, b) => b.n - a.n)[0] : null;
+      if (rep && rep.n >= 3) r.push(`${rep.name} ×${rep.n} in 2 weeks`);
+      return r;
+    };
+
     const out = students.map((s) => {
       const periodNotices = noticesPeriod[String(s._id)] || 0;
       const periodWhiteSlips = wsPeriod[String(s._id)] || 0;
@@ -2532,6 +2590,7 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
         whiteSlipCount: periodWhiteSlips,
         // Handbook-consistent recommendation (null → client falls back to the ladder).
         recommendedConsequence: whiteSlipLadderRecommendation(config, { periodNotices, periodWhiteSlips }),
+        urgentReasons: urgentReasonsFor(String(s._id), periodNotices, cnt[String(s._id)] || 0),
       };
     });
     res.json({
@@ -2544,8 +2603,47 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
 });
 
 // Full cross-teacher status + history for a student.
+// Recent SIMILAR incidents for students about to be logged — same behaviour, or
+// any behaviour sharing its keyword (e.g. "Inappropriate language" + "…
+// reported"), offences only, last `days` (default 30). Lets the teacher see a
+// repeat while choosing the consequence's severity.
+router.post("/similar-incidents", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const ids = (Array.isArray(req.body?.studentIds) ? req.body.studentIds : []).filter((x) => mongoose.Types.ObjectId.isValid(x)).slice(0, 200);
+    const beh = mongoose.Types.ObjectId.isValid(req.body?.behaviorId)
+      ? await Behavior.findOne({ _id: req.body.behaviorId, schoolId: req.schoolId }).select("name keyword").lean() : null;
+    if (!ids.length || !beh) return res.json({ ok: true, similar: {} });
+    const days = Math.min(365, Math.max(1, Number(req.body?.days) || 30));
+    const kw = String(beh.keyword || "").trim();
+    const related = kw ? await Behavior.find({ schoolId: req.schoolId, keyword: kw }).select("_id").lean() : [];
+    const behIds = [beh._id, ...related.map((b) => b._id)];
+    const incs = await BehaviorIncident.find({
+      schoolId: req.schoolId,
+      studentId: { $in: ids.map((x) => new mongoose.Types.ObjectId(x)) },
+      timestamp: { $gt: new Date(Date.now() - days * DAY_MS) },
+      $or: [{ behaviorId: { $in: behIds } }, { "behaviorSnapshot.name": beh.name }],
+      "behaviorSnapshot.triggerMode": { $ne: "INTERACTION" },
+      "behaviorSnapshot.kind": { $ne: "positive" },
+    }).select("studentId teacherId timestamp behaviorSnapshot.name behaviorSnapshot.triggerMode").sort({ timestamp: -1 }).lean();
+    const tIds = [...new Set(incs.map((i) => String(i.teacherId)))];
+    const tDocs = await BehaviorTeacher.find({ _id: { $in: tIds } }).select("name courtesyName").lean();
+    const tName = Object.fromEntries(tDocs.map((t) => [String(t._id), (t.courtesyName || t.name || "").trim()]));
+    const similar = {};
+    for (const i of incs) {
+      (similar[String(i.studentId)] ||= []).push({
+        date: i.timestamp, name: i.behaviorSnapshot?.name || "", teacher: tName[String(i.teacherId)] || "",
+        noStrike: i.behaviorSnapshot?.triggerMode === "NOTE",
+      });
+    }
+    res.json({ ok: true, days, similar });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
   try {
+    await retireStaleConsequences(req.schoolId);
     const student = await BehaviorStudent.findOne({ _id: req.params.id, schoolId: req.schoolId }).lean();
     if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
 
@@ -2972,14 +3070,42 @@ router.delete("/behaviors/:id", authAny, loadMembership, canLog, async (req, res
 
 // ── Incident logging + trigger (§6, §7) ──────────────────────────────────────
 
+// The school's built-in Custom behaviour for a kind, created on first use.
+// Correcting: counts toward strikes, no consequence. Encouraging: 0 points.
+// (Admins can adjust either on the Behaviours page.)
+async function customBehaviorFor(schoolId, kind) {
+  const k = kind === "positive" ? "positive" : "negative";
+  const found = await Behavior.findOne({ schoolId, isCustom: true, kind: k }).lean();
+  if (found) return found;
+  const b = await Behavior.create({
+    schoolId, isCustom: true, kind: k, keyword: "custom", scope: "standard", active: true,
+    name: k === "positive" ? "Custom (encouraging)" : "Custom (correcting)",
+    triggerMode: k === "positive" ? "INTERACTION" : "THRESHOLD",
+    consequenceText: "", points: 0,
+    description: "Logged with the teacher's own few words describing what happened.",
+  });
+  return b.toObject();
+}
+// "A few words" from the teacher for a Custom incident (trimmed, capped).
+const cleanCustomName = (v) => String(v || "").replace(/\s+/g, " ").trim().slice(0, 80);
+
 router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next) => {
   try {
     const studentId = req.body?.studentId;
-    const behaviorIds = Array.isArray(req.body?.behaviorIds)
+    let behaviorIds = Array.isArray(req.body?.behaviorIds)
       ? req.body.behaviorIds
       : req.body?.behaviorId
       ? [req.body.behaviorId]
       : [];
+    // Custom: the teacher describes it in a few words.
+    const customNames = {};
+    if (req.body?.customName !== undefined) {
+      const cn = cleanCustomName(req.body.customName);
+      if (!cn) return res.status(400).json({ ok: false, error: "Describe the behaviour in a few words." });
+      const cb = await customBehaviorFor(req.schoolId, req.body?.custom);
+      behaviorIds = [String(cb._id)];
+      customNames[String(cb._id)] = cn;
+    }
     const detailText = String(req.body?.detailText || "");
     const weight = clampWeight(req.body?.weight);
     // Optional event time (teacher may set/adjust when the incident occurred).
@@ -3006,8 +3132,9 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
     const createdIncidents = [];
     const consequenceNotes = []; // non-white-slip consequences to post to Edsby
     for (const bId of behaviorIds) {
-      const behavior = await Behavior.findOne({ _id: bId, schoolId: req.schoolId }).lean();
+      let behavior = await Behavior.findOne({ _id: bId, schoolId: req.schoolId }).lean();
       if (!behavior) continue;
+      if (customNames[String(bId)]) behavior = { ...behavior, name: customNames[String(bId)] };
       const inc = await BehaviorIncident.create({
         schoolId: req.schoolId,
         studentId: student._id,
@@ -3207,7 +3334,13 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
 // that fires is queued for review on that student's page (no inline send dance).
 router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res, next) => {
   try {
-    const behaviorId = req.body?.behaviorId;
+    let behaviorId = req.body?.behaviorId;
+    let customName = "";
+    if (req.body?.customName !== undefined) {
+      customName = cleanCustomName(req.body.customName);
+      if (!customName) return res.status(400).json({ ok: false, error: "Describe the behaviour in a few words." });
+      behaviorId = String((await customBehaviorFor(req.schoolId, req.body?.custom))._id);
+    }
     const studentIds = Array.isArray(req.body?.studentIds) ? req.body.studentIds : [];
     const detailText = String(req.body?.detailText || "");
     const weight = clampWeight(req.body?.weight);
@@ -3220,8 +3353,9 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
       return res.status(400).json({ ok: false, error: "Please add a note explaining the changed intensity (×" + weight + ")." });
     }
 
-    const behavior = await Behavior.findOne({ _id: behaviorId, schoolId: req.schoolId }).lean();
+    let behavior = await Behavior.findOne({ _id: behaviorId, schoolId: req.schoolId }).lean();
     if (!behavior) return res.status(404).json({ ok: false, error: "Behaviour not found" });
+    if (customName) behavior = { ...behavior, name: customName };
     const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
 
     const results = [];
@@ -3644,6 +3778,7 @@ async function fireNotice({ req, student, config, decision, awaitDecision = fals
   const recByInc = new Map(consRecs.map((r) => [String(r.relatedIncidentId), r]));
   const consequenceTexts = [...new Set(contributing.map((i) => {
     const rec = recByInc.get(String(i._id));
+    if (rec?.lapsedAt) return ""; // retired with no consequence recorded — don't state one
     const base = String(rec?.type || i.behaviorSnapshot?.consequenceText || "").trim();
     if (!base) return "";
     return rec?.completed ? `${base} (already completed)` : base;
@@ -4613,7 +4748,7 @@ router.post("/students/:id/parent-summary", authAny, loadMembership, async (req,
         kind: isConvo ? "conversation" : "offense",
         offense: isConvo ? "Conversation" : (i.behaviorSnapshot?.name || "—"),
         teacher: tName[String(i.teacherId)] || "a teacher",
-        consequence: isConvo ? "" : famScrub(c ? (c.detail && c.detail.length <= 70 ? `${c.type} — ${c.detail}` : c.type) : ""),
+        consequence: isConvo || c?.lapsedAt ? "" : famScrub(c ? (c.detail && c.detail.length <= 70 ? `${c.type} — ${c.detail}` : c.type) : ""),
       });
     }
     const historyText = history
@@ -5574,6 +5709,7 @@ router.post("/consequence-action/log", async (req, res, next) => {
     } else {
       if (!c.completed) {
         c.completed = true; c.completedByName = byName || "Confirmed via email"; c.completedAt = new Date();
+        c.resolution = "completed"; c.lapsedAt = null;
         await c.save();
         await audit(schoolId, "consequence.completed_via_link", { userId: null, user: { email: "" } }, { studentId: String(c.studentId), meta: { type: c.type } });
       }
@@ -5727,7 +5863,7 @@ router.post("/consequences/:id/discussed", authAny, loadMembership, canLog, asyn
     if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
     const who = actorName(req);
     const inc = await logDiscussedWithStudent({ schoolId: req.schoolId, student, teacherId: req.membership._id, byName: who, insteadOf: c.type });
-    c.completed = true; c.resolution = "discussed";
+    c.completed = true; c.resolution = "discussed"; c.lapsedAt = null;
     c.completedByTeacherId = req.membership._id; c.completedByName = who; c.completedAt = new Date();
     await c.save();
     await audit(req.schoolId, "consequence.discussed", req, { studentId: String(c.studentId), incidentId: String(inc._id), meta: { type: c.type } });
@@ -5745,6 +5881,7 @@ router.post("/consequences/:id/complete", authAny, loadMembership, canLog, async
     const who = req.membership.name || req.user?.name || "";
     c.completed = done;
     c.resolution = done ? "completed" : "";
+    c.lapsedAt = null; // recording it (or reopening it) takes it out of "lapsed"
     c.completedByTeacherId = done ? req.membership._id : null;
     c.completedByName = done ? who : "";
     c.completedAt = done ? new Date() : null;
@@ -6338,8 +6475,9 @@ export async function sendConsequenceDigestForSchool(schoolId, { force = false }
   const lookback = new Date(now - 10 * DAY_MS); // show recent outstanding only
   const missedCutoff = now - fadeDays * DAY_MS;
 
+  await retireStaleConsequences(schoolId);
   const cons = await BehaviorConsequence.find({
-    schoolId, kind: "corrective", completed: false,
+    schoolId, kind: "corrective", completed: false, lapsedAt: null,
     status: { $in: ["issued", "recommended", "other"] },
     type: { $not: /^Parent message/i },
     at: { $gte: lookback },
@@ -7074,64 +7212,150 @@ router.post("/house/food-drive/parse", authAny, loadMembership, canLog, uploadSh
 });
 
 // 2) Apply: award top donors + house placements from the confirmed rows.
+// Award a tally event's points from its stored rows (house placements by total
+// items; top individual donors → bonus to their house). Every award carries the
+// event's id. Returns the outcome; the caller decides about the banner.
+async function awardTally({ schoolId, teacherId, tally }) {
+  const rows = (tally.rows || []).filter((r) => r.studentId && Number(r.items) > 0)
+    .map((r) => ({ studentId: String(r.studentId), items: Math.round(Number(r.items)) }));
+  const indPts = (tally.individual || []).map(Number);
+  const housePts = (tally.house || []).map(Number);
+  const label = tally.label || "Food Drive";
+  const at = tally.at || new Date();
+
+  const students = await BehaviorStudent.find({ _id: { $in: rows.map((r) => new mongoose.Types.ObjectId(r.studentId)) }, schoolId })
+    .select("firstName preferredName lastName houseId").lean();
+  const sById = Object.fromEntries(students.map((s) => [String(s._id), s]));
+  const houses = await BehaviorHouse.find({ schoolId }).select("name").lean();
+  const houseName = Object.fromEntries(houses.map((h) => [String(h._id), h.name]));
+
+  // House totals (sum of items by each student's house).
+  const houseTotalsMap = {};
+  for (const r of rows) { const s = sById[r.studentId]; if (!s?.houseId) continue; const k = String(s.houseId); houseTotalsMap[k] = (houseTotalsMap[k] || 0) + r.items; }
+  const rankedHouses = Object.entries(houseTotalsMap).map(([id, total]) => ({ id, total })).sort((a, b) => b.total - a.total);
+
+  const awardedHouses = [];
+  for (let i = 0; i < rankedHouses.length && i < housePts.length; i++) {
+    const p = Math.round(housePts[i]) || 0;
+    if (!p) continue;
+    const hid = rankedHouses[i].id;
+    await HousePointEvent.create({ schoolId, houseId: new mongoose.Types.ObjectId(hid), studentId: null, points: p, reason: `${label} — ${["1st","2nd","3rd","4th","5th"][i]||`#${i+1}`} most items (${rankedHouses[i].total})`, awardedByTeacherId: teacherId, at, tallyEventId: tally._id });
+    awardedHouses.push({ house: houseName[hid] || "—", place: i + 1, points: p, items: rankedHouses[i].total });
+  }
+
+  // Top individual donors (regardless of house) → bonus points to their house.
+  const rankedStudents = rows.slice().sort((a, b) => b.items - a.items);
+  const awardedStudents = [];
+  for (let i = 0; i < rankedStudents.length && i < indPts.length; i++) {
+    const p = Math.round(indPts[i]) || 0;
+    if (!p) continue;
+    const r = rankedStudents[i]; const s = sById[r.studentId];
+    if (!s?.houseId) continue;
+    await HousePointEvent.create({ schoolId, houseId: s.houseId, studentId: new mongoose.Types.ObjectId(r.studentId), points: p, reason: `${label} — top donor ${["1st","2nd","3rd"][i]||`#${i+1}`} (${r.items} items)`, awardedByTeacherId: teacherId, at, tallyEventId: tally._id });
+    awardedStudents.push({ studentId: r.studentId, name: `${s.preferredName || s.firstName} ${s.lastName}`.trim(), place: i + 1, points: p, items: r.items });
+  }
+
+  // Banner (staff copy keeps first name + last initial; the public endpoint
+  // strips students entirely).
+  const bannerStudents = [];
+  for (let i = 0; i < rankedStudents.length && i < Math.max(indPts.length, 3); i++) {
+    const r = rankedStudents[i]; const s = sById[r.studentId];
+    if (!s) continue;
+    bannerStudents.push({ name: `${s.preferredName || s.firstName} ${(s.lastName || "").charAt(0)}.`.trim(), place: i + 1, items: r.items });
+  }
+  const eventResult = {
+    label, at, tallyEventId: String(tally._id),
+    houses: awardedHouses.map((h) => ({ name: h.house, place: h.place, items: h.items, points: h.points })),
+    students: bannerStudents,
+  };
+  const allHouseTotals = rankedHouses.map((h) => ({ house: houseName[h.id] || "—", items: h.total }));
+  return { awardedHouses, awardedStudents, eventResult, allHouseTotals, totalItems: rows.reduce((a, b) => a + b.items, 0) };
+}
+
 router.post("/house/food-drive/apply", authAny, loadMembership, canLog, async (req, res, next) => {
   try {
-    const rows = (req.body?.rows || []).filter((r) => r.studentId && Number(r.items) > 0).map((r) => ({ studentId: String(r.studentId), items: Math.round(Number(r.items)) }));
+    const rows = (req.body?.rows || []).filter((r) => r.studentId && Number(r.items) > 0 && mongoose.Types.ObjectId.isValid(r.studentId))
+      .map((r) => ({ studentId: new mongoose.Types.ObjectId(String(r.studentId)), items: Math.round(Number(r.items)) }));
     if (!rows.length) return res.status(400).json({ ok: false, error: "No rows with a matched student and a positive count." });
-    const indPts = Array.isArray(req.body?.individual) ? req.body.individual.map(Number) : [30, 20, 10];
-    const housePts = Array.isArray(req.body?.house) ? req.body.house.map(Number) : [100, 60, 30];
-    const label = String(req.body?.label || "Food Drive").trim() || "Food Drive";
-    const at = new Date();
+    const tally = await TallyEvent.create({
+      schoolId: req.schoolId,
+      label: String(req.body?.label || "Food Drive").trim() || "Food Drive",
+      at: new Date(),
+      individual: Array.isArray(req.body?.individual) ? req.body.individual.map(Number) : [30, 20, 10],
+      house: Array.isArray(req.body?.house) ? req.body.house.map(Number) : [100, 60, 30],
+      rows,
+      createdByTeacherId: req.membership._id,
+    });
+    const out = await awardTally({ schoolId: req.schoolId, teacherId: req.membership._id, tally });
+    await TallyEvent.updateOne({ _id: tally._id }, { $set: { results: { houses: out.awardedHouses, students: out.awardedStudents, allHouseTotals: out.allHouseTotals, totalItems: out.totalItems } } });
+    await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: { houseEventResult: out.eventResult } });
 
-    const ids = rows.map((r) => new mongoose.Types.ObjectId(r.studentId));
-    const students = await BehaviorStudent.find({ _id: { $in: ids }, schoolId: req.schoolId }).select("firstName preferredName lastName houseId").lean();
-    const sById = Object.fromEntries(students.map((s) => [String(s._id), s]));
+    await audit(req.schoolId, "house.food_drive", req, { meta: { label: tally.label, rows: rows.length, houses: out.awardedHouses.length, donors: out.awardedStudents.length } });
+    res.json({ ok: true, tallyEventId: String(tally._id), houses: out.awardedHouses, students: out.awardedStudents, totalItems: out.totalItems });
+  } catch (err) {
+    next(err);
+  }
+});
 
-    // House totals (sum of items by each student's house).
-    const houseTotalsMap = {};
-    for (const r of rows) { const s = sById[r.studentId]; if (!s?.houseId) continue; const k = String(s.houseId); houseTotalsMap[k] = (houseTotalsMap[k] || 0) + r.items; }
+// Tally events, newest first (for "Correct a count").
+router.get("/house/tally-events", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const list = await TallyEvent.find({ schoolId: req.schoolId }).sort({ at: -1 }).limit(20).select("label at rows results").lean();
+    res.json({ ok: true, events: list.map((t) => ({ id: String(t._id), label: t.label, at: t.at, students: (t.rows || []).length, totalItems: t.results?.totalItems ?? (t.rows || []).reduce((a, r) => a + (r.items || 0), 0) })) });
+  } catch (err) { next(err); }
+});
+
+// One tally event with names, for editing.
+router.get("/house/tally-events/:id", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const t = await TallyEvent.findOne({ _id: req.params.id, schoolId: req.schoolId }).lean();
+    if (!t) return res.status(404).json({ ok: false, error: "Not found" });
+    const sts = await BehaviorStudent.find({ _id: { $in: (t.rows || []).map((r) => r.studentId) } }).select("firstName preferredName lastName classGroup houseId").lean();
     const houses = await BehaviorHouse.find({ schoolId: req.schoolId }).select("name").lean();
-    const houseName = Object.fromEntries(houses.map((h) => [String(h._id), h.name]));
-    const rankedHouses = Object.entries(houseTotalsMap).map(([id, total]) => ({ id, total })).sort((a, b) => b.total - a.total);
+    const hn = Object.fromEntries(houses.map((h) => [String(h._id), h.name]));
+    const sById = Object.fromEntries(sts.map((s) => [String(s._id), s]));
+    const rows = (t.rows || []).map((r) => {
+      const s = sById[String(r.studentId)];
+      return { studentId: String(r.studentId), items: r.items, name: s ? `${s.lastName}, ${s.preferredName || s.firstName}` : "(removed student)", classGroup: s?.classGroup || "", house: s?.houseId ? hn[String(s.houseId)] || "" : "" };
+    }).sort((a, b) => a.name.localeCompare(b.name));
+    res.json({ ok: true, event: { id: String(t._id), label: t.label, at: t.at, individual: t.individual, house: t.house, results: t.results, edits: t.edits || [] }, rows });
+  } catch (err) { next(err); }
+});
 
-    const awardedHouses = [];
-    for (let i = 0; i < rankedHouses.length && i < housePts.length; i++) {
-      const p = Math.round(housePts[i]) || 0;
-      if (!p) continue;
-      const hid = rankedHouses[i].id;
-      await HousePointEvent.create({ schoolId: req.schoolId, houseId: new mongoose.Types.ObjectId(hid), studentId: null, points: p, reason: `${label} — ${["1st","2nd","3rd","4th","5th"][i]||`#${i+1}`} most items (${rankedHouses[i].total})`, awardedByTeacherId: req.membership._id, at });
-      awardedHouses.push({ house: houseName[hid] || "—", place: i + 1, points: p, items: rankedHouses[i].total });
+// Correct counts (late items, a misread number, a missed student) and
+// recalculate: the event's previous awards are removed and re-awarded from the
+// corrected counts, keeping the original award date. Returns before/after.
+router.put("/house/tally-events/:id", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const t = await TallyEvent.findOne({ _id: req.params.id, schoolId: req.schoolId });
+    if (!t) return res.status(404).json({ ok: false, error: "Not found" });
+    const incoming = Array.isArray(req.body?.rows) ? req.body.rows : null;
+    if (!incoming) return res.status(400).json({ ok: false, error: "rows required" });
+    const merged = new Map();
+    for (const r of incoming) {
+      if (!r?.studentId || !mongoose.Types.ObjectId.isValid(r.studentId)) continue;
+      const n = Math.max(0, Math.round(Number(r.items) || 0));
+      merged.set(String(r.studentId), (merged.get(String(r.studentId)) || 0) + n);
     }
+    const okIds = new Set((await BehaviorStudent.find({ _id: { $in: [...merged.keys()] }, schoolId: req.schoolId }).select("_id").lean()).map((s) => String(s._id)));
+    const rows = [...merged.entries()].filter(([id, n]) => okIds.has(id) && n > 0).map(([id, n]) => ({ studentId: new mongoose.Types.ObjectId(id), items: n }));
+    if (!rows.length) return res.status(400).json({ ok: false, error: "No students with a positive count." });
 
-    // Top individual donors (regardless of house) → bonus points to their house.
-    const rankedStudents = rows.slice().sort((a, b) => b.items - a.items);
-    const awardedStudents = [];
-    for (let i = 0; i < rankedStudents.length && i < indPts.length; i++) {
-      const p = Math.round(indPts[i]) || 0;
-      if (!p) continue;
-      const r = rankedStudents[i]; const s = sById[r.studentId];
-      if (!s?.houseId) continue;
-      await HousePointEvent.create({ schoolId: req.schoolId, houseId: s.houseId, studentId: new mongoose.Types.ObjectId(r.studentId), points: p, reason: `${label} — top donor ${["1st","2nd","3rd"][i]||`#${i+1}`} (${r.items} items)`, awardedByTeacherId: req.membership._id, at });
-      awardedStudents.push({ name: `${s.preferredName || s.firstName} ${s.lastName}`.trim(), place: i + 1, points: p, items: r.items });
+    const before = t.results || null;
+    await HousePointEvent.deleteMany({ schoolId: req.schoolId, tallyEventId: t._id });
+    t.rows = rows;
+    const out = await awardTally({ schoolId: req.schoolId, teacherId: req.membership._id, tally: t });
+    t.results = { houses: out.awardedHouses, students: out.awardedStudents, allHouseTotals: out.allHouseTotals, totalItems: out.totalItems };
+    t.edits.push({ at: new Date(), byName: actorName(req), note: String(req.body?.note || "").slice(0, 200) });
+    await t.save();
+
+    // Keep the /houses results banner in step if it's showing this event.
+    const cfg = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("houseEventResult").lean();
+    if (cfg?.houseEventResult?.tallyEventId === String(t._id)) {
+      await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: { houseEventResult: out.eventResult } });
     }
-
-    // Save a celebratory banner for /houses (first name + last initial for the
-    // donors — minimal PII on a public wall board), shown for ~2 weeks.
-    const bannerStudents = [];
-    for (let i = 0; i < rankedStudents.length && i < Math.max(indPts.length, 3); i++) {
-      const r = rankedStudents[i]; const s = sById[r.studentId];
-      if (!s) continue;
-      bannerStudents.push({ name: `${s.preferredName || s.firstName} ${(s.lastName || "").charAt(0)}.`.trim(), place: i + 1, items: r.items });
-    }
-    const eventResult = {
-      label, at,
-      houses: awardedHouses.map((h) => ({ name: h.house, place: h.place, items: h.items, points: h.points })),
-      students: bannerStudents,
-    };
-    await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: { houseEventResult: eventResult } });
-
-    await audit(req.schoolId, "house.food_drive", req, { meta: { label, rows: rows.length, houses: awardedHouses.length, donors: awardedStudents.length } });
-    res.json({ ok: true, houses: awardedHouses, students: awardedStudents, totalItems: rows.reduce((a, b) => a + b.items, 0) });
+    await audit(req.schoolId, "house.tally_edit", req, { meta: { tallyEventId: String(t._id), label: t.label, totalItems: out.totalItems } });
+    res.json({ ok: true, before, after: t.results });
   } catch (err) {
     next(err);
   }

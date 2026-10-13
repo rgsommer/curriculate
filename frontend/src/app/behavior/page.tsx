@@ -8,6 +8,7 @@ import SendNoticeModal from "./_components/SendNoticeModal";
 import { Card, Button } from "./_components/ui";
 import { toast } from "./_components/toast";
 import AddToHomeScreen from "./_components/AddToHomeScreen";
+import { useOccurrences, StudentNameTap, OccurrenceList } from "./_components/Occurrences";
 
 export default function BehaviorDashboard() {
   const [me, setMe] = useState<Me | null>(null);
@@ -151,7 +152,7 @@ export default function BehaviorDashboard() {
             )}
             {housesOn && (
               <Link href="/behavior/food-drive" className="rounded-lg border border-slate-300 px-3 py-1.5">
-                Tally import
+                🥫 Food drive / tally import
               </Link>
             )}
           </div>
@@ -505,9 +506,15 @@ function HousesCard({ canLog, isAdmin, portalCode, events = [] }: { canLog: bool
       <div className="flex items-center justify-between">
         <h2 className="font-semibold">House points</h2>
         {canLog && (
-          <Button onClick={() => { setOpen((o) => !o); setHouseId(houses[0]?._id || ""); }} variant="secondary" size="sm">
-            {open ? "Cancel" : "Give points"}
-          </Button>
+          <span className="flex flex-wrap items-center justify-end gap-2">
+            <Link href="/behavior/food-drive" className="text-xs font-medium text-slate-600 underline underline-offset-2 hover:text-slate-900"
+              title="Print class sheets for a counted event (food drive, cleanup, read-a-thon…), then upload them to award points">
+              🥫 Food drive / tally import
+            </Link>
+            <Button onClick={() => { setOpen((o) => !o); setHouseId(houses[0]?._id || ""); }} variant="secondary" size="sm">
+              {open ? "Cancel" : "Give points"}
+            </Button>
+          </span>
         )}
       </div>
 
@@ -623,6 +630,20 @@ function HousesCard({ canLog, isAdmin, portalCode, events = [] }: { canLog: bool
 // A one-click "homeroom follow-up" nudge: logs a supportive relational check-in
 // (homeroom teacher to steer the student) as a documented interaction. Green so
 // it reads as encouragement, not punishment. Sits beside a watch-list row.
+// Urgent re-direction flag (reasons computed server-side).
+const isUrgent = (s: StudentSummary) => (s.urgentReasons || []).length > 0;
+function UrgentNote({ s }: { s: StudentSummary }) {
+  if (!isUrgent(s)) return null;
+  return (
+    <p className="mt-1 flex flex-wrap items-center gap-1.5 pl-4 text-xs">
+      <span className="rounded bg-red-600 px-1.5 py-0.5 font-bold uppercase tracking-wide text-white">Urgent</span>
+      <span className="text-red-800">{(s.urgentReasons || []).join(" · ")}</span>
+    </p>
+  );
+}
+// Urgent first within each homeroom group, then the list's own order.
+const urgentFirst = (a: StudentSummary, b: StudentSummary) => (isUrgent(b) ? 1 : 0) - (isUrgent(a) ? 1 : 0);
+
 function HrButton({ studentId, done }: { studentId: string; done?: boolean }) {
   const [state, setState] = useState<"idle" | "busy" | "done">(done ? "done" : "idle");
   async function click() {
@@ -651,6 +672,7 @@ function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number
   const [rows, setRows] = useState<StudentSummary[] | null>(null);
   const [trigger, setTrigger] = useState(3);
   const [othersOpen, setOthersOpen] = useState(false);
+  const occ = useOccurrences();
 
   useEffect(() => {
     api<{ students: StudentSummary[]; triggerCount: number }>("/students")
@@ -661,9 +683,9 @@ function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number
         // recommended white slip awaiting confirmation (so it can be acted on here
         // even if they're not otherwise on probation-watch).
         const watch = (d.students || [])
-          .filter((s) => s.pendingWhiteSlipId || (s.pendingConsequences && s.pendingConsequences.length > 0) || ((s.noticesHomeCount || 0) >= 1 && (s.activeCount || 0) >= t - 1))
+          .filter((s) => isUrgent(s) || s.pendingWhiteSlipId || (s.pendingConsequences && s.pendingConsequences.length > 0) || ((s.noticesHomeCount || 0) >= 1 && (s.activeCount || 0) >= t - 1))
           // Grouped by homeroom (classGroup), then most-urgent first within a homeroom.
-          .sort((a, b) => (a.classGroup || "").localeCompare(b.classGroup || "") || (b.pendingWhiteSlipId ? 1 : 0) - (a.pendingWhiteSlipId ? 1 : 0) || (b.noticesHomeCount || 0) - (a.noticesHomeCount || 0) || (b.activeCount || 0) - (a.activeCount || 0));
+          .sort((a, b) => (a.classGroup || "").localeCompare(b.classGroup || "") || urgentFirst(a, b) || (b.pendingWhiteSlipId ? 1 : 0) - (a.pendingWhiteSlipId ? 1 : 0) || (b.noticesHomeCount || 0) - (a.noticesHomeCount || 0) || (b.activeCount || 0) - (a.activeCount || 0));
         setRows(watch);
       })
       .catch(() => setRows([]));
@@ -719,24 +741,27 @@ function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number
         {showHeader && (
           <li className="!border-t-0 pt-2 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-500">{s.classGroup || "No homeroom"}</li>
         )}
-        <li className="py-2">
+        <li className={`py-2 ${isUrgent(s) ? "-mx-2 border-l-4 border-l-red-500 bg-red-50/70 px-2" : ""}`}>
           <div className="flex items-center justify-between gap-2 text-sm">
             <span className="flex min-w-0 items-center gap-2">
-              <Link href={`/behavior/student/${s._id}`} className="min-w-0 hover:text-slate-600">
+              <StudentNameTap studentId={s._id} open={occ.openId === s._id} onToggle={() => occ.toggle(s._id)}>
                 <span className="font-medium">{s.lastName}, {s.firstName}</span> <span className="text-slate-500">{s.classGroup}</span>
                 {s.pendingWhiteSlipId
-                  ? <span className="mt-0.5 block text-xs text-red-700">Next: White slip recommended</span>
-                  : action && <span className="mt-0.5 block text-xs text-red-700">Next: {action}</span>}
-              </Link>
+                  ? <span className="mt-0.5 block pl-4 text-xs text-red-700">Next: White slip recommended</span>
+                  : action && <span className="mt-0.5 block pl-4 text-xs text-red-700">Next: {action}</span>}
+              </StudentNameTap>
               <HrButton studentId={s._id} done={s.hrFollowedUpThisWeek} />
             </span>
             <span className="flex shrink-0 items-center gap-3">
               <span className="text-xs text-slate-500">{s.noticesHomeCount} notice{(s.noticesHomeCount || 0) === 1 ? "" : "s"}</span>
-              <span className={`font-semibold tabular-nums ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
+              <Link href={`/behavior/student/${s._id}`} aria-label={`Open ${s.firstName} ${s.lastName}'s history`}
+                className={`font-semibold tabular-nums hover:underline ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
                 {s.activeCount}/{trigger} →
-              </span>
+              </Link>
             </span>
           </div>
+          <UrgentNote s={s} />
+          {occ.openId === s._id && <OccurrenceList studentId={s._id} occ={occ.occById[s._id]} />}
           {s.pendingWhiteSlipId && (
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
               <span className="text-slate-500">Confirm the consequence given:</span>
@@ -767,7 +792,7 @@ function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number
     <Card>
       <h2 className="font-semibold text-red-800">Needs a decision</h2>
       <p className="mt-0.5 text-xs text-slate-500">
-        Already had a notice home and back at or near the {trigger}-strike trigger. The next notice carries the rule-based consequence below; open a student for AI coaching suggestions too.
+        Already had a notice home and back at or near the {trigger}-strike trigger. The next notice carries the rule-based consequence below; open a student for AI coaching suggestions too. <span className="font-medium text-red-700">Red = urgent</span> (a serious offence, several in a week, or an escalating pattern) — listed first.
       </p>
       <ul className="mt-2 divide-y divide-slate-100">
         {myHomeroom && mine.length > 0 && (
@@ -798,30 +823,11 @@ function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number
   );
 }
 
-type Occ = { date: string; name: string; detail?: string; teacher?: string };
 function StudentsToWatch({ fadeDays, myHomeroom }: { fadeDays?: number; myHomeroom?: string }) {
   const [rows, setRows] = useState<StudentSummary[] | null>(null);
   const [trigger, setTrigger] = useState(3);
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [occById, setOccById] = useState<Record<string, Occ[] | "loading">>({});
+  const occ = useOccurrences();
   const [othersOpen, setOthersOpen] = useState(false);
-
-  async function toggleOcc(id: string) {
-    if (openId === id) { setOpenId(null); return; }
-    setOpenId(id);
-    if (occById[id] && occById[id] !== "loading") return;
-    setOccById((m) => ({ ...m, [id]: "loading" }));
-    try {
-      const d = await api<{ incidents: Array<{ behaviorSnapshot: { name: string; kind?: string }; detailText?: string; teacherName?: string; timestamp: string }> }>(`/students/${id}`);
-      const occ: Occ[] = (d.incidents || [])
-        .filter((inc) => inc.behaviorSnapshot?.kind !== "positive")
-        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-        .slice(0, 12)
-        .map((inc) => ({ date: inc.timestamp, name: inc.behaviorSnapshot?.name || "Offence", detail: inc.detailText || "", teacher: inc.teacherName || "" }));
-      setOccById((m) => ({ ...m, [id]: occ }));
-    } catch { setOccById((m) => ({ ...m, [id]: [] })); }
-  }
-
   useEffect(() => {
     api<{ students: StudentSummary[]; triggerCount: number }>("/students")
       .then((d) => {
@@ -830,7 +836,7 @@ function StudentsToWatch({ fadeDays, myHomeroom }: { fadeDays?: number; myHomero
         const watch = (d.students || [])
           .filter((s) => (s.activeCount || 0) >= t - 1)
           // Grouped by homeroom (classGroup), then most strikes first within a homeroom.
-          .sort((a, b) => (a.classGroup || "").localeCompare(b.classGroup || "") || (b.activeCount || 0) - (a.activeCount || 0));
+          .sort((a, b) => (a.classGroup || "").localeCompare(b.classGroup || "") || urgentFirst(a, b) || (b.activeCount || 0) - (a.activeCount || 0));
         setRows(watch);
       })
       .catch(() => setRows([]));
@@ -848,37 +854,21 @@ function StudentsToWatch({ fadeDays, myHomeroom }: { fadeDays?: number; myHomero
       {showHeader && (
         <li className="!border-t-0 pt-2 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-500">{s.classGroup || "No homeroom"}</li>
       )}
-      <li className="flex items-center justify-between gap-2 py-2 text-sm">
+      <li className={`flex flex-wrap items-center justify-between gap-x-2 py-2 text-sm ${isUrgent(s) ? "-mx-2 border-l-4 border-l-red-500 bg-red-50/70 px-2" : ""}`}>
         <span className="flex min-w-0 items-center gap-2">
-          <button onClick={() => toggleOcc(s._id)} aria-label={openId === s._id ? "Hide occurrences" : "Show occurrences"} aria-expanded={openId === s._id} className="-m-1 shrink-0 p-1 text-slate-500 hover:text-slate-700">{openId === s._id ? "▾" : "▸"}</button>
-          <Link href={`/behavior/student/${s._id}`} className="min-w-0 truncate font-medium hover:text-slate-600">
-            {s.lastName}, {s.firstName} <span className="text-slate-500">{s.classGroup}</span>
-          </Link>
+          <StudentNameTap studentId={s._id} open={occ.openId === s._id} onToggle={() => occ.toggle(s._id)}>
+            <span className="font-medium">{s.lastName}, {s.firstName}</span> <span className="text-slate-500">{s.classGroup}</span>
+          </StudentNameTap>
           <HrButton studentId={s._id} done={s.hrFollowedUpThisWeek} />
         </span>
-        <span className={`shrink-0 font-semibold tabular-nums ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
+        <Link href={`/behavior/student/${s._id}`} aria-label={`Open ${s.firstName} ${s.lastName}'s history`}
+          className={`shrink-0 font-semibold tabular-nums hover:underline ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
           {s.activeCount}/{trigger} →
-        </span>
+        </Link>
+        {isUrgent(s) && <div className="w-full"><UrgentNote s={s} /></div>}
       </li>
-      {openId === s._id && (
-        <li className="!border-t-0 pb-2 pl-6 text-xs text-slate-600">
-          {occById[s._id] === "loading" ? (
-            <span className="text-slate-500">Loading…</span>
-          ) : (occById[s._id] as Occ[])?.length ? (
-            <ul className="space-y-0.5">
-              {(occById[s._id] as Occ[]).map((o, k) => (
-                <li key={k}>
-                  <span className="text-slate-500">{new Date(o.date).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}</span>
-                  {" · "}<span className="font-medium">{o.name}</span>
-                  {o.detail ? <span className="text-slate-500"> — {o.detail}</span> : null}
-                  {o.teacher ? <span className="text-slate-500"> ({o.teacher})</span> : null}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <span className="text-slate-500">No recent occurrences.</span>
-          )}
-        </li>
+      {occ.openId === s._id && (
+        <li className="!border-t-0 pb-2"><OccurrenceList studentId={s._id} occ={occ.occById[s._id]} /></li>
       )}
     </Fragment>
   );

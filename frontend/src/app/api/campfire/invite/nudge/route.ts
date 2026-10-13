@@ -5,6 +5,7 @@ import {
   buildJoinUrl,
   inviteEmail,
   newEngagementEmail,
+  cardEmailInfo,
   mailDefaults,
   campfireFrom,
 } from "@/lib/campfire/serverInvites";
@@ -76,7 +77,7 @@ export async function POST(req: Request) {
     const { data: activeEng } = await admin
       .from("engagements")
       .select(
-        "title, type, is_blind, reveal, deadline, hold_until_deadline, birth_year, excluded_emails"
+        "id, title, type, config, is_blind, reveal, deadline, hold_until_deadline, birth_year, excluded_emails"
       )
       .eq("group_id", groupId)
       .eq("status", "active")
@@ -119,6 +120,7 @@ export async function POST(req: Request) {
             reveal: activeEng.reveal as string,
             deadline: activeEng.deadline as string | null,
             holdUntilDeadline: !!activeEng.hold_until_deadline,
+            ...cardEmailInfo(activeEng),
             url: joinUrl,
             invited: true,
             recipientName: p.name || undefined,

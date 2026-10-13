@@ -655,3 +655,277 @@ export function withCorrectedAnswer(text, id, answer) {
     return `${m[1]}${m[2]}${m[3]}: ${String(answer).trim()}${m[5] ? ` ${m[5]}` : ""}`;
   }).join("\n");
 }
+
+/* ------------------------------------------------------------------
+ *  An answer key uploaded into the rubric box.
+ *
+ *  "Upload Rubric" is the only upload button on that panel, so a teacher
+ *  with an answer key presses it — and the key lands in rubricOverride,
+ *  which nothing in the key machinery reads. The deterministic matching,
+ *  the blind read and the mark scheme all take answerKeyOverride, so the
+ *  paper is graded as if no key existed and the banner says so. The text
+ *  is right there on the screen; it is simply in the wrong slot.
+ *
+ *  So the slot is corrected here, before anything is sent, rather than in
+ *  the backend — the frontend is the one place that holds both, and doing
+ *  it once means the backend, the blind read and the marking all agree
+ *  without a second copy of this rule to drift out of step.
+ * ------------------------------------------------------------------ */
+
+/**
+ * Does this text look like an answer key rather than a marking rubric?
+ *
+ * Deliberately two-gated. A heading that says so is enough on its own; a
+ * document without one has to look like a key — a run of numbered short
+ * answers, which is what a key is and what a rubric never is. A rubric
+ * describes levels and criteria in sentences.
+ */
+export function looksLikeAnswerKey(text) {
+  const s = String(text || "").split("\n").map(plainLine).join("\n").trim();
+  if (s.length < 40) return false;
+
+  // Said outright, at the top where a title lives.
+  if (/\b(answer\s*key|marking\s*key|teacher\s*copy|solutions?\s*sheet)\b/i.test(s.slice(0, 300))) {
+    return true;
+  }
+
+  // Or it reads like one: numbered items whose answers are a letter, a
+  // truth value or a couple of words.
+  const short = (s.match(/(?:^|[\s;·])\d{1,2}\s*[.)]\s*(?:[A-J]\b|TRUE\b|FALSE\b|[TF]\b)/gi) || []).length;
+  if (short >= 6) return true;
+
+  // A key for a written paper states the marks per question throughout.
+  const perItem = (s.match(/\(\s*\/\s*\d+\s*\)/g) || []).length;
+  if (perItem >= 6) return true;
+
+  // Or it is a short quiz key with no heading at all — "/6", then
+  // "1  √81 → 9   √64 → 8" with the two versions side by side. Nothing
+  // above catches that: there is no "Answer Key" title, the items are
+  // numbered with a space rather than "1.", and the answers are
+  // expressions rather than letters, so it arrived as a rubric and a
+  // matching letter was weighed instead of looked up.
+  //
+  // Three numbered lines each pointing at an answer is a key. A rubric
+  // describes levels instead, so one that does is never taken.
+  const describesLevels = /\blevel\s*[1-4]\b|\bcriteri|\bexceeds\s+expectation|\bapproaching\b|\bbeginning\b/i.test(s);
+  if (describesLevels) return false;
+  const pointed = (s.match(/(?:^|[\s,;])\d{1,2}[\s.)]+[^\n]*?(?:→|->|⟶)\s*\S/g) || []).length;
+  if (pointed >= 3) return true;
+  // A bare "/6" is how a short quiz states what it is out of.
+  const bareTotal = /^[ \t]*\/[ \t]*\d{1,3}[ \t]*$/m.test(s);
+  return bareTotal && pointed >= 2;
+}
+
+/**
+ * Work out what should be sent as the rubric and what as the answer key.
+ *
+ * A key already in the key slot is left alone. Otherwise a key-looking
+ * rubric is copied across — copied, not moved, because the teacher chose
+ * to attach it and the grader can still use a key as a rubric, and because
+ * a wrong guess then costs a repeated paragraph rather than a lost upload.
+ *
+ * @returns { rubric, answerKey, promoted }
+ */
+export function routeRubricAndKey(rubricText, answerKeyText) {
+  const rubric = String(rubricText || "").trim();
+  const key = String(answerKeyText || "").trim();
+  // Whichever slot it arrives in, a key is put into the shape the markers
+  // read — canonicaliseKeyText returns it untouched when it is already in
+  // that shape, or when it is not a key at all.
+  if (key) return { rubric, answerKey: canonicaliseKeyText(key), promoted: false };
+  if (!rubric || !looksLikeAnswerKey(rubric)) return { rubric, answerKey: "", promoted: false };
+  return { rubric, answerKey: canonicaliseKeyText(rubric), promoted: true };
+}
+
+/* ------------------------------------------------------------------
+ *  A pasted key, put into the shape the markers already understand.
+ *
+ *  /grading/extract-answer-key emits "A1: E (/1)", and both the blind
+ *  read's marker and applyKeyToGuide parse that and nothing else. A key a
+ *  teacher pastes or uploads as a document is prose —
+ *
+ *      A. Matching ( 10 marks )
+ *      1. E  2. I  3. C  4. H  5. D
+ *
+ *  — so the deterministic marking finds no items at all and twenty-five of
+ *  a fifty-mark Geography paper go back to being judged rather than looked
+ *  up. Translating here, once, means neither parser has to learn a second
+ *  format: the prompt, the blind read, the mark scheme and the key review
+ *  table all receive the canonical form and already agree on it.
+ * ------------------------------------------------------------------ */
+
+/**
+ * Markdown off, words left.
+ *
+ * A key exported from Word arrives as markdown: the headings in **bold**,
+ * the answers inside block quotes, the teacher's notes in *italic*. None of
+ * it survived the shapes below, so a real answer key parsed to nothing and
+ * the paper was marked as if no key existed at all.
+ */
+function plainLine(raw) {
+  return String(raw)
+    .replace(/^[>\s]*/, "")          // block quote markers, however nested
+    .replace(/^#{1,6}\s*/, "")       // a heading
+    .replace(/\*\*/g, "")           // bold
+    .replace(/__/g, "")              // bold, the other way
+    .replace(/(^|[\s(])[*_](?=\S)/g, "$1")   // opening italic
+    .replace(/(?<=\S)[*_](?=[\s).,;:]|$)/g, "") // closing italic
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Items written along a line: "1. E  2. I  3. C", and also "1 → A, 2 → D".
+ *
+ * An arrow is how a Word key writes a matching pair. "=" is deliberately
+ * not a separator: the teacher's own note "you multiply first, so 10 - 6 =
+ * 4" would otherwise read as item 6 answered "4".
+ */
+function numberedItemsOn(line) {
+  // A digit straight after the point means a number, not an item: "Africa
+  // grows at about 2.6% a year, Europe at about 0.2%" was read as item 2
+  // answered "6% a year, Europe at about" and item 0 answered "2%", which
+  // put eleven items in a ten-item section and shifted the marks per item.
+  const re = /(?:^|[\s,;])(\d{1,2})\s*([.)]|→|->|⟶)(?!\d)\s*/g;
+  const hits = [];
+  let m;
+  let style = null;
+  while ((m = re.exec(line))) {
+    const sep = m[2] === "." || m[2] === ")" ? "dot" : "arrow";
+    // One line, one way of numbering. "3. add 5 → 23, 28" is a single item
+    // whose answer happens to contain an arrow — read loosely it became a
+    // phantom item 5 and took the rest of item 3's answer with it.
+    if (style === null) style = sep;
+    else if (sep !== style) continue;
+    hits.push({ n: m[1], at: m.index, from: m.index + m[0].length });
+  }
+  return hits.map((h, i) => ({
+    n: h.n,
+    // An answer runs to the next numbered item, or to the end of the line.
+    // The separator that led to the next one comes off: "1 → A, 2 → D"
+    // leaves "A," for the first, and "A," does not match a student's "A".
+    answer: line
+      .slice(h.from, i + 1 < hits.length ? hits[i + 1].at : line.length)
+      .trim()
+      .replace(/[,;]+$/, "")
+      .trim(),
+  }));
+}
+
+/**
+ * A key that arrived with its line breaks gone, put back on lines.
+ *
+ * Copying out of a PDF viewer flattens a document into one paragraph, and so
+ * did this app's own PDF reader until it was taught otherwise. Everything
+ * below works a line at a time, so a flattened key parsed to nothing at all.
+ *
+ * Only a line long enough to be plainly a flattened document is touched, and
+ * only at two places: before a section heading that states its marks, and
+ * before a numbered item. "2.6% a year" has no space after the point and
+ * "pp. 16-43" no digit before it, so neither is mistaken for one.
+ */
+function unflatten(text) {
+  return String(text).split("\n").flatMap((line) => {
+    if (line.length < 180) return [line];
+    return line
+      .replace(/\s+(?=[A-Z][.)]\s+[A-Z][^.()]{2,40}\(\s*\d{1,3}\s*(?:marks?)?\s*\))/g, "\n")
+      .replace(/\s+(?=\d{1,2}[.)]\s)/g, "\n")
+      .split("\n");
+  });
+}
+
+/**
+ * Turn a pasted answer key into the extractor's own lines.
+ * Returns the text unchanged when it is already canonical, or when it does
+ * not read like a key at all — this must never make a key worse.
+ */
+export function canonicaliseKeyText(text) {
+  const raw = String(text || "");
+  if (!raw.trim()) return raw;
+  // Already in the labelled form the markers read.
+  if (/^\s*[A-Z]\s*\d{1,2}[a-z]?\s*:/m.test(raw)) return raw;
+
+  const out = [];
+  let letter = null;
+  let marksForSection = 0;
+  let pending = [];
+  let prose = [];
+
+  const flush = () => {
+    // A section that states its marks but numbers nothing is one question:
+    // a paragraph, an essay, an extended problem. The Geography key's "E.
+    // Paragraph ( 10 marks )" is marked out of a rubric — "position stated
+    // clearly (2) · two accurate facts (4) · explanation (3) · writing (1)"
+    // — with no items to list, so it produced no scheme at all and a
+    // 50-mark paper read as a 40-mark one. It becomes a single item worth
+    // the section, carrying its own standard for the marker to read.
+    if (letter && !pending.length && marksForSection > 0 && prose.length) {
+      const standard = prose.join(" ").slice(0, 400).trim();
+      if (standard) out.push(`${letter}1: ${standard} (/${marksForSection})`);
+      prose = [];
+      return;
+    }
+    prose = [];
+    if (!letter || !pending.length) { pending = []; return; }
+    // Marks per item from the section heading where it gives a total.
+    const per = marksForSection > 0
+      ? Math.round((marksForSection / pending.length) * 100) / 100
+      : 1;
+    for (const it of pending) {
+      // "FALSE — Canada is sparsely populated" is the answer plus the
+      // teacher's reason, so the answer is the part before the dash. Only
+      // where the head is a letter or a truth value, though: a short-answer
+      // key sets out the full response it is looking for, and cutting that
+      // at its first dash handed the written marker half of what the key
+      // actually said.
+      const whole = it.answer.trim();
+      const answer = /^(TRUE|FALSE|[A-J])\b/i.test(whole)
+        ? whole.split(/\s+[—–-]\s+/)[0].trim()
+        : whole;
+      if (answer) out.push(`${letter}${it.n}: ${answer} (/${per})`);
+    }
+    pending = [];
+  };
+
+  for (const line of unflatten(raw)) {
+    const s = plainLine(line);
+    if (!s) continue;
+
+    // "A. Matching ( 10 marks )" — a section, not an answer.
+    const head = s.match(/^([A-Z])\s*[.)]\s+[A-Za-z][^\n]*$/);
+    if (head && !/^\d/.test(s)) {
+      flush();
+      letter = head[1];
+      // "( 8 marks )" on the paper, "(5)" in a Word key — both are what
+      // the section is worth.
+      const marks = s.match(/\(\s*(\d{1,3})\s*(?:marks?)?\s*\)/i);
+      marksForSection = marks ? Number(marks[1]) : 0;
+      // A heading may carry its items on the same line.
+      const rest = s.slice(head[0].indexOf(head[1]) + 1).replace(/^\s*[.)]\s*/, "");
+      pending = numberedItemsOn(" " + rest);
+      prose = [];
+      // A heading that numbers nothing may still carry the section's standard
+      // on its own line — "E. Paragraph ( 10 marks ) Mark out of 10: position
+      // (2) · two facts (4) ...". Keep whatever follows the marks bracket, or
+      // the section is lost on a key whose line breaks are gone.
+      if (!pending.length && marks) {
+        const after = rest.slice(rest.indexOf(marks[0]) + marks[0].length).trim();
+        if (after) prose.push(after);
+      }
+      continue;
+    }
+    if (!letter) continue;
+    const found = numberedItemsOn(" " + s);
+    if (found.length) pending = pending.concat(found);
+    else prose.push(s);
+  }
+  flush();
+
+  if (out.length < 4) return raw;   // not enough to be worth rewriting
+  const total = raw.match(/total\s*(?:of\s*)?(\d{1,3})\s*marks?/i)
+    || raw.match(/total[:\s]*\/\s*(\d{1,3})/i)
+    // "Unit Test --- Accommodated / 30 marks" — the heading of a Word key.
+    || raw.match(/\/\s*(\d{1,3})\s*marks\b/i);
+  if (total) out.push(`Total: /${total[1]}`);
+  return out.join("\n");
+}

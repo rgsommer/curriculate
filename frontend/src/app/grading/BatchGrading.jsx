@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildResultsPdf, buildStripsPdf, buildMarkingGuidePdf, preloadPdfLibs } from "./pdfReports";
-import { deriveConsensusKey, keyIndex, keyIndexFromExtracted, applyKeyToGuide, applyBlindMarking, keyRowsForReview, withCorrectedAnswer, MIN_VOTERS } from "./consensusKey";
+import { deriveConsensusKey, keyIndex, keyIndexFromExtracted, applyKeyToGuide, applyBlindMarking, keyRowsForReview, withCorrectedAnswer, routeRubricAndKey, MIN_VOTERS } from "./consensusKey";
 import { completeQuest } from "../../components/QuestWidget";
 
 /**
@@ -93,6 +93,299 @@ export function loadPdfJs() {
 
 // Render a single page to a JPEG data URL.
 // For image-mode batches, `imageDataArr` supplies pre-loaded data URLs — pdfDoc may be null.
+/* ------------------------------------------------------------------
+ *  PATH A — a test with an answer key.
+ *
+ *    1. read the paper blind      /grading/transcribe  (no key in prompt)
+ *    2. mark the closed sets      in code, against the key — exact
+ *    3. mark the rest             /grading/mark-paper: the whole paper and
+ *                                 the key AS THE TEACHER WROTE IT, together
+ *    4. write the feedback        /grading/feedback, marks already fixed
+ *
+ *  Step 3 used to compile the key into a lookup table and mark each section
+ *  against the table. On a Geography class of twenty, marked by hand for
+ *  comparison, that came back 7.9 marks LOW on twenty papers out of twenty
+ *  — and every cause was the compiling rather than the judging:
+ *
+ *    - thirteen students wrote "area" and were crossed, because the key
+ *      reads "area (in km²)" and a parenthetical meant for the marker had
+ *      become text the student was required to produce;
+ *    - a key offering "where · there · care" for one question gave nothing
+ *      to a student who got two of the three blanks;
+ *    - five papers published with whole sections missing, scored as
+ *      nothing, and they were the five worst results in the class.
+ *
+ *  A teacher reading their own key has none of those problems, so the key
+ *  is no longer compiled. What stays in code is what is mechanical: the
+ *  closed sets, the arithmetic, and the check that every section the key
+ *  declares actually came back.
+ *
+ *  Returns the same shape the monolith did, because the publishing, the
+ *  PDFs, the Edsby CSV and the email all read it.
+ * ------------------------------------------------------------------ */
+const SECTION_LETTER = (s) => String(s || "").trim().match(/^([A-Z])[.)\s]/)?.[1] || "";
+
+async function gradeViaPathA({ images, answerKeyText, rawAnswerKeyText, gradeBand, subjectArea, voice, title, fallbackName, base, signal }) {
+  const at = (path) => base.replace(/\/grading$/, path);
+  const post = async (path, body) => {
+    const r = await fetchWithRetry(at(path), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    });
+    // Say what actually went wrong. A 404 here means the backend has not
+    // deployed these endpoints yet, which is a different problem from the
+    // marking failing, and the teacher should not have to guess which.
+    if (!r.ok) {
+      const e = new Error(
+        r.status === 404
+          ? `${path} is not on the server yet (404) — the backend has not deployed`
+          : `${path} returned ${r.status}`
+      );
+      e.status = r.status;
+      e.missingEndpoint = r.status === 404;
+      throw e;
+    }
+    return r.json().catch(() => { throw new Error(`${path} did not return JSON`); });
+  };
+
+  // Two calls, side by side, and neither of them is given a fragment.
+  //
+  //   the blind read  — the paper with the key NOWHERE in the prompt, so a
+  //                     model cannot report the key's answers as the
+  //                     student's; matching and true/false are then settled
+  //                     in code by string comparison, which is exact;
+  //   mark-paper      — the whole paper and the KEY AS THE TEACHER WROTE IT,
+  //                     read together, for everything else.
+  //
+  // The key used to be compiled into a lookup table first and every section
+  // marked against the table. On a class of twenty that came back 7.9 marks
+  // low on twenty papers out of twenty, and the compiling was the cause:
+  // "area" crossed against a key reading "area (in km²)", nothing given for
+  // two blanks of three, and five papers published with whole sections
+  // missing. The teacher's own document does not have those problems.
+  //
+  // The canonical key still goes along, for the one job it is good at:
+  // deciding which sections are closed sets. Both calls work that out with
+  // the same function, so neither waits for the other.
+  const theKey = String(rawAnswerKeyText || "").trim() || answerKeyText;
+  const [blind, marked] = await Promise.all([
+    post("/grading/transcribe", { images, gradeBand, answerKeyText }),
+    post("/grading/mark-paper", {
+      images,
+      answerKeyText: theKey,
+      canonicalKeyText: answerKeyText,
+      gradeBand,
+      subjectArea,
+    }),
+  ]);
+
+  if (!blind?.ok) throw new Error("Could not read the paper.");
+  if (!marked?.ok) throw new Error("Could not mark the paper against the key.");
+
+  // A section the marker could not finish must not be published. A missing
+  // section used to be scored zero, which is what put five papers of twenty
+  // between 11 and 19 marks below what they had earned.
+  if (marked.complete === false) {
+    return {
+      error: `Section ${(marked.missing || []).join(", ")} could not be marked. Re-grade this paper.`,
+      code: "incomplete_marking",
+    };
+  }
+
+  const nameOf = new Map(
+    (blind.sections || []).map((s) => [SECTION_LETTER(s.section) || s.letter, s.section])
+  );
+  const pretty = (letter) => nameOf.get(letter) || letter;
+
+  // Closed sets ONLY — a letter from a column, or true/false. Measured on a
+  // hand-marked class, settling those in code cut their error from 28 marks
+  // to 10 and from 11 to 8; doing the same to the fill-in-the-blanks raised
+  // theirs from 16 to 36, because a blank has a dozen right wordings and a
+  // string comparison knows one. Those now go to the marker with the key.
+  const objective = (blind.marking?.sections || []).filter((s) => s.objective && s.closedSet);
+  const sections = [
+    ...objective.map((s) => ({
+      name: pretty(s.letter),
+      score: Number(s.score) || 0,
+      out_of: Number(s.out_of) || 0,
+      teacher_comment: "",
+      incorrect_items: (s.items || [])
+        .filter((i) => i.verdict === "incorrect" || i.verdict === "blank")
+        .map((i) => ({
+          prompt: `${i.n}.`,
+          student_answer: i.written || "",
+          correct_answer: i.answer || "",
+        })),
+    })),
+    ...(marked.sections || []).map((s) => ({
+      name: pretty(s.letter) === s.letter ? (s.name || s.letter) : pretty(s.letter),
+      score: Number(s.score) || 0,
+      out_of: Number(s.out_of) || 0,
+      teacher_comment: "",
+      incorrect_items: (s.items || [])
+        .filter((i) => i.marks < i.out_of)
+        .map((i) => ({
+          prompt: `${String(i.id).replace(/^[A-Z]/, "")}.`,
+          student_answer: i.wrote || "",
+          correct_answer: "",
+        })),
+    })),
+  ].sort((a, b) => String(a.name).localeCompare(String(b.name)));
+
+  const score = Math.round(sections.reduce((t, s) => t + s.score, 0) * 100) / 100;
+  let outOf = sections.reduce((t, s) => t + s.out_of, 0);
+
+  // A paper must be marked out of what the key says the paper is out of.
+  //
+  // Nothing checked that, and a key that parsed only in PART therefore
+  // published quietly: a Word key written in markdown ("**A. Key terms ---
+  // matching (5)**", "> **1 -> A**") yielded a mark scheme of one section,
+  // and a 30-mark test went out as 6 out of 7. A low mark and a marked
+  // fragment look identical on the report, so the teacher has no way to tell
+  // them apart — and 6/7 reads as a good paper.
+  //
+  // The sections the key declares come back from the server that read them,
+  // rather than being re-derived here: this file and backend/utils have
+  // drifted apart three times this week, and each time the drift was the bug.
+  const declared = Number(marked.paperTotal) || 0;
+  // No sections at all is the loudest version of the same fault, and it was
+  // the quietest: with nothing read there is no total to disagree with, so
+  // every check below passes and the paper goes out marked against whatever
+  // the model made up.
+  if (!(marked.declared || []).length || !outOf) {
+    // Say what was looked at and what was looked for. "No mark scheme
+    // could be read from the key" told a teacher nothing: not which key,
+    // not what shape was missing, not what to do about it — and the one
+    // thing it implied, that the key was bad, was usually wrong.
+    const chars = Number(marked.keyChars) || 0;
+    return {
+      error: chars
+        ? `The key was read (${chars} characters) but nothing in it says how the paper is`
+          + ` marked — no question numbers the marker could use, and no total.`
+          + ` A line such as "Total: /50", or headings such as "A. Matching (10 marks)",`
+          + ` is enough.`
+        : "The answer key came through empty, so there is nothing to mark against.",
+      code: "scheme_mismatch",
+    };
+  }
+  const markedLetters = new Set([
+    ...objective.map((s) => s.letter),
+    ...(marked.sections || []).map((s) => s.letter),
+  ]);
+  const unmarked = (marked.declared || [])
+    .map((s) => s.letter)
+    .filter((l) => !markedLetters.has(l));
+  if (unmarked.length) {
+    return {
+      error: `Section ${unmarked.join(", ")} of the key was never marked — re-check the key.`,
+      code: "scheme_mismatch",
+    };
+  }
+  if (declared && Math.abs(outOf - declared) > 0.51) {
+    const got = (marked.declared || []).map((d) => `${d.letter || "the paper"} /${d.out_of}`).join(", ");
+    return {
+      error: `The key says the paper is out of ${declared}, but the sections read from it`
+           + ` add to ${outOf}${got ? ` (${got})` : ""} — so part of the key did not come`
+           + ` through, and this is not being marked against a fragment.`,
+      code: "scheme_mismatch",
+    };
+  }
+  // Within half a mark, the key's own figure is the one to show: /50, not /49.5.
+  if (declared) outOf = declared;
+
+  // Everything that went wrong, for the feedback call. It gets this and no
+  // pages, so it cannot move a mark.
+  const faults = [
+    ...objective.flatMap((s) =>
+      (s.items || [])
+        .filter((i) => i.verdict === "incorrect" || i.verdict === "blank")
+        .map((i) => ({
+          id: `${s.letter}${i.n}`,
+          wrote: i.written || "",
+          why: i.verdict === "blank" ? "left blank" : `the answer is ${i.answer}`,
+        }))
+    ),
+    ...(marked.items || [])
+      .filter((i) => i.marks < i.out_of)
+      .map((i) => ({ id: i.id, wrote: i.wrote, why: i.why })),
+  ];
+
+  const fb = await post("/grading/feedback", {
+    sections: sections.map((s) => ({ name: s.name, score: s.score, out_of: s.out_of })),
+    faults,
+    studentName: blind.student_name || fallbackName || "",
+    title: title || blind.paper_title || "",
+    voice,
+    gradeBand,
+    score,
+    outOf,
+  }).catch(() => ({}));
+
+  // The marking guide the teacher's PDF is built from.
+  const guideSections = [
+    ...objective.map((s) => ({
+      name: pretty(s.letter),
+      score: Number(s.score) || 0,
+      out_of: Number(s.out_of) || 0,
+      items: (s.items || []).map((i) => ({
+        n: String(i.n),
+        verdict: i.verdict === "unmarked" ? "unclear" : i.verdict,
+        student_answer: i.written || "",
+        correct_answer: i.verdict === "correct" ? "" : (i.answer || ""),
+        note: "",
+        marks: null,
+        marks_out_of: null,
+      })),
+    })),
+    ...(marked.sections || []).map((s) => ({
+      name: pretty(s.letter) === s.letter ? (s.name || s.letter) : pretty(s.letter),
+      score: Number(s.score) || 0,
+      out_of: Number(s.out_of) || 0,
+      items: (s.items || []).map((i) => ({
+        n: String(i.id).replace(/^[A-Z]/, ""),
+        verdict: i.marks >= i.out_of ? "correct" : (i.marks > 0 ? "partial" : "incorrect"),
+        student_answer: i.wrote || "",
+        correct_answer: "",
+        note: i.why || "",
+        marks: i.marks,
+        marks_out_of: i.out_of,
+      })),
+    })),
+  ].sort((a, b) => String(a.name).localeCompare(String(b.name)));
+
+  return {
+    overall_score: score,
+    overall_out_of: outOf,
+    student_name: blind.student_name || "",
+    student_id: null,
+    detected_title: blind.paper_title || "",
+    sections,
+    strengths: Array.isArray(fb.strengths) ? fb.strengths : [],
+    improvements: Array.isArray(fb.improvements) ? fb.improvements : [],
+    teacher_comment: fb.teacher_comment || "",
+    inferred_subject: subjectArea || "",
+    inferred_assessment_type: "Test",
+    achievement_summary: null,
+    teacher_starred: false,
+    marking_guide: {
+      handwrite: fb.handwrite || "",
+      write_on_paper: fb.write_on_paper || "",
+      highlights: null,
+      sections: guideSections,
+    },
+    answer_key_used: {
+      source: "text",
+      textChars: String(answerKeyText || "").length,
+      imageCount: 0,
+      hasReference: true,
+      path: "A",
+    },
+  };
+}
+
+
 // The answer key is rendered larger than the student pages, on purpose.
 //
 // A mistake in a student's page costs that student a mark. A mistake in the
@@ -660,6 +953,31 @@ export default function BatchGrading({
 
   // The key, laid out for the teacher to check before it marks anyone. An
   // error in the key is not worth one mark, it is worth the class.
+  // One title for the whole batch.
+  //
+  // Each paper's title came from that paper's own grading call, and the
+  // model renames the same test every time it reads it: one 21-student run
+  // produced eight titles — "Unit Test - Number Sense and Algebra", "Unit
+  // Test Number Sense and Patterns and Algebra", "Unit Test on Number Sense
+  // and Patterns and Algebra" — so /progress listed one assessment as
+  // several. A stack of papers is one assessment, so the first paper's title
+  // is taken and the rest of the run uses it.
+  const batchTitleRef = useRef("");
+  // Set once if the test-path endpoints are not deployed, so a 404 is
+  // reported once for the run rather than twenty times and is not retried
+  // on every remaining paper.
+  const pathAUnavailableRef = useRef(false);
+  // A key that yields no usable mark scheme is one fault for the whole batch,
+  // not twenty — the stack shares a key. Said once, then the run goes the
+  // usual way rather than repeating the same refusal per paper.
+  const keyUnusableRef = useRef(false);
+
+  // The test path: three small calls instead of the 28-field form, used
+  // whenever a test has an answer key. On by default because it measures
+  // better, and switchable because a term's marks should not hinge on a
+  // path that is one day old.
+  const [pathAEnabled, setPathAEnabled] = useState(true);
+
   const [keyReviewOpen, setKeyReviewOpen] = useState(false);
   const keyReviewRows = useMemo(
     () => keyRowsForReview(extractedAnswerKey),
@@ -1224,6 +1542,9 @@ export default function BatchGrading({
     abortControllerRef.current = new AbortController();
     setServiceFault(null); // a fresh run gets a fresh verdict on the service
     setActivity([]);       // and a fresh account of itself
+    batchTitleRef.current = "";  // and settles on its own title
+    pathAUnavailableRef.current = false;  // and tries the test path again
+    keyUnusableRef.current = false;
     setGrading(true);
     // Wrap the whole run so an unexpected throw (or early return) can never leave
     // the UI stuck in the "grading" state — finally always clears it.
@@ -1423,7 +1744,33 @@ export default function BatchGrading({
       }
     }
 
-    const effectiveRubric = (rubricOverride || "").trim();
+    // An answer key uploaded into the rubric box belongs in the key slot.
+    // "Upload Rubric" is the only upload button on that panel, so that is
+    // where a teacher's answer key lands — and nothing in the key machinery
+    // reads the rubric, so the run marks as if no key existed. See
+    // routeRubricAndKey in consensusKey.js.
+    //
+    // Take the routed key whether or not it was promoted. It is also where a
+    // key gets put into the shape the markers parse, and that half was being
+    // thrown away: a key uploaded into the KEY slot kept whatever markdown
+    // Word gave it ("**A. Key terms --- matching (5)**", "> **1 -> A**"), so
+    // the mark scheme read as one section and a 30-mark test went out marked
+    // 6 out of 7. Only a key that arrived in the rubric box was ever tidied.
+    const routed = routeRubricAndKey(rubricOverride, effectiveAnswerKey);
+    // The key as it arrived, kept beside the canonical one. The marker is
+    // given the teacher's own document; only the closed-set lookup and the
+    // key-review table read the canonical form.
+    const rawAnswerKey = routed.promoted ? String(rubricOverride || "") : effectiveAnswerKey;
+    if (routed.answerKey !== effectiveAnswerKey) {
+      if (routed.promoted) {
+        say("That rubric upload is an answer key — marking against it");
+        console.log("[batch] rubric looked like an answer key; promoted to the key slot");
+      } else {
+        console.log("[batch] answer key re-written into the canonical form the markers parse");
+      }
+      effectiveAnswerKey = routed.answerKey;
+    }
+    const effectiveRubric = routed.rubric;
 
     // Grade a single student — returns a result entry
     if (keyDoubt.length) {
@@ -1513,7 +1860,9 @@ export default function BatchGrading({
         // written sections and the feedback, which is what it is for. The
         // two calls go together, so this costs latency only when the blind
         // read is the slower of the two.
-        const blindRead = effectiveAnswerKey
+        const willUsePathA = pathAEnabled && !!effectiveAnswerKey
+          && !pathAUnavailableRef.current && !keyUnusableRef.current;
+        const blindRead = (effectiveAnswerKey && !willUsePathA)
           ? fetchWithRetry(gradingUrl.replace(/\/grading$/, "/grading/transcribe"), {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -1525,24 +1874,88 @@ export default function BatchGrading({
             })
           : Promise.resolve(null);
 
-        const res = await fetchWithRetry(gradingUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-          signal: abortControllerRef.current?.signal,
-        });
+        // PATH A — a test with a key goes down the three small calls, not
+        // the 28-field form. See gradeViaPathA.
+        let data;
+        let usedPathA = false;
+        if (willUsePathA) {
+          try {
+            data = await gradeViaPathA({
+              images,
+              answerKeyText: effectiveAnswerKey,
+              rawAnswerKeyText: rawAnswerKey,
+              gradeBand,
+              subjectArea: subjectArea || undefined,
+              voice: feedbackVoice || undefined,
+              title: batchTitleRef.current || undefined,
+              fallbackName: group.name || "",
+              base: gradingUrl,
+              signal: abortControllerRef.current?.signal,
+            });
+            usedPathA = !data?.error;
+            if (data?.code === "scheme_mismatch") {
+              // The key is the same for every paper in the stack, so this is
+              // one line for the run and the test path stops being tried.
+              if (!keyUnusableRef.current) {
+                keyUnusableRef.current = true;
+                say(`${data.error} Grading the stack the usual way.`);
+              }
+              console.warn(`[batch] the key gave no usable mark scheme: ${data.error}`);
+            } else if (data?.error) {
+              say(`${who}: ${data.error}`);
+              console.warn(`[batch] Path A declined to mark ${who}: ${data.error}`);
+            }
+          } catch (e) {
+            // Never lose a paper to the new path. Fall through to the
+            // grader that has been marking all term — and say why, because
+            // "the test path failed" across twenty rows tells nobody
+            // anything.
+            const why = e?.message || String(e);
+            console.warn("[batch] Path A failed, falling back:", why);
+            if (e?.missingEndpoint) {
+              // One line for the run, not one per paper, and stop trying.
+              if (!pathAUnavailableRef.current) {
+                pathAUnavailableRef.current = true;
+                say(`The test path is not on the server yet — grading the whole stack the usual way`);
+              }
+            } else {
+              say(`${who}: test path failed (${why}) — falling back`);
+            }
+            data = null;
+          }
+        }
 
-        const data = await res.json();
+        if (!usedPathA) {
+          const res = await fetchWithRetry(gradingUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+            signal: abortControllerRef.current?.signal,
+          });
+          const fallback = await res.json();
+          // A Path A refusal (an item it could not mark) is kept only when
+          // the fallback has nothing better to say.
+          data = fallback?.overall_score != null ? fallback : (data || fallback);
+        }
+
         say(`${who}: marked in ${((Date.now() - began) / 1000).toFixed(1)}s` +
+            `${usedPathA ? " (test path)" : ""}` +
             `${Number.isFinite(Number(data.overall_score)) ? ` — ${Math.round(Number(data.overall_score) * 10) / 10}/${Math.round(Number(data.overall_out_of))}` : ""}`);
 
-        const blind = await blindRead;
+        // Path A has already marked the objective sections from its own
+        // blind read; applying it twice would double the correction.
+        const blind = usedPathA ? null : await blindRead;
         if (blind?.marking?.sections?.length) {
           const moved = applyBlindMarking(data, blind.marking.sections);
           if (moved.length) {
             say(`${who}: read blind — ${moved.join(", ")}` +
                 `${Number.isFinite(Number(data.overall_score)) ? ` → ${Math.round(Number(data.overall_score) * 10) / 10}/${Math.round(Number(data.overall_out_of))}` : ""}`);
           }
+        }
+
+        if (!batchTitleRef.current && String(data.detected_title || "").trim()) {
+          batchTitleRef.current = String(data.detected_title).trim();
+          say(`Title for this batch: "${batchTitleRef.current}"`);
         }
 
         const rawScore = Number(data.overall_score);
@@ -1580,7 +1993,7 @@ export default function BatchGrading({
           sections: data.sections || null,
           subject: data.inferred_subject || "",
           assessmentType: data.inferred_assessment_type || "",
-          detectedTitle: data.detected_title || "",
+          detectedTitle: batchTitleRef.current || data.detected_title || "",
           pageImages: images,
           refCode: null,
           // Surface the server's error code and correlation id, not just the
@@ -2700,6 +3113,7 @@ export default function BatchGrading({
     }
   }, [
     say,
+    pathAEnabled,
     studentCount,
     pageCount,
     fixedPps,
@@ -2800,8 +3214,11 @@ export default function BatchGrading({
       }
       if (!images.length) throw new Error("No valid pages for this student");
 
-      const effectiveRubric = (rubricOverride || "").trim();
-      const effectiveAnswerKey = extractedAnswerKey || "";
+      // Same routing as the batch run, so a re-grade cannot quietly lose
+      // the key the original run used.
+      const regradeRouted = routeRubricAndKey(rubricOverride, extractedAnswerKey || "");
+      const effectiveRubric = regradeRouted.rubric;
+      const effectiveAnswerKey = regradeRouted.answerKey;
 
       const payload = {
         images,
@@ -3164,9 +3581,35 @@ export default function BatchGrading({
     const rubricNote = (rubricOverride || "").trim();
     if (rubricNote) {
       const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+      // A rubric or key that came from a file is named, not reprinted.
+      //
+      // Reading a .docx puts "--- Name.docx ---" at the head of the text it
+      // extracted, and the whole of an answer key was then pasted into the
+      // summary email — pages of it, in markdown, above the marks. The
+      // teacher attached that file and already has it; what they need is to
+      // know which one the run used.
+      // Everything before the first file header is what the teacher typed;
+      // from the header on it is the file's own contents.
+      const headers = [...rubricNote.matchAll(/^---[ \t]*(.+?)[ \t]*---[ \t]*$/gm)];
+      const files = headers.map((m) => m[1]);
+      const typed = (headers.length ? rubricNote.slice(0, headers[0].index) : rubricNote).trim();
+
       html += `<div style="background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px;">`;
-      html += `<div style="font-weight: 800; font-size: 12px; color: #92400e; margin-bottom: 4px;">Rubric</div>`;
-      html += `<div style="font-size: 13px; line-height: 1.5; color: #78350f; white-space: pre-wrap;">${esc(rubricNote)}</div>`;
+      html += `<div style="font-weight: 800; font-size: 12px; color: #92400e; margin-bottom: 4px;">Marked against</div>`;
+      if (files.length) {
+        html += `<div style="font-size: 13px; line-height: 1.6; color: #78350f;">`
+          + files.map((f) => `&#128206; ${esc(f)}`).join("<br/>")
+          + `<div style="font-size: 11px; opacity: 0.75; margin-top: 4px;">`
+          + `${files.length === 1 ? "This file was" : "These files were"} attached when the stack was graded.</div>`
+          + `</div>`;
+      }
+      if (typed) {
+        // Anything the teacher actually typed still belongs in the email,
+        // but a long paste is trimmed — this is a summary, not the key.
+        const short = typed.length > 600 ? `${typed.slice(0, 600)}…` : typed;
+        html += `<div style="font-size: 13px; line-height: 1.5; color: #78350f; white-space: pre-wrap;${files.length ? " margin-top: 8px;" : ""}">${esc(short)}</div>`;
+      }
       html += `</div>`;
     }
 
@@ -3424,7 +3867,23 @@ export default function BatchGrading({
     if (!csv) { alert("No graded results to export yet."); return; }
     // Names are normalised to the roster spelling on email; do the same here,
     // or the gradebook gets whatever the handwriting was read as.
-    const safeTitle = String(effectiveTitle || "grades").replace(/[^\w.-]+/g, "-").slice(0, 40);
+    //
+    // The FILE is named after the stack it came from rather than after what
+    // the grader inferred the subject to be. Three classes exported in one
+    // afternoon all arrived as "edsby-Geography-Worksheet-<today>.csv" with
+    // nothing to tell them apart, when the scan they came from was called
+    // "Geo8B Ch Review Handouts". The teacher's own title still wins where
+    // they have typed one, and the scanner's timestamp comes off the front
+    // since the date is already on the end.
+    const fromScan = String(pdfName || "")
+      .replace(/\.pdf$/i, "")
+      .replace(/^\s*\d{8}[_-]\d{6}\s*[-—–]?\s*/, "")
+      .trim();
+    const base = emailTitle.trim() || fromScan || effectiveTitle || "grades";
+    const safeTitle = String(base)
+      .replace(/[^\w.-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60) || "grades";
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -3436,7 +3895,7 @@ export default function BatchGrading({
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     setEdsbyExported(true);
     setTimeout(() => setEdsbyExported(false), 2500);
-  }, [buildEdsbyCsv, effectiveTitle]);
+  }, [buildEdsbyCsv, effectiveTitle, pdfName, emailTitle]);
 
   const sendEmail = useCallback(async () => {
     // An array, so the backend does not have to re-split it and a trailing
@@ -4524,6 +4983,51 @@ export default function BatchGrading({
                   </option>
                 ))}
               </select>
+            </label>
+
+            {/* The test path. Only does anything when a key is attached —
+                without one there is nothing to mark against, and the
+                general grader is the right tool. */}
+            <label style={{
+              ...batchStyles.label,
+              cursor: "pointer",
+              paddingTop: 18,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div
+                  onClick={() => setPathAEnabled((v) => !v)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setPathAEnabled((v) => !v); }
+                  }}
+                  role="switch"
+                  aria-checked={pathAEnabled}
+                  aria-label="Mark as a test"
+                  tabIndex={0}
+                  style={{
+                    width: 40, height: 22, borderRadius: 11,
+                    background: pathAEnabled ? "#15803d" : "#d1d5db",
+                    position: "relative", transition: "background 0.2s",
+                    cursor: "pointer", flexShrink: 0,
+                  }}
+                >
+                  <div style={{
+                    width: 18, height: 18, borderRadius: 9, background: "#fff",
+                    position: "absolute", top: 2, left: pathAEnabled ? 20 : 2,
+                    transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                  }} />
+                </div>
+                <span
+                  style={{ fontSize: 13, fontWeight: 600 }}
+                  title="With an answer key attached, marks the paper the way a teacher would: the objective sections are looked up against your key in code, the written sections are marked against the key's own mark scheme, and the feedback is written afterwards from marks that are already fixed."
+                >
+                  Mark as a test
+                </span>
+              </div>
+              <div style={{ fontSize: 11, opacity: 0.6, marginTop: 2 }}>
+                {pathAEnabled
+                  ? "Matching and true/false looked up against your key; written work marked against its mark scheme."
+                  : "Off — every paper goes through the general grader."}
+              </div>
             </label>
 
             <label style={{

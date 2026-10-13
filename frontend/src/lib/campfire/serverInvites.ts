@@ -2,7 +2,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import { firstName } from "./parseInvites";
 import { campfireTeaserText, campfireTeaserHtml } from "./types";
-import { passItOnCard } from "./templates";
+import { passItOnCard, payItForward } from "./templates";
 
 export const EMAIL_RE = /^[^\s@<>,;"']+@[^\s@<>,;"']+\.[^\s@<>,;"']+$/;
 export const MAX_INVITES = 50;
@@ -201,17 +201,18 @@ function passItOnBlock(
   } catch {
     /* keep default */
   }
+  // The recipient gets a "pay it forward" idea for someone in their world (and no
+  // season line — "start a card for your pastor" makes no sense to the pastor).
   const pass = passItOnCard(context);
-  const link = `${origin}/campfirelive?start=${pass.templateId}`;
-  const lead = forRecipient
-    ? "Pay it forward — start a card for a colleague"
-    : "Know someone else who deserves one? Start a card";
-  const season = pass.seasonLine ? `${pass.seasonLine}. ` : "";
+  const fwd = payItForward(context);
+  const link = `${origin}/campfirelive?start=${forRecipient ? fwd.templateId : pass.templateId}`;
+  const lead = forRecipient ? fwd.lead : "Know someone else who deserves one? Start a card";
+  const season = !forRecipient && pass.seasonLine ? `${pass.seasonLine}. ` : "";
   const html = `
   <p style="margin:20px 0 0; padding:12px 14px; background:#fff7ed; border:1px solid #fed7aa; border-radius:12px; font-size:14px; color:#7c2d12; text-align:center;">${
-    forRecipient ? "💛" : pass.emoji
+    forRecipient ? fwd.emoji : pass.emoji
   } ${escapeHtml(season)}<a href="${link}" style="color:#c2410c; font-weight:700; text-decoration:underline;">${lead} &rarr;</a><br><span style="font-size:12px; color:#9a3412;">Takes 30 seconds — everyone signs from one link.</span></p>`;
-  const text = `\n\n${forRecipient ? "💛" : pass.emoji} ${season}${lead}: ${link}`;
+  const text = `\n\n${forRecipient ? fwd.emoji : pass.emoji} ${season}${lead}: ${link}`;
   return { html, text };
 }
 
@@ -399,8 +400,8 @@ export async function getCardRecipients(
   return { label: names.join(" & ") || fallback, emails };
 }
 
-// Birthday card just opened. The wishes are private to the recipient, but everyone
-// who signed gets told the card was delivered + how many wishes went in.
+// A card just opened. The notes are private to the recipient, but everyone who signed
+// gets told the card was delivered + how many notes went in.
 export function cardRevealEmail(opts: {
   groupName: string;
   title: string;
@@ -409,9 +410,13 @@ export function cardRevealEmail(opts: {
   url: string;
   forRecipient: boolean;
   icon?: string; // 🎂 for a birthday; 💐/👔/🎉 for other celebration cards
+  imageUrl?: string; // the card picture (cardEmailInfo) — the email then reads like a card
 }) {
   const { groupName, title, recipientName, count, url, forRecipient, icon = "🎂" } = opts;
-  const wishes = `${count} ${count === 1 ? "wish" : "wishes"}`;
+  const img = opts.imageUrl
+    ? `${opts.imageUrl}?for=${forRecipient ? "recipient" : "delivered"}&n=${count}`
+    : null;
+  const wishes = `${count} ${count === 1 ? "note" : "notes"}`;
   const subject = forRecipient
     ? `${icon} Your card is here — ${wishes} inside!`
     : `💌 ${recipientName} just got the card (${wishes})`;
@@ -420,19 +425,24 @@ export function cardRevealEmail(opts: {
     ? `Open "${escapeHtml(title)}" in ${escapeHtml(groupName)} — ${wishes} written just for you.`
     : `"${escapeHtml(title)}" just opened in ${escapeHtml(groupName)}. <strong>${escapeHtml(
         recipientName
-      )}</strong> received the card with <strong>${wishes}</strong> — each message is private to them.`;
+      )}</strong> received the card with <strong>${wishes}</strong> — each note is private to them.`;
   const cta = forRecipient ? "Open my card" : "See the card";
   const pass = passItOnBlock(url, title, forRecipient);
   const text = (forRecipient
     ? `Your card is here! Open "${title}" in ${groupName} — ${wishes} written just for you.\n\n${cta}: ${url}`
-    : `"${title}" just opened in ${groupName}. ${recipientName} received the card with ${wishes} — each message is private to them.\n\n${cta}: ${url}`) + pass.text;
+    : `"${title}" just opened in ${groupName}. ${recipientName} received the card with ${wishes} — each note is private to them.\n\n${cta}: ${url}`) + pass.text;
   const html = `
 <div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
-  <div style="font-size:40px;">${icon}</div>
-  <h1 style="font-size:22px; margin:8px 0;">${escapeHtml(headline)}</h1>
+  ${
+    img
+      ? `<a href="${url}" style="display:block; text-decoration:none;"><img src="${img}" width="480" alt="${escapeHtml(`${title} — ${cta}`)}" style="display:block; width:100%; max-width:480px; height:auto; border:0; border-radius:16px;"></a>
+  <h1 style="font-size:22px; margin:16px 0 6px;">${escapeHtml(headline)}</h1>`
+      : `<div style="font-size:40px;">${icon}</div>
+  <h1 style="font-size:22px; margin:8px 0;">${escapeHtml(headline)}</h1>`
+  }
   <p style="color:#475569; margin:0 0 12px;">${lead}</p>
   ${emailButton(url, `${cta}`)}
-  <p style="margin:0;"><a href="${url}" style="color:#64748b; font-size:12px; word-break:break-all;">${url}</a></p>
+  ${img ? "" : `<p style="margin:0;"><a href="${url}" style="color:#64748b; font-size:12px; word-break:break-all;">${url}</a></p>`}
   ${pass.html}
 </div>`.trim();
   return { subject, text, html };
@@ -547,20 +557,38 @@ export function contestWinnerEmail(opts: {
   byScore: boolean; // score tournament (best total) vs a group vote
   prize: "paid" | "pending" | "none";
   prizeText?: string | null; // host-described prize the host delivers themselves
+  imageUrl?: string; // the winner card (/api/campfire/winner-image/[id])
+  giftCents?: number; // paid into the prize pot
+  giftCurrency?: string | null;
+  subject?: string | null; // who's in the winning photo, when not the entrant ("Pippin")
 }) {
-  const { forWinner, groupName, title, url, winnerName, byScore, prize, prizeText } = opts;
+  const { forWinner, groupName, title, url, winnerName, byScore, prize, prizeText, imageUrl, giftCents = 0, giftCurrency } = opts;
+  const subj = opts.subject?.trim() || null;
+  const star = subj ?? winnerName; // who the group cheers for
   const why = byScore ? "posted the best total score" : "got the most votes from the group";
+  // The prize pot, stated as what was actually collected ("a $10 gift card").
+  const cur = (giftCurrency || "usd").toUpperCase();
+  const amt = giftCents > 0
+    ? `$${(giftCents / 100).toFixed(giftCents % 100 ? 2 : 0)}${cur === "USD" ? "" : ` ${cur}`}`
+    : null;
+  const giftAll = amt ? `🎁 Plus a ${amt} gift card from the prize pot to go with it!` : "";
   const subject = forWinner
     ? `🏆 You won "${title}"!`
-    : `🏆 We have a winner — ${winnerName} won "${title}"`;
-  const headline = forWinner ? "You won! 🎉" : `${winnerName} won! 🏆`;
+    : `🏆 We have a winner — ${star} won "${title}"`;
+  const headline = forWinner ? (subj ? `${subj} won! 🎉` : "You won! 🎉") : `${star} won! 🏆`;
   const lead = forWinner
-    ? `Congratulations — your entry in "${title}" (${groupName}) ${why}.`
-    : `The ${byScore ? "scores" : "votes"} are in for "${title}" in ${groupName} — ${winnerName}'s entry ${why}.${
+    ? `Congratulations — your entry${subj ? ` of ${subj}` : ""} in "${title}" (${groupName}) ${why}.`
+    : `The ${byScore ? "scores" : "votes"} are in for "${title}" in ${groupName} — ${
+        subj ? `the photo of ${subj} (entered by ${winnerName})` : `${winnerName}'s entry`
+      } ${why}.${
         prizeText ? ` They win: ${prizeText}.` : ""
       } Go cheer them on!`;
   const prizeLine = !forWinner
-    ? ""
+    ? giftAll
+    : amt
+    ? `Your prize: a ${amt} gift card from the prize pot${prizeText ? `, plus ${prizeText}` : ""} — ${
+        prize === "paid" ? "it's on its way to your inbox." : "the host will send it to you."
+      }`
     : prizeText
     ? `Your prize: ${prizeText} — the host will get it to you.${
         prize === "paid" ? " Your gift card from the prize pot is on its way to your inbox too." : ""
@@ -574,16 +602,20 @@ export function contestWinnerEmail(opts: {
   const text = `${headline}\n\n${lead}${prizeLine ? `\n\n${prizeLine}` : ""}\n\n${cta}: ${url}`;
   const html = `
 <div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
-  <div style="font-size:44px;">🏆</div>
-  <h1 style="font-size:24px; margin:8px 0;">${escapeHtml(headline)}</h1>
+  ${
+    imageUrl
+      ? `<a href="${url}" style="display:block; text-decoration:none;"><img src="${imageUrl}" width="480" alt="${escapeHtml(`${star} won ${title}`)}" style="display:block; width:100%; max-width:480px; height:auto; border:0; border-radius:16px;"></a>`
+      : `<div style="font-size:44px;">🏆</div>`
+  }
+  <h1 style="font-size:24px; margin:${imageUrl ? "16px" : "8px"} 0 8px;">${escapeHtml(headline)}</h1>
   <p style="color:#475569; margin:0 0 12px;">${escapeHtml(lead)}</p>
   ${
     prizeLine
-      ? `<p style="margin:0 0 12px; padding:12px 14px; background:#fffbeb; border:1px solid #fde68a; border-radius:12px; color:#92400e;">🎁 ${escapeHtml(prizeLine)}</p>`
+      ? `<p style="margin:0 0 12px; padding:12px 14px; background:#fffbeb; border:1px solid #fde68a; border-radius:12px; color:#92400e; font-weight:600;">${prizeLine.startsWith("🎁") ? "" : "🎁 "}${escapeHtml(prizeLine)}</p>`
       : ""
   }
   ${emailButton(url, escapeHtml(cta))}
-  <p style="margin:0;"><a href="${url}" style="color:#64748b; font-size:12px; word-break:break-all;">${url}</a></p>
+  ${imageUrl ? "" : `<p style="margin:0;"><a href="${url}" style="color:#64748b; font-size:12px; word-break:break-all;">${url}</a></p>`}
 </div>`.trim();
   return { subject, text, html };
 }
@@ -659,6 +691,21 @@ function formatRevealWhen(iso: string): string {
   return `${day} at ${time}`;
 }
 
+// A card's invite shows the card itself (rendered by /api/campfire/card-image/[id])
+// and its real occasion ("Pastor Appreciation card", not the internal "Birthday").
+// Spread into newEngagementEmail's options; {} for anything that isn't a card.
+export function cardEmailInfo(e: {
+  id?: string | null;
+  type?: string | null;
+  config?: unknown;
+}): { card?: { imageUrl: string; label: string } } {
+  if (e.type !== "birthday" || !e.id) return {};
+  const occ = (e.config as { occasion?: string } | null)?.occasion?.trim();
+  const label = !occ ? "birthday card" : /\bcard$/i.test(occ) ? occ : `${occ} card`;
+  const base = campfireSiteUrl().replace(/\/$/, "");
+  return { card: { imageUrl: `${base}/api/campfire/card-image/${e.id}`, label } };
+}
+
 // Sent when a new engagement is posted (if the creator opted into emailing the
 // group). Describes what makes THIS engagement fun, in plain, inviting language.
 export function newEngagementEmail(opts: {
@@ -676,8 +723,10 @@ export function newEngagementEmail(opts: {
   cardGuest?: boolean; // invited to ONLY this engagement (a guest, not the group)
   recipientName?: string; // greet them by name if we have it
   note?: string; // optional one-line personal note from the member nudging
+  card?: { imageUrl: string; label: string }; // a card → short layout with its picture
 }) {
-  const { creator, groupName, title, typeLabel, typeIcon, isBlind, reveal, deadline, holdUntilDeadline, url, invited, cardGuest, recipientName, note } = opts;
+  const { creator, groupName, title, typeLabel, typeIcon, isBlind, reveal, deadline, holdUntilDeadline, url, invited, cardGuest, recipientName, note, card } = opts;
+  if (card) return cardInviteEmail({ creator, title, deadline, url, recipientName, note, card });
   const noteText = note ? `\n💬 "${note}"\n` : "";
   const noteHtml = note
     ? `<blockquote style="margin:0 0 16px; padding:10px 14px; border-left:3px solid #f97316; background:#fff7ed; color:#9a3412; font-style:italic; border-radius:6px;">💬 "${escapeHtml(
@@ -747,6 +796,48 @@ ${cta}: ${url}${appPromoBlock(url).text}`;
   ${appPromoBlock(url).html}
 </div>`.trim();
 
+  return { subject, text, html };
+}
+
+// The card invite: the card's picture (tap to sign), one line of who/what, when it
+// opens, one button. Deliberately short — the picture does the explaining.
+function cardInviteEmail(opts: {
+  creator: string;
+  title: string;
+  deadline: string | null;
+  url: string;
+  recipientName?: string;
+  note?: string;
+  card: { imageUrl: string; label: string };
+}) {
+  const { creator, title, deadline, url, recipientName, note, card } = opts;
+  const hi = firstName(recipientName);
+  const subject = `✍️ ${creator} invited you to sign "${title}"`;
+  const lead = `${hi ? `Hi ${hi}, ` : ""}${creator} invited you to sign this ${card.label} — just your name and a short note.`;
+  const when = deadline
+    ? `🎁 It opens ${formatRevealWhen(deadline)}. Your note stays hidden until then.`
+    : "🎁 Your note stays hidden until the card opens.";
+  const trust = "No account, app or password needed.";
+  const text = `${lead}
+
+"${title}"${note ? `
+
+💬 "${note}"` : ""}
+
+${when}
+
+✍️ Sign the card: ${url}
+
+${trust}`;
+  const html = `
+<div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.55; color:#0f172a;">
+  <a href="${url}" style="display:block; text-decoration:none;"><img src="${card.imageUrl}" width="480" alt="${escapeHtml(`${title} — tap to sign`)}" style="display:block; width:100%; max-width:480px; height:auto; border:0; border-radius:16px;"></a>
+  <p style="color:#334155; margin:16px 0 8px;">${escapeHtml(lead)}</p>
+  ${note ? `<blockquote style="margin:0 0 10px; padding:8px 12px; border-left:3px solid #f97316; background:#fff7ed; color:#9a3412; font-style:italic; border-radius:6px;">💬 "${escapeHtml(note)}"</blockquote>` : ""}
+  <p style="color:#475569; margin:0; font-size:14px;">${escapeHtml(when)}</p>
+  ${emailButton(url, "✍️ Sign the card")}
+  <p style="color:#94a3b8; font-size:12px; margin:0; text-align:center;">${escapeHtml(trust)}</p>
+</div>`.trim();
   return { subject, text, html };
 }
 

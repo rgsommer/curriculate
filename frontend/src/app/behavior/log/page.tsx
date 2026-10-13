@@ -15,6 +15,58 @@ function kindOf(b: any): "negative" | "positive" {
   return (b?.points || 0) > 0 ? "positive" : "negative";
 }
 
+// ---- Repeat flag: recent SIMILAR incidents (same behaviour, or one sharing its
+// keyword), offences only, last 30 days — so the teacher can weigh severity.
+const SIMILAR_DAYS = 30;
+type Similar = { date: string; name: string; teacher?: string; noStrike?: boolean };
+
+function similarFromIncidents(incidents: any[], beh: Behavior | undefined, all: Behavior[]): Similar[] {
+  if (!beh || kindOf(beh) === "positive" || beh.triggerMode === "INTERACTION") return [];
+  const kw = (beh.keyword || "").trim();
+  const ids = new Set([beh._id, ...(kw ? all.filter((b) => (b.keyword || "").trim() === kw).map((b) => b._id) : [])]);
+  const since = Date.now() - SIMILAR_DAYS * 864e5;
+  return (incidents || [])
+    .filter((i) => new Date(i.timestamp).getTime() > since)
+    .filter((i) => i.behaviorSnapshot?.triggerMode !== "INTERACTION" && kindOf(i.behaviorSnapshot) !== "positive")
+    .filter((i) => ids.has(String(i.behaviorId)) || i.behaviorSnapshot?.name === beh.name)
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .map((i) => ({ date: i.timestamp, name: i.behaviorSnapshot?.name || "", teacher: i.teacherName || "", noStrike: i.behaviorSnapshot?.triggerMode === "NOTE" }));
+}
+
+function SimilarList({ items }: { items: Similar[] }) {
+  return (
+    <ul className="mt-1 space-y-0.5 text-xs text-amber-900">
+      {items.slice(0, 5).map((o, k) => (
+        <li key={k}>
+          <span className="tabular-nums">{new Date(o.date).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}</span>
+          {" · "}<span className="font-medium">{o.name}</span>
+          {o.noStrike ? " (no strike)" : ""}
+          {o.teacher ? <span className="text-amber-800/80"> · {o.teacher}</span> : null}
+        </li>
+      ))}
+      {items.length > 5 && <li className="text-amber-800/80">…and {items.length - 5} more</li>}
+    </ul>
+  );
+}
+
+// The "✏️ Custom" picker option: the teacher describes it in a few words, which
+// becomes the incident's name (logged under the school's built-in Custom
+// behaviour). Hidden built-in Custom behaviours never show in the list itself.
+const CUSTOM = "__custom__";
+function CustomNameInput({ value, onChange, positive }: { value: string; onChange: (v: string) => void; positive?: boolean }) {
+  return (
+    <label className="mt-2 block">
+      <span className="mb-1 block text-sm font-medium text-slate-600">In a few words, what happened?</span>
+      <input value={value} onChange={(e) => onChange(e.target.value)} maxLength={80} autoFocus
+        placeholder={positive ? "e.g. Helped a new student find their classes" : "e.g. Threw an eraser across the room"}
+        className="w-full rounded-xl border border-slate-300 px-4 py-3" />
+      <span className="mt-1 block text-xs text-slate-500">
+        {positive ? "Recorded as an encouraging behaviour." : "Recorded as a correcting behaviour — it counts as a strike, with no set consequence."} Add details in the note below if needed.
+      </span>
+    </label>
+  );
+}
+
 function gradeLabel(g?: string) {
   const v = (g || "").trim();
   return v ? `Grade ${v}` : "";
@@ -167,6 +219,7 @@ export default function LogIncidentPage() {
   const [keywordFilter, setKeywordFilter] = useState("");
   const [occurredAt, setOccurredAt] = useState("");
   const [note, setNote] = useState("");
+  const [customName, setCustomName] = useState("");
   const [weight, setWeight] = useState(1);
   const [sendImmediately, setSendImmediately] = useState(false);
   const [requestMeeting, setRequestMeeting] = useState(false);
@@ -204,7 +257,7 @@ export default function LogIncidentPage() {
       })
       .catch((e) => setError(e.message));
     api<{ behaviors: Behavior[] }>("/behaviors")
-      .then((d) => setBehaviors(d.behaviors || []))
+      .then((d) => setBehaviors((d.behaviors || []).filter((b) => !b.isCustom)))
       .catch((e) => setError(e.message));
   }, []);
 
@@ -272,6 +325,7 @@ export default function LogIncidentPage() {
 
   // Selected behaviour + the house points this incident would apply (× intensity).
   const selectedBehavior = useMemo(() => inKind.find((b) => b._id === behaviorId), [inKind, behaviorId]);
+  const similar = useMemo(() => similarFromIncidents(status?.incidents || [], selectedBehavior, behaviors), [status, selectedBehavior, behaviors]);
   const incidentPoints = Math.round((selectedBehavior?.points || 0) * (weight || 1) * 10) / 10;
 
   // Distinct class codes (6A, 6B, 7A…), sorted naturally for the button row.
@@ -310,6 +364,8 @@ export default function LogIncidentPage() {
   async function submit(e?: React.FormEvent) {
     e?.preventDefault();
     if (!student || !behaviorId) return;
+    const isCustom = behaviorId === CUSTOM;
+    if (isCustom && !customName.trim()) { setError("Describe the behaviour in a few words."); return; }
     if (weight !== 1 && !note.trim()) { setError(`Add a note explaining the changed intensity (×${weight.toFixed(1)}).`); return; }
     setSubmitting(true);
     setError(null);
@@ -317,14 +373,14 @@ export default function LogIncidentPage() {
       const res = await api<{ notice: NoticeResult; positiveNotice: { _id: string; status: string } | null; incidents?: { _id: string }[]; triggerIncidents: any[]; triggerCount: number }>("/incidents", {
         body: {
           studentId: student._id,
-          behaviorIds: [behaviorId],
+          ...(isCustom ? { customName: customName.trim(), custom: kindFilter } : { behaviorIds: [behaviorId] }),
           detailText: note.trim(),
           weight,
           occurredAt: occurredAt ? new Date(occurredAt).toISOString() : undefined,
           sendImmediately,
         },
       });
-      recordRecent([behaviorId]); // bubble this behaviour to the top of the picker
+      if (!isCustom) recordRecent([behaviorId]); // bubble this behaviour to the top of the picker
       setNotice(res.notice);
       setPositiveNotice(res.positiveNotice || null);
       setCreatedIds((res.incidents || []).map((i) => i._id));
@@ -401,6 +457,7 @@ export default function LogIncidentPage() {
   function reset() {
     setStudent(null);
     setBehaviorId("");
+    setCustomName("");
     setKeywordFilter("");
     setOccurredAt("");
     setNote("");
@@ -654,6 +711,7 @@ export default function LogIncidentPage() {
             className="w-full rounded-xl border border-slate-300 px-4 py-3 text-lg"
           >
             <option value="">{kindFilter === "positive" ? "Choose a positive behaviour…" : "Choose a behaviour…"}</option>
+            <option value={CUSTOM}>✏️ Custom — describe it in a few words…</option>
             {offenseOptions.map((b) => (
               <option key={b._id} value={b._id}>
                 {b.name}
@@ -666,6 +724,7 @@ export default function LogIncidentPage() {
               No {kindFilter} behaviours yet — <Link href="/behavior/behaviours" className="underline">add one</Link>.
             </p>
           )}
+          {behaviorId === CUSTOM && <CustomNameInput value={customName} onChange={setCustomName} positive={kindFilter === "positive"} />}
           {behaviorId && (
             <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
               {!!incidentPoints && (
@@ -676,6 +735,15 @@ export default function LogIncidentPage() {
               <span className="text-slate-600">Intensity</span>
               <WeightPill value={weight} onChange={setWeight} kind={kindFilter} />
               {weight !== 1 && <span className="text-xs text-amber-600">note required</span>}
+            </div>
+          )}
+          {student && similar.length > 0 && (
+            <div role="status" className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
+              <p className="text-sm font-semibold text-amber-900">
+                ⚠ Repeat: {student.preferredName || student.firstName} has had {similar.length} similar incident{similar.length === 1 ? "" : "s"} in the last {SIMILAR_DAYS} days
+              </p>
+              <SimilarList items={similar} />
+              <p className="mt-1 text-xs text-amber-800">Worth weighing when you choose the consequence — e.g. raise the intensity, or follow up with home.</p>
             </div>
           )}
         </div>
@@ -858,6 +926,7 @@ function BatchLog({
   const [picked, setPicked] = useState<Record<string, boolean>>({});
   const [occurredAt, setOccurredAt] = useState(nowLocal());
   const [note, setNote] = useState("");
+  const [customName, setCustomName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ logged: number; behaviorName: string; results: any[] } | null>(null);
@@ -912,6 +981,19 @@ function BatchLog({
   }, [students, query, selectedClass]);
 
   const pickedIds = Object.keys(picked).filter((id) => picked[id]);
+  // Repeat flags for the picked students (server lookup, debounced).
+  const [similarBy, setSimilarBy] = useState<Record<string, Similar[]>>({});
+  const pickedKey = pickedIds.slice().sort().join(",");
+  useEffect(() => {
+    const b = behaviors.find((x) => x._id === behaviorId);
+    if (!b || !pickedKey || kindOf(b) === "positive" || b.triggerMode === "INTERACTION") { setSimilarBy({}); return; }
+    const t = setTimeout(() => {
+      api<{ similar: Record<string, Similar[]> }>("/similar-incidents", { body: { studentIds: pickedKey.split(","), behaviorId, days: SIMILAR_DAYS } })
+        .then((d) => setSimilarBy(d.similar || {}))
+        .catch(() => setSimilarBy({}));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [behaviorId, pickedKey, behaviors]);
   const pickedStudents = students.filter((s) => picked[s._id]);
   const behavior = behaviors.find((b) => b._id === behaviorId);
 
@@ -921,20 +1003,22 @@ function BatchLog({
 
   async function submit() {
     if (!behaviorId || pickedIds.length === 0) return;
+    const isCustom = behaviorId === CUSTOM;
+    if (isCustom && !customName.trim()) { setError("Describe the behaviour in a few words."); return; }
     if (weight !== 1 && !note.trim()) { setError(`Add a note explaining the changed intensity (×${weight.toFixed(1)}).`); return; }
     setSubmitting(true);
     setError(null);
     try {
       const r = await api<{ logged: number; behaviorName: string; results: any[] }>("/incidents/batch", {
         body: {
-          behaviorId,
+          ...(isCustom ? { customName: customName.trim(), custom: "negative" } : { behaviorId }),
           studentIds: pickedIds,
           detailText: note.trim(),
           weight,
           occurredAt: occurredAt ? new Date(occurredAt).toISOString() : undefined,
         },
       });
-      recordRecent([behaviorId]); // bubble this behaviour to the top of the picker
+      if (!isCustom) recordRecent([behaviorId]); // bubble this behaviour to the top of the picker
       setResult(r);
     } catch (e: any) {
       setError(e.message);
@@ -1018,6 +1102,7 @@ function BatchLog({
         )}
         <select value={behaviorId} onChange={(e) => setBehaviorId(e.target.value)} className="w-full rounded-xl border border-slate-300 px-4 py-3 text-lg">
           <option value="">Choose an incident…</option>
+          <option value={CUSTOM}>✏️ Custom — describe it in a few words…</option>
           {offenseOptions.map((b) => (
             <option key={b._id} value={b._id}>
               {b.name}
@@ -1025,6 +1110,7 @@ function BatchLog({
             </option>
           ))}
         </select>
+        {behaviorId === CUSTOM && <CustomNameInput value={customName} onChange={setCustomName} />}
         {behaviorId && (
           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
             <span className="text-slate-600">Intensity</span>
@@ -1078,6 +1164,29 @@ function BatchLog({
           {visible.length === 0 && <li className="px-4 py-3 text-sm text-slate-500">Pick a class above, or search by name.</li>}
         </ul>
       </div>
+
+      {(() => {
+        const repeats = pickedIds.filter((id) => (similarBy[id] || []).length > 0);
+        if (!repeats.length) return null;
+        const nameOf = (id: string) => { const st = students.find((x) => x._id === id); return st ? `${st.preferredName || st.firstName} ${st.lastName}` : "A student"; };
+        return (
+          <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
+            <p className="text-sm font-semibold text-amber-900">
+              ⚠ Repeat: {repeats.length} of the selected student{pickedIds.length === 1 ? "" : "s"} had a similar incident in the last {SIMILAR_DAYS} days
+            </p>
+            <ul className="mt-1 space-y-1.5">
+              {repeats.map((id) => (
+                <li key={id}>
+                  <span className="text-sm font-medium text-amber-900">{nameOf(id)}</span>
+                  <span className="text-xs text-amber-800"> — {similarBy[id].length} similar</span>
+                  <SimilarList items={similarBy[id]} />
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-xs text-amber-800">Worth weighing when you choose the consequence for these students.</p>
+          </div>
+        );
+      })()}
 
       <label className="block">
         <span className="mb-1 block text-sm font-medium text-slate-600">Date &amp; time</span>

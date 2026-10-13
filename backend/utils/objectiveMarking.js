@@ -52,11 +52,114 @@ function sumParts(v) {
   return parts.length >= 2 ? parts.sort().join("+") : null;
 }
 
+// The operation written as a word. A blank asking for "x" is answered
+// "times" or "multiply" by about as many students as write the symbol, and
+// a teacher marks both right.
+const WORD_FOR = new Map(Object.entries({
+  times: "×", multiply: "×", "multiply by": "×", "multiplied by": "×", product: "×",
+  divide: "÷", "divide by": "÷", "divided by": "÷", "division": "÷",
+  plus: "+", add: "+", addition: "+",
+  minus: "-", subtract: "-", subtraction: "-", "take away": "-",
+  brackets: "brackets", bracket: "brackets", parentheses: "brackets", parenthesis: "brackets",
+  "( )": "brackets", "()": "brackets",
+}));
+
+/** Spelling, not knowledge: "brakets", "bracets", "bracts" are all brackets. */
+function editDistance(a, b) {
+  if (a === b) return 0;
+  if (!a.length || !b.length) return Math.max(a.length, b.length);
+  let prev = Array.from({ length: a.length + 1 }, (_, i) => i);
+  for (let j = 1; j <= b.length; j++) {
+    const cur = [j];
+    for (let i = 1; i <= a.length; i++) {
+      cur[i] = Math.min(prev[i] + 1, cur[i - 1] + 1, prev[i - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[a.length];
+}
+
+// A word a child has spelled wrong is still the right answer.
+//
+// One character is a confident match: "brakets" and "bracets" are brackets
+// and nothing else. Two is not — "bracts" is brackets misspelled but
+// "braces" is a different grouping symbol, and they are the same distance
+// away, so no comparison can tell them apart. Those go to arguablyRight:
+// the mark is given and the teacher is shown it.
+//
+// Words only, four letters or more. Nothing numeric is ever compared this
+// way, so 6 and 9 cannot drift into each other.
+function sameWord(a, b, allow = 1) {
+  if (!/^[a-z]{4,}$/.test(a) || !/^[a-z]{4,}$/.test(b)) return false;
+  return editDistance(a, b) <= allow;
+}
+
+const asWord = (v) => WORD_FOR.get(String(v).trim()) || v;
+
 export function answersMatch(a, b) {
   if (a === b) return true;
   if (SAME_THING.some((g) => g.has(a) && g.has(b))) return true;
+
+  // "times" and "×" are one answer; so are "bracket" and "brackets".
+  const wa = asWord(a), wb = asWord(b);
+  if (wa === wb) return true;
+  if (SAME_THING.some((g) => g.has(wa) && g.has(wb))) return true;
+
+  if (sameWord(wa, wb)) return true;
+
   const sa = sumParts(a), sb = sumParts(b);
   return !!(sa && sb && sa === sb);
+}
+
+/**
+ * Could this be right, without being sure?
+ *
+ * A blank answered with a sentence — "Start at 4 and multiply 3" where the
+ * key says "3" — contains the answer but also contains other numbers, so no
+ * comparison can settle it. A teacher reading it gives the mark.
+ *
+ * Never tell a student they are wrong when they may be right: these are
+ * given the mark and flagged, so the fault, if there is one, is the
+ * teacher's to find rather than the child's to argue about.
+ */
+export function arguablyRight(studentAnswer, keyAnswer) {
+  const s = String(studentAnswer || "").toLowerCase().trim();
+  const k = String(keyAnswer || "").toLowerCase().trim();
+  if (!s || !k) return false;
+
+  // Two characters out: a misspelling, or a different word that happens to
+  // sit nearby. Not decidable by comparison.
+  if (sameWord(asWord(s), asWord(k), 2)) return true;
+
+  // A key that offers more than one answer for the blank — "where · there ·
+  // care", "choropleth / shaded" — is a list, not a string. A student who
+  // writes any one of them has answered it, and a student who writes the
+  // lot has too, so the comparison is made against each part and against
+  // the whole. It comes through here rather than through answersMatch
+  // because which of those two the key meant cannot be told from the text:
+  // the mark is given and the teacher sees it flagged, which is the way
+  // round that never tells a student they are wrong when they are not.
+  // A slash or an "or" counts as a separator only with space around it:
+  // "choropleth / shaded" is a choice, "3/4" is a fraction and "km/h" is a
+  // unit, and splitting those would accept a student who wrote 3 for 3/4.
+  const parts = k.split(/\s*[·•|]\s*|\s+\/\s+|\s+or\s+/).map((x) => x.trim()).filter(Boolean);
+  if (parts.length > 1) {
+    if (parts.some((p) => p === s || answersMatch(s, p))) return true;
+    // Or the student wrote the lot, which is the other thing a list like
+    // this can mean — one blank per part.
+    const inReply = (p) => {
+      const esc = p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      return new RegExp(`(^|[^a-z0-9])${esc}([^a-z0-9]|$)`).test(s);
+    };
+    if (parts.every(inReply)) return true;
+  }
+
+  // The key's answer standing as a whole word inside a longer reply —
+  // "Start at 4 and multiply 3" against a key of "3". The answer is in
+  // there, and so is a 4.
+  if (s.length <= k.length) return false;
+  const esc = k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^a-z0-9])${esc}([^a-z0-9]|$)`).test(s);
 }
 
 // An answer that is more than a letter, a digit or a T/F is one where a
@@ -186,13 +289,18 @@ export function markObjective(transcript, keyText) {
       if (!want) return { n: it.n, written: it.written, verdict: "unmarked" };
       if (!wrote) return { n: it.n, written: "", verdict: "blank", answer: want };
       const ok = answersMatch(wrote, want);
+      // Where a comparison cannot settle it, the mark goes to the student
+      // and the item is flagged. Telling a child they are wrong when they
+      // may be right is the one error worth being asymmetric about.
+      const arguable = !ok && arguablyRight(it.written, want);
       marked += 1;
       return {
         n: it.n,
         written: it.written,
-        verdict: ok ? "correct" : "incorrect",
-        answer: ok ? "" : want,
-        ...(!ok && needsEye(it.written) ? { checkWording: true } : {}),
+        verdict: (ok || arguable) ? "correct" : "incorrect",
+        answer: (ok || arguable) ? "" : want,
+        ...(arguable ? { checkWording: true, keyWanted: want } : {}),
+        ...(!ok && !arguable && needsEye(it.written) ? { checkWording: true } : {}),
       };
     });
 

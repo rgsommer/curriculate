@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import {
   authorizeGroupRequester,
   newEngagementEmail,
+  cardEmailInfo,
   campfireFrom,
   mailDefaults,
   getGroupMemberEmails,
@@ -39,7 +40,7 @@ export async function POST(req: Request) {
     const { data: eng } = await svc
       .from("engagements")
       .select(
-        "group_id, creator_id, title, type, config, is_blind, reveal, deadline, hold_until_deadline, birth_year, share_code, launched_at, allow_member_invites, paused"
+        "id, group_id, creator_id, title, type, config, is_blind, reveal, deadline, hold_until_deadline, birth_year, share_code, launched_at, allow_member_invites, paused"
       )
       .eq("id", engagementId)
       .single();
@@ -133,6 +134,7 @@ export async function POST(req: Request) {
       reveal: eng.reveal as string,
       deadline: eng.deadline as string | null,
       holdUntilDeadline: !!eng.hold_until_deadline,
+      ...cardEmailInfo(eng),
     };
 
     const msgs = emails.map((to) => {

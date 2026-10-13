@@ -345,6 +345,20 @@ export function passItOnCard(
   return pick("thank-you-card", "💌");
 }
 
+// What to suggest to the person who just RECEIVED a card. Not "a card like yours" —
+// a pastor shouldn't be told to start a pastor card — but someone in their world.
+export function payItForward(title: string): { templateId: string; emoji: string; lead: string } {
+  if (/pastor|clergy|minister|reverend/i.test(title))
+    return { templateId: "volunteer-appreciation", emoji: "🤝", lead: "Pay it forward — thank someone who serves alongside you" };
+  if (/\bcoach/i.test(title))
+    return { templateId: "thank-you-card", emoji: "🏆", lead: "Pay it forward — thank someone who helped your team" };
+  if (/secretar|administrative|office staff/i.test(title))
+    return { templateId: "admin-appreciation", emoji: "💐", lead: "Pay it forward — start a card for a colleague" };
+  if (/\bteach|\bclass\b|\bmr\.?\s|\bmrs\.?\s|\bms\.?\s|\bmiss\s|\bmadame?\b|\bsir\b/i.test(title))
+    return { templateId: "teacher-appreciation", emoji: "🍎", lead: "Pay it forward — start a card for a colleague" };
+  return { templateId: "thank-you-card", emoji: "💛", lead: "Pay it forward — start a card for someone who's earned it" };
+}
+
 // Teacher Appreciation card — listed in both the Classroom pack (where teachers look)
 // and the Cards pack; one definition so they never drift apart.
 const TEACHER_APPRECIATION_CARD: EngagementTemplate = {

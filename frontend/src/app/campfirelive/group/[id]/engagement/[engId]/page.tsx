@@ -20,7 +20,7 @@ import { hasProfanity } from "@/lib/campfire/profanity";
 import { formatWhen } from "@/lib/campfire/dates";
 import { cfAlert, cfConfirm, cfPrompt } from "@/lib/campfire/dialogs";
 import { CF_PRIMARY, CF_PRIMARY_SM, CF_SECONDARY, CF_SECONDARY_SM, chipClass } from "@/lib/campfire/ui";
-import { passItOnCard, startShareCopy, QUICK_STARTS } from "@/lib/campfire/templates";
+import { passItOnCard, payItForward, startShareCopy, QUICK_STARTS } from "@/lib/campfire/templates";
 import MoveActivity from "./MoveActivity";
 import { copyRich, inviteHtml } from "@/lib/campfire/richCopy";
 import { campfireAppLinksText } from "@/lib/campfire/appLinks";
@@ -233,6 +233,9 @@ export default function EngagementDetailPage() {
     }
   }, [revealAnswer]);
   const [textInput, setTextInput] = useState("");
+  // Photo entries: who's pictured, when it isn't the person entering (a parent
+  // entering for their child) — the winner card and emails name them.
+  const [subjectInput, setSubjectInput] = useState("");
   // Open-ended poll: free-text answer per question (keyed by question index).
   const [openPollAnswers, setOpenPollAnswers] = useState<Record<number, string>>({});
   // Truth or Dare: which one the responder picked + an optional photo (proof).
@@ -581,6 +584,7 @@ export default function EngagementDetailPage() {
   // Photo challenge: up to 3 photos/videos per response.
   const [mediaItems, setMediaItems] = useState<{ url: string; type: string }[]>([]);
   const [resendingReveal, setResendingReveal] = useState(false);
+  const [announcing, setAnnouncing] = useState(false); // contest: re-send the winner
   // Un-reveal asks when it should reveal again (one tap: +7 days).
   const [resealOpen, setResealOpen] = useState(false);
   const [resealDate, setResealDate] = useState("");
@@ -2099,11 +2103,42 @@ export default function EngagementDetailPage() {
   };
 
   // Host: re-send the reveal email (e.g. if a first send went out with a bad link).
-  const resendReveal = async () => {
+  // Contest host: re-send the winner celebration (winner) + announcement (everyone).
+  const announceWinnerAgain = async () => {
+    if (announcing || !session) return;
+    if (!(await cfConfirm("Re-send the winner celebration to the winner and the announcement to everyone in the group?")))
+      return;
+    setAnnouncing(true);
+    try {
+      const res = await fetch("/api/campfire/engagement/announce-winner", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ engagementId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      cfAlert(
+        res.ok
+          ? `🏆 Sent — ${data?.winnerName ?? "the winner"} got the celebration, and ${Math.max(0, (data?.sent ?? 1) - 1)} others got the announcement.`
+          : data?.error || "Couldn't send."
+      );
+    } catch {
+      cfAlert("Couldn't send.");
+    } finally {
+      setAnnouncing(false);
+    }
+  };
+
+  // recipientOnly: a card's host re-sends just the "your card is here" email to the
+  // guest of honour, without emailing every signer again.
+  const resendReveal = async (recipientOnly = false) => {
     if (resendingReveal || !session) return;
     if (
       typeof window !== "undefined" &&
-      !(await cfConfirm("Re-send the reveal email to everyone in the group?"))
+      !(await cfConfirm(
+        recipientOnly
+          ? "Re-send the card to the recipient only? Nobody else is emailed."
+          : "Re-send the reveal email to everyone in the group?"
+      ))
     )
       return;
     setResendingReveal(true);
@@ -2118,10 +2153,18 @@ export default function EngagementDetailPage() {
           engagementId,
           origin: window.location.origin,
           force: true,
+          recipientOnly,
         }),
       });
       const data = await res.json();
-      if (!res.ok || data?.sendError) {
+      if (recipientOnly && res.ok && !data?.sendError) {
+        const reached: string[] = data?.recipientsReached ?? [];
+        cfAlert(
+          reached.length
+            ? `🎉 Card re-sent to ${reached.join(", ")}.`
+            : data?.error || "⚠️ This card has no recipient email on file."
+        );
+      } else if (!res.ok || data?.sendError) {
         cfAlert(data?.error || data?.sendError || "Couldn't re-send.");
       } else {
         const reached: string[] = data?.recipientsReached ?? [];
@@ -2467,6 +2510,7 @@ export default function EngagementDetailPage() {
     }
     if (typeof c.text === "string") setTextInput(c.text);
     if (typeof c.caption === "string") setTextInput(c.caption);
+    if (typeof c.subject === "string") setSubjectInput(c.subject);
     if (engagement.type === "poll" && isOpenPoll) {
       const ans = (c.answers ?? {}) as Record<string, string>;
       const init: Record<number, string> = {};
@@ -2959,9 +3003,11 @@ export default function EngagementDetailPage() {
       media_url: mediaItems[0]?.url,
       media_type: mediaItems[0]?.type,
       caption: textInput.trim() || undefined,
+      subject: subjectInput.trim().slice(0, 60) || undefined,
     });
     setSubmitting(false);
     setTextInput("");
+    setSubjectInput("");
     setMediaItems([]);
   };
 
@@ -3519,6 +3565,14 @@ export default function EngagementDetailPage() {
       case "photo_pose":
         return (
           <div className="space-y-3">
+            <input
+              type="text"
+              value={subjectInput}
+              onChange={(e) => setSubjectInput(e.target.value)}
+              maxLength={60}
+              placeholder="Who's in the photo? (optional — e.g. your child's name)"
+              className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 outline-none"
+            />
             <textarea
               value={textInput}
               onChange={(e) => setTextInput(e.target.value)}
@@ -5976,6 +6030,11 @@ export default function EngagementDetailPage() {
                         )
                     )}
                   </div>
+                  {content.subject ? (
+                    <p className="mt-1 text-sm font-semibold text-slate-800">
+                      📸 {content.subject as string}
+                    </p>
+                  ) : null}
                   {content.caption ? (
                     <p className="mt-1 text-sm text-slate-600">
                       {content.caption as string}
@@ -5997,6 +6056,11 @@ export default function EngagementDetailPage() {
                       className="w-full max-h-64 object-cover"
                     />
                   )}
+                  {content.subject ? (
+                    <p className="mt-1 text-sm font-semibold text-slate-800">
+                      📸 {content.subject as string}
+                    </p>
+                  ) : null}
                   {content.caption && (
                     <p className="text-sm text-slate-600 mt-1">{content.caption as string}</p>
                   )}
@@ -8177,12 +8241,30 @@ export default function EngagementDetailPage() {
             })()}
           <div className="mt-3 border-t border-slate-100 pt-3">
             <button
-              onClick={resendReveal}
+              onClick={() => resendReveal()}
               disabled={resendingReveal}
               className="text-xs font-medium text-sky-600 underline hover:text-sky-700 disabled:opacity-50"
             >
               {resendingReveal ? "Sending…" : "📨 Re-send the reveal email to everyone"}
             </button>
+            {raffleWinnerUserId && (
+              <button
+                onClick={announceWinnerAgain}
+                disabled={announcing}
+                className="ml-3 text-xs font-medium text-amber-700 underline hover:text-amber-800 disabled:opacity-50"
+              >
+                {announcing ? "Sending…" : "🏆 Re-send the winner announcement"}
+              </button>
+            )}
+            {isBirthdayCard && (
+              <button
+                onClick={() => resendReveal(true)}
+                disabled={resendingReveal}
+                className="ml-3 text-xs font-medium text-sky-600 underline hover:text-sky-700 disabled:opacity-50"
+              >
+                💌 Re-send to {recipientLabel} only
+              </button>
+            )}
             <p className="mt-0.5 text-xs text-slate-500">
               Use this if an earlier email went out with a broken link.
             </p>
@@ -9215,7 +9297,12 @@ export default function EngagementDetailPage() {
           (students who came in on a card link) and the recipient start their own group
           via ?start= — the group page itself would be a dead end for them. */}
       {isBirthdayCard && (hasResponded || isRevealed || isCreator) && (() => {
-        const pass = passItOnCard(engagement.title);
+        // The recipient is pointed at someone in their world (a pastor → the people
+        // who serve alongside him), not a copy of their own card.
+        const fwd = payItForward(engagement.title);
+        const pass = isRecipient
+          ? { templateId: fwd.templateId, emoji: fwd.emoji, seasonLine: null }
+          : passItOnCard(engagement.title);
         const inThisGroup = !isGuest && !isRecipient;
         const href = inThisGroup
           ? `/campfirelive/group/${groupId}/engagement/new?template=${pass.templateId}`
@@ -9269,11 +9356,9 @@ export default function EngagementDetailPage() {
         };
         return (
           <div className="mb-6 rounded-2xl border-2 border-rose-200 bg-gradient-to-br from-rose-50 to-orange-50 p-5 text-center shadow-sm">
-            <div className="mb-1 text-3xl">{isRecipient ? "💛" : pass.emoji}</div>
+            <div className="mb-1 text-3xl">{pass.emoji}</div>
             <div className="text-lg font-extrabold text-slate-900">
-              {isRecipient
-                ? "Pay it forward — start a card for a colleague"
-                : "Know someone else who deserves one?"}
+              {isRecipient ? fwd.lead : "Know someone else who deserves one?"}
             </div>
             {pass.seasonLine && (
               <p className="mt-1 text-sm font-semibold text-rose-700">{pass.seasonLine}</p>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { api, getToken, loginHref, getMyTemplates, generateParentMessage, type Me, type GuddStatus, type ParentTemplate } from "../../_lib/api";
@@ -53,7 +53,7 @@ type StudentDetail = {
     deliveries?: Array<{ channel: string; ok: boolean; error?: string }>;
     fromTeachers: Array<{ name: string; behaviorName: string }>;
   }>;
-  consequences?: Array<{ _id: string; type: string; detail?: string; byName?: string; at: string; kind?: "encouraging" | "corrective"; completed?: boolean; completedByName?: string; completedAt?: string; resolution?: "" | "completed" | "discussed"; notifiedAt?: string | null; notifiedByName?: string }>;
+  consequences?: Array<{ _id: string; type: string; detail?: string; byName?: string; at: string; kind?: "encouraging" | "corrective"; completed?: boolean; completedByName?: string; completedAt?: string; resolution?: "" | "completed" | "discussed" | "lapsed"; lapsedAt?: string | null; notifiedAt?: string | null; notifiedByName?: string }>;
 };
 
 const fmtDT = (d: string) =>
@@ -79,6 +79,24 @@ export default function StudentPage() {
   const [openNotice, setOpenNotice] = useState<string | null>(null);
   // Incident edit/delete
   const [editIncId, setEditIncId] = useState<string | null>(null);
+  // Arriving from a dashboard offence row (#inc-<id>): once the history has
+  // loaded, scroll to that offence and highlight it for a few seconds. (Done
+  // here, not just in ClientGate, because tapping a row is a client-side
+  // navigation — the layout's one-time anchor scroll has already run.)
+  const [focusInc, setFocusInc] = useState<string | null>(null);
+  const focusDone = useRef(false);
+  useEffect(() => {
+    const m = window.location.hash.match(/^#inc-([a-f0-9]{24})$/i);
+    if (m) setFocusInc(m[1]);
+  }, []);
+  useEffect(() => {
+    if (!focusInc || !data || focusDone.current) return;
+    const el = document.getElementById(`inc-${focusInc}`);
+    if (!el) return;
+    focusDone.current = true;
+    setTimeout(() => el.scrollIntoView({ block: "center" }), 0); // instant: works even before the tab is painted
+    setTimeout(() => setFocusInc(null), 4000); // not cleared on re-render: the highlight always fades
+  }, [focusInc, data]);
   // Removing an offence: "entered in error" (no trace) vs "withdrawn" (the
   // teacher's judgment — a record of the reversal is kept).
   const [removeIncId, setRemoveIncId] = useState<string | null>(null);
@@ -816,6 +834,7 @@ export default function StudentPage() {
                 const notified = !!c.notifiedAt;
                 const done = !!c.completed;
                 const discussed = c.resolution === "discussed";
+                const lapsed = !done && !!c.lapsedAt;
                 // A conversation in place of the consequence needs no note home.
                 const resolved = done && (notified || discussed);
                 return (
@@ -856,6 +875,12 @@ export default function StudentPage() {
                       </span>
                     ) : (
                       <span className="inline-flex flex-wrap items-center gap-1.5">
+                        {lapsed && (
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600"
+                            title="Still open 7 days after it was given, so it was retired from the dashboard. The offence still counts; record it below if it was actually carried out.">
+                            No consequence recorded by the teacher
+                          </span>
+                        )}
                         <button onClick={() => markConsequenceDone(c._id, true)}
                           title="The student has carried this out (e.g. handed in the lines / served the detention)"
                           className="rounded-lg border border-green-300 px-2 py-0.5 text-xs font-medium text-green-700 hover:bg-green-50">
@@ -1005,7 +1030,8 @@ export default function StudentPage() {
         <h2 className="font-semibold">Incident log</h2>
         <ul className="mt-2 divide-y divide-slate-100">
           {data.incidents.map((inc) => (
-            <li key={inc._id} className="py-3 text-sm">
+            <li key={inc._id} id={`inc-${inc._id}`}
+              className={`scroll-mt-20 py-3 text-sm transition-colors duration-1000 ${focusInc === inc._id ? "-mx-2 rounded-lg bg-amber-50 px-2 ring-2 ring-amber-300" : ""}`}>
               <div className="flex items-start justify-between gap-2">
                 <span className="min-w-0 flex-1 break-words">
                   {inc.behaviorSnapshot.name}

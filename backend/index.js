@@ -1400,6 +1400,11 @@ const AI_MODEL_FULL = process.env.AI_MODEL_FULL || "gpt-4.1";
 // class was measured in this configuration — gpt-5.4 marking, mini reading —
 // at 2.3 marks mean error against the teacher's own marking.
 const AI_MODEL_TRANSCRIBE = process.env.AI_MODEL_TRANSCRIBE || "gpt-5.4-mini";
+// Writing the feedback is not marking. It gets the marks already settled and
+// no pages at all, so it is the one call in the pipeline with no judgement
+// and no images in it — the smaller model is the right tool and the cheaper
+// one.
+const AI_MODEL_FEEDBACK = process.env.AI_MODEL_FEEDBACK || "gpt-5.4-mini";
 
 const AWS_REGION = process.env.AWS_REGION || "us-east-2";
 const S3_BUCKET = process.env.S3_BUCKET || "";
@@ -17393,6 +17398,632 @@ Also give the student's name as written, the paper's title, and the mark total p
     } catch (err) {
       console.error("POST /grading/mark-objective error:", err?.message || err);
       return res.status(500).json({ error: "Marking failed." });
+    }
+  });
+
+  // POST /grading/mark-written  { images, answerKeyText, gradeBand, subjectArea }
+  //
+  // Path A, step 5: the only part of marking a test that is a judgement.
+  //
+  // The objective sections are settled against the key in code and are
+  // exact. This call does the rest — "show your work", an extended problem
+  // — and it is given one job and the key's own mark scheme, instead of a
+  // share of a sixty-thousand-character prompt that also wants a subject
+  // guess, a cheating verdict and a wellbeing flag. Measured against 41
+  // papers marked by hand, that monolith ran 2.4 to 3.9 marks out and moved
+  // up to 20 marks between two runs of the same paper.
+  //
+  // Sections the key can settle by lookup are deliberately NOT sent here.
+  app.post("/grading/mark-written", gradingLimiter, async (req, res) => {
+    try {
+      const { images, answerKeyText, gradeBand, subjectArea } = req.body || {};
+      if (!Array.isArray(images) || !images.length) {
+        return res.status(400).json({ error: "No images provided." });
+      }
+      if (!String(answerKeyText || "").trim()) {
+        return res.status(400).json({ error: "answerKeyText required — the mark scheme comes from it." });
+      }
+      const band = ["3-5", "6-8", "9-10", "11+"].includes(gradeBand) ? gradeBand : "6-8";
+
+      const { markSchemeFromKey } = await import("./utils/sectionTotals.js");
+      const { parseKeyAnswers, isObjectiveSection, normaliseAnswer } =
+        await import("./utils/objectiveMarking.js");
+
+      const scheme = markSchemeFromKey(answerKeyText);
+      const keyAnswers = parseKeyAnswers(answerKeyText);
+
+      // The key's own words for each item, so the marker knows what the
+      // question was looking for. Taken raw, not normalised, because a
+      // method description is what it is.
+      const rawAnswer = new Map();
+      {
+        let started = false;
+        for (const line of String(answerKeyText).split("\n")) {
+          const l = line.trim();
+          if (/^=+\s*ANSWER KEY/i.test(l)) { if (started) break; started = true; continue; }
+          const m = l.match(/^([A-Z])\s*(\d{1,2}[a-z]?)\s*[:.]\s*(.+?)\s*(?:\(\/\s*[\d.]+[^)]*\))?\s*(?:\[CHECK\])?\s*$/);
+          if (m && !rawAnswer.has(m[1] + m[2])) rawAnswer.set(m[1] + m[2], m[3].trim());
+        }
+      }
+
+      // Written sections only. A section whose key entries are short
+      // answers is a lookup and is marked in code; asking a model to
+      // re-judge it is how a correct matching letter gets crossed.
+      const written = [];
+      for (const [letter, items] of scheme) {
+        const objectiveByKey = keyAnswers.get(letter);
+        if (objectiveByKey && isObjectiveSection(objectiveByKey)) continue;
+        if (items.length > 1 && items.every((i) => i.outOf <= 1)) continue;
+        written.push({ letter, items });
+      }
+
+      // An "alternatives" section — one extended problem offered as Option
+      // 1 or Option 2 — lists each option at the section's full value, so
+      // summing them scores it twice and the option the student did not
+      // choose drags the total down. On this paper that made E /20 and the
+      // test /60.
+      //
+      // Detected from the paper's own total rather than from the word
+      // "Option": the key writes the two routes out as E1 and E2 with no
+      // such label. If every section's parts add to more than the test is
+      // out of, the sections whose items are equal-valued and repeated are
+      // the choices, and collapsing them to one item brings the paper back
+      // to its stated total. The word, where it does appear, is taken as
+      // confirmation.
+      const { declaredTotals } = await import("./utils/sectionTotals.js");
+      const paperTotal = declaredTotals(answerKeyText)[0] || 0;
+      const collapsed = new Set();
+
+      // The scheme read out of the key, sent back whole. The caller adds up
+      // what the two halves of Path A actually marked and checks it against
+      // this before publishing anything: a key that parses only in PART
+      // yields a scheme that is short, and the paper then comes back marked
+      // out of the fragment — one went out as 6 out of 7 when the test was
+      // out of 30. A short scheme must look like a failure, not a low mark.
+      const schemeOut = () => [...scheme.entries()].map(([letter, items]) => ({
+        letter,
+        items: items.length,
+        out_of: collapsed.has(letter) ? (items[0]?.outOf || 0)
+                                      : items.reduce((t, i) => t + i.outOf, 0),
+      }));
+      if (!written.length) {
+        console.log("[mark-written] no written sections in this key — nothing to judge");
+        return res.json({
+          ok: true, sections: [], items: [], note: "no written sections",
+          complete: true, missing: [],
+          paperTotal, scheme: schemeOut(),
+        });
+      }
+
+      const allSections = [...scheme.entries()].map(([letter, items]) => ({
+        letter,
+        sum: items.reduce((t, i) => t + i.outOf, 0),
+        equalRepeated: items.length > 1 && items.every((i) => i.outOf === items[0].outOf),
+        one: items[0]?.outOf || 0,
+      }));
+      let over = allSections.reduce((t, s) => t + s.sum, 0) - paperTotal;
+      if (paperTotal > 0 && over > 0) {
+        // Largest first: an extended problem is the big section, and a
+        // six-item objective section of 1s is not what is being offered as
+        // a choice.
+        for (const s of allSections.filter((x) => x.equalRepeated).sort((a, b) => b.one - a.one)) {
+          if (over <= 0) break;
+          if (s.sum - s.one <= over + 0.01) { collapsed.add(s.letter); over -= s.sum - s.one; }
+        }
+        if (collapsed.size) {
+          console.log(`[mark-written] the key's parts add to more than the paper's ${paperTotal}`
+            + ` — treating ${[...collapsed].join(", ")} as a choice of one`);
+        }
+      }
+
+      const lines = [];
+      for (const sec of written) {
+        const total = sec.items.reduce((t, i) => t + i.outOf, 0);
+        const alternatives = collapsed.has(sec.letter)
+          || (sec.items.length > 1
+              && sec.items.every((i) => i.outOf === sec.items[0].outOf)
+              && /option/i.test(sec.items.map((i) => rawAnswer.get(sec.letter + i.n) || "").join(" ")));
+        sec.alternatives = alternatives;
+        sec.outOf = alternatives ? sec.items[0].outOf : total;
+        for (const it of sec.items) {
+          lines.push(
+            `${sec.letter}${it.n} (${it.outOf} mark${it.outOf === 1 ? "" : "s"})` +
+            (alternatives ? " — AN ALTERNATIVE: the student does only ONE of these. Mark 0 for one not attempted." : "") +
+            ` — the key expects: ${rawAnswer.get(sec.letter + it.n) || "see the key"}`
+          );
+        }
+      }
+
+      const schema = {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          items: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                id: { type: "string", maxLength: 8 },
+                marks: { type: "number", minimum: 0 },
+                wrote: { type: "string", maxLength: 120 },
+                why: { type: "string", maxLength: 160 },
+              },
+              required: ["id", "marks", "wrote", "why"],
+            },
+          },
+        },
+        required: ["items"],
+      };
+
+      const prompt = `Mark the written sections of this student's ${subjectArea || "test"} paper. Nothing else — no feedback, no comment, no other sections, no grade.
+
+${lines.join("\n")}
+
+For each item above, give the marks earned, 0 to its allocation. Half marks are fine.
+- Right answer with working shown: full marks.
+- Right answer, no working: most of the marks, not all.
+- Wrong answer from a sound method with one slip: about half, and name the slip in "why".
+- Wrong answer with no usable method, or no equation ever written: 0 or 1.
+- Nothing attempted, or abandoned part way ("I'm not done"): 0.
+
+A part set out differently from the key still earns full marks if it reaches
+the right answer by sound working — the key shows one route, not the only one.
+A long answer that is confidently written and wrong is still wrong. Do not
+award marks for effort, neatness, or restating the question.
+
+"wrote" is the student's final answer for that item, short, or "" if blank.
+Mark what is on the page, part by part. Let the total fall where it falls.
+Grade band ${band}.`;
+
+      const response = await openai.responses.create({
+        model: AI_MODEL,
+        input: [{ role: "user", content: [
+          { type: "input_text", text: prompt },
+          ...images.map((u) => ({ type: "input_image", image_url: u })),
+        ]}],
+        text: { format: { type: "json_schema", name: "written_marks", strict: true, schema } },
+        max_output_tokens: 2500,
+      });
+
+      const out = safeJsonParse(response.output_text);
+      if (!out || !Array.isArray(out.items)) {
+        return res.status(502).json({ error: "Could not mark the written sections." });
+      }
+
+      // An item the marker leaves out must never be scored as a zero.
+      //
+      // It silently was: on one paper the model returned six of twelve
+      // items and the missing six counted as nothing, so "show your work"
+      // came back 4 out of 20 where the teacher gave 11.5 — the same paper
+      // had scored 14 on the previous run. A gap in the answer is not the
+      // same as a gap in the student's working, and the two must not look
+      // alike.
+      const wanted = new Set();
+      for (const sec of written) for (const it of sec.items) wanted.add(sec.letter + it.n);
+      const seen = (list) => new Set(list.map((i) => String(i.id || "").toUpperCase().replace(/\s+/g, "")));
+      let have = seen(out.items);
+      let missing = [...wanted].filter((id) => !have.has(id));
+
+      if (missing.length) {
+        console.warn(`[mark-written] ${missing.length} item(s) not returned (${missing.join(", ")}) — asking again for those`);
+        try {
+          const again = await openai.responses.create({
+            model: AI_MODEL,
+            input: [{ role: "user", content: [
+              { type: "input_text", text: `${prompt}
+
+Return ONLY these items, every one of them: ${missing.join(", ")}.` },
+              ...images.map((u) => ({ type: "input_image", image_url: u })),
+            ]}],
+            text: { format: { type: "json_schema", name: "written_marks", strict: true, schema } },
+            max_output_tokens: 2000,
+          });
+          const more = safeJsonParse(again.output_text);
+          if (more && Array.isArray(more.items)) {
+            out.items = out.items.concat(more.items.filter((i) => missing.includes(String(i.id || "").toUpperCase().replace(/\s+/g, ""))));
+            have = seen(out.items);
+            missing = [...wanted].filter((id) => !have.has(id));
+          }
+        } catch (e) {
+          console.warn("[mark-written] retry failed:", e?.message || e);
+        }
+      }
+
+      // The section totals are arithmetic, done here. A model asked for a
+      // section total gives an impression of the paper and regresses to the
+      // mean; the parts are a local judgement and the sum is not a judgement
+      // at all.
+      const cap = new Map();
+      for (const sec of written) for (const it of sec.items) cap.set(sec.letter + it.n, { outOf: it.outOf, letter: sec.letter });
+      const byId = new Map();
+      for (const it of out.items) {
+        const id = String(it.id || "").toUpperCase().replace(/\s+/g, "");
+        const c = cap.get(id);
+        if (!c) continue;
+        byId.set(id, {
+          id,
+          marks: Math.max(0, Math.min(c.outOf, Number(it.marks) || 0)),
+          out_of: c.outOf,
+          wrote: String(it.wrote || ""),
+          why: String(it.why || ""),
+        });
+      }
+
+      const sections = written.map((sec) => {
+        const got = sec.items
+          .map((it) => byId.get(sec.letter + it.n))
+          .filter(Boolean);
+        const score = sec.alternatives
+          ? Math.min(sec.outOf, got.length ? Math.max(...got.map((g) => g.marks)) : 0)
+          : got.reduce((t, g) => t + g.marks, 0);
+        return {
+          letter: sec.letter,
+          out_of: sec.outOf,
+          score: Math.round(score * 100) / 100,
+          // false means some part of this section was never marked, so the
+          // score below is NOT out of out_of. The caller must not publish it.
+          complete: got.length === sec.items.length,
+          missing: sec.items.map((it) => sec.letter + it.n).filter((id) => !got.some((g) => g.id === id)),
+          alternatives: !!sec.alternatives,
+          items: got,
+        };
+      });
+
+      const incomplete = sections.filter((s) => !s.complete);
+      console.log(`[mark-written] ${AI_MODEL} ${sections.map((s) => `${s.letter} ${s.score}/${s.out_of}`).join(" ")}`
+        + `${incomplete.length ? `  !! STILL MISSING after a retry: ${incomplete.flatMap((s) => s.missing).join(", ")}` : ""}`);
+
+      return res.json({
+        ok: true,
+        sections,
+        items: [...byId.values()],
+        // The caller checks these before using any of it.
+        complete: incomplete.length === 0,
+        missing: incomplete.flatMap((s) => s.missing),
+        paperTotal,
+        scheme: schemeOut(),
+      });
+    } catch (err) {
+      console.error("POST /grading/mark-written error:", err?.message || err);
+      return res.status(500).json({ error: "Marking the written sections failed." });
+    }
+  });
+
+  // POST /grading/mark-paper
+  //   { images, answerKeyText, gradeBand, subjectArea, alreadyMarked: ["A","B"] }
+  //
+  // The whole paper and the whole key, read together, in one call.
+  //
+  // This replaces a two-step that compiled the key into a lookup table and
+  // then marked against the table. Measured on a class of twenty against
+  // hand marking, that shape came back 7.9 marks LOW on 20 papers out of 20,
+  // and the reasons were all the compiling rather than the judging:
+  //
+  //   - a key reading "area (in km²)" crossed thirteen students who wrote
+  //     "area", because a parenthetical the teacher meant as a clarification
+  //     became text the student had to produce;
+  //   - a key reading "where · there · care" gave nothing to a student who
+  //     got two of the three blanks, because a compiled key holds one answer
+  //     per question;
+  //   - five papers came back missing whole sections, scored as nothing.
+  //
+  // So the key goes to the marker as the teacher wrote it. What stays in
+  // code is what is genuinely mechanical: the arithmetic, and the check that
+  // every section the key declares actually came back.
+  //
+  // Closed sets — matching and true/false — are NOT marked here. They are
+  // settled by string comparison against the key in objectiveMarking.js,
+  // which is exact, and a model shown the key reports the key's own answers
+  // as the student's (+22 marks across one class). Those letters arrive in
+  // `alreadyMarked` and are named as off limits.
+  app.post("/grading/mark-paper", gradingLimiter, async (req, res) => {
+    try {
+      const { images, answerKeyText, canonicalKeyText, gradeBand, subjectArea, alreadyMarked } = req.body || {};
+      if (!Array.isArray(images) || !images.length) {
+        return res.status(400).json({ error: "No images provided." });
+      }
+      const key = String(answerKeyText || "").trim();
+      if (!key) {
+        return res.status(400).json({ error: "answerKeyText required — the paper is marked against it." });
+      }
+      const band = ["3-5", "6-8", "9-10", "11+"].includes(gradeBand) ? gradeBand : "6-8";
+
+      const { sectionMarksFromKey, declaredTotals } = await import("./utils/sectionTotals.js");
+      const { parseKeyAnswers, isClosedSetSection } = await import("./utils/objectiveMarking.js");
+      const declared = sectionMarksFromKey(key);
+      const paperTotal = declaredTotals(key)[0] || 0;
+      // A short quiz has no sections at all — "/6" and three questions.
+      // Without this the paper has nothing declared, and the caller's check
+      // that every declared section came back reads as "no mark scheme
+      // could be read from the key" and refuses a perfectly good key.
+      const sectionless = declared.size === 0 && paperTotal > 0;
+      if (sectionless) declared.set("", { title: "", outOf: paperTotal });
+
+      // Which sections are settled in code, worked out from the key here
+      // rather than waited for from the blind read — so the two calls run
+      // side by side, and both decide it with the same function.
+      const skip = new Set((Array.isArray(alreadyMarked) ? alreadyMarked : [])
+        .map((l) => String(l || "").trim().toUpperCase()).filter(Boolean));
+      for (const [letter, items] of parseKeyAnswers(String(canonicalKeyText || "").trim() || key)) {
+        if (isClosedSetSection(items)) skip.add(letter);
+      }
+      const want = [...declared.entries()].filter(([l]) => !skip.has(l));
+      if (!want.length) {
+        return res.json({
+          ok: true, sections: [], items: [], complete: true, missing: [],
+          paperTotal, openEnded, keyChars: key.length,
+          note: "every section the key declares is marked in code",
+          declared: [...declared.entries()].map(([letter, d]) => ({ letter, out_of: d.outOf })),
+        });
+      }
+
+      const toMark = sectionless
+        ? `the whole paper, worth ${paperTotal} in total — use the question numbers as they are printed`
+        : want.map(([l, d]) => `${l}${d.title ? ` (${d.title})` : ""} — worth ${d.outOf}`).join("\n");
+
+      const schema = {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          items: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                id: { type: "string", maxLength: 8 },
+                out_of: { type: "number", minimum: 0 },
+                marks: { type: "number", minimum: 0 },
+                wrote: { type: "string", maxLength: 160 },
+                why: { type: "string", maxLength: 200 },
+              },
+              required: ["id", "out_of", "marks", "wrote", "why"],
+            },
+          },
+        },
+        required: ["items"],
+      };
+
+      const prompt = `Mark this student's ${subjectArea || "test"} paper against the teacher's answer key.
+
+===== ANSWER KEY, exactly as the teacher wrote it =====
+${key}
+===== END OF ANSWER KEY =====
+
+${sectionless ? "Mark " : "Mark these sections, and only these:\n"}${toMark}
+${skip.size ? `\nSections ${[...skip].join(", ")} are already marked. Do not return them.` : ""}
+
+For every question in those sections return:
+  id      ${sectionless ? `the question number — "1", "2", "3"` : `the section letter and the question number — "C2", "D1", "E1"`}
+  out_of  what that question is worth, as the key allocates it
+  marks   what this student earned, 0 to out_of; half marks are fine
+  wrote   the student's answer, short, or "" if nothing was written
+  why     one line, only where marks are below out_of
+
+How the key means to be read — it assumes a teacher and does not spell these out:
+- Where the key sets out more than one version of the paper side by side —
+  "Version A" and "Version B" — work out from the questions on this
+  student's pages which version they sat, and mark against that one only.
+  Say which in the "why" of the first item.
+- A bracket in a key answer is a note to the marker, not words the student
+  must produce. A key of "area (in km²)" is earned by "area".
+- Where the key offers alternatives, separated by "·", "/" or "or", any one
+  of them earns the mark.
+- Where one numbered question has several blanks, award the share the
+  student got right rather than all or nothing.
+- Where the key states a breakdown for a longer answer — "one mark for
+  naming it, one for explaining it, one for evidence" — apply that breakdown.
+- A right answer reached by sound work the key does not show earns full
+  marks. The key shows one route, not the only one.
+- For a longer question the key gives ONE good answer, not a checklist.
+  Where it lists possibilities — "Natural: arable land, fresh water, a mild
+  climate, resources" — the list shows the KIND of answer wanted, and
+  another answer of that kind earns the mark just as well. Never take a
+  mark off because the student chose a different example, a different
+  figure, or different wording from the key.
+- The evidence mark is earned by the student's own example. It does not
+  require the key's example. A student who illustrates Canada's density
+  with Toronto against the Yukon has given evidence; they do not also have
+  to say "4 people per km²".
+- Where the key says in words what to accept — "accept any answer that
+  meets the same standard" — that is an instruction to you, and it governs
+  everything above.
+- A long answer confidently written and wrong is still wrong. No marks for
+  effort, neatness, or restating the question. But wrong means wrong, not
+  "not how the key put it".
+
+Mark what is on the page, question by question, and let the total fall where
+it falls. Return every question in those sections and nothing else.
+Grade band ${band}.`;
+
+      const ask = async (extra) => {
+        const r = await openai.responses.create({
+          model: AI_MODEL,
+          input: [{ role: "user", content: [
+            { type: "input_text", text: extra ? `${prompt}\n\n${extra}` : prompt },
+            ...images.map((u) => ({ type: "input_image", image_url: u })),
+          ]}],
+          text: { format: { type: "json_schema", name: "paper_marks", strict: true, schema } },
+          max_output_tokens: 3500,
+        });
+        return safeJsonParse(r.output_text);
+      };
+
+      let out = await ask("");
+      if (!out || !Array.isArray(out.items)) {
+        return res.status(502).json({ error: "Could not mark the paper." });
+      }
+
+      const letterOf = (id) => String(id || "").trim().toUpperCase().match(/^([A-Z])/)?.[1] || "";
+      const covered = (list) => new Set(list.map((i) => letterOf(i.id)).filter(Boolean));
+      let missing = want.map(([l]) => l).filter((l) => !covered(out.items).has(l));
+
+      // A section left out is not a section worth nothing. Ask again for it
+      // rather than publishing a paper marked out of the part that came back.
+      if (missing.length) {
+        console.warn(`[mark-paper] section(s) ${missing.join(", ")} not returned — asking again`);
+        try {
+          const more = await ask(`Return ONLY the questions in section${missing.length > 1 ? "s" : ""} ${missing.join(", ")}, every one of them.`);
+          if (more && Array.isArray(more.items)) {
+            out.items = out.items.concat(more.items.filter((i) => missing.includes(letterOf(i.id))));
+            missing = want.map(([l]) => l).filter((l) => !covered(out.items).has(l));
+          }
+        } catch (e) {
+          console.warn("[mark-paper] retry failed:", e?.message || e);
+        }
+      }
+
+      // The arithmetic is done here. A model asked for a section total gives
+      // an impression of the paper; the parts are a local judgement and the
+      // sum is not a judgement at all.
+      const byLetter = new Map();
+      const seen = new Set();
+      for (const it of out.items) {
+        const id = String(it.id || "").trim().toUpperCase().replace(/\s+/g, "");
+        const letter = letterOf(id);
+        if (!letter || skip.has(letter) || !declared.has(letter)) continue;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        const outOf = Math.max(0, Number(it.out_of) || 0);
+        if (!byLetter.has(letter)) byLetter.set(letter, []);
+        byLetter.get(letter).push({
+          id,
+          out_of: outOf,
+          marks: Math.max(0, Math.min(outOf, Number(it.marks) || 0)),
+          wrote: String(it.wrote || ""),
+          why: String(it.why || ""),
+        });
+      }
+
+      const round = (n) => Math.round(n * 100) / 100;
+      const sections = [];
+      const offBy = [];
+      for (const [letter, d] of want) {
+        const items = (byLetter.get(letter) || []).sort((a, b) =>
+          a.id.localeCompare(b.id, undefined, { numeric: true }));
+        const parts = items.reduce((t, i) => t + i.out_of, 0);
+        let score = items.reduce((t, i) => t + i.marks, 0);
+        // The section is worth what the key says it is worth. Where the
+        // parts the marker itemised allocate something else, the earned
+        // fraction is kept and scaled onto the key's figure — and it is
+        // said out loud, because a wide gap means the question was read
+        // wrongly, not that the student did badly.
+        let outOf = d.outOf;
+        if (parts > 0 && Math.abs(parts - d.outOf) > 0.01) {
+          offBy.push(`${letter}: itemised /${round(parts)}, key says /${d.outOf}`);
+          score = (score / parts) * d.outOf;
+        } else if (!parts) {
+          outOf = d.outOf;
+        }
+        sections.push({
+          letter,
+          name: d.title ? `${letter}. ${d.title}` : (letter || "Answers"),
+          out_of: outOf,
+          score: round(Math.min(outOf, score)),
+          complete: items.length > 0,
+          items,
+        });
+      }
+
+      const incomplete = sections.filter((s) => !s.complete).map((s) => s.letter);
+      console.log(`[mark-paper] ${AI_MODEL} ${sections.map((s) => `${s.letter} ${s.score}/${s.out_of}`).join(" ")}`
+        + `${offBy.length ? `  (${offBy.join("; ")})` : ""}`
+        + `${incomplete.length ? `  !! STILL MISSING: ${incomplete.join(", ")}` : ""}`);
+
+      return res.json({
+        ok: true,
+        sections,
+        items: sections.flatMap((s) => s.items),
+        complete: incomplete.length === 0,
+        missing: incomplete,
+        paperTotal,
+        openEnded,
+        keyChars: key.length,
+        reallocated: offBy,
+        declared: [...declared.entries()].map(([letter, d]) => ({ letter, out_of: d.outOf, title: d.title })),
+      });
+    } catch (err) {
+      console.error("POST /grading/mark-paper error:", err?.message || err);
+      return res.status(500).json({ error: "Marking the paper failed." });
+    }
+  });
+
+  // POST /grading/feedback  { sections, faults, studentName, title, voice, gradeBand }
+  //
+  // Path A, step 6: the words, written once the marks are already fixed.
+  //
+  // No images and no marking. The marks arrive settled — objective from
+  // code, written from /grading/mark-written — so this call cannot move
+  // them, which is the point: in the monolith the feedback and the score
+  // were produced together and the prose pulled the number around with it.
+  // It is also the cheapest call in the pipeline, having no pages to read.
+  app.post("/grading/feedback", gradingLimiter, async (req, res) => {
+    try {
+      const { sections, faults, studentName, title, voice, gradeBand, score, outOf } = req.body || {};
+      if (!Array.isArray(sections) || !sections.length) {
+        return res.status(400).json({ error: "sections required." });
+      }
+      const band = ["3-5", "6-8", "9-10", "11+"].includes(gradeBand) ? gradeBand : "6-8";
+
+      const schema = {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          strengths: { type: "array", items: { type: "string", maxLength: 160 } },
+          improvements: { type: "array", items: { type: "string", maxLength: 160 } },
+          teacher_comment: { type: "string", maxLength: 450 },
+          handwrite: { type: "string", maxLength: 40 },
+          write_on_paper: { type: "string", maxLength: 180 },
+        },
+        required: ["strengths", "improvements", "teacher_comment", "handwrite", "write_on_paper"],
+      };
+
+      const secLine = sections
+        .map((s) => `  ${s.name || s.letter}: ${s.score} of ${s.out_of}`)
+        .join("\n");
+      const faultLine = (Array.isArray(faults) ? faults : [])
+        .slice(0, 24)
+        .map((f) => `  ${f.id}: ${f.why || f.note || ""}${f.wrote ? ` (wrote "${f.wrote}")` : ""}`)
+        .filter((l) => l.trim().length > 4)
+        .join("\n");
+
+      const prompt = `Write the feedback for one marked test. The marking is finished and is not yours to change — do not re-mark, do not question a mark, and do not state the total.
+
+${title ? `Test: ${title}\n` : ""}${studentName ? `Student: ${studentName}\n` : ""}Sections:
+${secLine}
+${faultLine ? `\nWhat went wrong, item by item:\n${faultLine}\n` : ""}
+Write, for a grade band ${band} student${voice ? `, in a ${voice} voice` : ""}:
+- strengths: 1 to 3, each naming something this paper actually did — a
+  section, a method, a question. Never "good effort".
+- improvements: 1 to 3, each naming the specific thing to practise, drawn
+  from the faults above. If one mistake repeats, say so once rather than
+  three times.
+- teacher_comment: 2 to 3 sentences to the student. Lead with what worked.
+- handwrite: TWO or THREE words to write beside the mark, specific to this
+  paper — "Show your steps", "Careful with signs", "Strong reasoning". No
+  mark, no percentage, no full stop.
+- write_on_paper: ONE sentence under about 20 words, expanding on handwrite
+  without repeating it.
+
+A section at full marks is a strength. A section near zero is the first
+improvement. Where a whole section was left blank, say that plainly — it is
+a different problem from getting it wrong.`;
+
+      const response = await openai.responses.create({
+        model: AI_MODEL_FEEDBACK,
+        input: [{ role: "user", content: [{ type: "input_text", text: prompt }] }],
+        text: { format: { type: "json_schema", name: "feedback", strict: true, schema } },
+        max_output_tokens: 1200,
+      });
+
+      const out = safeJsonParse(response.output_text);
+      if (!out) return res.status(502).json({ error: "Could not write the feedback." });
+      console.log(`[feedback] ${AI_MODEL_FEEDBACK} ${studentName || "?"} ${score ?? "?"}/${outOf ?? "?"}: "${out.handwrite}"`);
+      return res.json({ ok: true, ...out });
+    } catch (err) {
+      console.error("POST /grading/feedback error:", err?.message || err);
+      return res.status(500).json({ error: "Writing the feedback failed." });
     }
   });
 

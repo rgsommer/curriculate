@@ -182,6 +182,8 @@ export type StudentSummary = {
   // (null when the ladder is off / no rule applies → fall back to the admin ladder).
   whiteSlipCount?: number;
   recommendedConsequence?: string | null;
+  // Why this student needs re-direction first (serious / frequent / escalating).
+  urgentReasons?: string[];
 };
 
 export type ParentTemplate = { name: string; body: string; kind?: "encouraging" | "corrective" };
@@ -256,4 +258,5 @@ export type Behavior = {
   immediateWhiteSlip?: boolean;
   points?: number;
   kind?: "negative" | "positive";
+  isCustom?: boolean;
 };
