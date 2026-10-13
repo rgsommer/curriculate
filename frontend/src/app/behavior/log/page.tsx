@@ -15,6 +15,40 @@ function kindOf(b: any): "negative" | "positive" {
   return (b?.points || 0) > 0 ? "positive" : "negative";
 }
 
+// ---- Repeat flag: recent SIMILAR incidents (same behaviour, or one sharing its
+// keyword), offences only, last 30 days — so the teacher can weigh severity.
+const SIMILAR_DAYS = 30;
+type Similar = { date: string; name: string; teacher?: string; noStrike?: boolean };
+
+function similarFromIncidents(incidents: any[], beh: Behavior | undefined, all: Behavior[]): Similar[] {
+  if (!beh || kindOf(beh) === "positive" || beh.triggerMode === "INTERACTION") return [];
+  const kw = (beh.keyword || "").trim();
+  const ids = new Set([beh._id, ...(kw ? all.filter((b) => (b.keyword || "").trim() === kw).map((b) => b._id) : [])]);
+  const since = Date.now() - SIMILAR_DAYS * 864e5;
+  return (incidents || [])
+    .filter((i) => new Date(i.timestamp).getTime() > since)
+    .filter((i) => i.behaviorSnapshot?.triggerMode !== "INTERACTION" && kindOf(i.behaviorSnapshot) !== "positive")
+    .filter((i) => ids.has(String(i.behaviorId)) || i.behaviorSnapshot?.name === beh.name)
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .map((i) => ({ date: i.timestamp, name: i.behaviorSnapshot?.name || "", teacher: i.teacherName || "", noStrike: i.behaviorSnapshot?.triggerMode === "NOTE" }));
+}
+
+function SimilarList({ items }: { items: Similar[] }) {
+  return (
+    <ul className="mt-1 space-y-0.5 text-xs text-amber-900">
+      {items.slice(0, 5).map((o, k) => (
+        <li key={k}>
+          <span className="tabular-nums">{new Date(o.date).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}</span>
+          {" · "}<span className="font-medium">{o.name}</span>
+          {o.noStrike ? " (no strike)" : ""}
+          {o.teacher ? <span className="text-amber-800/80"> · {o.teacher}</span> : null}
+        </li>
+      ))}
+      {items.length > 5 && <li className="text-amber-800/80">…and {items.length - 5} more</li>}
+    </ul>
+  );
+}
+
 function gradeLabel(g?: string) {
   const v = (g || "").trim();
   return v ? `Grade ${v}` : "";
@@ -272,6 +306,7 @@ export default function LogIncidentPage() {
 
   // Selected behaviour + the house points this incident would apply (× intensity).
   const selectedBehavior = useMemo(() => inKind.find((b) => b._id === behaviorId), [inKind, behaviorId]);
+  const similar = useMemo(() => similarFromIncidents(status?.incidents || [], selectedBehavior, behaviors), [status, selectedBehavior, behaviors]);
   const incidentPoints = Math.round((selectedBehavior?.points || 0) * (weight || 1) * 10) / 10;
 
   // Distinct class codes (6A, 6B, 7A…), sorted naturally for the button row.
@@ -678,6 +713,15 @@ export default function LogIncidentPage() {
               {weight !== 1 && <span className="text-xs text-amber-600">note required</span>}
             </div>
           )}
+          {student && similar.length > 0 && (
+            <div role="status" className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
+              <p className="text-sm font-semibold text-amber-900">
+                ⚠ Repeat: {student.preferredName || student.firstName} has had {similar.length} similar incident{similar.length === 1 ? "" : "s"} in the last {SIMILAR_DAYS} days
+              </p>
+              <SimilarList items={similar} />
+              <p className="mt-1 text-xs text-amber-800">Worth weighing when you choose the consequence — e.g. raise the intensity, or follow up with home.</p>
+            </div>
+          )}
         </div>
         <Link href="/behavior/behaviours" className="text-xs text-slate-500 underline">manage behaviours</Link>
 
@@ -912,6 +956,19 @@ function BatchLog({
   }, [students, query, selectedClass]);
 
   const pickedIds = Object.keys(picked).filter((id) => picked[id]);
+  // Repeat flags for the picked students (server lookup, debounced).
+  const [similarBy, setSimilarBy] = useState<Record<string, Similar[]>>({});
+  const pickedKey = pickedIds.slice().sort().join(",");
+  useEffect(() => {
+    const b = behaviors.find((x) => x._id === behaviorId);
+    if (!b || !pickedKey || kindOf(b) === "positive" || b.triggerMode === "INTERACTION") { setSimilarBy({}); return; }
+    const t = setTimeout(() => {
+      api<{ similar: Record<string, Similar[]> }>("/similar-incidents", { body: { studentIds: pickedKey.split(","), behaviorId, days: SIMILAR_DAYS } })
+        .then((d) => setSimilarBy(d.similar || {}))
+        .catch(() => setSimilarBy({}));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [behaviorId, pickedKey, behaviors]);
   const pickedStudents = students.filter((s) => picked[s._id]);
   const behavior = behaviors.find((b) => b._id === behaviorId);
 
@@ -1078,6 +1135,29 @@ function BatchLog({
           {visible.length === 0 && <li className="px-4 py-3 text-sm text-slate-500">Pick a class above, or search by name.</li>}
         </ul>
       </div>
+
+      {(() => {
+        const repeats = pickedIds.filter((id) => (similarBy[id] || []).length > 0);
+        if (!repeats.length) return null;
+        const nameOf = (id: string) => { const st = students.find((x) => x._id === id); return st ? `${st.preferredName || st.firstName} ${st.lastName}` : "A student"; };
+        return (
+          <div role="status" className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
+            <p className="text-sm font-semibold text-amber-900">
+              ⚠ Repeat: {repeats.length} of the selected student{pickedIds.length === 1 ? "" : "s"} had a similar incident in the last {SIMILAR_DAYS} days
+            </p>
+            <ul className="mt-1 space-y-1.5">
+              {repeats.map((id) => (
+                <li key={id}>
+                  <span className="text-sm font-medium text-amber-900">{nameOf(id)}</span>
+                  <span className="text-xs text-amber-800"> — {similarBy[id].length} similar</span>
+                  <SimilarList items={similarBy[id]} />
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-xs text-amber-800">Worth weighing when you choose the consequence for these students.</p>
+          </div>
+        );
+      })()}
 
       <label className="block">
         <span className="mb-1 block text-sm font-medium text-slate-600">Date &amp; time</span>

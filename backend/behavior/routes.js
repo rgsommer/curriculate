@@ -2562,6 +2562,44 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
 });
 
 // Full cross-teacher status + history for a student.
+// Recent SIMILAR incidents for students about to be logged — same behaviour, or
+// any behaviour sharing its keyword (e.g. "Inappropriate language" + "…
+// reported"), offences only, last `days` (default 30). Lets the teacher see a
+// repeat while choosing the consequence's severity.
+router.post("/similar-incidents", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const ids = (Array.isArray(req.body?.studentIds) ? req.body.studentIds : []).filter((x) => mongoose.Types.ObjectId.isValid(x)).slice(0, 200);
+    const beh = mongoose.Types.ObjectId.isValid(req.body?.behaviorId)
+      ? await Behavior.findOne({ _id: req.body.behaviorId, schoolId: req.schoolId }).select("name keyword").lean() : null;
+    if (!ids.length || !beh) return res.json({ ok: true, similar: {} });
+    const days = Math.min(365, Math.max(1, Number(req.body?.days) || 30));
+    const kw = String(beh.keyword || "").trim();
+    const related = kw ? await Behavior.find({ schoolId: req.schoolId, keyword: kw }).select("_id").lean() : [];
+    const behIds = [beh._id, ...related.map((b) => b._id)];
+    const incs = await BehaviorIncident.find({
+      schoolId: req.schoolId,
+      studentId: { $in: ids.map((x) => new mongoose.Types.ObjectId(x)) },
+      timestamp: { $gt: new Date(Date.now() - days * DAY_MS) },
+      $or: [{ behaviorId: { $in: behIds } }, { "behaviorSnapshot.name": beh.name }],
+      "behaviorSnapshot.triggerMode": { $ne: "INTERACTION" },
+      "behaviorSnapshot.kind": { $ne: "positive" },
+    }).select("studentId teacherId timestamp behaviorSnapshot.name behaviorSnapshot.triggerMode").sort({ timestamp: -1 }).lean();
+    const tIds = [...new Set(incs.map((i) => String(i.teacherId)))];
+    const tDocs = await BehaviorTeacher.find({ _id: { $in: tIds } }).select("name courtesyName").lean();
+    const tName = Object.fromEntries(tDocs.map((t) => [String(t._id), (t.courtesyName || t.name || "").trim()]));
+    const similar = {};
+    for (const i of incs) {
+      (similar[String(i.studentId)] ||= []).push({
+        date: i.timestamp, name: i.behaviorSnapshot?.name || "", teacher: tName[String(i.teacherId)] || "",
+        noStrike: i.behaviorSnapshot?.triggerMode === "NOTE",
+      });
+    }
+    res.json({ ok: true, days, similar });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
   try {
     await retireStaleConsequences(req.schoolId);
