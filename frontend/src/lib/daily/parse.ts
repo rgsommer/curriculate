@@ -1226,7 +1226,7 @@ export type RawInputs = {
   pointsRow46?: string[];
   rewardRules?: string[][]; // Setup!D52:AE56 — the header row, then B1, B2, B3, W1
   rewardRulesPoints?: string[][]; // Points!D52:AE56 — the same block on the tab the B3 flag is computed on
-  impromptu?: string[][]; // Impromptu!L1:M30 — L the grade 7 topics, M the grade 8
+  impromptu?: string[][]; // Impromptu!K1:M120 — K in play, L the topic, M the grade it is meant for
   schoolCalendar?: string[][]; // SchoolCalendar!A1:G220 — a row per event: date, "<serial> n", event, no-school, description
   birthdays?: string[][]; // BDays!A1:AZ400 — a row per birthday, keyed "<serial> n" like the calendar
   slotBlock?: string[][]; // Setup!S1:AB8 values — the whole block, S2 included
@@ -1558,7 +1558,7 @@ export type Sources = {
   plansCells: string[][]; // Setup rows 35 to 40, columns F, K and L, raw, for ?debug=1
   pointsCells: string[]; // every cell of Points!A1:BV46 that holds something, "I5=8"
   rewards: Record<string, RewardRule>; // Setup!D52:AE56 — the thresholds, by label
-  impromptu: string[][]; // Impromptu!L1:M30 — the Formal Discussion topics
+  impromptu: string[][]; // Impromptu!K1:M120 — the Formal Discussion topics, with their grade tags
   memoryVerse: string; // the week's memory verse, from MemoryCards column H
   prayers: ClassPrayer[]; // the prayers before class, Poems column Q
   poem: string; // the week's poem or hymn, from Poems A (or B when Setup C19 is on)
@@ -2941,10 +2941,41 @@ export function fdSlotForSection(
   return preferred || any;
 }
 
-/** The topic itself: column L for a grade 7 group, M for a grade 8 one. */
-export function impromptuTopic(grid: string[][], sec: string, row: number): string {
-  const col = /^7/.test(sec) ? 0 : 1; // the range is read as L:M
-  return String(((grid || [])[row - 1] || [])[col] || "").trim();
+/**
+ * The topic itself, and the row it came from.
+ *
+ * The block is **K whether it is in play this year, L the topic, M the grade it
+ * is meant for** — not "L the grade 7 topics, M the grade 8 ones", which is what
+ * the board assumed. That assumption did harm on both sides: October is row 10,
+ * and row 10 is tagged 8 ("A person (or his family) should be allowed to end his
+ * life…"), so a grade 8 resolution went up in front of a grade 7 room; while the
+ * grade 8 groups were handed the contents of column M, which is the string "8".
+ *
+ * Each grade therefore has its own list — the rows in play and tagged for it, in
+ * the order the tab holds them — and the month picks a place in that list rather
+ * than a row number: September the first, October the second, and so on. Walking
+ * forward from the month's own row instead would have given grade 7 the same
+ * topic three months running, since rows 10, 11 and 12 are all grade 8. A row
+ * with no grade tag belongs to both lists.
+ */
+export function impromptuTopic(
+  grid: string[][], sec: string, nth: number
+): { topic: string; row: number } {
+  const grade = /^7/.test(sec) ? "7" : /^8/.test(sec) ? "8" : "";
+  const mine: { topic: string; row: number }[] = [];
+  (grid || []).forEach((r, i) => {
+    const cells = (r || []).map((c) => String(c ?? "").trim());
+    if (/^false$/i.test(cells[0] || "")) return;        // not in play this year
+    if (!cells[1]) return;                               // the header row, or a gap
+    const tag = (cells[2] || "").replace(/[^78]/g, ""); // "7", "8", "7/8"
+    if (grade && tag && !tag.includes(grade)) return;
+    mine.push({ topic: cells[1], row: i + 1 });
+  });
+  if (!mine.length) return { topic: "", row: nth };
+  // September is the school year's first, and `nth` is the month (9) or the
+  // month plus fourteen for a group's earned second one.
+  const at = (((nth - 9) % mine.length) + mine.length) % mine.length;
+  return mine[at];
 }
 
 export function formalDiscussion(opts: {
@@ -2979,14 +3010,18 @@ export function formalDiscussion(opts: {
   const month = at.getMonth() + 1;
   const week = weekOfMonth(at);
   if (week === 2) {
-    const topic = impromptuTopic(impromptu, sec, month);
-    return topic ? { topic, row: month, extra: false, why: `month ${month}, second week` } : null;
+    const pick = impromptuTopic(impromptu, sec, month);
+    return pick.topic
+      ? { topic: pick.topic, row: pick.row, extra: false, why: `month ${month}, second week → row ${pick.row}` }
+      : null;
   }
   // Any other week, once they have earned it and not yet had it.
   if (earnedExtra && !extraAlreadyHad) {
-    const row = month + FD_EXTRA_ROW_OFFSET;
-    const topic = impromptuTopic(impromptu, sec, row);
-    return topic ? { topic, row, extra: true, why: `earned, week ${week}` } : null;
+    const from = month + FD_EXTRA_ROW_OFFSET;
+    const pick = impromptuTopic(impromptu, sec, from);
+    return pick.topic
+      ? { topic: pick.topic, row: pick.row, extra: true, why: `earned, week ${week} → row ${pick.row}` }
+      : null;
   }
   return null;
 }

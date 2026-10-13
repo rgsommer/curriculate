@@ -469,6 +469,28 @@ would have replaced, with its replacement, before it replaces any of them.
 Node — both of the teacher's own journals are caught, the peacemaking one is
 not, and a unit genuinely about stress, or about managing water, is left alone.
 
+### The Formal Discussion topic, and the grade it is for
+
+The **Impromptu** tab is a list of resolutions: column **K** whether it is in
+play this year, **L** the topic, **M** the grade it is meant for. The board read
+it as "L the grade 7 topics, M the grade 8 ones", which was wrong in both
+directions. October is row 10, and row 10 is tagged **8** — *"A person (or his
+family) should be allowed to end his life if it doesn't seem worth living"* — so
+a grade 8 resolution went up in front of a grade 7 room; and a grade 8 group was
+handed the contents of column M, which is the string "8".
+
+So each grade has its own list now (`impromptuTopic`): the rows in play and
+tagged for it, in the tab's own order, with an untagged row belonging to both.
+The month picks a **place in that list** rather than a row number — September the
+first, October the second — because walking forward from the month's own row
+would have given grade 7 the same topic three months running, rows 10, 11 and 12
+all being grade 8. A group's earned second discussion takes the place fourteen
+further on, so it is never that month's.
+
+The read widened to `Impromptu!K1:M120`: the flags live in K, and the tab carries
+sixty-odd topics past row 30 that the old `L1:M30` never saw. `?debug=1` names
+the row each topic came from.
+
 ### A message is not a period
 
 Every DisplayAI row with a time in column A becomes a period, which is right for

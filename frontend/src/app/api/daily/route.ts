@@ -173,7 +173,7 @@ async function refresh(quick: boolean): Promise<Payload> {
       // the writing penalty, but it should do so from the sheet's own numbers.
       "Setup!D52:AE56",      // 23 — row 52 is the header the columns are read by
       // The Formal Discussion topics: L for grade 7, M for grade 8, by row.
-      "Impromptu!L1:M30",    // 24
+      "Impromptu!K1:M120",   // 24 — K in play, L the topic, M the grade it is meant for
       // The same threshold block on the Points tab, which is the copy the sheet's
       // own B3 flag is written against — its formula reads Z55 and AA55 with no
       // tab in front of them — and the copy that carries the days-a-week the

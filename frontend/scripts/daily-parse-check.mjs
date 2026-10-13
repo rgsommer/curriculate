@@ -1408,13 +1408,15 @@ check("column letters", P.columnName(4) === "D" && P.columnName(43) === "AQ" && 
   // The subject is a preference, not a condition: a day with no History or
   // Geography on it still has the discussion, in the group's last class there.
   const mathOnly = { 2: [{ subj: "Math 7C" }], 4: [{ subj: "Math 7C" }, { subj: "Art 7C" }] };
-  const topics = Array.from({ length: 30 }, (_, i) => [`seven-${i + 1}`, `eight-${i + 1}`]);
+  // The block as the tab actually holds it: K whether it is in play this year,
+  // L the topic, M the grade it is meant for.
+  const topics = Array.from({ length: 30 }, (_, i) => ["TRUE", `topic-${i + 1}`, "7"]);
   const ask7c = (over) => P.formalDiscussion({
     sec: "7C", subj: "Art 7C", at: new Date(2026, 8, 16, 11, 0), plan: mathOnly, impromptu: topics,
     todaysSubjects: ["Math 7C", "Art 7C"], earnedExtra: false, extraAlreadyHad: false, ...over,
   });
   check("FD: with no History or Geography it takes the group's last class that day",
-    (ask7c({}) || {}).row === 9, ask7c({}));
+    (ask7c({}) || {}).topic !== undefined, ask7c({}));
   check("FD: and not their earlier one that day", ask7c({ subj: "Math 7C" }) === null);
   check("FD: when the day does carry the History period, that is the one",
     P.formalDiscussion({
@@ -1429,26 +1431,54 @@ check("column letters", P.columnName(4) === "D" && P.columnName(43) === "AQ" && 
       todaysSubjects: ["History 7A", "Math 7A"], earnedExtra: false, extraAlreadyHad: false,
     }) === null);
 
-  const impromptu = Array.from({ length: 30 }, (_, i) => [`seven-${i + 1}`, `eight-${i + 1}`]);
+  // Mostly grade 7, with the grade 8 ones where his own tab has them: a few
+  // scattered rows, so a grade 8 group has to walk past the grade 7 ones.
+  const impromptu = Array.from({ length: 30 }, (_, i) =>
+    ["TRUE", `topic-${i + 1}`, [10, 11, 25].includes(i + 1) ? "8" : "7"]);
   const ask = (over) => P.formalDiscussion({
     sec: "7A", subj: "History 7A", at: d(16), plan, impromptu,
     earnedExtra: false, extraAlreadyHad: false, ...over,
   });
   // Wednesday the 16th is the second week, and History 7A is 7A's slot.
   check("FD: the monthly one, in the second week, on the group's own day",
-    JSON.stringify(ask({})) === JSON.stringify({ topic: "seven-9", row: 9, extra: false, why: "month 9, second week" }), ask({}));
+    JSON.stringify(ask({})) === JSON.stringify({ topic: "topic-1", row: 1, extra: false, why: "month 9, second week \u2192 row 1" }), ask({}));
   const eight = P.formalDiscussion({
     sec: "8B", subj: "Geography 8B", at: d(14), plan, impromptu, earnedExtra: false, extraAlreadyHad: false,
   });
-  check("FD: grade 8's topic comes from column M", eight && eight.topic === "eight-9", eight);
+  // The grade is a tag in column M, not a second column of topics: September's
+  // row is tagged 7, so a grade 8 group takes the next row that is theirs. The
+  // board used to hand them column M itself — the string "8" — as the topic.
+  check("FD: a grade 8 group gets a topic tagged for grade 8",
+    eight && ["topic-10", "topic-11", "topic-25"].includes(eight.topic), eight);
+  check("FD: and a grade 7 group never gets one tagged 8",
+    [9, 10, 11, 12, 1, 2, 3, 4, 5, 6].every((m) =>
+      !["topic-10", "topic-11", "topic-25"].includes(P.impromptuTopic(impromptu, "7A", m).topic)),
+    [9, 10, 11, 12].map((m) => P.impromptuTopic(impromptu, "7A", m)));
+  // Rows 10, 11 and 12 are grade 8 in this list, so walking forward from the
+  // month's own row gave grade 7 the same topic three months running.
+  check("FD: and a different one each month, not the same three months over",
+    new Set([9, 10, 11, 12].map((m) => P.impromptuTopic(impromptu, "7A", m).topic)).size === 4,
+    [9, 10, 11, 12].map((m) => P.impromptuTopic(impromptu, "7A", m).topic));
+  check("FD: September is the group's first",
+    P.impromptuTopic(impromptu, "7A", 9).row === 1, P.impromptuTopic(impromptu, "7A", 9));
+  check("FD: a row that is not in play this year is passed over",
+    P.impromptuTopic([["FALSE", "retired", "7"], ["TRUE", "live", "7"]], "7A", 1).topic === "live");
+  check("FD: an untagged row suits either grade",
+    P.impromptuTopic([["TRUE", "for anyone", ""]], "8A", 1).topic === "for anyone");
+  check("FD: a short list simply comes round again",
+    P.impromptuTopic([["TRUE", "eights", "8"], ["TRUE", "sevens", "7"]], "8A", 11).row === 1);
+  check("FD: a list with nothing for this grade gives nothing",
+    P.impromptuTopic([["TRUE", "sevens", "7"]], "8A", 1).topic === "");
+  check("FD: the header row is not a topic",
+    P.impromptuTopic([["Formal Discussion Topics", "", "Grade"], ["TRUE", "live", "7"]], "7A", 1).topic === "live");
   check("FD: not on another day of the week", ask({ at: d(18) }) === null, ask({ at: d(18) }));
   check("FD: not in another class that day", ask({ subj: "Math 7A" }) === null);
   check("FD: not in another week of the month", ask({ at: d(23) }) === null);
 
   // The earned one: any other week, once, and from row month + 14.
   const earned = ask({ at: d(23), earnedExtra: true });
-  check("FD: the earned one comes in another week",
-    earned && earned.extra && earned.row === 23 && earned.topic === "seven-23", earned);
+  check("FD: the earned one comes in another week, and is not the monthly one",
+    earned && earned.extra && earned.topic !== ask({}).topic, earned);
   check("FD: it does not double up with the monthly one",
     (ask({ at: d(16), earnedExtra: true }) || {}).extra === false, ask({ at: d(16), earnedExtra: true }));
   check("FD: once had, it does not come round again",
