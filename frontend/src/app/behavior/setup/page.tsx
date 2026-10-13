@@ -148,6 +148,13 @@ export default function SetupPage() {
 
       <div id="grp-houses" className="scroll-mt-20 space-y-4">
         <GroupHeading>Houses</GroupHeading>
+        <Link href="/behavior/food-drive" className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm hover:bg-slate-50">
+          <span>
+            <span className="font-semibold text-slate-900">🥫 Food drive / tally import</span>
+            <span className="block text-xs text-slate-500">Print class sheets for a counted event, then upload the filled-in sheets to award house and student points.</span>
+          </span>
+          <span aria-hidden className="text-slate-400">→</span>
+        </Link>
         <HousesSection config={me.config} />
       </div>
 

@@ -152,7 +152,7 @@ export default function BehaviorDashboard() {
             )}
             {housesOn && (
               <Link href="/behavior/food-drive" className="rounded-lg border border-slate-300 px-3 py-1.5">
-                Tally import
+                🥫 Food drive / tally import
               </Link>
             )}
           </div>
@@ -506,9 +506,15 @@ function HousesCard({ canLog, isAdmin, portalCode, events = [] }: { canLog: bool
       <div className="flex items-center justify-between">
         <h2 className="font-semibold">House points</h2>
         {canLog && (
-          <Button onClick={() => { setOpen((o) => !o); setHouseId(houses[0]?._id || ""); }} variant="secondary" size="sm">
-            {open ? "Cancel" : "Give points"}
-          </Button>
+          <span className="flex flex-wrap items-center justify-end gap-2">
+            <Link href="/behavior/food-drive" className="text-xs font-medium text-slate-600 underline underline-offset-2 hover:text-slate-900"
+              title="Print class sheets for a counted event (food drive, cleanup, read-a-thon…), then upload them to award points">
+              🥫 Food drive / tally import
+            </Link>
+            <Button onClick={() => { setOpen((o) => !o); setHouseId(houses[0]?._id || ""); }} variant="secondary" size="sm">
+              {open ? "Cancel" : "Give points"}
+            </Button>
+          </span>
         )}
       </div>
 
