@@ -1016,7 +1016,8 @@ function num(s: string, d: number): number {
  * split apart here.
  */
 /** The shapes the head-out cell is written in. */
-export const HEADOUT_CELL = /^(?:before you (?:head out|go)\b|make sure\s*\.\.\.)/i;
+export const HEADOUT_CELL =
+  /^(?:before (?:you|we) (?:head (?:out|home|off|back)|go|leave|pack up)\b|make sure\s*\.\.\.)/i;
 
 export function splitHeadout(text: string): { items: string[]; blessing: string } {
   const body = String(text || "").replace(/^[^:]{0,80}?:\s*/, "").trim();

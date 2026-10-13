@@ -679,13 +679,31 @@ export default function DailyPage() {
     // of a period repeating the class before it — "10:00 Math 7A, 10:59 Math
     // 7A" on the agenda. The sliver goes and the class before it keeps the time.
     const kept = [];
-    for (const p of P) {
+    for (let i = 0; i < P.length; i += 1) {
+      const p = { ...P[i] };
       const prev = kept[kept.length - 1];
       if (!p.duty && !p.empty && p.end - p.start < MIN_PERIOD_MIN) {
+        // The sliver this rule was written for repeats the class before it: the
+        // stray bell, and the class before it keeps the time.
+        const echo = prev && !prev.duty && !prev.empty
+          && (prev.code && p.code ? prev.code === p.code : prev.subj === p.subj);
+        const nxt = P[i + 1];
+        // A class of its own, though, is not a stray bell — it has been cut
+        // short by something that is not a class, a message row with a time in
+        // column A ("Before you head home today…" at 1:00, which the board did
+        // not recognise). Losing the class to it took CE off the board for the
+        // whole afternoon, so the class takes the minutes that row was holding
+        // and the row itself does not show: it is a message, not a period.
+        if (!echo && nxt && (nxt.duty || nxt.empty) && nxt.end - p.start >= MIN_PERIOD_MIN) {
+          p.end = nxt.end;
+          i += 1;
+          kept.push(p);
+          continue;
+        }
         if (prev && prev.end <= p.start) prev.end = p.end;
         continue;
       }
-      kept.push({ ...p });
+      kept.push(p);
     }
     // A class is not under way while the room is standing for the anthem. The
     // day's first teaching period therefore begins when the opening is over —
