@@ -32,6 +32,7 @@ import { HonourRollSnapshot, HonourRollConfig } from "./models/HonourRoll.js";
 import { edsbyGetJson, extractZoomStudentsRaw, buildIxlRoster } from "./lib/edsbyRead.js";
 import BehaviorHouse from "./models/BehaviorHouse.js";
 import HousePointEvent from "./models/HousePointEvent.js";
+import TallyEvent from "./models/TallyEvent.js";
 import HousesVisit from "./models/HousesVisit.js";
 import MerchRedemption from "./models/MerchRedemption.js";
 import { awardGuddAndReset } from "./lib/guddAward.js";
@@ -7135,64 +7136,150 @@ router.post("/house/food-drive/parse", authAny, loadMembership, canLog, uploadSh
 });
 
 // 2) Apply: award top donors + house placements from the confirmed rows.
+// Award a tally event's points from its stored rows (house placements by total
+// items; top individual donors → bonus to their house). Every award carries the
+// event's id. Returns the outcome; the caller decides about the banner.
+async function awardTally({ schoolId, teacherId, tally }) {
+  const rows = (tally.rows || []).filter((r) => r.studentId && Number(r.items) > 0)
+    .map((r) => ({ studentId: String(r.studentId), items: Math.round(Number(r.items)) }));
+  const indPts = (tally.individual || []).map(Number);
+  const housePts = (tally.house || []).map(Number);
+  const label = tally.label || "Food Drive";
+  const at = tally.at || new Date();
+
+  const students = await BehaviorStudent.find({ _id: { $in: rows.map((r) => new mongoose.Types.ObjectId(r.studentId)) }, schoolId })
+    .select("firstName preferredName lastName houseId").lean();
+  const sById = Object.fromEntries(students.map((s) => [String(s._id), s]));
+  const houses = await BehaviorHouse.find({ schoolId }).select("name").lean();
+  const houseName = Object.fromEntries(houses.map((h) => [String(h._id), h.name]));
+
+  // House totals (sum of items by each student's house).
+  const houseTotalsMap = {};
+  for (const r of rows) { const s = sById[r.studentId]; if (!s?.houseId) continue; const k = String(s.houseId); houseTotalsMap[k] = (houseTotalsMap[k] || 0) + r.items; }
+  const rankedHouses = Object.entries(houseTotalsMap).map(([id, total]) => ({ id, total })).sort((a, b) => b.total - a.total);
+
+  const awardedHouses = [];
+  for (let i = 0; i < rankedHouses.length && i < housePts.length; i++) {
+    const p = Math.round(housePts[i]) || 0;
+    if (!p) continue;
+    const hid = rankedHouses[i].id;
+    await HousePointEvent.create({ schoolId, houseId: new mongoose.Types.ObjectId(hid), studentId: null, points: p, reason: `${label} — ${["1st","2nd","3rd","4th","5th"][i]||`#${i+1}`} most items (${rankedHouses[i].total})`, awardedByTeacherId: teacherId, at, tallyEventId: tally._id });
+    awardedHouses.push({ house: houseName[hid] || "—", place: i + 1, points: p, items: rankedHouses[i].total });
+  }
+
+  // Top individual donors (regardless of house) → bonus points to their house.
+  const rankedStudents = rows.slice().sort((a, b) => b.items - a.items);
+  const awardedStudents = [];
+  for (let i = 0; i < rankedStudents.length && i < indPts.length; i++) {
+    const p = Math.round(indPts[i]) || 0;
+    if (!p) continue;
+    const r = rankedStudents[i]; const s = sById[r.studentId];
+    if (!s?.houseId) continue;
+    await HousePointEvent.create({ schoolId, houseId: s.houseId, studentId: new mongoose.Types.ObjectId(r.studentId), points: p, reason: `${label} — top donor ${["1st","2nd","3rd"][i]||`#${i+1}`} (${r.items} items)`, awardedByTeacherId: teacherId, at, tallyEventId: tally._id });
+    awardedStudents.push({ studentId: r.studentId, name: `${s.preferredName || s.firstName} ${s.lastName}`.trim(), place: i + 1, points: p, items: r.items });
+  }
+
+  // Banner (staff copy keeps first name + last initial; the public endpoint
+  // strips students entirely).
+  const bannerStudents = [];
+  for (let i = 0; i < rankedStudents.length && i < Math.max(indPts.length, 3); i++) {
+    const r = rankedStudents[i]; const s = sById[r.studentId];
+    if (!s) continue;
+    bannerStudents.push({ name: `${s.preferredName || s.firstName} ${(s.lastName || "").charAt(0)}.`.trim(), place: i + 1, items: r.items });
+  }
+  const eventResult = {
+    label, at, tallyEventId: String(tally._id),
+    houses: awardedHouses.map((h) => ({ name: h.house, place: h.place, items: h.items, points: h.points })),
+    students: bannerStudents,
+  };
+  const allHouseTotals = rankedHouses.map((h) => ({ house: houseName[h.id] || "—", items: h.total }));
+  return { awardedHouses, awardedStudents, eventResult, allHouseTotals, totalItems: rows.reduce((a, b) => a + b.items, 0) };
+}
+
 router.post("/house/food-drive/apply", authAny, loadMembership, canLog, async (req, res, next) => {
   try {
-    const rows = (req.body?.rows || []).filter((r) => r.studentId && Number(r.items) > 0).map((r) => ({ studentId: String(r.studentId), items: Math.round(Number(r.items)) }));
+    const rows = (req.body?.rows || []).filter((r) => r.studentId && Number(r.items) > 0 && mongoose.Types.ObjectId.isValid(r.studentId))
+      .map((r) => ({ studentId: new mongoose.Types.ObjectId(String(r.studentId)), items: Math.round(Number(r.items)) }));
     if (!rows.length) return res.status(400).json({ ok: false, error: "No rows with a matched student and a positive count." });
-    const indPts = Array.isArray(req.body?.individual) ? req.body.individual.map(Number) : [30, 20, 10];
-    const housePts = Array.isArray(req.body?.house) ? req.body.house.map(Number) : [100, 60, 30];
-    const label = String(req.body?.label || "Food Drive").trim() || "Food Drive";
-    const at = new Date();
+    const tally = await TallyEvent.create({
+      schoolId: req.schoolId,
+      label: String(req.body?.label || "Food Drive").trim() || "Food Drive",
+      at: new Date(),
+      individual: Array.isArray(req.body?.individual) ? req.body.individual.map(Number) : [30, 20, 10],
+      house: Array.isArray(req.body?.house) ? req.body.house.map(Number) : [100, 60, 30],
+      rows,
+      createdByTeacherId: req.membership._id,
+    });
+    const out = await awardTally({ schoolId: req.schoolId, teacherId: req.membership._id, tally });
+    await TallyEvent.updateOne({ _id: tally._id }, { $set: { results: { houses: out.awardedHouses, students: out.awardedStudents, allHouseTotals: out.allHouseTotals, totalItems: out.totalItems } } });
+    await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: { houseEventResult: out.eventResult } });
 
-    const ids = rows.map((r) => new mongoose.Types.ObjectId(r.studentId));
-    const students = await BehaviorStudent.find({ _id: { $in: ids }, schoolId: req.schoolId }).select("firstName preferredName lastName houseId").lean();
-    const sById = Object.fromEntries(students.map((s) => [String(s._id), s]));
+    await audit(req.schoolId, "house.food_drive", req, { meta: { label: tally.label, rows: rows.length, houses: out.awardedHouses.length, donors: out.awardedStudents.length } });
+    res.json({ ok: true, tallyEventId: String(tally._id), houses: out.awardedHouses, students: out.awardedStudents, totalItems: out.totalItems });
+  } catch (err) {
+    next(err);
+  }
+});
 
-    // House totals (sum of items by each student's house).
-    const houseTotalsMap = {};
-    for (const r of rows) { const s = sById[r.studentId]; if (!s?.houseId) continue; const k = String(s.houseId); houseTotalsMap[k] = (houseTotalsMap[k] || 0) + r.items; }
+// Tally events, newest first (for "Correct a count").
+router.get("/house/tally-events", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const list = await TallyEvent.find({ schoolId: req.schoolId }).sort({ at: -1 }).limit(20).select("label at rows results").lean();
+    res.json({ ok: true, events: list.map((t) => ({ id: String(t._id), label: t.label, at: t.at, students: (t.rows || []).length, totalItems: t.results?.totalItems ?? (t.rows || []).reduce((a, r) => a + (r.items || 0), 0) })) });
+  } catch (err) { next(err); }
+});
+
+// One tally event with names, for editing.
+router.get("/house/tally-events/:id", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const t = await TallyEvent.findOne({ _id: req.params.id, schoolId: req.schoolId }).lean();
+    if (!t) return res.status(404).json({ ok: false, error: "Not found" });
+    const sts = await BehaviorStudent.find({ _id: { $in: (t.rows || []).map((r) => r.studentId) } }).select("firstName preferredName lastName classGroup houseId").lean();
     const houses = await BehaviorHouse.find({ schoolId: req.schoolId }).select("name").lean();
-    const houseName = Object.fromEntries(houses.map((h) => [String(h._id), h.name]));
-    const rankedHouses = Object.entries(houseTotalsMap).map(([id, total]) => ({ id, total })).sort((a, b) => b.total - a.total);
+    const hn = Object.fromEntries(houses.map((h) => [String(h._id), h.name]));
+    const sById = Object.fromEntries(sts.map((s) => [String(s._id), s]));
+    const rows = (t.rows || []).map((r) => {
+      const s = sById[String(r.studentId)];
+      return { studentId: String(r.studentId), items: r.items, name: s ? `${s.lastName}, ${s.preferredName || s.firstName}` : "(removed student)", classGroup: s?.classGroup || "", house: s?.houseId ? hn[String(s.houseId)] || "" : "" };
+    }).sort((a, b) => a.name.localeCompare(b.name));
+    res.json({ ok: true, event: { id: String(t._id), label: t.label, at: t.at, individual: t.individual, house: t.house, results: t.results, edits: t.edits || [] }, rows });
+  } catch (err) { next(err); }
+});
 
-    const awardedHouses = [];
-    for (let i = 0; i < rankedHouses.length && i < housePts.length; i++) {
-      const p = Math.round(housePts[i]) || 0;
-      if (!p) continue;
-      const hid = rankedHouses[i].id;
-      await HousePointEvent.create({ schoolId: req.schoolId, houseId: new mongoose.Types.ObjectId(hid), studentId: null, points: p, reason: `${label} — ${["1st","2nd","3rd","4th","5th"][i]||`#${i+1}`} most items (${rankedHouses[i].total})`, awardedByTeacherId: req.membership._id, at });
-      awardedHouses.push({ house: houseName[hid] || "—", place: i + 1, points: p, items: rankedHouses[i].total });
+// Correct counts (late items, a misread number, a missed student) and
+// recalculate: the event's previous awards are removed and re-awarded from the
+// corrected counts, keeping the original award date. Returns before/after.
+router.put("/house/tally-events/:id", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const t = await TallyEvent.findOne({ _id: req.params.id, schoolId: req.schoolId });
+    if (!t) return res.status(404).json({ ok: false, error: "Not found" });
+    const incoming = Array.isArray(req.body?.rows) ? req.body.rows : null;
+    if (!incoming) return res.status(400).json({ ok: false, error: "rows required" });
+    const merged = new Map();
+    for (const r of incoming) {
+      if (!r?.studentId || !mongoose.Types.ObjectId.isValid(r.studentId)) continue;
+      const n = Math.max(0, Math.round(Number(r.items) || 0));
+      merged.set(String(r.studentId), (merged.get(String(r.studentId)) || 0) + n);
     }
+    const okIds = new Set((await BehaviorStudent.find({ _id: { $in: [...merged.keys()] }, schoolId: req.schoolId }).select("_id").lean()).map((s) => String(s._id)));
+    const rows = [...merged.entries()].filter(([id, n]) => okIds.has(id) && n > 0).map(([id, n]) => ({ studentId: new mongoose.Types.ObjectId(id), items: n }));
+    if (!rows.length) return res.status(400).json({ ok: false, error: "No students with a positive count." });
 
-    // Top individual donors (regardless of house) → bonus points to their house.
-    const rankedStudents = rows.slice().sort((a, b) => b.items - a.items);
-    const awardedStudents = [];
-    for (let i = 0; i < rankedStudents.length && i < indPts.length; i++) {
-      const p = Math.round(indPts[i]) || 0;
-      if (!p) continue;
-      const r = rankedStudents[i]; const s = sById[r.studentId];
-      if (!s?.houseId) continue;
-      await HousePointEvent.create({ schoolId: req.schoolId, houseId: s.houseId, studentId: new mongoose.Types.ObjectId(r.studentId), points: p, reason: `${label} — top donor ${["1st","2nd","3rd"][i]||`#${i+1}`} (${r.items} items)`, awardedByTeacherId: req.membership._id, at });
-      awardedStudents.push({ name: `${s.preferredName || s.firstName} ${s.lastName}`.trim(), place: i + 1, points: p, items: r.items });
+    const before = t.results || null;
+    await HousePointEvent.deleteMany({ schoolId: req.schoolId, tallyEventId: t._id });
+    t.rows = rows;
+    const out = await awardTally({ schoolId: req.schoolId, teacherId: req.membership._id, tally: t });
+    t.results = { houses: out.awardedHouses, students: out.awardedStudents, allHouseTotals: out.allHouseTotals, totalItems: out.totalItems };
+    t.edits.push({ at: new Date(), byName: actorName(req), note: String(req.body?.note || "").slice(0, 200) });
+    await t.save();
+
+    // Keep the /houses results banner in step if it's showing this event.
+    const cfg = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("houseEventResult").lean();
+    if (cfg?.houseEventResult?.tallyEventId === String(t._id)) {
+      await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: { houseEventResult: out.eventResult } });
     }
-
-    // Save a celebratory banner for /houses (first name + last initial for the
-    // donors — minimal PII on a public wall board), shown for ~2 weeks.
-    const bannerStudents = [];
-    for (let i = 0; i < rankedStudents.length && i < Math.max(indPts.length, 3); i++) {
-      const r = rankedStudents[i]; const s = sById[r.studentId];
-      if (!s) continue;
-      bannerStudents.push({ name: `${s.preferredName || s.firstName} ${(s.lastName || "").charAt(0)}.`.trim(), place: i + 1, items: r.items });
-    }
-    const eventResult = {
-      label, at,
-      houses: awardedHouses.map((h) => ({ name: h.house, place: h.place, items: h.items, points: h.points })),
-      students: bannerStudents,
-    };
-    await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: { houseEventResult: eventResult } });
-
-    await audit(req.schoolId, "house.food_drive", req, { meta: { label, rows: rows.length, houses: awardedHouses.length, donors: awardedStudents.length } });
-    res.json({ ok: true, houses: awardedHouses, students: awardedStudents, totalItems: rows.reduce((a, b) => a + b.items, 0) });
+    await audit(req.schoolId, "house.tally_edit", req, { meta: { tallyEventId: String(t._id), label: t.label, totalItems: out.totalItems } });
+    res.json({ ok: true, before, after: t.results });
   } catch (err) {
     next(err);
   }

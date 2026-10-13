@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, getToken, loginHref, type Me } from "../_lib/api";
 import { cardCls, Button } from "../_components/ui";
+import TallyEditor from "./TallyEditor";
 
 type Row = { name: string; items: number | null; studentId: string | null; studentLabel: string | null; house: string | null; houseColor: string | null };
 type RosterOpt = { id: string; label: string; house: string };
@@ -37,7 +38,7 @@ export default function FoodDrivePage() {
     "6. Check the read-back: fix any unmatched name (dropdown) or wrong count, set the points, then “Award points.”",
     "   • Top contributors overall get bonus points (default 30 / 20 / 10).",
     "   • The houses with the highest total place 1st/2nd/3rd (default 100 / 60 / 30).",
-    "7. Anything handed in after the counting window can still be accepted but isn't counted (it can't be recorded on the sheets).",
+    "7. Late items? In Compass → Tally import → “Correct a past event”, add them to the student's count and save — placements and points are recalculated.",
     "",
     "Tip: decide the scale and keep a consistent event name for a clean record.",
   ].join("\n");
@@ -219,6 +220,8 @@ export default function FoodDrivePage() {
           <Link href="/behavior" className="mt-3 inline-block text-sm underline">Back to dashboard</Link>
         </section>
       )}
+
+      <TallyEditor />
     </div>
   );
 }
