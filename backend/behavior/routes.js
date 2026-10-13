@@ -2537,6 +2537,45 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
     const wsLadderOn = !!config?.whiteSlipLadder?.enabled;
     const wsPeriod = wsLadderOn ? await periodWhiteSlipsByStudent(req.schoolId, students.map((s) => s._id), config) : {};
 
+    // URGENT re-direction: recent, serious, or escalating patterns, so the
+    // dashboard can highlight who needs attention first. Counts real strikes /
+    // immediate offences only (not documentation-only interactions, and not
+    // unconfirmed "note home, no strike" reports).
+    const urgentSince = new Date(Date.now() - 14 * DAY_MS);
+    const weekAgo = Date.now() - 7 * DAY_MS;
+    const recentIncs = await BehaviorIncident.find({
+      schoolId: req.schoolId,
+      studentId: { $in: students.map((s) => s._id) },
+      timestamp: { $gte: urgentSince },
+      "behaviorSnapshot.triggerMode": { $in: ["THRESHOLD", "IMMEDIATE"] },
+      "behaviorSnapshot.kind": { $ne: "positive" },
+    }).select("studentId behaviorId timestamp weight whiteSlip behaviorSnapshot.triggerMode behaviorSnapshot.points behaviorSnapshot.name").lean();
+    const urgentStats = {};
+    for (const i of recentIncs) {
+      if ((i.behaviorSnapshot?.points || 0) > 0) continue; // a positive, legacy-style
+      const k = String(i.studentId);
+      const st = (urgentStats[k] ||= { week: 0, serious: [], same: {} });
+      const t = new Date(i.timestamp).getTime();
+      if (t >= weekAgo) {
+        st.week += 1;
+        if (i.behaviorSnapshot?.triggerMode === "IMMEDIATE" || i.whiteSlip || (i.weight || 1) >= 1.5) st.serious.push(i.behaviorSnapshot?.name || "offence");
+      }
+      const bk = String(i.behaviorId || i.behaviorSnapshot?.name);
+      st.same[bk] = st.same[bk] || { n: 0, name: i.behaviorSnapshot?.name || "" };
+      st.same[bk].n += 1;
+    }
+    const urgentReasonsFor = (sid, periodNotices, active) => {
+      const st = urgentStats[sid];
+      const r = [];
+      if (st?.serious.length) r.push(`Serious offence this week (${[...new Set(st.serious)].slice(0, 2).join(", ")})`);
+      if ((st?.week || 0) >= 3) r.push(`${st.week} offences in the last 7 days`);
+      if (periodNotices >= 1 && active >= triggerCount) r.push("Back at the strike limit after a notice home");
+      if (periodNotices >= 2) r.push(`${periodNotices} notices home this term`);
+      const rep = st ? Object.values(st.same).sort((a, b) => b.n - a.n)[0] : null;
+      if (rep && rep.n >= 3) r.push(`${rep.name} ×${rep.n} in 2 weeks`);
+      return r;
+    };
+
     const out = students.map((s) => {
       const periodNotices = noticesPeriod[String(s._id)] || 0;
       const periodWhiteSlips = wsPeriod[String(s._id)] || 0;
@@ -2551,6 +2590,7 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
         whiteSlipCount: periodWhiteSlips,
         // Handbook-consistent recommendation (null → client falls back to the ladder).
         recommendedConsequence: whiteSlipLadderRecommendation(config, { periodNotices, periodWhiteSlips }),
+        urgentReasons: urgentReasonsFor(String(s._id), periodNotices, cnt[String(s._id)] || 0),
       };
     });
     res.json({

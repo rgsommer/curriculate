@@ -630,6 +630,20 @@ function HousesCard({ canLog, isAdmin, portalCode, events = [] }: { canLog: bool
 // A one-click "homeroom follow-up" nudge: logs a supportive relational check-in
 // (homeroom teacher to steer the student) as a documented interaction. Green so
 // it reads as encouragement, not punishment. Sits beside a watch-list row.
+// Urgent re-direction flag (reasons computed server-side).
+const isUrgent = (s: StudentSummary) => (s.urgentReasons || []).length > 0;
+function UrgentNote({ s }: { s: StudentSummary }) {
+  if (!isUrgent(s)) return null;
+  return (
+    <p className="mt-1 flex flex-wrap items-center gap-1.5 pl-4 text-xs">
+      <span className="rounded bg-red-600 px-1.5 py-0.5 font-bold uppercase tracking-wide text-white">Urgent</span>
+      <span className="text-red-800">{(s.urgentReasons || []).join(" · ")}</span>
+    </p>
+  );
+}
+// Urgent first within each homeroom group, then the list's own order.
+const urgentFirst = (a: StudentSummary, b: StudentSummary) => (isUrgent(b) ? 1 : 0) - (isUrgent(a) ? 1 : 0);
+
 function HrButton({ studentId, done }: { studentId: string; done?: boolean }) {
   const [state, setState] = useState<"idle" | "busy" | "done">(done ? "done" : "idle");
   async function click() {
@@ -669,9 +683,9 @@ function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number
         // recommended white slip awaiting confirmation (so it can be acted on here
         // even if they're not otherwise on probation-watch).
         const watch = (d.students || [])
-          .filter((s) => s.pendingWhiteSlipId || (s.pendingConsequences && s.pendingConsequences.length > 0) || ((s.noticesHomeCount || 0) >= 1 && (s.activeCount || 0) >= t - 1))
+          .filter((s) => isUrgent(s) || s.pendingWhiteSlipId || (s.pendingConsequences && s.pendingConsequences.length > 0) || ((s.noticesHomeCount || 0) >= 1 && (s.activeCount || 0) >= t - 1))
           // Grouped by homeroom (classGroup), then most-urgent first within a homeroom.
-          .sort((a, b) => (a.classGroup || "").localeCompare(b.classGroup || "") || (b.pendingWhiteSlipId ? 1 : 0) - (a.pendingWhiteSlipId ? 1 : 0) || (b.noticesHomeCount || 0) - (a.noticesHomeCount || 0) || (b.activeCount || 0) - (a.activeCount || 0));
+          .sort((a, b) => (a.classGroup || "").localeCompare(b.classGroup || "") || urgentFirst(a, b) || (b.pendingWhiteSlipId ? 1 : 0) - (a.pendingWhiteSlipId ? 1 : 0) || (b.noticesHomeCount || 0) - (a.noticesHomeCount || 0) || (b.activeCount || 0) - (a.activeCount || 0));
         setRows(watch);
       })
       .catch(() => setRows([]));
@@ -727,7 +741,7 @@ function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number
         {showHeader && (
           <li className="!border-t-0 pt-2 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-500">{s.classGroup || "No homeroom"}</li>
         )}
-        <li className="py-2">
+        <li className={`py-2 ${isUrgent(s) ? "-mx-2 border-l-4 border-l-red-500 bg-red-50/70 px-2" : ""}`}>
           <div className="flex items-center justify-between gap-2 text-sm">
             <span className="flex min-w-0 items-center gap-2">
               <StudentNameTap studentId={s._id} open={occ.openId === s._id} onToggle={() => occ.toggle(s._id)}>
@@ -746,6 +760,7 @@ function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number
               </Link>
             </span>
           </div>
+          <UrgentNote s={s} />
           {occ.openId === s._id && <OccurrenceList studentId={s._id} occ={occ.occById[s._id]} />}
           {s.pendingWhiteSlipId && (
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
@@ -777,7 +792,7 @@ function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number
     <Card>
       <h2 className="font-semibold text-red-800">Needs a decision</h2>
       <p className="mt-0.5 text-xs text-slate-500">
-        Already had a notice home and back at or near the {trigger}-strike trigger. The next notice carries the rule-based consequence below; open a student for AI coaching suggestions too.
+        Already had a notice home and back at or near the {trigger}-strike trigger. The next notice carries the rule-based consequence below; open a student for AI coaching suggestions too. <span className="font-medium text-red-700">Red = urgent</span> (a serious offence, several in a week, or an escalating pattern) — listed first.
       </p>
       <ul className="mt-2 divide-y divide-slate-100">
         {myHomeroom && mine.length > 0 && (
@@ -821,7 +836,7 @@ function StudentsToWatch({ fadeDays, myHomeroom }: { fadeDays?: number; myHomero
         const watch = (d.students || [])
           .filter((s) => (s.activeCount || 0) >= t - 1)
           // Grouped by homeroom (classGroup), then most strikes first within a homeroom.
-          .sort((a, b) => (a.classGroup || "").localeCompare(b.classGroup || "") || (b.activeCount || 0) - (a.activeCount || 0));
+          .sort((a, b) => (a.classGroup || "").localeCompare(b.classGroup || "") || urgentFirst(a, b) || (b.activeCount || 0) - (a.activeCount || 0));
         setRows(watch);
       })
       .catch(() => setRows([]));
@@ -839,7 +854,7 @@ function StudentsToWatch({ fadeDays, myHomeroom }: { fadeDays?: number; myHomero
       {showHeader && (
         <li className="!border-t-0 pt-2 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-500">{s.classGroup || "No homeroom"}</li>
       )}
-      <li className="flex items-center justify-between gap-2 py-2 text-sm">
+      <li className={`flex flex-wrap items-center justify-between gap-x-2 py-2 text-sm ${isUrgent(s) ? "-mx-2 border-l-4 border-l-red-500 bg-red-50/70 px-2" : ""}`}>
         <span className="flex min-w-0 items-center gap-2">
           <StudentNameTap studentId={s._id} open={occ.openId === s._id} onToggle={() => occ.toggle(s._id)}>
             <span className="font-medium">{s.lastName}, {s.firstName}</span> <span className="text-slate-500">{s.classGroup}</span>
@@ -850,6 +865,7 @@ function StudentsToWatch({ fadeDays, myHomeroom }: { fadeDays?: number; myHomero
           className={`shrink-0 font-semibold tabular-nums hover:underline ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
           {s.activeCount}/{trigger} →
         </Link>
+        {isUrgent(s) && <div className="w-full"><UrgentNote s={s} /></div>}
       </li>
       {occ.openId === s._id && (
         <li className="!border-t-0 pb-2"><OccurrenceList studentId={s._id} occ={occ.occById[s._id]} /></li>
