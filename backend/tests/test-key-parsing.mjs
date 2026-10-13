@@ -18,9 +18,9 @@ import path from "node:path";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, "../..");
-const { routeRubricAndKey, canonicaliseKeyText } =
+const { routeRubricAndKey, canonicaliseKeyText, looksLikeAnswerKey } =
   await import(path.join(repo, "frontend/src/app/grading/consensusKey.js"));
-const { markSchemeFromKey, declaredTotals } =
+const { markSchemeFromKey, declaredTotals, sectionMarksFromKey } =
   await import(path.join(repo, "backend/utils/sectionTotals.js"));
 const { parseKeyAnswers, isClosedSetSection, answersMatch, normaliseAnswer, arguablyRight } =
   await import(path.join(repo, "backend/utils/objectiveMarking.js"));
@@ -275,6 +275,46 @@ console.log("\na section marked against a rubric, not a list");
     s.sections.reduce((t, x) => t + x.outOf, 0), s.total);
   check("and it carries its own standard for the marker",
     (s.key.split("\n").find((l) => l.startsWith("E1:")) || "").includes("two accurate facts"), true);
+}
+
+/* ---------------------------------------------------------------- *
+ * 6. A short quiz key with no heading and no sections.
+ *
+ * "/6", then "1  √81 → 9   √64 → 8" with two versions side by side. No
+ * "Answer Key" title, items numbered with a space, answers written as
+ * expressions — so it was not recognised as a key at all and went to the
+ * grader as a rubric, where a matching letter is weighed instead of
+ * looked up.
+ * ---------------------------------------------------------------- */
+console.log("\na short quiz key with no heading");
+{
+  const QUIZ = [
+    "/6",
+    "Version A    Version B",
+    "1  √81 → 9   √64 → 8",
+    "2  Is 50 a perfect square? → No, it sits between 49 and 64    Is 75 a perfect square? → No, it sits between 64 and 81",
+    "3  4² + √25 − √(20−4) → 17   3² + √49 − √(50−14) → 10",
+  ].join("\n");
+
+  check("it is recognised as a key", looksLikeAnswerKey(QUIZ), true);
+  check("promoted out of the rubric box", routeRubricAndKey(QUIZ, "").promoted, true);
+  check("its total is read", declaredTotals(QUIZ)[0], 6);
+
+  // A rubric must never be taken for one: the grader would then look up
+  // answers that do not exist.
+  const LEVELS = [
+    "Level 4 — thorough understanding, precise vocabulary throughout",
+    "Level 3 — considerable understanding, 1 → mostly accurate",
+    "Level 2 — some understanding, 2 → partly accurate",
+    "Level 1 — limited understanding, 3 → rarely accurate",
+  ].join("\n");
+  check("a rubric with arrows is still a rubric", looksLikeAnswerKey(LEVELS), false);
+
+  // A key written for a person states its total in words.
+  check("\"Total 50 marks\" is read", declaredTotals("Teacher copy. Total 50 marks.")[0], 50);
+  check("\"out of 30 marks\" is read", declaredTotals("Marked out of 30 marks.")[0], 30);
+  check("the canonical form still wins",
+    declaredTotals("Total 99 marks\nA1: E (/1)\nTotal: /30")[0], 30);
 }
 
 console.log(`\n${failed ? `${failed} check(s) FAILED` : "all checks passed"}`);

@@ -20,11 +20,21 @@
  * paper. A multi-version key therefore declares several.
  */
 export function declaredTotals(keyText) {
-  return [...new Set(
-    [...String(keyText || "").matchAll(/^[ \t]*Total:[ \t]*\/[ \t]*([\d.]+)[ \t]*$/gim)]
-      .map((m) => Number(m[1]))
-      .filter((n) => Number.isFinite(n) && n > 0)
-  )];
+  const text = String(keyText || "");
+  // The canonical form first, so a key that has been through the extractor
+  // still answers with its own figure.
+  const found = [
+    ...[...text.matchAll(/^[ \t]*Total:[ \t]*\/[ \t]*([\d.]+)[ \t]*$/gim)].map((m) => m[1]),
+    // A key written for a person says it in words: "Teacher copy. Total 50
+    // marks." The raw key now goes to the marker, so this is the shape the
+    // total usually arrives in, and without it the check that a paper adds
+    // up to what the key says had nothing to check against.
+    ...[...text.matchAll(/\bTotal[:\s]+([\d.]+)\s*marks?\b/gi)].map((m) => m[1]),
+    ...[...text.matchAll(/\bout\s+of\s+([\d.]+)\s*marks?\b/gi)].map((m) => m[1]),
+    // And a short quiz just writes "/6" on a line of its own.
+    ...[...text.matchAll(/^[ \t]*\/[ \t]*([\d.]+)[ \t]*$/gm)].map((m) => m[1]),
+  ];
+  return [...new Set(found.map(Number).filter((n) => Number.isFinite(n) && n > 0))];
 }
 
 /**

@@ -17733,6 +17733,12 @@ Return ONLY these items, every one of them: ${missing.join(", ")}.` },
       const { parseKeyAnswers, isClosedSetSection } = await import("./utils/objectiveMarking.js");
       const declared = sectionMarksFromKey(key);
       const paperTotal = declaredTotals(key)[0] || 0;
+      // A short quiz has no sections at all — "/6" and three questions.
+      // Without this the paper has nothing declared, and the caller's check
+      // that every declared section came back reads as "no mark scheme
+      // could be read from the key" and refuses a perfectly good key.
+      const sectionless = declared.size === 0 && paperTotal > 0;
+      if (sectionless) declared.set("", { title: "", outOf: paperTotal });
 
       // Which sections are settled in code, worked out from the key here
       // rather than waited for from the blind read — so the two calls run
@@ -17751,7 +17757,9 @@ Return ONLY these items, every one of them: ${missing.join(", ")}.` },
         });
       }
 
-      const toMark = want.map(([l, d]) => `${l}${d.title ? ` (${d.title})` : ""} — worth ${d.outOf}`).join("\n");
+      const toMark = sectionless
+        ? `the whole paper, worth ${paperTotal} in total — use the question numbers as they are printed`
+        : want.map(([l, d]) => `${l}${d.title ? ` (${d.title})` : ""} — worth ${d.outOf}`).join("\n");
 
       const schema = {
         type: "object",
@@ -17782,18 +17790,21 @@ Return ONLY these items, every one of them: ${missing.join(", ")}.` },
 ${key}
 ===== END OF ANSWER KEY =====
 
-Mark these sections, and only these:
-${toMark}
+${sectionless ? "Mark " : "Mark these sections, and only these:\n"}${toMark}
 ${skip.size ? `\nSections ${[...skip].join(", ")} are already marked. Do not return them.` : ""}
 
 For every question in those sections return:
-  id      the section letter and the question number — "C2", "D1", "E1"
+  id      ${sectionless ? `the question number — "1", "2", "3"` : `the section letter and the question number — "C2", "D1", "E1"`}
   out_of  what that question is worth, as the key allocates it
   marks   what this student earned, 0 to out_of; half marks are fine
   wrote   the student's answer, short, or "" if nothing was written
   why     one line, only where marks are below out_of
 
 How the key means to be read — it assumes a teacher and does not spell these out:
+- Where the key sets out more than one version of the paper side by side —
+  "Version A" and "Version B" — work out from the questions on this
+  student's pages which version they sat, and mark against that one only.
+  Say which in the "why" of the first item.
 - A bracket in a key answer is a note to the marker, not words the student
   must produce. A key of "area (in km²)" is earned by "area".
 - Where the key offers alternatives, separated by "·", "/" or "or", any one
@@ -17906,7 +17917,7 @@ Grade band ${band}.`;
         }
         sections.push({
           letter,
-          name: d.title ? `${letter}. ${d.title}` : letter,
+          name: d.title ? `${letter}. ${d.title}` : (letter || "Answers"),
           out_of: outOf,
           score: round(Math.min(outOf, score)),
           complete: items.length > 0,

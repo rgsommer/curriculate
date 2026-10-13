@@ -696,7 +696,24 @@ export function looksLikeAnswerKey(text) {
 
   // A key for a written paper states the marks per question throughout.
   const perItem = (s.match(/\(\s*\/\s*\d+\s*\)/g) || []).length;
-  return perItem >= 6;
+  if (perItem >= 6) return true;
+
+  // Or it is a short quiz key with no heading at all — "/6", then
+  // "1  √81 → 9   √64 → 8" with the two versions side by side. Nothing
+  // above catches that: there is no "Answer Key" title, the items are
+  // numbered with a space rather than "1.", and the answers are
+  // expressions rather than letters, so it arrived as a rubric and a
+  // matching letter was weighed instead of looked up.
+  //
+  // Three numbered lines each pointing at an answer is a key. A rubric
+  // describes levels instead, so one that does is never taken.
+  const describesLevels = /\blevel\s*[1-4]\b|\bcriteri|\bexceeds\s+expectation|\bapproaching\b|\bbeginning\b/i.test(s);
+  if (describesLevels) return false;
+  const pointed = (s.match(/(?:^|[\s,;])\d{1,2}[\s.)]+[^\n]*?(?:→|->|⟶)\s*\S/g) || []).length;
+  if (pointed >= 3) return true;
+  // A bare "/6" is how a short quiz states what it is out of.
+  const bareTotal = /^[ \t]*\/[ \t]*\d{1,3}[ \t]*$/m.test(s);
+  return bareTotal && pointed >= 2;
 }
 
 /**
