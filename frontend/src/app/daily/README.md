@@ -469,6 +469,28 @@ would have replaced, with its replacement, before it replaces any of them.
 Node — both of the teacher's own journals are caught, the peacemaking one is
 not, and a unit genuinely about stress, or about managing water, is left alone.
 
+### A message is not a period
+
+Every DisplayAI row with a time in column A becomes a period, which is right for
+a class and wrong for the dismissal message the sheet writes at the foot of the
+day. `HEADOUT_CELL` recognises that cell however it is written — "Before you head
+out today…", "Before you head home today…", "Before you go today, please:",
+"Before we leave…", "Make sure…" — and takes it out of the timetable and into the
+dismissal panel.
+
+An unrecognised wording used to cost only the list. It cost a whole period on a
+Tuesday: the message sat at **1:00 PM**, five minutes after CE began, so CE ran
+12:55 to 1:00, came in under `MIN_PERIOD_MIN`, and was dropped as a sliver — the
+room lost the class from the board for the afternoon, and the message took its
+place in the timetable.
+
+So the sliver rule knows what it is for. It was written for a **stray bell
+repeating the class before it** ("10:00 Math 7A, 10:59 Math 7A" on the agenda),
+and it still drops that echo — the same code, or the same subject where neither
+carries one. A class of its own that has been cut short by something that is
+**not** a class now takes the minutes that row was holding instead, and that row
+does not show: a message is not a period. (`kept` in `page.jsx`.)
+
 ### The writing penalty
 
 The legend's last row — *"Writing assignment penalty if below x points z times in

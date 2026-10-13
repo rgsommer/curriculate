@@ -831,6 +831,11 @@ check("setup: the other labels still read", P.parseSetup([["", "Change time to r
     "Before you head out today, please: - Tidy your desk. - Say sorry if you wronged someone. And as you go, receive this blessing: Go in peace.",
     "Before you go today, please: - Tidy your desk. - Say sorry if you wronged someone. And as you go, receive this blessing: Go in peace.",
     "Make sure ... - Tidy your desk. - Say sorry if you wronged someone.",
+    // The one the sheet actually carried on a Tuesday, which nothing matched —
+    // and that cost the room its CE period, since the row has a time in column
+    // A and so cut the class before it down to five minutes.
+    "Before you head home today, please remember: - Tidy your desk. - Say sorry if you wronged someone.",
+    "Before we leave today, please: - Tidy your desk. - Say sorry if you wronged someone.",
   ];
   for (const text of shapes) {
     check(`head-out: recognised — ${text.slice(0, 22)}…`, P.HEADOUT_CELL.test(text));
@@ -838,6 +843,8 @@ check("setup: the other labels still read", P.parseSetup([["", "Change time to r
     check(`head-out: two items out of it — ${text.slice(0, 22)}…`, out.items.length === 2, out);
   }
   check("head-out: an ordinary lesson is not one", !P.HEADOUT_CELL.test("Math 7A (23) 202 Today we practise..."));
+  check("head-out: nor is a lesson about going home",
+    !P.HEADOUT_CELL.test("Geography 8A (24) 212 Today we ask why people go home at all."));
   // An unrecognised shape does not just lose the list: that row carries a time,
   // so it turned into a period of its own in the middle of the timetable.
   const rows = [
