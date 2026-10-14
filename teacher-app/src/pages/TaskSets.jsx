@@ -394,6 +394,79 @@ export default function TaskSets() {
   const [shareTaskset, setShareTaskset] = useState(null); // remember which taskset to regenerate against
   const [shareRegenerating, setShareRegenerating] = useState(false);
 
+  // ──────────────────────────────────────────────────────────────────────
+  // Import from Kahoot / Blooket
+  // ──────────────────────────────────────────────────────────────────────
+  // Three paths: Kahoot share URL (fetch + parse server-side), Kahoot
+  // paste-text (AI parse), Blooket paste-text (AI parse). Blooket has no
+  // URL mode because its share pages require auth. On a URL fetch that
+  // comes back with canFallbackToText, the modal swaps to Kahoot-paste
+  // and keeps the teacher's typing in-flight.
+  const [importOpen, setImportOpen] = useState(false);
+  const [importMode, setImportMode] = useState("kahoot-url"); // "kahoot-url" | "kahoot-text" | "blooket-text"
+  const [importUrl, setImportUrl] = useState("");
+  const [importText, setImportText] = useState("");
+  const [importRunning, setImportRunning] = useState(false);
+  const [importError, setImportError] = useState("");
+
+  function openImport() {
+    setImportMode("kahoot-url");
+    setImportUrl("");
+    setImportText("");
+    setImportError("");
+    setImportOpen(true);
+  }
+  function closeImport() {
+    if (importRunning) return;
+    setImportOpen(false);
+  }
+  async function runImport() {
+    setImportError("");
+    setImportRunning(true);
+    try {
+      let result;
+      if (importMode === "kahoot-url") {
+        const url = (importUrl || "").trim();
+        if (!url) throw new Error("Paste a Kahoot share link first.");
+        result = await apiFetchJson("/api/ai/tasksets/import-url", {
+          method: "POST",
+          body: { url },
+        });
+      } else {
+        const text = (importText || "").trim();
+        if (!text) throw new Error("Paste the questions first.");
+        const source = importMode === "kahoot-text" ? "kahoot" : "blooket";
+        result = await apiFetchJson("/api/ai/tasksets/import-text", {
+          method: "POST",
+          body: { text, source },
+        });
+      }
+      const newId = result?.taskset?._id || result?.taskset?.id;
+      const skipped = Number(result?.skipped) || 0;
+      setImportOpen(false);
+      setToast(
+        `✅ Imported ${result?.imported || 0} question${result?.imported === 1 ? "" : "s"}` +
+          (skipped ? ` (skipped ${skipped} non-MCQ)` : "") + "."
+      );
+      await loadSets();
+      if (newId) {
+        try { navigate(`/tasksets/${newId}`); } catch {}
+      }
+    } catch (e) {
+      // apiFetchJson puts the server's error field in e.message and the
+      // full parsed body in e.payload. If the URL fetch failed with a
+      // canFallbackToText hint, swap to paste-text so the teacher keeps
+      // going instead of starting over.
+      const msg = String(e?.message || "Import failed.");
+      if (e?.payload?.canFallbackToText && importMode === "kahoot-url") {
+        setImportMode("kahoot-text");
+      }
+      setImportError(msg);
+    } finally {
+      setImportRunning(false);
+    }
+  }
+
   const loadSets = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -1498,12 +1571,96 @@ export default function TaskSets() {
             )}
       </Modal>
 
+      {/* Import from Kahoot / Blooket — URL for Kahoot (server fetches +
+          parses), paste-text for everything else (AI parse). Shares the
+          same modal so a Kahoot URL that can't be fetched flips to
+          Kahoot-paste automatically without the teacher starting over. */}
+      <Modal
+        open={importOpen}
+        onClose={closeImport}
+        title="Import questions"
+        size="md"
+        closeOnBackdrop={!importRunning}
+        closeOnEsc={!importRunning}
+      >
+        <div style={{ marginTop: 0, marginBottom: 14 }}>
+          <ToggleGroup
+            value={importMode}
+            onChange={setImportMode}
+            options={[
+              { value: "kahoot-url", label: "Kahoot link" },
+              { value: "kahoot-text", label: "Kahoot (paste text)" },
+              { value: "blooket-text", label: "Blooket (paste text)" },
+            ]}
+            disabled={importRunning}
+          />
+          <div style={{ fontSize: 12, color: "#6b7280", marginTop: 8, lineHeight: 1.5 }}>
+            {importMode === "kahoot-url"
+              ? "Paste the share link from Kahoot's editor. Private kahoots can't be fetched — use paste-text instead."
+              : importMode === "kahoot-text"
+                ? "Copy the question list from Kahoot's editor (or export) and paste it below. Multiple-choice only — jumble/survey/open-ended questions are skipped."
+                : "Blooket share pages are behind their login, so paste the questions directly. Multiple-choice only."}
+          </div>
+        </div>
+
+        {importMode === "kahoot-url" ? (
+          <Field label="Kahoot share link">
+            <TextInput
+              value={importUrl}
+              onChange={(e) => setImportUrl(e.target.value)}
+              placeholder="https://create.kahoot.it/share/..."
+              disabled={importRunning}
+              autoFocus
+            />
+          </Field>
+        ) : (
+          <Field label={importMode === "kahoot-text" ? "Paste the Kahoot questions" : "Paste the Blooket questions"}>
+            <TextArea
+              value={importText}
+              onChange={(e) => setImportText(e.target.value)}
+              placeholder={"1. What is the primary source of energy for Earth's climate?\n   a) Geothermal heat\n   b) The Sun (correct)\n   c) Ocean currents\n   d) Earth's core"}
+              rows={10}
+              maxLength={50000}
+              disabled={importRunning}
+            />
+          </Field>
+        )}
+
+        {importError && (
+          <div
+            style={{
+              marginTop: 10,
+              padding: 10,
+              borderRadius: 10,
+              background: "#fef2f2",
+              border: "1px solid #fecaca",
+              color: "#b91c1c",
+              fontSize: 13,
+              fontWeight: 600,
+              lineHeight: 1.5,
+            }}
+          >
+            {importError}
+          </div>
+        )}
+
+        <Modal.Footer>
+          <Button variant="ghost" onClick={closeImport} disabled={importRunning}>
+            Cancel
+          </Button>
+          <Button onClick={runImport} disabled={importRunning}>
+            {importRunning ? "Importing…" : "Import"}
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
       <PageHeader
         title="Task Sets"
         subtitle="Your saved task sets."
         actions={
           <>
             <Button variant="ghost" onClick={loadSets}>Refresh</Button>
+            <Button variant="ghost" onClick={openImport}>Import from Kahoot / Blooket</Button>
             <Button onClick={() => navigate("/teacher/ai-tasksets")}>Create AI task set</Button>
           </>
         }

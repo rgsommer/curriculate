@@ -4,6 +4,10 @@ import jwt from "jsonwebtoken";
 
 import { createAiTaskset } from "../controllers/mainTasksetController.js";
 import { regenerateSingleTask } from "../controllers/sharedTasksetController.js";
+import {
+  importFromUrl,
+  importFromText,
+} from "../controllers/importExternalTaskset.js";
 import { requireAiQuota } from "../middleware/requirePlanFeature.js";
 import User from "../models/User.js";
 
@@ -51,6 +55,22 @@ router.get("/ping", (_req, res) => res.json({ ok: true }));
  * Bug 2: Apply AI quota enforcement middleware
  */
 router.post("/", auth, requireAiQuota(1), createAiTaskset);
+
+/**
+ * POST /api/ai/tasksets/import-url
+ * Fetch a Kahoot share link and turn it into an MCQ taskset. No AI call,
+ * so no quota — the mount-level aiLimiter still caps per-IP abuse.
+ * Returns `canFallbackToText: true` on recoverable failures so the UI
+ * can offer the paste-text flow.
+ */
+router.post("/import-url", auth, importFromUrl);
+
+/**
+ * POST /api/ai/tasksets/import-text
+ * AI-parse pasted Kahoot/Blooket questions into an MCQ taskset. Costs one
+ * AI call — same quota as a generated taskset.
+ */
+router.post("/import-text", auth, requireAiQuota(1), importFromText);
 
 /**
  * POST /api/ai/tasksets/regenerate-single
