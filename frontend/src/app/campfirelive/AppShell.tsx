@@ -200,16 +200,32 @@ function Shell({ children }: { children: React.ReactNode }) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-rose-50 flex items-center justify-center p-6">
         <div className="max-w-md w-full text-center">
-          <div className="text-6xl mb-4">🔥</div>
-          <h1 className="text-3xl font-extrabold text-slate-900 mb-2">Campfire</h1>
-          <p className="text-slate-600 mb-6">
-            Sign in to start engaging with your groups.
+          <div className="text-6xl mb-3">🔥</div>
+          <h1 className="text-3xl font-extrabold text-slate-900">Campfire</h1>
+          <p className="mt-2 text-lg font-semibold text-slate-700">
+            Sign a card together. Ask your group anything.
           </p>
-          <Link
-            href="/campfirelive/auth"
-            className={`${CF_PRIMARY}`}
-          >
-            Sign In or Sign Up
+          {/* What it's for, at a glance — a blank sign-in wall tells a newcomer nothing. */}
+          <div className="mt-5 grid grid-cols-3 gap-2 text-left">
+            {[
+              ["💌", "Cards everyone signs"],
+              ["📊", "Polls that open together"],
+              ["📸", "Photo contests"],
+            ].map(([e, t]) => (
+              <div key={t} className="rounded-xl border border-orange-100 bg-white/80 p-3 shadow-sm">
+                <div className="text-2xl">{e}</div>
+                <div className="mt-1 text-xs font-semibold leading-snug text-slate-700">{t}</div>
+              </div>
+            ))}
+          </div>
+          <Link href="/campfirelive/auth" className={`${CF_PRIMARY} mt-6`}>
+            Sign in or create an account
+          </Link>
+          <p className="mt-4 text-sm text-slate-500">
+            Got a link from someone? Just tap it — you can sign with only your name.
+          </p>
+          <Link href="/campfire" className="mt-2 inline-block text-sm font-medium text-orange-700 underline">
+            What is Campfire?
           </Link>
         </div>
       </div>

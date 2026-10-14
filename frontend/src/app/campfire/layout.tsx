@@ -1,94 +1,24 @@
 import type { Metadata } from "next";
 
+// /campfire and its public pages (privacy, terms, support, get…). The interactive
+// prototype lives at /campfire/demo with its own "demo" banner — never here, so the
+// privacy/terms pages the app stores link to don't read as sample data.
 export const metadata: Metadata = {
-  title: "Campfire Prototype — Interactive Group Engagement Demo",
+  title: "Campfire — sign a card together, ask your group anything",
   description:
-    "Try the Campfire interactive prototype. Experience sealed polls, group challenges, accountability check-ins, and 12 engagement types designed for families, friends, churches, and communities.",
-  keywords: [
-    "campfire app",
-    "group engagement app",
-    "sealed polls",
-    "group challenges",
-    "family app",
-    "church group app",
-    "community engagement",
-    "social engagement platform",
-    "group activities app",
-    "interactive group games",
-  ],
+    "Campfire is a free app for families, churches, classes and teams: everyone signs one surprise card from a single link, or answers a poll, photo contest or check-in that opens for everyone at once. Signers need no account.",
   openGraph: {
-    title: "Campfire — Try the Interactive Prototype",
+    title: "Campfire — sign a card together 🔥",
     description:
-      "Experience the group engagement app that seals results until everyone responds. Polls, challenges, games, and more for your group.",
+      "Everyone signs one surprise card from a single link, and it opens on the day. Polls, photo contests and sign-ups too. Free; signers need no account.",
     url: "https://curriculate.net/campfire",
     siteName: "Campfire",
     type: "website",
-    locale: "en_US",
-    images: [
-      {
-        url: "https://curriculate.net/images/og/og-campfire.png",
-        width: 1200,
-        height: 630,
-        alt: "Campfire Prototype",
-      },
-    ],
+    images: [{ url: "https://curriculate.net/images/og/og-campfire.png", width: 1200, height: 630, alt: "Campfire" }],
   },
-  twitter: {
-    card: "summary_large_image",
-    title: "Campfire — Interactive Group Engagement Prototype",
-    description:
-      "Sealed polls, group challenges, accountability — try the prototype for the app that brings groups to life.",
-    images: ["https://curriculate.net/images/og/og-campfire.png"],
-  },
-  alternates: {
-    canonical: "https://curriculate.net/campfire",
-  },
+  alternates: { canonical: "https://curriculate.net/campfire" },
 };
 
-export default function CampfirePrototypeLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    <>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
-            "@context": "https://schema.org",
-            "@type": "SoftwareApplication",
-            name: "Campfire",
-            applicationCategory: "SocialNetworkingApplication",
-            operatingSystem: "iOS, Android, Web",
-            description:
-              "Campfire is a group engagement app featuring sealed polls, challenges, accountability check-ins, and 12 activity types. Results stay hidden until everyone responds.",
-            url: "https://curriculate.net/campfire",
-            offers: {
-              "@type": "Offer",
-              price: "0",
-              priceCurrency: "USD",
-              description: "Free 3-month trial, then $4.99/month premium",
-            },
-            featureList: [
-              "Sealed results — nobody sees answers until everyone responds",
-              "12 engagement types including polls, challenges, and games",
-              "Blind/anonymous mode for honest responses",
-              "Group streaks and milestone tracking",
-              "Voice responses and photo/video challenges",
-              "Recurring scheduled engagements",
-              "Real-time nudges for stragglers",
-            ],
-          }),
-        }}
-      />
-      <div className="fixed top-2 left-1/2 -translate-x-1/2 z-[60] rounded-full bg-slate-900/90 px-4 py-1.5 text-xs font-semibold text-white shadow-lg backdrop-blur">
-        🎬 Demo — sample data, not a real account.{" "}
-        <a href="/campfirelive" className="text-orange-300 underline">
-          Open the real app →
-        </a>
-      </div>
-      {children}
-    </>
-  );
+export default function CampfireLayout({ children }: { children: React.ReactNode }) {
+  return <>{children}</>;
 }

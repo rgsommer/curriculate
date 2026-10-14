@@ -182,12 +182,12 @@ export default function AboutCampfirePage() {
             "@type": "HowTo",
             name: "How to use Campfire",
             description:
-              "Join a group, start or answer an engagement, and reveal everyone's answers together once all members have responded.",
+              "Join a group, start or answer an activity, and reveal everyone's answers together once all members have responded.",
             step: [
               {
                 "@type": "HowToStep",
                 name: "Sign in",
-                text: "Create an account or continue with Google. Your free trial starts automatically.",
+                text: "Continue with Google or Apple, or just type your name. It's free.",
               },
               {
                 "@type": "HowToStep",
@@ -196,7 +196,7 @@ export default function AboutCampfirePage() {
               },
               {
                 "@type": "HowToStep",
-                name: "Start an engagement",
+                name: "Start an activity",
                 text: "Pick an activity type — a poll, a challenge, a check-in — and send it to the group.",
               },
               {
@@ -232,7 +232,7 @@ export default function AboutCampfirePage() {
                 price: "0",
                 priceCurrency: "USD",
                 name: "Free Trial",
-                description: "3-month free trial with full access",
+                description: "Free to use; joining and signing are always free",
               },
               {
                 "@type": "Offer",
@@ -240,7 +240,7 @@ export default function AboutCampfirePage() {
                 priceCurrency: "USD",
                 name: "Premium",
                 description:
-                  "Monthly subscription — no ads, analytics, exclusive engagement types",
+                  "Monthly subscription — no ads, analytics, exclusive activity types",
                 priceSpecification: {
                   "@type": "UnitPriceSpecification",
                   price: "4.99",
@@ -276,7 +276,7 @@ export default function AboutCampfirePage() {
               "Voice responses",
               "Blind/anonymous mode",
               "Group streaks and health scores",
-              "Recurring engagements — daily, weekly, monthly, yearly, and floating holidays",
+              "Recurring activities — daily, weekly, monthly, yearly, and floating holidays",
               "Template packs: Icebreaker, Classroom, Family Night, Bible Study, Group Care (pastoral check-ins, prayer requests)",
               "Themed seasons: Summer, Advent, March Madness, Spooky Season",
               "Real-time nudges and presence",
@@ -308,7 +308,7 @@ export default function AboutCampfirePage() {
                 name: "Is Campfire free?",
                 acceptedAnswer: {
                   "@type": "Answer",
-                  text: "You start with a free trial that gives you full access. After that there's an optional premium plan, but everything you need to join in and play is available from day one.",
+                  text: "Campfire is free. Joining a group, signing cards and answering are always free — nothing to pay and no credit card.",
                 },
               },
               {
@@ -316,7 +316,7 @@ export default function AboutCampfirePage() {
                 name: "Can people see my answer before I'm ready?",
                 acceptedAnswer: {
                   "@type": "Answer",
-                  text: "No. Your response stays sealed — even from the person who started the engagement — until the last group member has responded.",
+                  text: "No. Your response stays sealed — even from the person who started the activity — until the last group member has responded.",
                 },
               },
               {
@@ -324,7 +324,7 @@ export default function AboutCampfirePage() {
                 name: "Can I answer honestly but privately?",
                 acceptedAnswer: {
                   "@type": "Answer",
-                  text: "Many engagements can be set to blind mode, where answers reveal without showing whose is whose. Great for honest check-ins and unbiased judging.",
+                  text: "Many activities can be set to blind mode, where answers reveal without showing whose is whose. Great for honest check-ins and unbiased judging.",
                 },
               },
               {
@@ -332,7 +332,7 @@ export default function AboutCampfirePage() {
                 name: "What happens if someone doesn't respond?",
                 acceptedAnswer: {
                   "@type": "Answer",
-                  text: "The engagement waits on them, and anyone can send a gentle nudge. Some engagements have a deadline, so the reveal still happens on time.",
+                  text: "The engagement waits on them, and anyone can send a gentle nudge. Some activities have a deadline, so the reveal still happens on time.",
                 },
               },
               {
@@ -378,12 +378,13 @@ export default function AboutCampfirePage() {
 
           <p className="mt-5 text-lg text-slate-600 leading-relaxed">
             Campfire is a place where your group — your class, your friends, your
-            family — actually does things together. Someone posts a question,
-            challenge, or game. Everyone answers. And here&apos;s the twist:{" "}
+            family, your church — actually does things together. Someone starts a
+            card, a question, a challenge or a game. Everyone adds theirs. And
+            here&apos;s the twist:{" "}
             <strong className="text-slate-800">
-              nobody sees a single answer until everyone has responded.
+              nobody sees a single answer until it opens
             </strong>{" "}
-            Then it all opens at once.
+            — once everyone&apos;s in, or on the day — and then everyone sees it at once.
           </p>
 
           <div className="mt-6 flex flex-wrap gap-3">
@@ -394,7 +395,7 @@ export default function AboutCampfirePage() {
               Get started
             </Link>
             <Link
-              href="/campfire"
+              href="/campfire/demo"
               className="rounded-full border border-slate-300 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
             >
               See a quick preview
@@ -461,7 +462,7 @@ export default function AboutCampfirePage() {
           <FlowStep
             num="1"
             title="Sign in"
-            desc="Create an account or continue with Google. It takes a few seconds, and your free trial starts right away."
+            desc="Continue with Google or Apple, or just type your name — it takes a few seconds, and it's free."
             you="Tap “Get started,” then sign in."
           />
           <FlowStep
@@ -472,8 +473,8 @@ export default function AboutCampfirePage() {
           />
           <FlowStep
             num="3"
-            title="An engagement gets posted"
-            desc="An engagement is one activity — a poll, a photo challenge, a quick check-in, a trivia question. Anyone in the group can start one and choose how it works (deadline, anonymous or not, how it reveals)."
+            title="An activity gets posted"
+            desc="An activity is one activity — a poll, a photo challenge, a quick check-in, a trivia question. Anyone in the group can start one and choose how it works (deadline, anonymous or not, how it reveals)."
             you="Watch for it, or start your own once you're comfortable."
           />
           <FlowStep
@@ -491,7 +492,7 @@ export default function AboutCampfirePage() {
           <FlowStep
             num="6"
             title="Keep it going"
-            desc="Groups build streaks the more they play, and a group health score shows how active you are. The next engagement is usually just a tap away — sometimes the winner gets to post it."
+            desc="Groups build streaks the more they play, and a group health score shows how active you are. The next activity is usually just a tap away — sometimes the winner gets to post it."
             you="Come back for the next one and keep your streak alive."
           />
         </div>
@@ -508,8 +509,8 @@ export default function AboutCampfirePage() {
           <ol className="grid gap-4 sm:grid-cols-2">
             {[
               ["Tap the link or scan the QR code", "It opens Campfire on the exact group you're joining."],
-              ["Continue with Google", "One tap, no password to remember. Your trial starts automatically."],
-              ["You're in the group", "You'll see the group and any engagement that's waiting for you."],
+              ["Type your name (or continue with Google)", "No password to remember, nothing to pay."],
+              ["You're in the group", "You'll see the group and anything that's waiting for you."],
               ["Answer the question", "Submit your response — remember, nobody can see it yet."],
               ["Wait for the reveal", "Once everyone's answered, all the results open at the same moment."],
               ["React and join the next one", "Drop a reaction or comment, then keep the streak going."],
@@ -568,9 +569,9 @@ export default function AboutCampfirePage() {
 
         <Divider />
 
-        {/* ── Engagement Types ── */}
+        {/* ── Activity Types ── */}
         <SectionHeader
-          eyebrow="Engagement Types"
+          eyebrow="Activity Types"
           title="Every way to bring your group to life"
           desc="From lighthearted games to celebration cards, group gifts, and party sign-ups, Campfire is a rich toolkit for group connection. Every one uses the same sealed-reveal magic."
         />
@@ -604,7 +605,7 @@ export default function AboutCampfirePage() {
         {/* ── Template Packs ── */}
         <SectionHeader
           eyebrow="Pre-built Packs"
-          title="Engagement templates to get started instantly"
+          title="Activity templates to get started instantly"
           desc="Browse curated template packs tailored to your group's interests and gatherings."
         />
         <div className="grid gap-4 md:grid-cols-3">
@@ -650,8 +651,8 @@ export default function AboutCampfirePage() {
         {/* ── Response Mechanics ── */}
         <SectionHeader
           eyebrow="Smart Mechanics"
-          title="The person who starts the engagement controls how it plays out"
-          desc="Deadlines, blind mode, reveal mechanics, ratings, and recurrence — all configurable per engagement, all live today."
+          title="The person who starts the activity controls how it plays out"
+          desc="Deadlines, blind mode, reveal mechanics, ratings, and recurrence — all configurable per activity, all live today."
         />
         <div className="grid gap-4 md:grid-cols-2">
           <Card
@@ -660,7 +661,7 @@ export default function AboutCampfirePage() {
             bullets={[
               "Builds anticipation and honest responses",
               "Eliminates bandwagon voting and bias",
-              "Turns every engagement into a shared event",
+              "Turns every activity into a shared event",
             ]}
           />
           <Card
@@ -684,7 +685,7 @@ export default function AboutCampfirePage() {
             desc="One tap emails everyone who hasn't responded yet; the system also nudges automatically as a deadline approaches."
           />
           <Card
-            title="🔄 Recurring Engagements"
+            title="🔄 Recurring Activities"
             desc="Repeat daily, weekly, monthly, or yearly — including floating holidays like Mother's Day (2nd Sunday of May). A fresh copy auto-posts each cycle; yearly cards re-open a couple of weeks before the date."
           />
           <Card
@@ -710,7 +711,7 @@ export default function AboutCampfirePage() {
           />
           <Card
             title="🕊️ Anonymous Replies"
-            desc="Let members leave each other encouraging replies without their name attached once an engagement is released — honest support, no spotlight."
+            desc="Let members leave each other encouraging replies without their name attached once an activity is released — honest support, no spotlight."
           />
           <Card
             title="📤 Share Card"
@@ -738,7 +739,7 @@ export default function AboutCampfirePage() {
 
         {/* ── Streaks & Group Health ── */}
         <SectionHeader
-          eyebrow="Group Engagement"
+          eyebrow="Group Health"
           title="Streaks & group health at a glance"
           desc="Track participation, build momentum, and celebrate collective milestones."
         />
@@ -749,7 +750,7 @@ export default function AboutCampfirePage() {
           />
           <Card
             title="📊 Participation Dashboard"
-            desc="Real-time view of who's responded, who's still pending, and overall group engagement metrics."
+            desc="Real-time view of who's responded, who's still pending, and how active the group is overall."
           />
           <Card
             title="💪 Group Health Score"
@@ -757,7 +758,7 @@ export default function AboutCampfirePage() {
           />
           <Card
             title="🎖️ Group Milestones"
-            desc="Celebratory milestones at 10, 25, 50, and 100 engagements. Shareable graphics for each achievement."
+            desc="Celebratory milestones at 10, 25, 50, and 100 activities. Shareable graphics for each achievement."
           />
         </div>
 
@@ -765,9 +766,9 @@ export default function AboutCampfirePage() {
 
         {/* ── Themed Seasons ── */}
         <SectionHeader
-          eyebrow="Seasonal Engagement"
+          eyebrow="Seasonal Themes"
           title="Themed seasons to keep things fresh"
-          desc="Time-limited engagement themes tailored to seasons, holidays, and group moments."
+          desc="Time-limited themes tailored to seasons, holidays, and group moments."
         />
         <div className="grid gap-4 md:grid-cols-3">
           <EngCard
@@ -817,19 +818,19 @@ export default function AboutCampfirePage() {
           />
           <Faq
             q="Is it free?"
-            a="You start with a free trial that gives you full access. After that there's an optional premium plan, but everything you need to join in and play is available from day one."
+            a="Campfire is free. Joining a group, signing cards and answering are always free — nothing to pay and no credit card."
           />
           <Faq
             q="Can people see my answer before I'm ready?"
-            a="No. That's the whole point. Your response stays sealed — even from the person who started the engagement — until the last group member has responded."
+            a="No. That's the whole point. Your response stays sealed — even from the person who started the activity — until the last group member has responded."
           />
           <Faq
             q="What if I want to answer honestly but privately?"
-            a="Many engagements can be set to blind mode, where answers reveal without showing whose is whose. Great for honest check-ins and unbiased judging."
+            a="Many activities can be set to blind mode, where answers reveal without showing whose is whose. Great for honest check-ins and unbiased judging."
           />
           <Faq
             q="What happens if someone doesn't respond?"
-            a="The engagement waits on them, and anyone can send a gentle nudge. Some engagements have a deadline, so the reveal still happens on time."
+            a="The activity waits on them, and anyone can send a gentle nudge. Some activities have a deadline, so the reveal still happens on time."
           />
           <Faq
             q="How do I join the group my teacher set up?"
