@@ -146,7 +146,13 @@ async function refresh(quick: boolean): Promise<Payload> {
       // Row 3 the class names, row 46 the four privilege flags, and the days in
       // between — one read where there used to be two.
       "Points!A1:BV46",     // 12
-      "Lessons!C1:K400",    // 13 the teacher's own material, keyed by lesson code
+      "Lessons!C1:K2000",   // 13 the teacher's own material, keyed by lesson code.
+      // The tab runs to 2227 rows and the courses sit one under another: M at
+      // row 3, CE at 109, Bible at 251, Geography past 600, History past 700.
+      // Reading the first 400 therefore found the three oldest courses and no
+      // others — every History, Geography and this year's Math lesson missed
+      // its row, and with it the page reference, the homework, the picture and
+      // the video. A values batch is one request however many rows it carries.
       // The tabs the Setup slot rules reach into. They cost nothing extra — a
       // values batch is one request however many ranges it names — and without
       // them every one of those formulas throws and falls back to whatever the
@@ -167,7 +173,7 @@ async function refresh(quick: boolean): Promise<Payload> {
       "BoardImages!A2:B200", // 21
       // Column B of Lessons: the row above a course's first lesson carries the
       // link to that course's deck for the year, which the heading points at.
-      "Lessons!B1:B400",     // 22
+      "Lessons!B1:B2000",    // 22
       // The reward thresholds, one row per benefit: how many points, over how
       // many days, how many times. The board only computes the last of them,
       // the writing penalty, but it should do so from the sheet's own numbers.
@@ -201,8 +207,8 @@ async function refresh(quick: boolean): Promise<Payload> {
       "Display!E1",         // 3 an =IMAGE() cell has no value, only a formula
       "DisplayAI!E1",       // 4
       "Poems!F1:J3",        // 5
-      "Lessons!C1:K400",    // 6 an =IMAGE() or =HYPERLINK() in the picture and video columns
-      "Lessons!B1:B400",    // 7 a HYPERLINK() to a course's deck
+      "Lessons!C1:K2000",   // 6 an =IMAGE() or =HYPERLINK() in the picture and video columns
+      "Lessons!B1:B2000",   // 7 a HYPERLINK() to a course's deck
       // A2 is the day's notices, and its rule turns over at noon — today's
       // events before, tomorrow's after — so the board runs it at its own clock
       // like the rest. A1 to A5 comes as one range.
@@ -224,7 +230,7 @@ async function refresh(quick: boolean): Promise<Payload> {
       // link attached to the cell's text, which no value or formula shows.
       // B as well as E to K: the deck link above a course's first lesson is
       // often attached to that cell's text, which no value or formula shows.
-      quick ? none : readGridLinks("Lessons!B1:K400").catch(() => none),
+      quick ? none : readGridLinks("Lessons!B1:K2000").catch(() => none),
     ]);
 
     const display = values[0] || [];

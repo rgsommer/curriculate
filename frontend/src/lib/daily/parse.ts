@@ -31,6 +31,7 @@ export type Period = {
   homework: string; // Lessons F
   deck: string; // the course's deck for the year, linked from the class heading
   image: string; // Lessons I — the lesson picture
+  videos: string[]; // every video on the Lessons row, column D's included
 };
 
 export type Points = {
@@ -239,6 +240,10 @@ export type Lesson = {
   homework: string;
   image: string;
   video: string;
+  // Every video on the row, in the order the row holds them: the ones written
+  // into the lesson's own description in column D as well as the picture and
+  // video columns at the end of it. `video` is the first of them.
+  videos: string[];
   deck: string; // the course's deck for the year — column B, above its first lesson
   links: LessonLink[];
 };
@@ -260,6 +265,21 @@ export function normalizeCode(raw: string): string {
   const text = String(raw || "").trim();
   const m = LESSON_CODE.exec(text);
   return m ? m[1].toUpperCase() : text.replace(/^~+/, "").toUpperCase();
+}
+
+/**
+ * What a video link points at, rather than how it is written.
+ *
+ * `youtu.be/abc` and `youtube.com/watch?v=abc` are the same video and the same
+ * poster; a lesson that names one of them twice should not get two players.
+ */
+export function videoKey(url: string): string {
+  const u = String(url || "");
+  const yt = /(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/))([A-Za-z0-9_-]{6,})/i.exec(u);
+  if (yt) return `yt:${yt[1]}`;
+  const drive = /drive\.google\.com\/file\/d\/([A-Za-z0-9_-]+)/i.exec(u);
+  if (drive) return `drive:${drive[1]}`;
+  return canonicalUrl(u);
 }
 
 export function parseLessons(
@@ -303,6 +323,20 @@ export function parseLessons(
     for (let i = 6; i <= 8; i += 1) tail.push(...urlsAt(i)); // I to K
     // The read starts at C, so this row of the grid is the same row of the sheet.
     const video = tail.find(isVideoUrl) || "";
+    // A video is often written into the lesson's own description in **column D**
+    // — "Play Video", with the link in the sentence — and those never reach the
+    // daily post, so the board is the only place the teacher can start them
+    // from without going hunting. Every video on the row is therefore kept, in
+    // the order the row holds them, deduped by what they point at.
+    const videos: string[] = [];
+    const seenVideo = new Set<string>();
+    [...tail, ...urlsAt(1)].forEach((u) => {           // I to K, then D
+      if (!isVideoUrl(u)) return;
+      const key = videoKey(u);
+      if (seenVideo.has(key)) return;
+      seenVideo.add(key);
+      videos.push(u);
+    });
     const image = tail.find((u) => isImageUrl(u) && u !== video)
       || images[cellImageKey(`Lessons!I${r + 1}`)]
       // A Drive link written "open?id=…" passes no image test at all, so
@@ -330,7 +364,8 @@ export function parseLessons(
       page,
       homework: extractLinks(homework).clean,
       image: image ? normalizeImageUrl(image) : "",
-      video,
+      video: video || videos[0] || "",
+      videos,
       deck: "",
       links: links.filter((l) => !isVideoUrl(l.url)),
     };
@@ -368,7 +403,7 @@ export function parseLessons(
 export type DayClass = {
   subj: string; room: string; code: string; today: string; q: string;
   plan: string[]; assign: string[]; remind: string;
-  links: LessonLink[]; page: string; homework: string; image: string; video: string; deck: string;
+  links: LessonLink[]; page: string; homework: string; image: string; video: string; videos: string[]; deck: string;
   start: number | null; // from Vertical column A, when the row carries a time
 };
 
@@ -393,6 +428,7 @@ function withLesson<T extends { code: string; links: LessonLink[] }>(c: T, lesso
     homework: l ? l.homework : "",
     image: l ? l.image : "",
     video: l ? l.video : "",
+    videos: l ? l.videos : [],
     deck: l ? l.deck : "",
   };
 }
@@ -1467,6 +1503,10 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
       page: withMat.page,
       homework: withMat.homework,
       image: withMat.image,
+      // The DisplayAI row's own video leads, then the Lessons row's — the one in
+      // column D among them, which is the only place it is ever written.
+      videos: [video, ...withMat.videos].filter(Boolean)
+        .filter((u, i, all) => all.findIndex((v) => videoKey(v) === videoKey(u)) === i),
       deck: withMat.deck,
     });
   }
