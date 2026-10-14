@@ -8280,12 +8280,13 @@ function autoHomeworkScore(assignment, config, prefs) {
   return round1(denom * 0.62);
 }
 
-// Score out of 10 for a Formal Discussion from +/- tallies (baseline 5 on the
-// first +). Absent → null (excused). No participation → null.
+// Score out of 10 for a Formal Discussion from +/- tallies: baseline 5, so the
+// first + makes it 6 and the first − makes it 4. Absent → null (excused).
+// No participation (no taps) → null.
 function discussionScore({ plus = 0, minus = 0, absent = false }) {
   if (absent) return null;
-  if (plus <= 0) return null;
-  return Math.max(0, Math.min(10, round1(4 + plus - minus)));
+  if (plus + minus <= 0) return null;
+  return Math.max(0, Math.min(10, round1(5 + plus - minus)));
 }
 
 // Earliest date whose outstanding work we still surface: the start of the
@@ -8634,12 +8635,14 @@ async function buildTermReport(schoolId, { classGroup, term, subject, type, belo
   for (const sc of scores) scMap[`${sc.assignmentId}|${sc.studentId}`] = sc;
   const below = (belowOverride ?? null) != null ? belowOverride : (config?.homework?.outstandingBelow ?? 6);
 
+  const outOfAll = assignments.reduce((n, a) => n + (a.denom || 10), 0);
   const rows = students.map((s) => {
     let total = 0, outOf = 0, outstanding = 0, excused = 0;
     for (const a of assignments) {
       const sc = scMap[`${a._id}|${s._id}`];
       const denom = a.denom || 10;
-      if (sc?.excused) { excused += 1; continue; }
+      // Excused, or marked Absent in a formal discussion → not a 0.
+      if (sc?.excused || sc?.discussion?.absent) { excused += 1; continue; }
       outOf += denom;
       const raw = sc?.score; // null/undefined = blank → counts as 0
       total += raw == null ? 0 : raw;
@@ -8651,6 +8654,8 @@ async function buildTermReport(schoolId, { classGroup, term, subject, type, belo
       firstName: s.firstName, lastName: s.lastName, externalId: s.externalId,
       total: round1(total), outOf, average: outOf > 0 ? round1((total / outOf) * 10) : null,
       outstanding, excused,
+      // Every assignment excused/absent → exported with a BLANK grade.
+      allExcused: assignments.length > 0 && outOf === 0, outOfAll,
     };
   });
   const graded = rows.filter((r) => r.average != null);
@@ -8691,6 +8696,35 @@ router.put("/homework/my-prefs", authAny, loadMembership, async (req, res, next)
   }
 });
 
+// Edsby's import matches on its own Student ID (e.g. 328400022), not the
+// school number Compass stores as externalId (e.g. 21525894). The grading app's
+// class rosters / student accounts hold both (edsbyId = school number,
+// studentId = Edsby number), so map through them; fall back to a name match.
+async function edsbyNumbersFor(students) {
+  const db = mongoose.connection.db;
+  const byExt = new Map(), byName = new Map();
+  const norm = (v) => String(v || "").toLowerCase().replace(/[^a-z]/g, "");
+  const add = (ext, num, first, last) => {
+    if (!num || !/^\d{6,}$/.test(String(num))) return;
+    if (ext) byExt.set(String(ext).trim(), String(num));
+    if (first && last) byName.set(`${norm(first)}|${norm(last)}`, String(num));
+  };
+  try {
+    const rosters = await db.collection("classrosters").find({}, { projection: { students: 1 } }).toArray();
+    for (const r of rosters) for (const st of r.students || []) add(st.edsbyId, st.studentId, st.firstName, st.lastName);
+    const accts = await db.collection("studentaccounts").find({}, { projection: { studentId: 1, edsbyId: 1, firstName: 1, lastName: 1 } }).toArray();
+    for (const a of accts) add(a.edsbyId, a.studentId, a.firstName, a.lastName);
+  } catch (e) { console.warn("[behavior] edsby number lookup failed:", e?.message || e); }
+  const out = {};
+  for (const s of students) {
+    out[String(s.studentId || s._id)] =
+      byExt.get(String(s.externalId || "").trim()) ||
+      byName.get(`${norm(s.firstName)}|${norm(s.lastName)}`) ||
+      byName.get(`${norm(s.preferredName)}|${norm(s.lastName)}`) || "";
+  }
+  return out;
+}
+
 // End-of-term CSV in Edsby's import shape — one file per (term, subject, type),
 // one summed row per student (grade out of the type's combined denominator).
 router.get("/homework/export", authAny, loadMembership, async (req, res, next) => {
@@ -8708,11 +8742,22 @@ router.get("/homework/export", authAny, loadMembership, async (req, res, next) =
     };
     const assessmentName = `${classGroup} ${subject} ${HW_TYPE_LABEL[type] || type}`.replace(/\s+/g, " ").trim();
     const today = new Date().toISOString().slice(0, 10);
+    const edsbyNum = await edsbyNumbersFor(r.rows);
+    const unmatched = [];
     const out = [["Student ID", "First Name", "Last Name", "Assessment Name", "Date", "Grade", "Out Of", "Comment"].join(",")];
     for (const row of r.rows) {
-      if (row.outOf <= 0) continue; // no applicable (non-excused) work → nothing to import
-      out.push([row.externalId || "", row.firstName || "", row.lastName || "", assessmentName, today, row.total, row.outOf, ""].map(esc).join(","));
+      // Excused / absent for everything → a row with a BLANK grade (not 0).
+      if (row.outOf <= 0 && !row.allExcused) continue; // nothing assigned → nothing to import
+      const id = edsbyNum[row.studentId] || "";
+      if (!id) unmatched.push(`${row.firstName} ${row.lastName}`.trim());
+      const grade = row.allExcused ? "" : row.total;
+      const outOf = row.allExcused ? row.outOfAll : row.outOf;
+      out.push([id || row.externalId || "", row.firstName || "", row.lastName || "", assessmentName, today, grade, outOf, ""].map(esc).join(","));
     }
+    // Tell the page who has no Edsby number on file (their row falls back to the
+    // school number, which Edsby won't match).
+    res.setHeader("X-Compass-Unmatched", encodeURIComponent(unmatched.join("; ")));
+    res.setHeader("Access-Control-Expose-Headers", "X-Compass-Unmatched, Content-Disposition");
     const fname = `${assessmentName} T${term + 1}.csv`.replace(/[^\w.-]+/g, "_");
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${fname}"`);

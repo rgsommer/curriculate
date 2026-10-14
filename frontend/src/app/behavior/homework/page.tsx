@@ -273,6 +273,7 @@ function ReportPanel({ classGroup, subjects, currentTerm }: { classGroup: string
   const [type, setType] = useState<"homework" | "work" | "discussion">("homework");
   const [data, setData] = useState<{ rows: any[]; classAverage: number | null; below: number; assignmentCount: number } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [exportNote, setExportNote] = useState("");
 
   function load() {
     if (!subject) return;
@@ -287,6 +288,10 @@ function ReportPanel({ classGroup, subjects, currentTerm }: { classGroup: string
     const qs = new URLSearchParams({ classGroup, term, subject, type });
     const res = await fetch(`${API_BASE}/api/behavior/homework/export?${qs}`, { headers: { Authorization: `Bearer ${getToken()}` } });
     if (!res.ok) return;
+    const missing = decodeURIComponent(res.headers.get("X-Compass-Unmatched") || "");
+    setExportNote(missing
+      ? `No Edsby student number on file for: ${missing}. Their rows use the school number, which Edsby won't match — enter those grades in Edsby by hand (or upload that class's roster in Grading so Compass learns the numbers).`
+      : "");
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -310,6 +315,7 @@ function ReportPanel({ classGroup, subjects, currentTerm }: { classGroup: string
         </select>
         <Button onClick={download} variant="secondary" size="sm" className="ml-auto">Export CSV (Edsby)</Button>
       </div>
+      {exportNote && <p className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">{exportNote}</p>}
 
       {loading || !data ? (
         <p className="mt-3 text-sm text-slate-500">Loading…</p>
@@ -400,7 +406,12 @@ function DiscussionTool({ assignment, students, initial, onClose }: { assignment
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  const scoreOf = (st: St) => (st.absent ? null : st.plus > 0 ? Math.max(0, Math.min(10, Math.round((4 + st.plus - st.minus) * 10) / 10)) : null);
+  // Baseline 5: the first + makes it 6, the first − makes it 4.
+  const scoreOf = (st: St) => (st.absent ? null : st.plus + st.minus > 0 ? Math.max(0, Math.min(10, Math.round((5 + st.plus - st.minus) * 10) / 10)) : null);
+  // Once half the present students have spoken, the ones who haven't turn orange.
+  const present = students.filter((s) => !state[s._id].absent);
+  const spokenCount = present.filter((s) => state[s._id].turns > 0).length;
+  const nudgeQuiet = present.length > 0 && spokenCount >= present.length / 2;
   const scores = students.map((s) => scoreOf(state[s._id]));
   const top = Math.max(0, ...scores.filter((x): x is number => x != null));
 
@@ -446,15 +457,16 @@ function DiscussionTool({ assignment, students, initial, onClose }: { assignment
         </div>
         <button onClick={onClose} className="text-sm text-slate-500 underline">close</button>
       </div>
-      <p className="mt-1 text-xs text-slate-500">Tap + / − as a student speaks (first + starts them at 5). Mark <span className="font-medium">A</span> for absent. The 3rd turn is blocked until everyone has spoken. Green = leading.</p>
+      <p className="mt-1 text-xs text-slate-500">Tap + / − as a student speaks (they start at 5: the first + makes it 6, the first − makes it 4). Mark <span className="font-medium">A</span> for absent. The 3rd turn is blocked until everyone has spoken. Green = leading. Once half have spoken, <span className="font-medium text-orange-700">orange</span> = hasn&apos;t spoken yet.</p>
       <ul className="mt-3 space-y-1.5">
         {students.map((s) => {
           const st = state[s._id];
           const sc = scoreOf(st);
           const leading = sc != null && sc === top && top > 0;
+          const quiet = nudgeQuiet && !st.absent && st.turns === 0;
           return (
-            <li key={s._id} className={`flex items-center justify-between gap-2 rounded-lg border p-2 ${leading ? "border-green-400 bg-green-50" : st.absent ? "border-slate-200 bg-slate-50 opacity-60" : current === s._id ? "border-indigo-300 bg-indigo-50" : "border-slate-200"}`}>
-              <span className="min-w-0 flex-1 truncate text-sm font-medium">{s.lastName}, {s.firstName}{st.turns ? <span className="ml-1 text-[10px] text-slate-500">· {st.turns} turn{st.turns === 1 ? "" : "s"}</span> : null}</span>
+            <li key={s._id} className={`flex items-center justify-between gap-2 rounded-lg border p-2 ${leading ? "border-green-400 bg-green-50" : st.absent ? "border-slate-200 bg-slate-50 opacity-60" : current === s._id ? "border-indigo-300 bg-indigo-50" : quiet ? "border-orange-300 bg-orange-50" : "border-slate-200"}`}>
+              <span className={`min-w-0 flex-1 truncate text-sm font-medium ${quiet ? "text-orange-800" : ""}`}>{s.lastName}, {s.firstName}{st.turns ? <span className="ml-1 text-[10px] text-slate-500">· {st.turns} turn{st.turns === 1 ? "" : "s"}</span> : null}</span>
               <span className="w-12 text-center text-sm font-bold tabular-nums">{st.absent ? "A" : sc != null ? sc : "—"}</span>
               <div className="flex shrink-0 gap-1">
                 <button onClick={() => tick(s._id, -1)} disabled={st.absent} className="h-8 w-8 rounded-lg bg-red-100 font-bold text-red-700 disabled:opacity-30">−</button>
