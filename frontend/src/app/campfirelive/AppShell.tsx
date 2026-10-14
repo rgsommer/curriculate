@@ -206,15 +206,20 @@ function Shell({ children }: { children: React.ReactNode }) {
             Sign a card together. Ask your group anything.
           </p>
           {/* What it's for, at a glance — a blank sign-in wall tells a newcomer nothing. */}
-          <div className="mt-5 grid grid-cols-3 gap-2 text-left">
+          <div className="mx-auto mt-6 grid max-w-sm grid-cols-3 gap-3">
             {[
               ["💌", "Cards everyone signs"],
               ["📊", "Polls that open together"],
               ["📸", "Photo contests"],
             ].map(([e, t]) => (
-              <div key={t} className="rounded-xl border border-orange-100 bg-white/80 p-3 shadow-sm">
-                <div className="text-2xl">{e}</div>
-                <div className="mt-1 text-xs font-semibold leading-snug text-slate-700">{t}</div>
+              <div
+                key={t}
+                className="flex flex-col items-center rounded-2xl border border-orange-100 bg-white/80 px-2 py-3 text-center shadow-sm"
+              >
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-orange-50 to-rose-100 text-[26px] leading-none">
+                  {e}
+                </div>
+                <div className="mt-2 text-xs font-semibold leading-snug text-slate-700">{t}</div>
               </div>
             ))}
           </div>
