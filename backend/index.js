@@ -17747,14 +17747,27 @@ Return ONLY these items, every one of them: ${missing.join(", ")}.` },
 
       const { sectionMarksFromKey, declaredTotals } = await import("./utils/sectionTotals.js");
       const { parseKeyAnswers, isClosedSetSection } = await import("./utils/objectiveMarking.js");
-      const declared = sectionMarksFromKey(key);
-      const paperTotal = declaredTotals(key)[0] || 0;
+      const canonKey = String(canonicalKeyText || "").trim();
+      let declared = sectionMarksFromKey(key);
+      if (!declared.size && canonKey && canonKey !== key) declared = sectionMarksFromKey(canonKey);
+      const paperTotal = declaredTotals(key)[0]
+        || (canonKey ? declaredTotals(canonKey)[0] : 0) || 0;
+
       // A short quiz has no sections at all — "/6" and three questions.
       // Without this the paper has nothing declared, and the caller's check
       // that every declared section came back reads as "no mark scheme
       // could be read from the key" and refuses a perfectly good key.
       const sectionless = declared.size === 0 && paperTotal > 0;
       if (sectionless) declared.set("", { title: "", outOf: paperTotal });
+
+      // And the commonest key of all is a bare list — "1. E  2. I  3. C" —
+      // with no headings and no total anywhere. That is not a key that
+      // parsed in PART, which is what the caller's check is for; it is a
+      // key that does not state its own structure, and the marker can see
+      // the paper's printed marks perfectly well. So the paper is marked,
+      // and what it is out of comes from the marker's own itemisation.
+      const openEnded = declared.size === 0;
+      if (openEnded) declared.set("", { title: "", outOf: 0 });
 
       // Which sections are settled in code, worked out from the key here
       // rather than waited for from the blind read — so the two calls run
@@ -17774,7 +17787,10 @@ Return ONLY these items, every one of them: ${missing.join(", ")}.` },
         });
       }
 
-      const toMark = sectionless
+      const toMark = openEnded
+        ? "the whole paper. The key does not say what it is out of, so take each question's"
+          + " marks from the paper itself, and use the question numbers as they are printed"
+        : sectionless
         ? `the whole paper, worth ${paperTotal} in total — use the question numbers as they are printed`
         : want.map(([l, d]) => `${l}${d.title ? ` (${d.title})` : ""} — worth ${d.outOf}`).join("\n");
 
@@ -17807,11 +17823,11 @@ Return ONLY these items, every one of them: ${missing.join(", ")}.` },
 ${key}
 ===== END OF ANSWER KEY =====
 
-${sectionless ? "Mark " : "Mark these sections, and only these:\n"}${toMark}
+${sectionless || openEnded ? "Mark " : "Mark these sections, and only these:\n"}${toMark}
 ${skip.size ? `\nSections ${[...skip].join(", ")} are already marked. Do not return them.` : ""}
 
 For every question in those sections return:
-  id      ${sectionless ? `the question number — "1", "2", "3"` : `the section letter and the question number — "C2", "D1", "E1"`}
+  id      ${sectionless || openEnded ? `the question number — "1", "2", "3"` : `the section letter and the question number — "C2", "D1", "E1"`}
   out_of  what that question is worth, as the key allocates it
   marks   what this student earned, 0 to out_of; half marks are fine
   wrote   the student's answer, short, or "" if nothing was written
@@ -17926,11 +17942,13 @@ Grade band ${band}.`;
         // said out loud, because a wide gap means the question was read
         // wrongly, not that the student did badly.
         let outOf = d.outOf;
-        if (parts > 0 && Math.abs(parts - d.outOf) > 0.01) {
+        if (!d.outOf) {
+          // The key never said what this is worth, so the marker's own
+          // reading of the paper is the only figure there is.
+          outOf = parts;
+        } else if (parts > 0 && Math.abs(parts - d.outOf) > 0.01) {
           offBy.push(`${letter}: itemised /${round(parts)}, key says /${d.outOf}`);
           score = (score / parts) * d.outOf;
-        } else if (!parts) {
-          outOf = d.outOf;
         }
         sections.push({
           letter,
