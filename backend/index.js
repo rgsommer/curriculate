@@ -2720,12 +2720,28 @@ socket.on("task:force-advance", ({ roomCode }) => {
   });
 
   // HostView display joins a room channel (read-only — just needs state broadcasts)
-  socket.on("host:join", (payload, ack) => {
+  socket.on("host:join", async (payload, ack) => {
     const code = (payload?.roomCode || "").toUpperCase().trim();
     if (!code) return;
     socket.join(code);
     socket.data.role = "host";
     socket.data.roomCode = code;
+
+    // Demo rooms: the reviewer flow self-provisions only on first student
+    // join, but the public teacher demo at set.{brand}/demo starts at the
+    // projector — provision here too, and wipe a stale room when no other
+    // sockets are connected so each new demo opens on task 1.
+    if (DEMO_ROOM_CODES.has(code)) {
+      const live = io.sockets.adapter.rooms.get(code);
+      const otherCount = live ? [...live].filter((id) => id !== socket.id).length : 0;
+      if (rooms[code] && otherCount === 0) {
+        delete rooms[code];
+      }
+      if (!rooms[code]) {
+        await provisionDemoRoom(code);
+      }
+    }
+
     const room = rooms[code];
     if (room) {
       const state = buildRoomState(room);
