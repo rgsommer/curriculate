@@ -467,7 +467,7 @@ function DiscussionTool({ assignment, students, initial, onClose }: { assignment
           return (
             <li key={s._id} className={`flex items-center justify-between gap-2 rounded-lg border p-2 ${leading ? "border-green-400 bg-green-50" : st.absent ? "border-slate-200 bg-slate-50 opacity-60" : current === s._id ? "border-indigo-300 bg-indigo-50" : quiet ? "border-orange-300 bg-orange-50" : "border-slate-200"}`}>
               <span className={`min-w-0 flex-1 truncate text-sm font-medium ${quiet ? "text-orange-800" : ""}`}>{s.lastName}, {s.firstName}{st.turns ? <span className="ml-1 text-[10px] text-slate-500">· {st.turns} turn{st.turns === 1 ? "" : "s"}</span> : null}</span>
-              <span className="w-12 text-center text-sm font-bold tabular-nums">{st.absent ? "A" : sc != null ? sc : "—"}</span>
+              <span className="w-12 text-center text-sm font-bold tabular-nums" title={st.absent ? "Absent — no score (blank in the export)" : undefined}>{st.absent || sc == null ? "—" : sc}</span>
               <div className="flex shrink-0 gap-1">
                 <button onClick={() => tick(s._id, -1)} disabled={st.absent} className="h-8 w-8 rounded-lg bg-red-100 font-bold text-red-700 disabled:opacity-30">−</button>
                 <button onClick={() => tick(s._id, 1)} disabled={st.absent} className="h-8 w-8 rounded-lg bg-green-100 font-bold text-green-700 disabled:opacity-30">+</button>
