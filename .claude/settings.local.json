@@ -1152,7 +1152,6 @@
       "Bash(node /Users/richardsommer/dev/curriculate/backend/tests/test-paired-trade-math.mjs)",
       "Bash(node /Users/richardsommer/dev/curriculate/backend/tests/test-p25-signal-quality.mjs)",
       "Bash(pkill -f \"node index.js\")",
-      "Bash(export MONGO_URI='mongodb+srv://AtlasDB:NpGOIFdzwWLB8w4H@curriculate.7s8bdye.mongodb.net/?appName=curriculate')",
       "Bash(node scripts/run-attribution.mjs --email rgsommer@me.com --windows 30 --format text)",
       "Bash(node ../scripts/run-attribution.mjs --email rgsommer@me.com --windows 30 --format text)",
       "Bash(tee /tmp/claude-501/-Users-richardsommer-dev-curriculate/9bf64dcc-2eee-46eb-890a-b1c8881c8edf/scratchpad/attribution/richard-30d.txt)",
