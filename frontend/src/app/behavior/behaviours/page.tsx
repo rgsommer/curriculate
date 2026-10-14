@@ -69,6 +69,7 @@ export default function BehavioursPage() {
         </p>
         {isAdmin && <SeedStandard onSeeded={load} />}
       </div>
+      {housesOn && <PointsGuide behaviors={items} config={me.config} isAdmin={isAdmin} />}
 
       {(() => {
         const neg = sortBehaviors(items.filter((b) => !(b.kind === "positive" || (b.points ?? 0) > 0)));
@@ -371,5 +372,57 @@ function PointsBadge({ points }: { points: number }) {
     <span className={`ml-2 rounded px-1.5 text-xs font-medium ${positive ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
       {positive ? `+${points}` : points} pts
     </span>
+  );
+}
+
+// "House points at a glance": which behaviours earn / lose house points, and
+// the other ways points move — read from the school's live settings so it never
+// claims deductions that are switched off.
+function PointsGuide({ behaviors, config, isAdmin }: { behaviors: any[]; config: any; isAdmin: boolean }) {
+  const posOn = config?.housePositivePoints !== undefined ? config.housePositivePoints !== false : config?.houseIndividualPoints !== false;
+  const negOn = config?.houseNegativePoints !== undefined ? !!config.houseNegativePoints : config?.houseIndividualPoints !== false;
+  const isPos = (b: any) => b.kind === "positive" || (b.points ?? 0) > 0;
+  const earn = behaviors.filter((b) => isPos(b) && (b.points || 0) > 0).sort((a, b) => b.points - a.points || a.name.localeCompare(b.name));
+  const lose = behaviors.filter((b) => !isPos(b) && (b.points || 0) < 0).sort((a, b) => a.points - b.points || a.name.localeCompare(b.name));
+  const noteHome = Number(config?.encouragingMessagePoints ?? 5);
+  const wsOn = !!config?.houseWhiteSlipDeduct && !negOn;
+  const wsPts = Number(config?.houseWhiteSlipPoints ?? 10);
+  const Item = ({ b }: { b: any }) => (
+    <li className="flex items-baseline justify-between gap-2">
+      <span className="min-w-0 truncate">{b.name}</span>
+      <span className={`shrink-0 font-semibold tabular-nums ${b.points > 0 ? "text-green-700" : "text-red-700"}`}>{b.points > 0 ? `+${b.points}` : b.points}</span>
+    </li>
+  );
+  return (
+    <details id="points-guide" open className="scroll-mt-20 rounded-xl border border-slate-200 bg-white p-4">
+      <summary className="cursor-pointer font-semibold">🏠 House points at a glance</summary>
+      <div className="mt-3 grid gap-4 sm:grid-cols-2">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-green-700">Earn points{!posOn && " — switched off"}</p>
+          {!posOn ? <p className="mt-1 text-sm text-slate-500">Encouraging behaviours don&apos;t add house points at this school right now.</p>
+            : earn.length ? <ul className="mt-1 space-y-0.5 text-sm">{earn.map((b) => <Item key={b._id} b={b} />)}</ul>
+            : <p className="mt-1 text-sm text-slate-500">No encouraging behaviour has points yet.</p>}
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-red-700">Lose points{!negOn && " — switched off"}</p>
+          {!negOn ? <p className="mt-1 text-sm text-slate-500">Correcting behaviours don&apos;t take points away at this school{lose.length ? " (the values set below are ignored)" : ""}.</p>
+            : lose.length ? <ul className="mt-1 space-y-0.5 text-sm">{lose.map((b) => <Item key={b._id} b={b} />)}</ul>
+            : <p className="mt-1 text-sm text-slate-500">No correcting behaviour deducts points.</p>}
+        </div>
+      </div>
+      <div className="mt-4 border-t border-slate-100 pt-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">Other ways points move</p>
+        <ul className="mt-1 space-y-0.5 text-sm text-slate-700">
+          {noteHome > 0 && <li>Encouraging note home to a student&apos;s family: <span className="font-semibold text-green-700">+{noteHome}</span> to their house</li>}
+          {wsOn && <li>White slip: <span className="font-semibold text-red-700">−{wsPts}</span> from the student&apos;s house</li>}
+          <li>House competitions and counted events (food drive, cleanup…): placement points to the house, bonus points for top contributors</li>
+          <li>Any teacher can give or take points by hand from the dashboard&apos;s House points card</li>
+        </ul>
+        <p className="mt-2 text-xs text-slate-500">
+          Intensity (×0.5 – ×2) when logging scales a behaviour&apos;s points.
+          {isAdmin ? " Change which kinds count in Setup → Houses; change a behaviour's points by editing it below." : " Admins set these in Setup → Houses and on each behaviour."}
+        </p>
+      </div>
+    </details>
   );
 }

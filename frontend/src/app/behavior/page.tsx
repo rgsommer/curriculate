@@ -507,6 +507,10 @@ function HousesCard({ canLog, isAdmin, portalCode, events = [] }: { canLog: bool
         <h2 className="font-semibold">House points</h2>
         {canLog && (
           <span className="flex flex-wrap items-center justify-end gap-2">
+            <Link href="/behavior/behaviours" className="text-xs font-medium text-slate-600 underline underline-offset-2 hover:text-slate-900"
+              title="Which behaviours earn or lose house points, and the other ways points move">
+              How points work
+            </Link>
             <Link href="/behavior/food-drive" className="text-xs font-medium text-slate-600 underline underline-offset-2 hover:text-slate-900"
               title="Print class sheets for a counted event (food drive, cleanup, read-a-thon…), then upload them to award points">
               🥫 Food drive / tally import
