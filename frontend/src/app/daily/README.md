@@ -469,6 +469,31 @@ would have replaced, with its replacement, before it replaces any of them.
 Node — both of the teacher's own journals are caught, the peacemaking one is
 not, and a unit genuinely about stress, or about managing water, is left alone.
 
+### Every video the lesson carries
+
+A video is often written into the lesson's own description in **column D** —
+*"Play Video"*, with the link in the sentence — rather than in the video column
+at the end of the row. Column D and column I reach **no student-facing tab**, so
+nothing in them is ever linked in the daily post; column F's links are, as
+handout chips. That makes the board the only place those videos can be started
+from without hunting for them in the middle of a lesson.
+
+So the row's videos are all kept (`videos` on a Lesson and on a Period): the
+video column first, then the ones in the description, deduped by **what they
+point at** rather than how they are written — `youtu.be/abc` and
+`watch?v=abc` are one video and one poster (`videoKey`). Each gets a press-to-play
+poster in the bottom right beside the picture, `MAX_LESSON_VIDEOS` (3) at most,
+and each opens over the whole board. The small tile beside the clock still
+carries the first.
+
+**The Lessons read is `C1:K2000`.** The tab runs to 2227 rows and the courses sit
+one under another — Math's old M codes at row 3, CE at 109, Bible at 251,
+Geography past 600, History past 702, Art past 882 — so the old `C1:K400` found
+the three oldest courses and no others. Every History, Geography and this year's
+Math lesson missed its row, and with it the page reference, the homework, the
+handouts, the course deck, the picture and the video. A values batch is one
+request however many rows it carries.
+
 ### The Formal Discussion topic, and the grade it is for
 
 The **Impromptu** tab is a list of resolutions: column **K** whether it is in

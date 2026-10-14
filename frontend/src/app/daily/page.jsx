@@ -53,6 +53,10 @@ const FIT_MAX = 1.9;
 const FIT_SLACK = 0.05;
 // The shortest a period may be cut to by the bell schedule.
 const MIN_PERIOD_MIN = 10;
+// A lesson can carry several videos — one in the video column, others written
+// into its description. More than three posters and the corner is a contact
+// sheet rather than something to press.
+const MAX_LESSON_VIDEOS = 3;
 // How many blocks the right-hand half can hold on a projector before the last
 // one is clipped. They are built in order of what the room needs, so what falls
 // off the end is the riddle and the day's note.
@@ -490,7 +494,9 @@ export default function DailyPage() {
   const [loadNote, setLoadNote] = useState("Contacting the sheet…");
   const [points, setPoints] = useState({ numbers: null, percents: null, entered: null, enteredCell: "", writing: [], writingNote: "", b3: [], b3Note: "", note: "" });
   const [tick, setTick] = useState(0);
-  const [vidBig, setVidBig] = useState(false);
+  // Which video is open over the whole board, by its address — a class can
+  // have more than one, and the rail shows a player for each.
+  const [vidBig, setVidBig] = useState("");
   const [opts, setOpts] = useState({ t: null, k: "", pic: "right", debug: false });
   const [scrub, setScrub] = useState(null);
   const [badImages, setBadImages] = useState({});
@@ -1127,7 +1133,7 @@ export default function DailyPage() {
             <div className="peek">Next: <b>{peekNext.subj}</b> · {peekNext.room} · {fmt(peekNext.start)}</div>
           ) : null}
         </div>
-        {period && !period.duty ? (() => { if (period.video) headerVideo = period.video; return <VideoTile url={period.video} big={false} setBig={setVidBig} />; })() : <span />}
+        {period && !period.duty ? (() => { if (period.video) headerVideo = period.video; return <VideoTile url={period.video} big={false} setBig={(on) => setVidBig(on ? period.video : "")} />; })() : <span />}
         <div className={`clockbox${red ? " red" : ""}`}>
           <div className="clock">{fmt(t)}</div>
           <div className="left">{leftHtml}</div>
@@ -2160,7 +2166,7 @@ export default function DailyPage() {
     // the Setup slot picture is the fallback.
     const lessonPic = cur.image ? { url: cur.image, seconds: setup.picSeconds } : data.picture;
     const hasLessonPic = opts.pic !== "off" && !!lessonPic && usable(lessonPic.url);
-    const hasLessonVideo = !!cur.video;
+    const hasLessonVideo = !!(cur.video || (cur.videos || []).length);
 
     // The right-hand half in order: the memory work where there is any, then the
     // verse of the day, then the lesson's own picture and video, then the work.
@@ -2178,25 +2184,38 @@ export default function DailyPage() {
     // it works rather than a slide shown once, and the lesson's video should be
     // a press away at any point in the period, not only at the start of it. The
     // panel's own blocks keep the top of the column; this takes the foot of it.
+    // Every video the lesson row carries, not only the one in the video column:
+    // a video written into the lesson's own description in column D never
+    // reaches the daily post, so the board is the only place it can be started
+    // from without going hunting for it mid-class.
+    const lessonVideos = (cur.videos && cur.videos.length ? cur.videos : (cur.video ? [cur.video] : []))
+      .slice(0, MAX_LESSON_VIDEOS);
     const mediaRail = () => {
-      if (!hasLessonPic && !hasLessonVideo) return null;
+      if (!hasLessonPic && !lessonVideos.length) return null;
       const pic = hasLessonPic
         ? bigPicture(lessonPic.url, cur.code ? `Lesson · ${cur.code}` : "Lesson picture", "", "rail")
         : null;
-      const video = hasLessonVideo ? (
+      const players = lessonVideos.map((url, i) => (
         <div
+          key={url}
           className="vid poster"
           role="button"
           tabIndex={0}
-          aria-label="Play the lesson video"
-          onClick={() => setVidBig(true)}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setVidBig(true); } }}
+          aria-label={`Play lesson video ${i + 1}`}
+          onClick={() => setVidBig(url)}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setVidBig(url); } }}
         >
           <div className="thumb">▶</div>
-          <div className="cap">Lesson video — press to play</div>
+          <div className="cap">
+            {lessonVideos.length > 1 ? `Video ${i + 1} — press to play` : "Lesson video — press to play"}
+          </div>
         </div>
-      ) : null;
-      return <div key="media" className={`mediarail${pic ? "" : " videoonly"}`}>{pic}{video}</div>;
+      ));
+      return (
+        <div key="media" className={`mediarail${pic ? "" : " videoonly"}${players.length > 1 ? " manyvids" : ""}`}>
+          {pic}{players}
+        </div>
+      );
     };
 
     // Handouts named in the lesson cell, so they can be opened and printed from
@@ -2406,7 +2425,7 @@ export default function DailyPage() {
       {/* The videos, expanded over the whole board rather than inside the
           header or the lesson area, both of which are transformed and so become
           the containing block for anything absolutely positioned inside them. */}
-      {vidBig && headerVideo ? <VideoTile url={headerVideo} big setBig={setVidBig} /> : null}
+      {vidBig ? <VideoTile url={vidBig} big setBig={(on) => setVidBig(on ? vidBig : "")} /> : null}
       {prayerOn && prayBig && pray && isVideoUrl(pray.url)
         ? <VideoTile url={pray.url} big setBig={setPrayBig} />
         : null}

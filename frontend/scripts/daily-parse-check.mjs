@@ -485,6 +485,37 @@ check("lessons: picture from an =IMAGE() in column I", L.H001.image === "https:/
 check("lessons: a rich-text handout in the homework cell", L.H001.links.some((x) => x.label === "Due Dates handout"), L.H001.links);
 check("lessons: a row that is not a lesson is skipped", !L["NOT A CODE"], Object.keys(L));
 
+// A video is often written into the lesson's own description in column D —
+// "Play Video", with the link in the sentence — and that column reaches no
+// student-facing tab, so the board is the only place it can be started from.
+{
+  const inD = [
+    ["Code", "", "Page", "Homework", "", "", "Picture", "", "Video"],
+    ["~G011", "COMPASSION TRUE STORY — Lesson 1\nPlay Video https://youtu.be/compassion1\n-What is poverty?",
+      "p. 31", "Reflection due next class", "", "", "https://example.com/geo.png", "", "https://youtu.be/lessonvid"],
+    ["~G012", "Hazard map of Canada. Watch https://www.youtube.com/watch?v=hazards and then https://youtu.be/second",
+      "", "", "", "", "", "", ""],
+    ["~G013", "Two ways of writing the same one: https://youtu.be/dQw4w9WgXcQ and https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "", "", "", "", "", "", ""],
+  ];
+  const D = P.parseLessons(inD, [], []);
+  check("lessons: a video in column D is kept", D.G011.videos.includes("https://youtu.be/compassion1"), D.G011.videos);
+  check("lessons: the video column still leads",
+    D.G011.video === "https://youtu.be/lessonvid" && D.G011.videos[0] === "https://youtu.be/lessonvid", D.G011.videos);
+  check("lessons: and the picture is not confused for one", D.G011.image === "https://example.com/geo.png", D.G011.image);
+  check("lessons: two videos in the description are both kept",
+    D.G012.videos.length === 2 && D.G012.video === "https://www.youtube.com/watch?v=hazards", D.G012.videos);
+  check("lessons: the same video written two ways is one",
+    D.G013.videos.length === 1, D.G013.videos);
+  check("videoKey: youtu.be and watch?v= are the same video",
+    P.videoKey("https://youtu.be/abc123") === P.videoKey("https://www.youtube.com/watch?v=abc123&t=30"));
+  check("videoKey: two different videos are not",
+    P.videoKey("https://youtu.be/abc123") !== P.videoKey("https://youtu.be/xyz789"));
+  check("videoKey: a Drive file is known by its id",
+    P.videoKey("https://drive.google.com/file/d/1AbC/view?usp=sharing") === "drive:1AbC");
+  check("lessons: a row with no video has an empty list", L.H001.videos.length === 0, L.H001.videos);
+}
+
 // The code cell is not always only the code: the sheet marks a lesson that has
 // a picture with "~G007 📷", and the whole row was being skipped for it — no
 // page, no homework, no picture, no video, for every lesson so marked.

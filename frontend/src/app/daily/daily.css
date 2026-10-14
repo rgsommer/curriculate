@@ -566,6 +566,11 @@ a.subj.deck:hover { text-decoration-color: currentColor; }
 /* A video with no picture beside it is a poster in the corner, not a quadrant —
    the header carries a tile for it as well. */
 .panel > .mediarail.videoonly { max-height: 20vh; }
+/* Several videos on one lesson: they share the corner rather than each taking
+   it, and they stay pressable from across the room. */
+.panel > .mediarail.manyvids { gap: .6vw; }
+.panel > .mediarail.manyvids .vid { flex: 1 1 0; width: auto; min-width: 0; }
+.panel > .mediarail.manyvids .vid .cap { font-size: clamp(9px, 1.2vh, 12px); }
 .panel > .mediarail .picture { flex: 1 1 auto; min-width: 0; height: 100%; }
 .panel > .mediarail .picture .capline { font-size: clamp(11px, 1.6vh, 16px); }
 .panel > .mediarail .vid {
