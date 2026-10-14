@@ -406,8 +406,8 @@ function DiscussionTool({ assignment, students, initial, onClose }: { assignment
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  // Baseline 5: the first + makes it 6, the first − makes it 4.
-  const scoreOf = (st: St) => (st.absent ? null : st.plus + st.minus > 0 ? Math.max(0, Math.min(10, Math.round((5 + st.plus - st.minus) * 10) / 10)) : null);
+  // Everyone present starts at 5 (never spoke = 5/10); first + → 6, first − → 4.
+  const scoreOf = (st: St) => (st.absent ? null : Math.max(0, Math.min(10, Math.round((5 + st.plus - st.minus) * 10) / 10)));
   // Once half the present students have spoken, the ones who haven't turn orange.
   const present = students.filter((s) => !state[s._id].absent);
   const spokenCount = present.filter((s) => state[s._id].turns > 0).length;
@@ -457,12 +457,12 @@ function DiscussionTool({ assignment, students, initial, onClose }: { assignment
         </div>
         <button onClick={onClose} className="text-sm text-slate-500 underline">close</button>
       </div>
-      <p className="mt-1 text-xs text-slate-500">Tap + / − as a student speaks (they start at 5: the first + makes it 6, the first − makes it 4). Mark <span className="font-medium">A</span> for absent. The 3rd turn is blocked until everyone has spoken. Green = leading. Once half have spoken, <span className="font-medium text-orange-700">orange</span> = hasn&apos;t spoken yet.</p>
+      <p className="mt-1 text-xs text-slate-500">Tap + / − as a student speaks (everyone present starts at 5 — never speaking keeps 5; the first + makes it 6, the first − makes it 4). Mark <span className="font-medium">A</span> for absent. The 3rd turn is blocked until everyone has spoken. Green = leading. Once half have spoken, <span className="font-medium text-orange-700">orange</span> = hasn&apos;t spoken yet.</p>
       <ul className="mt-3 space-y-1.5">
         {students.map((s) => {
           const st = state[s._id];
           const sc = scoreOf(st);
-          const leading = sc != null && sc === top && top > 0;
+          const leading = sc != null && sc === top && top > 5; // nobody "leads" at the starting 5
           const quiet = nudgeQuiet && !st.absent && st.turns === 0;
           return (
             <li key={s._id} className={`flex items-center justify-between gap-2 rounded-lg border p-2 ${leading ? "border-green-400 bg-green-50" : st.absent ? "border-slate-200 bg-slate-50 opacity-60" : current === s._id ? "border-indigo-300 bg-indigo-50" : quiet ? "border-orange-300 bg-orange-50" : "border-slate-200"}`}>

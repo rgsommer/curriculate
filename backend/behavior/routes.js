@@ -8280,12 +8280,11 @@ function autoHomeworkScore(assignment, config, prefs) {
   return round1(denom * 0.62);
 }
 
-// Score out of 10 for a Formal Discussion from +/- tallies: baseline 5, so the
-// first + makes it 6 and the first − makes it 4. Absent → null (excused).
-// No participation (no taps) → null.
+// Score out of 10 for a Formal Discussion from +/- tallies. Everyone present
+// starts at 5 (so a student who never speaks keeps 5/10); each + / − moves it
+// by 1 (first + → 6, first − → 4). Absent → null (excused, not a 0).
 function discussionScore({ plus = 0, minus = 0, absent = false }) {
   if (absent) return null;
-  if (plus + minus <= 0) return null;
   return Math.max(0, Math.min(10, round1(5 + plus - minus)));
 }
 
