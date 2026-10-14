@@ -8750,8 +8750,11 @@ router.get("/homework/export", authAny, loadMembership, async (req, res, next) =
       if (row.outOf <= 0 && !row.allExcused) continue; // nothing assigned → nothing to import
       const id = edsbyNum[row.studentId] || "";
       if (!id) unmatched.push(`${row.firstName} ${row.lastName}`.trim());
-      const grade = row.allExcused ? "" : row.total;
-      const outOf = row.allExcused ? row.outOfAll : row.outOf;
+      // Missed (excused/absent) work isn't a penalty: scale what they did to the
+      // full denominator so every row shares one "Out Of" (e.g. 8/10 attended →
+      // 16/20). All of it missed → blank grade.
+      const grade = row.allExcused ? "" : row.outOf < row.outOfAll ? round1((row.total / row.outOf) * row.outOfAll) : row.total;
+      const outOf = row.outOfAll;
       out.push([id || row.externalId || "", row.firstName || "", row.lastName || "", assessmentName, today, grade, outOf, ""].map(esc).join(","));
     }
     // Tell the page who has no Edsby number on file (their row falls back to the
