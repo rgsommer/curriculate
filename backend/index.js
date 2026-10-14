@@ -17845,7 +17845,20 @@ How the key means to be read — it assumes a teacher and does not spell these o
 - Where one numbered question has several blanks, award the share the
   student got right rather than all or nothing.
 - Where the key states a breakdown for a longer answer — "one mark for
-  naming it, one for explaining it, one for evidence" — apply that breakdown.
+  naming it, one for explaining it, one for evidence", or "position
+  stated clearly (2) · at least two accurate facts (4) · explanation (3) ·
+  writing that can be followed (1)" — that breakdown IS the marking.
+  Award each part on its own terms and add them up. Do not form an
+  impression of the answer as a whole and pick a number near it: a
+  paragraph can state its position perfectly and support it poorly, and
+  it must take the first two marks and lose the others.
+  Where the part is a count — "at least two accurate facts" — it is a
+  count. Two accurate facts earn all four of those marks, however the
+  rest of the answer reads. In the "why", say which part lost the marks.
+  A part of the breakdown earns nothing where there is nothing to judge:
+  a student who wrote no paragraph does not earn the mark for writing
+  that can be followed. Marking the parts separately must not turn a
+  blank into a score.
 - A right answer reached by sound work the key does not show earns full
   marks. The key shows one route, not the only one.
 - For a longer question the key gives ONE good answer, not a checklist.
