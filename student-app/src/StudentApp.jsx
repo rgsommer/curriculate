@@ -264,7 +264,23 @@ function StudentApp() {
   const [isMysteryMode, setIsMysteryMode] = useState(false);
   const [scanFirstPopup, setScanFirstPopup] = useState(false);
 
-  const [roomCode, setRoomCode] = useState(() => lsGet(LS_KEYS.roomCode) || "");
+  // Pre-fill the room code from ?room=XXX when the student arrived via the
+  // projector's scan-to-join QR. Keep the saved roomCode as a fallback so a
+  // reload during a session doesn't require re-scanning. Clamp to the
+  // length a real room code can be (2–12 chars) so a junk param can't
+  // poison the saved state.
+  const [roomCode, setRoomCode] = useState(() => {
+    try {
+      const fromUrl = new URLSearchParams(window.location.search).get("room");
+      if (fromUrl) {
+        const upper = String(fromUrl).trim().toUpperCase();
+        if (upper.length >= 2 && upper.length <= 12 && /^[A-Z0-9]+$/.test(upper)) {
+          return upper;
+        }
+      }
+    } catch {}
+    return lsGet(LS_KEYS.roomCode) || "";
+  });
   const [teamName, setTeamName] = useState(() => lsGet(LS_KEYS.teamName) || "");
   // True when the current session was started via the public "Try a demo"
   // button (guest join to CRUEDEMO). Used to tag feedback/analytics so demo

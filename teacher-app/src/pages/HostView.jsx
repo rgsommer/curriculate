@@ -8,6 +8,7 @@ import { Trophy, Camera, Users, Sparkles, Volume2, VolumeX, Zap } from "lucide-r
 import EndTimeControl from "../components/EndTimeControl";
 import { getTasksetEstimatedMinutes } from "../utils/tasksetDuration";
 import { brandDomain } from "@shared/brandContext.js";
+import QRCode from "qrcode";
 
 // ── Constants ────────────────────────────────────────────────
 const trophyEmojis = ["🥇", "🥈", "🥉"];
@@ -31,6 +32,64 @@ const SFX = {
   ding:      "/sounds/ding.mp3",
   powerUp:   "/sounds/power-up.mp3",
 };
+
+// ── Scan-to-join QR ──────────────────────────────────────────
+// Shown on the projector under the room code so students join by scanning
+// instead of typing. Encodes play.{brand}.com/?room={code}; the student-app
+// reads ?room= and pre-fills the join form (StudentApp.jsx).
+//
+// `qrcode` is already a direct dep of teacher-app. We render into a data
+// URL at mount, re-render whenever the code changes, and fall back to the
+// bare room code if generation fails (projector should never be blank
+// because of a QR failure).
+function JoinQr({ code }) {
+  const [src, setSrc] = useState("");
+  const url = React.useMemo(() => {
+    const safe = String(code || "").trim().toUpperCase();
+    if (!safe) return "";
+    return `https://play.${brandDomain()}/?room=${encodeURIComponent(safe)}`;
+  }, [code]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!url) { setSrc(""); return; }
+    QRCode.toDataURL(url, {
+      errorCorrectionLevel: "M",
+      margin: 1,
+      width: 320,
+      color: { dark: "#0b1f3a", light: "#ffffff" },
+    })
+      .then((dataUrl) => { if (!cancelled) setSrc(dataUrl); })
+      .catch(() => { if (!cancelled) setSrc(""); });
+    return () => { cancelled = true; };
+  }, [url]);
+
+  if (!url) return null;
+  return (
+    <div className="mt-4 flex flex-col items-center gap-2 select-none">
+      {src ? (
+        <img
+          src={src}
+          alt={`Scan to join room ${code}`}
+          width={200}
+          height={200}
+          className="rounded-xl bg-white p-2 shadow-xl"
+          draggable={false}
+        />
+      ) : (
+        // Placeholder while the data URL resolves (<~50 ms in practice).
+        <div
+          aria-hidden="true"
+          className="rounded-xl bg-white/15"
+          style={{ width: 200, height: 200 }}
+        />
+      )}
+      <div className="text-base md:text-lg font-bold tracking-wide opacity-90">
+        📱 Scan to join
+      </div>
+    </div>
+  );
+}
 
 // ── Aurora backdrop ──────────────────────────────────────────
 const AURORA_OVERLAY_STYLE = {
@@ -585,6 +644,11 @@ export default function HostView({ roomCode: roomCodeProp }) {
           <div className="text-xl md:text-2xl font-bold opacity-95 tracking-wide">
             play.{brandDomain()}
           </div>
+
+          {/* Scan-to-join QR — one tap for students instead of typing a
+              code. Shown whenever we have a code, so the demo projector
+              AND real classroom sessions both benefit. */}
+          <JoinQr code={codeUpper} />
 
           {/* Taskset name */}
           {roomState.tasksetName && (

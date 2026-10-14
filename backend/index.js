@@ -2720,12 +2720,28 @@ socket.on("task:force-advance", ({ roomCode }) => {
   });
 
   // HostView display joins a room channel (read-only — just needs state broadcasts)
-  socket.on("host:join", (payload, ack) => {
+  socket.on("host:join", async (payload, ack) => {
     const code = (payload?.roomCode || "").toUpperCase().trim();
     if (!code) return;
     socket.join(code);
     socket.data.role = "host";
     socket.data.roomCode = code;
+
+    // Demo rooms: the reviewer flow self-provisions only on first student
+    // join, but the public teacher demo at set.{brand}/demo starts at the
+    // projector — provision here too, and wipe a stale room when no other
+    // sockets are connected so each new demo opens on task 1.
+    if (DEMO_ROOM_CODES.has(code)) {
+      const live = io.sockets.adapter.rooms.get(code);
+      const otherCount = live ? [...live].filter((id) => id !== socket.id).length : 0;
+      if (rooms[code] && otherCount === 0) {
+        delete rooms[code];
+      }
+      if (!rooms[code]) {
+        await provisionDemoRoom(code);
+      }
+    }
+
     const room = rooms[code];
     if (room) {
       const state = buildRoomState(room);
@@ -17731,14 +17747,27 @@ Return ONLY these items, every one of them: ${missing.join(", ")}.` },
 
       const { sectionMarksFromKey, declaredTotals } = await import("./utils/sectionTotals.js");
       const { parseKeyAnswers, isClosedSetSection } = await import("./utils/objectiveMarking.js");
-      const declared = sectionMarksFromKey(key);
-      const paperTotal = declaredTotals(key)[0] || 0;
+      const canonKey = String(canonicalKeyText || "").trim();
+      let declared = sectionMarksFromKey(key);
+      if (!declared.size && canonKey && canonKey !== key) declared = sectionMarksFromKey(canonKey);
+      const paperTotal = declaredTotals(key)[0]
+        || (canonKey ? declaredTotals(canonKey)[0] : 0) || 0;
+
       // A short quiz has no sections at all — "/6" and three questions.
       // Without this the paper has nothing declared, and the caller's check
       // that every declared section came back reads as "no mark scheme
       // could be read from the key" and refuses a perfectly good key.
       const sectionless = declared.size === 0 && paperTotal > 0;
       if (sectionless) declared.set("", { title: "", outOf: paperTotal });
+
+      // And the commonest key of all is a bare list — "1. E  2. I  3. C" —
+      // with no headings and no total anywhere. That is not a key that
+      // parsed in PART, which is what the caller's check is for; it is a
+      // key that does not state its own structure, and the marker can see
+      // the paper's printed marks perfectly well. So the paper is marked,
+      // and what it is out of comes from the marker's own itemisation.
+      const openEnded = declared.size === 0;
+      if (openEnded) declared.set("", { title: "", outOf: 0 });
 
       // Which sections are settled in code, worked out from the key here
       // rather than waited for from the blind read — so the two calls run
@@ -17758,7 +17787,10 @@ Return ONLY these items, every one of them: ${missing.join(", ")}.` },
         });
       }
 
-      const toMark = sectionless
+      const toMark = openEnded
+        ? "the whole paper. The key does not say what it is out of, so take each question's"
+          + " marks from the paper itself, and use the question numbers as they are printed"
+        : sectionless
         ? `the whole paper, worth ${paperTotal} in total — use the question numbers as they are printed`
         : want.map(([l, d]) => `${l}${d.title ? ` (${d.title})` : ""} — worth ${d.outOf}`).join("\n");
 
@@ -17791,11 +17823,11 @@ Return ONLY these items, every one of them: ${missing.join(", ")}.` },
 ${key}
 ===== END OF ANSWER KEY =====
 
-${sectionless ? "Mark " : "Mark these sections, and only these:\n"}${toMark}
+${sectionless || openEnded ? "Mark " : "Mark these sections, and only these:\n"}${toMark}
 ${skip.size ? `\nSections ${[...skip].join(", ")} are already marked. Do not return them.` : ""}
 
 For every question in those sections return:
-  id      ${sectionless ? `the question number — "1", "2", "3"` : `the section letter and the question number — "C2", "D1", "E1"`}
+  id      ${sectionless || openEnded ? `the question number — "1", "2", "3"` : `the section letter and the question number — "C2", "D1", "E1"`}
   out_of  what that question is worth, as the key allocates it
   marks   what this student earned, 0 to out_of; half marks are fine
   wrote   the student's answer, short, or "" if nothing was written
@@ -17813,7 +17845,20 @@ How the key means to be read — it assumes a teacher and does not spell these o
 - Where one numbered question has several blanks, award the share the
   student got right rather than all or nothing.
 - Where the key states a breakdown for a longer answer — "one mark for
-  naming it, one for explaining it, one for evidence" — apply that breakdown.
+  naming it, one for explaining it, one for evidence", or "position
+  stated clearly (2) · at least two accurate facts (4) · explanation (3) ·
+  writing that can be followed (1)" — that breakdown IS the marking.
+  Award each part on its own terms and add them up. Do not form an
+  impression of the answer as a whole and pick a number near it: a
+  paragraph can state its position perfectly and support it poorly, and
+  it must take the first two marks and lose the others.
+  Where the part is a count — "at least two accurate facts" — it is a
+  count. Two accurate facts earn all four of those marks, however the
+  rest of the answer reads. In the "why", say which part lost the marks.
+  A part of the breakdown earns nothing where there is nothing to judge:
+  a student who wrote no paragraph does not earn the mark for writing
+  that can be followed. Marking the parts separately must not turn a
+  blank into a score.
 - A right answer reached by sound work the key does not show earns full
   marks. The key shows one route, not the only one.
 - For a longer question the key gives ONE good answer, not a checklist.
@@ -17910,11 +17955,13 @@ Grade band ${band}.`;
         // said out loud, because a wide gap means the question was read
         // wrongly, not that the student did badly.
         let outOf = d.outOf;
-        if (parts > 0 && Math.abs(parts - d.outOf) > 0.01) {
+        if (!d.outOf) {
+          // The key never said what this is worth, so the marker's own
+          // reading of the paper is the only figure there is.
+          outOf = parts;
+        } else if (parts > 0 && Math.abs(parts - d.outOf) > 0.01) {
           offBy.push(`${letter}: itemised /${round(parts)}, key says /${d.outOf}`);
           score = (score / parts) * d.outOf;
-        } else if (!parts) {
-          outOf = d.outOf;
         }
         sections.push({
           letter,

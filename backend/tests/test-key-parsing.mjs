@@ -18,7 +18,8 @@ import path from "node:path";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, "../..");
-const { routeRubricAndKey, canonicaliseKeyText, looksLikeAnswerKey } =
+const { routeRubricAndKey, canonicaliseKeyText, looksLikeAnswerKey,
+        bestTitleFromPapers, withoutSubject } =
   await import(path.join(repo, "frontend/src/app/grading/consensusKey.js"));
 const { markSchemeFromKey, declaredTotals, sectionMarksFromKey } =
   await import(path.join(repo, "backend/utils/sectionTotals.js"));
@@ -356,6 +357,52 @@ console.log("\nwhat the marker is given, by key shape");
   check("an extracted key still works through its items",
     decide("A1: E (/1)\nA2: I (/1)\nB1: TRUE (/1)\nTotal: /3"),
     { kind: "sectioned", total: 3, sections: 2 });
+}
+
+/* ---------------------------------------------------------------- *
+ * 8. The name the gradebook column gets.
+ *
+ * Every result used to be handed the FIRST paper's title, so the vote
+ * that chose the column name had one candidate by construction and a
+ * bad first scan named it for the whole class.
+ * ---------------------------------------------------------------- */
+console.log("\nthe title the gradebook column gets");
+{
+  const T = (list) => list.map((t) => ({ ownTitle: t }));
+  const name = (list, file = "", subject = "") => bestTitleFromPapers(T(list), file, subject);
+
+  check("the class's own heading, subject off",
+    name(Array(20).fill("Chapter Test - Geography 8 - Chapter 1: Population Patterns and Growth"), "", "Geography"),
+    "Chapter Test — Chapter 1: Population Patterns and Growth");
+
+  // The page reference is the part a teacher looks for in December, and
+  // it is the part OCR drops. The fullest reading of a title wins over
+  // the commonest, because they are the same title.
+  check("the fullest reading wins",
+    name(["Nigeria Case Study", "Nigeria Case Study", "Nigeria Case Study p41#1,2"]),
+    "Nigeria Case Study p41#1,2");
+
+  // A worksheet prints no title; the teacher named the scan instead.
+  check("the scan's name is used when the pages say nothing",
+    name(["", "", ""], "20261009_155540 Geo8A p31#1-4.pdf", "Geography"), "p31#1-4");
+  check("and beats a vague printed heading",
+    name(["Worksheet", "Worksheet"], "20261009_155540 Geo8A p31#1-4.pdf", "Geography"), "p31#1-4");
+  check("but not a class that plainly says otherwise",
+    name(Array(20).fill("Nigeria Case Study p41#1,2"), "20261009_155700 Geo8B Ch1 Test.pdf", "Geography"),
+    "Nigeria Case Study p41#1,2");
+
+  check("one odd scan does not name the column",
+    name(["Blurred Thing", "Chapter Test", "Chapter Test"]), "Chapter Test");
+  check("a meaningless file name is ignored",
+    name(["Chapter Test", "Chapter Test"], "scan001.pdf"), "Chapter Test");
+  check("nothing to go on", name(["", ""], "batch-results.pdf"), "");
+
+  check("a title that is only the subject is kept",
+    withoutSubject("Geography 8", "Geography"), "Geography 8");
+  check("a title with nothing to strip is untouched",
+    withoutSubject("Nigeria Case Study p41#1,2", "Geography"), "Nigeria Case Study p41#1,2");
+  check("the subject comes off the front",
+    withoutSubject("Math 7 — Chapter 1 Test", "Mathematics"), "Chapter 1 Test");
 }
 
 console.log(`\n${failed ? `${failed} check(s) FAILED` : "all checks passed"}`);

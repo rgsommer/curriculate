@@ -21,7 +21,7 @@ import { apiFetch, apiFetchJson } from "./api/apiFetch";
 
 import { useAuth } from "./auth/useAuth";
 import { DISALLOWED_ROOM_CODES } from "./disallowedRoomCodes.js";
-import { brandUrl } from "@shared/brandContext.js";
+import { brandUrl, demoRoomCode } from "@shared/brandContext.js";
 
 import { socket } from "./socket"; // adjust path if needed
 import SharedLaunch from "./pages/SharedLaunch.jsx";
@@ -104,6 +104,21 @@ function TeacherApp() {
     routeLocation.pathname.startsWith("/reset-password");
 
   const isHostKioskRoute = routeLocation.pathname === "/host-kiosk";
+
+  // Public, un-authed presenter demo: set.{brand}.com/demo lands a teacher
+  // on the GameMaster view of the brand's demo room (QREWDEMO / CRUEDEMO)
+  // with no login. The backend self-provisions the room on host:join, so
+  // the projector shows the code immediately and students can join at
+  // play.{brand}.com from any device. This is what makes the "1-click demo"
+  // CTA on the marketing sites actually land somewhere usable.
+  const isDemoRoute = routeLocation.pathname === "/demo";
+  if (isDemoRoute) {
+    return (
+      <Routes>
+        <Route path="/demo" element={<HostView roomCode={demoRoomCode()} />} />
+      </Routes>
+    );
+  }
 
   // If we're on auth routes, render ONLY the auth page (no sidebar/header)
   if (isAuthRoute) {

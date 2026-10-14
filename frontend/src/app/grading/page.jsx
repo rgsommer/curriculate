@@ -1409,6 +1409,14 @@ export default function GradingPage() {
     useEffect(() => {
       try { localStorage.setItem(SAVED_RUBRICS_KEY, JSON.stringify(savedRubrics)); } catch {}
     }, [savedRubrics]);
+    // Which saved rubric or key is in the box, so Save and Delete can act
+    // on THAT one. Without it, saving meant retyping the name exactly to
+    // overwrite — which is how one list came to hold both "Geo8 Ch Review
+    // Handout" and "Geo8 Ch1 Review Handout" — and deleting meant reading
+    // a numbered list out of a browser dialog and typing the number.
+    const [pickedRubric, setPickedRubric] = useState("");
+    const sameName = (a, b) =>
+      String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
 
     const [gradeBand, setGradeBand] = useState(() => {
       if (typeof window === "undefined") return "6-8";
@@ -5158,20 +5166,20 @@ export default function GradingPage() {
                   {/* Saved rubrics dropdown + save */}
                   <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
                     <select
-                      value=""
+                      value={pickedRubric}
                       onChange={(e) => {
-                        const idx = Number(e.target.value);
-                        if (!isNaN(idx) && savedRubrics[idx]) {
-                          setRubricOverride(savedRubrics[idx].text);
-                        }
+                        const name = e.target.value;
+                        setPickedRubric(name);
+                        const hit = savedRubrics.find((r) => r.name === name);
+                        if (hit) setRubricOverride(hit.text);
                       }}
                       style={{ ...styles.select, flex: 1, fontSize: 13 }}
                     >
                       <option value="">
                         {savedRubrics.length ? `Saved rubrics (${savedRubrics.length})` : "No saved rubrics"}
                       </option>
-                      {savedRubrics.map((sr, i) => (
-                        <option key={i} value={i}>{sr.name}</option>
+                      {savedRubrics.map((sr) => (
+                        <option key={sr.name} value={sr.name}>{sr.name}</option>
                       ))}
                     </select>
                     <button
@@ -5185,44 +5193,55 @@ export default function GradingPage() {
                       onClick={() => {
                         const text = (rubricOverride || "").trim();
                         if (!text) return;
-                        const name = prompt("Name this rubric:");
-                        if (!name || !name.trim()) return;
+                        // The name of whatever is in the box, so updating
+                        // one is Save then Enter rather than retyping it.
+                        const typed = prompt("Name this rubric or key:", pickedRubric || "");
+                        if (!typed || !typed.trim()) return;
+                        const name = typed.trim();
+                        const clash = savedRubrics.find((r) => sameName(r.name, name));
+                        // Matched whatever the capitals, since "Geo8 Ch1 Test"
+                        // and "geo8 ch1 test" are one rubric to a teacher.
+                        if (clash && !confirm(`Replace the saved "${clash.name}"?`)) return;
                         setSavedRubrics((prev) => {
-                          const existing = prev.findIndex((r) => r.name === name.trim());
-                          if (existing >= 0) {
-                            const updated = [...prev];
-                            updated[existing] = { name: name.trim(), text };
-                            return updated;
+                          const at = prev.findIndex((r) => sameName(r.name, name));
+                          if (at >= 0) {
+                            const next = [...prev];
+                            next[at] = { name, text };
+                            return next;
                           }
-                          return [...prev, { name: name.trim(), text }];
+                          return [...prev, { name, text }].sort((a, b) =>
+                            a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
                         });
+                        setPickedRubric(name);
                       }}
                     >
-                      Save
+                      {savedRubrics.some((r) => sameName(r.name, pickedRubric)) ? "Update" : "Save"}
                     </button>
                     {savedRubrics.length > 0 && (
                       <button
                         type="button"
-                        style={{ ...styles.secondaryBtn, fontSize: 12, padding: "5px 10px", color: "#dc2626" }}
+                        disabled={!pickedRubric}
+                        title={pickedRubric
+                          ? `Delete the saved "${pickedRubric}"`
+                          : "Choose a saved rubric or key first"}
+                        style={{
+                          ...styles.secondaryBtn,
+                          fontSize: 12, padding: "5px 10px", color: "#dc2626",
+                          opacity: pickedRubric ? 1 : 0.4,
+                          cursor: pickedRubric ? "pointer" : "not-allowed",
+                        }}
                         onClick={() => {
-                          const name = (rubricOverride || "").trim();
-                          const match = savedRubrics.find((r) => r.text === name || r.text === rubricOverride);
-                          if (match) {
-                            setSavedRubrics((prev) => prev.filter((r) => r.name !== match.name));
-                          } else {
-                            // Show list to pick which to delete
-                            const names = savedRubrics.map((r, i) => `${i + 1}. ${r.name}`).join("\n");
-                            const pick = prompt(`Delete which rubric?\n${names}\n\nEnter the number:`);
-                            if (pick) {
-                              const idx = Number(pick) - 1;
-                              if (idx >= 0 && idx < savedRubrics.length) {
-                                setSavedRubrics((prev) => prev.filter((_, i) => i !== idx));
-                              }
-                            }
-                          }
+                          // The one that is selected, named in the asking.
+                          // It used to delete whichever saved rubric happened
+                          // to match the text in the box, and otherwise put a
+                          // numbered list in a dialog and ask for the number.
+                          if (!pickedRubric) return;
+                          if (!confirm(`Delete the saved "${pickedRubric}"? This cannot be undone.`)) return;
+                          setSavedRubrics((prev) => prev.filter((r) => !sameName(r.name, pickedRubric)));
+                          setPickedRubric("");
                         }}
                       >
-                        Del
+                        Delete
                       </button>
                     )}
                   </div>

@@ -645,6 +645,20 @@ export default function Home() {
           </p>
 
           <div className="grid grid-cols-1 sm:flex sm:flex-row gap-3 sm:gap-4 justify-center mb-10 sm:mb-14 max-w-md sm:max-w-none mx-auto">
+            {/* Try-the-demo CTA (new primary): a teacher lands here and in
+                ONE click opens a live GameMaster projector with code
+                CRUEDEMO. Backend self-provisions on host:join; students
+                join at play.curriculate.net from any device. */}
+            <a
+              href="https://set.curriculate.net/demo"
+              target="_blank"
+              rel="noopener"
+              className="group inline-flex w-full sm:w-auto items-center justify-center gap-3 bg-emerald-600 hover:bg-emerald-700 text-white text-lg sm:text-xl font-bold py-4 sm:py-5 px-6 sm:px-10 rounded-2xl shadow-2xl transform hover:scale-[1.02] transition-all"
+            >
+              Try a live demo
+              <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition" />
+            </a>
+
             <Link
               href="/login"
               className="group inline-flex w-full sm:w-auto items-center justify-center gap-3 bg-blue-600 hover:bg-blue-700 text-white text-lg sm:text-xl font-bold py-4 sm:py-5 px-6 sm:px-10 rounded-2xl shadow-2xl transform hover:scale-[1.02] transition-all"

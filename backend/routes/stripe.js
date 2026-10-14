@@ -94,6 +94,55 @@ router.post("/create-checkout-session", async (req, res) => {
       return res.status(409).json({ error: "Free trial already used" });
     }
 
+    // 1.6) QREWFREE promo bridge.
+    // The beta signup form stores a promoCode on betaSignups (see
+    // frontend/src/app/api/beta/route.ts), but promoCode never gets
+    // copied onto the User document — the chain is beta waitlist →
+    // manual outreach → separate signup → subscribe, and the code is
+    // dropped along the way. So we join on email right here: if the
+    // teacher's signup carried QREWFREE, grant them a 30-day trial on
+    // this checkout, regardless of which plan the client requested.
+    // One-time offer, so hasUsedTrial blocks it the way it blocks the
+    // explicit _TRIAL opt-in — no stacking first-month-frees.
+    // betaSignups lives in the Qrewzi/Curriculate shared DB ("curriculate")
+    // which is different from mongoose's default connection ("test"); we
+    // reach it via the underlying MongoClient so no second connection
+    // pool is needed. Lookup failure is non-fatal — the teacher just
+    // doesn't get the promo and sees normal pricing.
+    let grantQrewfree = false;
+    if (!user.hasUsedTrial && user.email) {
+      try {
+        const dbName = process.env.MONGODB_DB || "curriculate";
+        const colName = process.env.BETA_COLLECTION || "betaSignups";
+        const betaCol = mongoose.connection
+          .getClient()
+          .db(dbName)
+          .collection(colName);
+        const signup = await betaCol.findOne(
+          { email: user.email },
+          { projection: { promoCode: 1 } }
+        );
+        if (
+          signup &&
+          String(signup.promoCode || "").toUpperCase() === "QREWFREE"
+        ) {
+          grantQrewfree = true;
+        }
+      } catch (betaErr) {
+        console.warn("[stripe] QREWFREE lookup failed:", betaErr?.message || betaErr);
+      }
+    }
+
+    // The two trial paths share the same Stripe mechanic (trial_period_days
+    // under subscription_data) and the same post-write (hasUsedTrial = true),
+    // so collapse them into one effective trial decision below.
+    const wantsTrial = isTrial || grantQrewfree;
+    const effectiveTrialDays = isTrial
+      ? trialDays
+      : grantQrewfree
+        ? Number(process.env.QREWFREE_TRIAL_DAYS || 30)
+        : 0;
+
     // 2) Ensure Stripe customer exists
     let stripeCustomerId = user.stripeCustomerId;
 
@@ -185,16 +234,23 @@ router.post("/create-checkout-session", async (req, res) => {
           userId: String(user._id),
           userEmail: user.email || email || "",
           referralCode: validatedReferralCode,
+          // Audit trail: distinguishes a QREWFREE-granted trial from the
+          // explicit _TRIAL opt-in path so the webhook / support can tell
+          // where the free month came from.
+          promoCode: grantQrewfree ? "QREWFREE" : "",
+          trialSource: grantQrewfree ? "qrewfree" : isTrial ? "trial-plan" : "",
         },
-        ...(isTrial ? { trial_period_days: trialDays } : {}),
+        ...(wantsTrial ? { trial_period_days: effectiveTrialDays } : {}),
       },
       metadata: {
         referralCode: validatedReferralCode,
       },
     });
 
-    // 4) After successful checkout creation, mark trial as used (Bug 1: set hasUsedTrial)
-    if (isTrial) {
+    // 4) After successful checkout creation, mark trial as used so neither
+    // the _TRIAL opt-in nor the QREWFREE promo can be re-played by this
+    // teacher on a subsequent checkout. (Bug 1: set hasUsedTrial)
+    if (wantsTrial) {
       await User.updateOne({ _id: user._id }, { $set: { hasUsedTrial: true, updatedAt: new Date() } });
     }
 
