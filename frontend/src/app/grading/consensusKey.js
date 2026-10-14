@@ -813,6 +813,125 @@ function numberedItemsOn(line) {
 }
 
 /**
+ * The title the papers themselves carry, decided across the class.
+ *
+ * The gradebook column is named from this, and a column named vaguely is
+ * hard to find again in December. "Geography — Test" is what the grader
+ * infers from the subject; "Nigeria Case Study p41#1,2" is what is printed
+ * at the top of the page, and that is the one a teacher is looking for.
+ *
+ * It is a vote because one paper is not evidence: a crease, a thumb over
+ * the header or a scanner edge gives one paper a title of its own. Near
+ * readings are folded together first — the same words with the page
+ * reference lost off the end are the same title, and the longer reading is
+ * kept, since that is the one carrying the detail.
+ *
+ * The scan's own name is evidence too, and better evidence than OCR,
+ * because a teacher typed it: "20261009_155540 Geo8A p31#1-4.pdf" names
+ * the assignment where the worksheet itself may print no title at all. It
+ * carries two votes — enough to win on its own when the pages say nothing,
+ * enough to break a tie against a vague printed heading, and not enough to
+ * override a class that plainly reads something else. Where it says the
+ * same thing as the pages it simply joins them.
+ *
+ * Returns "" when nothing agrees, so the caller can fall back to what the
+ * teacher typed rather than name the column after one bad scan.
+ */
+export function bestTitleFromPapers(papers, sourceName = "", subject = "") {
+  const groups = [];
+
+  const fromFile = String(sourceName || "")
+    .replace(/\.[a-z0-9]{2,4}$/i, "")
+    .replace(/^\s*\d{8}[_-]\d{6}\s*[-—–]?\s*/, "")
+    .replace(/[_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  // "batch-results", "scan 001", "Document1" name nothing.
+  const fileIsATitle = fromFile.length >= 3
+    && /[a-z]{3}/i.test(fromFile)
+    && !/^(scan|img|image|doc|document|batch|untitled|new)\b/i.test(fromFile);
+  for (const p of papers || []) {
+    const raw = String(p?.ownTitle ?? p?.detectedTitle ?? p ?? "").trim();
+    if (!raw || raw.length < 3) continue;
+    const key = raw.toLowerCase().replace(/\s+/g, " ").replace(/[.,;:·–—-]+$/, "").trim();
+    if (!key) continue;
+    const hit = groups.find((g) => g.key === key);
+    if (hit) { hit.n += 1; hit.said.push(raw); } else groups.push({ key, n: 1, said: [raw] });
+  }
+  if (fileIsATitle) {
+    const key = fromFile.toLowerCase().replace(/[.,;:·–—-]+$/, "").trim();
+    const hit = groups.find((g) => g.key === key);
+    if (hit) { hit.n += 2; hit.said.push(fromFile, fromFile); }
+    else groups.push({ key, n: 2, said: [fromFile, fromFile] });
+  }
+  if (!groups.length) return "";
+
+  // Longest first, so a shorter reading folds into the fuller one it is
+  // the beginning of rather than the other way about.
+  groups.sort((a, b) => b.key.length - a.key.length);
+  const merged = [];
+  for (const g of groups) {
+    const into = merged.find((m) => m.key.startsWith(g.key));
+    if (into) { into.n += g.n; into.said.push(...g.said); } else merged.push({ ...g });
+  }
+
+  merged.sort((a, b) => b.n - a.n || b.key.length - a.key.length);
+  const win = merged[0];
+  // One paper saying something no other paper says is not the class's title.
+  if (win.n < 2 && merged.length > 1) return "";
+
+  // Every spelling in a merged group begins the same way, so the longest
+  // is that title with more of it read — not a different title. Picking
+  // the commonest instead lost the page reference whenever more papers
+  // dropped it than kept it, which is most of them.
+  const byText = {};
+  for (const t of win.said) byText[t] = (byText[t] || 0) + 1;
+  const best = Object.entries(byText)
+    .sort((a, b) => b[0].length - a[0].length || b[1] - a[1])[0][0];
+  return withoutSubject(best, subject);
+}
+
+/**
+ * The subject comes off the title before it goes in the gradebook.
+ *
+ * A CSV is imported into one course's gradebook, so a column called
+ * "Chapter Test — Geography 8 — Chapter 1: Population Patterns" says
+ * "Geography" to a teacher already looking at Geography. What they need
+ * from that column is which chapter test it was.
+ *
+ * Only a segment that is nothing but the subject is dropped, with its
+ * grade and section if it carries them, and only while something with
+ * words in it survives — a column called "8" helps nobody.
+ */
+const SUBJECT_WORDS = [
+  "geography", "geo", "mathematics", "math", "maths", "history", "hist",
+  "science", "sci", "english", "eng", "french", "christian education", "ce",
+  "bible", "religion", "art", "music", "drama", "health",
+  "physical education", "phys ed", "pe", "social studies", "socials",
+];
+export function withoutSubject(title, subject = "") {
+  const raw = String(title || "").trim();
+  if (!raw) return raw;
+  const words = [...SUBJECT_WORDS];
+  const own = String(subject || "").trim().toLowerCase();
+  if (own && !words.includes(own)) words.push(own);
+  const alt = words.map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  // "Geography 8", "Geo 8A", "Geo8A", "Math7B"
+  const subjectish = new RegExp(`^(?:${alt})\\s*\\d{0,2}\\s*[A-Da-d]?$`, "i");
+
+  const parts = raw.split(/\s*[—–·|]\s*|\s+-\s+/).map((x) => x.trim()).filter(Boolean);
+  let kept = parts.filter((x) => !subjectish.test(x));
+  // A title with no separators carries the subject at the front instead.
+  if (kept.length === parts.length && parts.length === 1) {
+    const lead = new RegExp(`^(?:${alt})\\s*\\d{0,2}\\s*[A-Da-d]?\\b[\\s:,-]*`, "i");
+    const cut = parts[0].replace(lead, "").trim();
+    if (cut && cut !== parts[0]) kept = [cut];
+  }
+  const out = kept.join(" — ").trim();
+  return /[a-z]/i.test(out) && out.length >= 3 ? out : raw;
+}
+
+/**
  * A key that arrived with its line breaks gone, put back on lines.
  *
  * Copying out of a PDF viewer flattens a document into one paragraph, and so

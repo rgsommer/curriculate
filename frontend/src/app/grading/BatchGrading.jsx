@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildResultsPdf, buildStripsPdf, buildMarkingGuidePdf, preloadPdfLibs } from "./pdfReports";
-import { deriveConsensusKey, keyIndex, keyIndexFromExtracted, applyKeyToGuide, applyBlindMarking, keyRowsForReview, withCorrectedAnswer, routeRubricAndKey, MIN_VOTERS } from "./consensusKey";
+import { deriveConsensusKey, keyIndex, keyIndexFromExtracted, applyKeyToGuide, applyBlindMarking, keyRowsForReview, withCorrectedAnswer, routeRubricAndKey, bestTitleFromPapers, MIN_VOTERS } from "./consensusKey";
 import { completeQuest } from "../../components/QuestWidget";
 
 /**
@@ -1994,6 +1994,11 @@ export default function BatchGrading({
           subject: data.inferred_subject || "",
           assessmentType: data.inferred_assessment_type || "",
           detectedTitle: batchTitleRef.current || data.detected_title || "",
+          // What THIS paper read, kept beside the title the batch settled
+          // on. The gradebook column is voted from these: every row
+          // carrying the first paper's title made the vote unanimous by
+          // construction, so one bad first scan named the column.
+          ownTitle: String(data.detected_title || "").trim(),
           pageImages: images,
           refCode: null,
           // Surface the server's error code and correlation id, not just the
@@ -3330,6 +3335,7 @@ export default function BatchGrading({
         subject: data.inferred_subject || "",
         assessmentType: data.inferred_assessment_type || "",
         detectedTitle: data.detected_title || r.detectedTitle || "",
+        ownTitle: String(data.detected_title || r.ownTitle || "").trim(),
         error: data.error || null,
         raw: data,
       };
@@ -3792,18 +3798,15 @@ export default function BatchGrading({
   const buildEdsbyCsv = useCallback(() => {
     if (!results.length) return null;
 
-    // What the work actually says it is, where the students agree.
-    // effectiveTitle is whatever was typed or taken from the filename —
-    // "Math — Quiz" — while the pages themselves read "Math Snap Quiz:
-    // Equations & Expressions". The detected title is the specific one, and
-    // a gradebook column named vaguely is hard to find again in December.
-    const titleVotes = {};
-    for (const r of results) {
-      const t = String(r?.detectedTitle || "").trim();
-      if (t) titleVotes[t] = (titleVotes[t] || 0) + 1;
-    }
-    const topTitle = Object.entries(titleVotes).sort((a, b) => b[1] - a[1])[0];
-    const assessmentName = (topTitle && topTitle[1] >= 2 ? topTitle[0] : "")
+    // What the work actually says it is, voted across the class and the
+    // scan's own name, with the subject taken off — the CSV is imported
+    // into one course's gradebook, so "Geography" in the column name tells
+    // a teacher nothing they are not already looking at. See
+    // bestTitleFromPapers in consensusKey.js.
+    const subjectCount = {};
+    for (const r of results) if (r?.subject) subjectCount[r.subject] = (subjectCount[r.subject] || 0) + 1;
+    const topSubject = Object.entries(subjectCount).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+    const assessmentName = bestTitleFromPapers(results, pdfName, topSubject)
       || effectiveTitle || "Curriculate Grade";
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
     const headers = ["Student ID", "First Name", "Last Name", "Assessment Name", "Date", "Grade", "Out Of", "Comment"];
@@ -3858,7 +3861,7 @@ export default function BatchGrading({
       ].join(","));
     }
     return rows.join("\n");
-  }, [results, emailTitle]);
+  }, [results, emailTitle, effectiveTitle, pdfName]);
 
   const photoInputRef = useRef(null);
   const [edsbyExported, setEdsbyExported] = useState(false);
