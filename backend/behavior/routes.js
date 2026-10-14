@@ -2658,16 +2658,26 @@ router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
       .lean();
 
     // Active count = THRESHOLD incidents within window, after reset, unspent.
-    const activeCount = incidents.filter((inc) => {
+    //
+    // One predicate, used both for the number and for the flag on each
+    // incident below. The dashboard lists a student's offences under their
+    // "2/3", and it was listing them straight out of history with no window
+    // at all — so a June offence from the previous school year sat under a
+    // card that says strikes fade after thirty days, reading as one of the
+    // two. The list and the number cannot disagree if they are the same
+    // test.
+    const stillCounts = (inc) => {
       const mode = inc.behaviorSnapshot?.triggerMode || (inc.immediateFlag ? "IMMEDIATE" : "THRESHOLD");
+      const ts = new Date(inc.timestamp).getTime();
       return (
         mode === "THRESHOLD" &&
         !inc.whiteSlip && // its white slip was the consequence — not a strike
         !inc.countedInNoticeId &&
-        new Date(inc.timestamp).getTime() > resetAt &&
-        new Date(inc.timestamp).getTime() > cutoff
+        ts > resetAt &&
+        ts > cutoff
       );
-    }).length;
+    };
+    const activeCount = incidents.filter(stillCounts).length;
 
     const notices = await BehaviorNotice.find({ studentId: student._id }).sort({ createdAt: -1 }).lean();
     const consequences = await BehaviorConsequence.find({ studentId: student._id }).sort({ at: -1 }).lean();
@@ -2726,6 +2736,13 @@ router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
       incidents.map(async (i) => ({
         ...i,
         teacherName: tName[String(i.teacherId)] || "",
+        // Whether this one is behind the number on the card, and whether it
+        // belongs to this school year at all. The full history is still
+        // returned — the student's own page shows all of it — but a caller
+        // showing a short list beside the strike count needs to know which
+        // is which.
+        countsNow: stillCounts(i),
+        thisPeriod: new Date(i.timestamp).getTime() >= psMs,
         // Sign each evidence key into a short-lived URL for display (private S3).
         attachments: await Promise.all(
           (i.attachments || []).map(async (a) => ({ key: a.key, kind: a.kind, contentType: a.contentType, at: a.at, url: await signEvidenceKey(a.key) }))
