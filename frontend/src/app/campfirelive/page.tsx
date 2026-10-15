@@ -38,6 +38,8 @@ const START_TEMPLATE_LABELS: Record<string, string> = {
   "get-well-card": "get-well card 🌻",
   "farewell-card": "farewell card 👋",
   "wedding-card": "wedding card 💒",
+  "birthday-card": "birthday card 🎂",
+  "type:poll": "quick poll 📊",
 };
 
 export default function DashboardPage() {
@@ -716,9 +718,13 @@ export default function DashboardPage() {
         /* ignore */
       }
       router.push(
-        `/campfirelive/group/${group.id}/engagement/new?template=${encodeURIComponent(
-          startTemplate
-        )}`
+        startTemplate.startsWith("type:")
+          ? `/campfirelive/group/${group.id}/engagement/new?type=${encodeURIComponent(
+              startTemplate.slice(5)
+            )}`
+          : `/campfirelive/group/${group.id}/engagement/new?template=${encodeURIComponent(
+              startTemplate
+            )}`
       );
     } else {
       // Drop straight into the new group so the next steps are obvious.
@@ -761,7 +767,7 @@ export default function DashboardPage() {
         </h1>
         {groups.length === 0 ? (
           <p className="text-slate-500 mt-1">
-            Create your first group or join one with an invite code.
+            Let&apos;s start something — pick one and we&apos;ll set it up for you.
           </p>
         ) : !todoReady ? (
           <p className="mt-1 animate-pulse text-slate-500">Checking what&apos;s new…</p>
@@ -932,6 +938,70 @@ export default function DashboardPage() {
         </div>
       )}
 
+      {/* First run (no groups yet): one-tap starts instead of an empty page. Each one
+          makes the group for you — a quick card asks for two names and goes live. */}
+      {groups.length === 0 && !showCreate && !showJoin && (() => {
+        const season = seasonalCardPrompt();
+        const start = (id: string) => {
+          setStartTemplate(id);
+          setQuickOff(false);
+          setShowCreate(true);
+          setShowJoin(false);
+          setError("");
+        };
+        const tiles: { emoji: string; title: string; sub: string; onClick: () => void; hot?: boolean }[] = [
+          ...(season
+            ? [{
+                emoji: season.emoji,
+                title: season.headline.split(" — ")[0],
+                sub: QUICK_STARTS[season.templateId]
+                  ? "Two names and it's ready to share"
+                  : "Everyone signs it from one link",
+                onClick: () => start(season.templateId),
+                hot: true,
+              }]
+            : []),
+          { emoji: "🎂", title: "A birthday card", sub: "Everyone signs; it opens on the day", onClick: () => start("birthday-card") },
+          { emoji: "📊", title: "A quick poll", sub: "Answers open once everyone's in", onClick: () => start("type:poll") },
+          {
+            emoji: "🔑",
+            title: "I have an invite code",
+            sub: "Join a group someone made",
+            onClick: () => {
+              setShowJoin(true);
+              setShowCreate(false);
+              setError("");
+            },
+          },
+        ];
+        return (
+          <div className="mb-8">
+            <div className="mb-3 text-sm font-bold text-slate-800">Start something in one tap</div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {tiles.map((t) => (
+                <button
+                  key={t.title}
+                  type="button"
+                  onClick={t.onClick}
+                  className={`flex items-center gap-3 rounded-2xl border-2 p-4 text-left shadow-sm transition hover:-translate-y-0.5 ${
+                    t.hot
+                      ? "border-rose-200 bg-gradient-to-br from-rose-50 to-orange-50 hover:border-rose-300"
+                      : "border-slate-200 bg-white hover:border-orange-200"
+                  }`}
+                >
+                  <span className="text-3xl">{t.emoji}</span>
+                  <span className="min-w-0">
+                    <span className="block font-bold text-slate-900">{t.title}</span>
+                    <span className="block text-xs text-slate-600">{t.sub}</span>
+                  </span>
+                  <span className="ml-auto text-orange-500">→</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Seasonal card nudge — surfaces the right card around Dec / May–June */}
       {(() => {
         const season = seasonalCardPrompt();
@@ -967,7 +1037,7 @@ export default function DashboardPage() {
       })()}
 
       {/* Trending across all of Campfire — click to start one in a group */}
-      {trendingMeta && trending && (
+      {trendingMeta && trending && groups.length > 0 && (
         groups.length > 0 ? (
           <Link
             href={`/campfirelive/group/${groups[0].id}/engagement/new?type=${trending.type}`}
@@ -1045,13 +1115,14 @@ export default function DashboardPage() {
               setGroupBlocked(true);
               return;
             }
+            setStartTemplate(null); // a plain new group — not a leftover one-tap start
             setShowCreate(true);
             setShowJoin(false);
             setError("");
           }}
-          className={`${CF_PRIMARY} ${canCreateGroup ? "" : "opacity-60"}`}
+          className={`${groups.length === 0 ? CF_SECONDARY : CF_PRIMARY} ${canCreateGroup ? "" : "opacity-60"}`}
         >
-          + New Group
+          {groups.length === 0 ? "+ Empty group" : "+ New Group"}
         </button>
         <button
           onClick={() => { setShowJoin(true); setShowCreate(false); setGroupBlocked(false); setError(""); }}
@@ -1250,13 +1321,13 @@ export default function DashboardPage() {
         <div className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           {startTemplate && (
             <div className="mb-4 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900">
-              🍎{" "}
+              ✨{" "}
               <span className="font-semibold">
                 You&apos;re starting a {START_TEMPLATE_LABELS[startTemplate] ?? "thank-you card"}.
               </span>{" "}
-              First, name the group (e.g. &ldquo;Coach Smith&apos;s team&rdquo; or
-              &ldquo;Mrs. Lee&apos;s class&rdquo;) — then we&apos;ll open the card for
-              you to fill in.
+              First, name the group who&apos;ll join in (e.g. &ldquo;The Smith family&rdquo;
+              or &ldquo;Grace Church small group&rdquo;) — then we&apos;ll open it for you to
+              fill in.
             </div>
           )}
           <h2 className="text-lg font-bold text-slate-900 mb-4">Create a group</h2>
@@ -1389,9 +1460,11 @@ export default function DashboardPage() {
 
       {/* Group List */}
       {groups.length === 0 ? (
-        <div className="text-center py-16 text-slate-500">
-          <div className="text-5xl mb-4">🏕️</div>
-          <p>No groups yet. Create one or join with an invite code.</p>
+        <div className="text-center py-10 text-slate-500">
+          <div className="text-4xl mb-2">🏕️</div>
+          <p className="text-sm">
+            Your groups will show up here — family, church, class or team.
+          </p>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">

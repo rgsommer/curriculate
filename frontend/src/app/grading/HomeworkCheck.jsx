@@ -441,13 +441,35 @@ export default function HomeworkCheck({
     () => [...new Set(keys.map((k) => String(k.bookName || "").trim()).filter(Boolean))].sort(),
     [keys]
   );
-  const matchedKey = useMemo(() => {
-    const code = String(lessonCode || "").trim().toUpperCase();
-    if (!code) return null;
+  // A homework set often spans several lessons — "NS7-18, NS7-19, NS7-21".
+  // The field took one, so the other lessons were graded against no key and
+  // came back "no key" on every question.
+  const lessonCodeList = useMemo(() => [...new Set(
+    String(lessonCode || "")
+      .split(/[,;/|\n]+|\s+and\s+|\s+/i)
+      .map((x) => x.trim().toUpperCase())
+      .filter(Boolean)
+  )], [lessonCode]);
+
+  // "NS7-18, NS7-19, NS7-21" reads well on a gradebook column and badly in a
+  // filename, so the separators become underscores there.
+  const codesForFilename = (code) =>
+    String(code || "batch").replace(/[,;/|]+\s*/g, "_").replace(/\s+/g, "-").replace(/_+/g, "_");
+
+  const matchedKeys = useMemo(() => {
+    if (!lessonCodeList.length) return [];
     const inBook = keys.filter((k) => !bookName || String(k.bookName || "") === bookName);
-    return inBook.find((k) => String(k.lessonCode || "").toUpperCase() === code) || null;
-  }, [keys, bookName, lessonCode]);
-  const answerKeyId = matchedKey?.id || "";
+    return lessonCodeList.map((code) => ({
+      code,
+      key: inBook.find((k) => String(k.lessonCode || "").toUpperCase() === code) || null,
+    }));
+  }, [keys, bookName, lessonCodeList]);
+  const matchedKey = matchedKeys.find((m) => m.key)?.key || null;
+  const missingCodes = matchedKeys.filter((m) => !m.key).map((m) => m.code);
+  const foundKeys = matchedKeys.filter((m) => m.key).map((m) => m.key);
+  // Only name a single key outright. With several lessons the server loads
+  // them all by code, and an id would pin it to one of them.
+  const answerKeyId = (matchedKeys.length === 1 && matchedKey) ? matchedKey.id || "" : "";
   const [coverageBusy, setCoverageBusy] = useState(false);
   useEffect(() => {
     if (!assignedQuestions.length || !backendBase) { setCoverage(null); return; }
@@ -1025,7 +1047,7 @@ export default function HomeworkCheck({
       ].map(escCsv).join(",");
     });
 
-    const name = `homework-${result.lessonCode || "batch"}-${new Date().toISOString().slice(0, 10)}.csv`;
+    const name = `homework-${codesForFilename(result.lessonCode)}-${new Date().toISOString().slice(0, 10)}.csv`;
     downloadText([header, ...rows].join("\n"), name);
   }
 
@@ -1107,7 +1129,7 @@ export default function HomeworkCheck({
 
     downloadText(
       [headers.map(escCsv).join(","), ...rows].join("\n"),
-      `edsby-homework-${result.lessonCode || "batch"}-${today}.csv`
+      `edsby-homework-${codesForFilename(result.lessonCode)}-${today}.csv`
     );
   }
 
@@ -1157,12 +1179,12 @@ export default function HomeworkCheck({
             code isn't what you'd recognise the homework by later. */}
         <div style={{ ...S.row, marginTop: 8 }}>
           <div style={{ flex: 1, minWidth: 140 }}>
-            <label style={S.label}>Lesson code</label>
+            <label style={S.label}>Lesson code{lessonCodeList.length > 1 ? "s" : ""}</label>
             <input
               style={S.input}
               value={lessonCode}
               onChange={(e) => setLessonCode(e.target.value.toUpperCase())}
-              placeholder="NS7-3"
+              placeholder="NS7-18, NS7-19, NS7-21"
             />
           </div>
           <div style={{ flex: 1, minWidth: 180 }}>
@@ -1232,25 +1254,38 @@ export default function HomeworkCheck({
             {/* Whether THIS lesson is actually in there. Otherwise the first
                 sign of a wrong code is a whole batch coming back with no
                 correctness score at all. */}
-            {!String(lessonCode || "").trim() ? (
-              <div style={S.hint}>Enter the lesson code above and its answers will be found here.</div>
-            ) : matchedKey ? (
-              <div style={{ ...S.hint, color: "#166534" }}>
-                ✓ <b>{matchedKey.lessonCode}</b> found{matchedKey.bookName ? ` in ${matchedKey.bookName}` : ""} —{" "}
-                {matchedKey.questionCount} answers.
-              </div>
+            {!lessonCodeList.length ? (
+              <div style={S.hint}>Enter the lesson code above — or several, separated by commas — and their answers will be found here.</div>
             ) : (
-              <div
-                style={{
-                  fontSize: 12, lineHeight: 1.5, marginTop: 4,
-                  color: "#7c2d12", background: "rgba(234,88,12,0.10)",
-                  border: "1px solid rgba(234,88,12,0.35)", borderRadius: 6, padding: "6px 9px",
-                }}
-              >
-                No answers on file for <b>{String(lessonCode).trim().toUpperCase()}</b>
-                {bookName ? ` in ${bookName}` : ""}. This batch will report completeness only.
-                Check the code, or upload that book's answer key below.
-              </div>
+              <>
+                {foundKeys.length > 0 && (
+                  <div style={{ ...S.hint, color: "#166534" }}>
+                    ✓ {foundKeys.map((k, i) => (
+                      <span key={k.lessonCode || i}>
+                        {i > 0 ? ", " : ""}<b>{k.lessonCode}</b> ({k.questionCount})
+                      </span>
+                    ))}
+                    {" "}found{foundKeys[0]?.bookName ? ` in ${foundKeys[0].bookName}` : ""} —{" "}
+                    {foundKeys.reduce((t, k) => t + (k.questionCount || 0), 0)} answers in all.
+                  </div>
+                )}
+                {missingCodes.length > 0 && (
+                  <div
+                    style={{
+                      fontSize: 12, lineHeight: 1.5, marginTop: 4,
+                      color: "#7c2d12", background: "rgba(234,88,12,0.10)",
+                      border: "1px solid rgba(234,88,12,0.35)", borderRadius: 6, padding: "6px 9px",
+                    }}
+                  >
+                    No answers on file for <b>{missingCodes.join(", ")}</b>
+                    {bookName ? ` in ${bookName}` : ""}.{" "}
+                    {foundKeys.length
+                      ? "Those questions will be marked \u201cno key\u201d and left out of the correctness score."
+                      : "This batch will report completeness only."}{" "}
+                    Check the code{missingCodes.length > 1 ? "s" : ""}, or upload that book&apos;s answer key below.
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}

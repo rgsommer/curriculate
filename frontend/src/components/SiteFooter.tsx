@@ -25,6 +25,9 @@ export default function SiteFooter() {
   // Student-facing House board and the Compass app have their own chrome — no
   // marketing footer (students were scrolling into "Free Trial / Pricing").
   if (pathname?.startsWith("/houses") || pathname?.startsWith("/behavior")) return null;
+  // The Campfire landing page has its own footer (a classroom-quiz footer there confuses
+  // church and family visitors about what they've landed on).
+  if (pathname === "/campfire") return null;
   return (
     <footer className="site-footer border-t bg-white/60">
       <div className="mx-auto max-w-6xl px-6 py-12">
