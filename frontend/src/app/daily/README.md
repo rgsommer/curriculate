@@ -26,7 +26,7 @@ projector PC's startup) — that is the whole deployment on the classroom side.
 | `DAILY_SHEETS_SERVICE_ACCOUNT` | one of the two | JSON of a Google service account. Share the spreadsheet with its `client_email` as **Viewer**. The sheet can stay private. |
 | `DAILY_SHEETS_API_KEY` | one of the two | Google API key with the Sheets API enabled. Only works if the spreadsheet is shared "Anyone with the link can view". |
 | `DAILY_SHEET_ID` | no | Spreadsheet id. Defaults to the Weekly Schedule sheet this was built for. |
-| `DAILY_ACCESS_KEY` | no | If set, the board must be opened as `/daily?k=<key>`. |
+| `DAILY_ACCESS_KEY` | no | If set, the board must be opened as `/daily?k=<key>`. Without it `/api/daily` answers `401 {locked:true}` and the page shows the subscriber notice instead of the board. |
 | `DAILY_PING_KEY` | no | Enables `/api/daily/ping?key=…`, which the sheet's Apps Script trigger calls after an edit so the board refreshes within seconds. |
 
 To create the service account: Google Cloud Console → IAM & Admin → Service Accounts →

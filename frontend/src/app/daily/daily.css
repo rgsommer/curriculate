@@ -714,6 +714,18 @@ a.subj.deck:hover { text-decoration-color: currentColor; }
 .notice p { color: var(--muted); font-size: clamp(14px, 2.4vh, 24px); max-width: 60ch; margin: 0; }
 .notice code { font-family: ui-monospace, Menlo, monospace; background: var(--chip); padding: 2px 6px; border-radius: 3px; }
 
+/* Opened without a key: a standing notice, not a board that failed to load. */
+.notice.locked p { margin: 0 auto 1.6vh; }
+.notice.locked .lockedlead { color: var(--ink); max-width: 56ch; }
+.notice.locked .lockedlinks { display: flex; gap: 1.4vw; justify-content: center; margin-top: 2.4vh; }
+.notice.locked .lockedlinks a {
+  color: var(--ink); text-decoration: none; border: 1px solid var(--line);
+  background: var(--chip); border-radius: 999px; padding: 1vh 2.2vw;
+  font-size: clamp(14px, 2.2vh, 22px);
+}
+.notice.locked .lockedlinks a:first-child { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.notice.locked .lockedfoot { font-size: clamp(12px, 1.8vh, 18px); opacity: 0.7; margin-bottom: 0; }
+
 @media (max-width: 760px) {
   .main, .main.pic-right, .main.pic-left { grid-template-columns: 1fr; overflow: auto; }
   .panel, .pic-left .panel { border: 0; border-top: 1px solid var(--line); padding: 2vh 0 0; }

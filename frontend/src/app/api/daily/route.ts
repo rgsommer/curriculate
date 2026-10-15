@@ -39,7 +39,15 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const requiredKey = process.env.DAILY_ACCESS_KEY;
   if (requiredKey && searchParams.get("k") !== requiredKey) {
-    return NextResponse.json({ error: "Not authorized" }, { status: 401 });
+    // A visitor without the key is not an error to retry: the board shows a
+    // standing notice saying the feature is part of a subscription, so the
+    // reply has to be something the page can recognise rather than one more
+    // failed read. 401 is the accurate status for "this needs a key"; the
+    // `locked` flag is what the board keys off.
+    return NextResponse.json(
+      { locked: true, error: "The Daily Board is part of a Curriculate subscription." },
+      { status: 401 },
+    );
   }
 
   // Preview without credentials (never in production): DAILY_FIXTURE=1 npm run dev

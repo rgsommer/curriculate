@@ -492,6 +492,9 @@ export default function DailyPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [loadNote, setLoadNote] = useState("Contacting the sheet…");
+  // The board is opened without a key: not a failed read but a closed door, so
+  // the polling stops and the screen says what the page is and who it is for.
+  const [locked, setLocked] = useState(false);
   const [points, setPoints] = useState({ numbers: null, percents: null, entered: null, enteredCell: "", writing: [], writingNote: "", b3: [], b3Note: "", note: "" });
   const [tick, setTick] = useState(0);
   // Which video is open over the whole board, by its address — a class can
@@ -575,6 +578,16 @@ export default function DailyPage() {
         let j;
         try { j = JSON.parse(text); } catch { j = { error: `Unexpected reply (${res.status}): ${text.slice(0, 120)}` }; }
         if (!alive) return;
+        if (j.locked) {
+          // Nothing to retry and nothing to show: a copy kept from a day this
+          // browser did have the key would otherwise stay on the screen.
+          alive = false;
+          try { window.localStorage.removeItem(LAST_COPY_KEY); } catch { /* storage off */ }
+          setData(null);
+          setError("");
+          setLocked(true);
+          return;
+        }
         if (!res.ok || !j.periods) { fail(j.error || `HTTP ${res.status}`); return; }
         failures = 0;
         // How old what is on screen actually is: the server may itself be
@@ -923,6 +936,29 @@ export default function DailyPage() {
   // Shrink the video when the period changes.
   const curKey = view && view.cur ? view.cur.start : -1;
   useEffect(() => { setVidBig(false); }, [curKey]);
+
+  if (locked) {
+    return (
+      <div className="board">
+        <div className="notice locked">
+          <div>
+            <h1>Daily Board</h1>
+            <p className="lockedlead">
+              A classroom projector board — the period on now, the lesson, what is due,
+              the day&rsquo;s notices and birthdays — driven straight from the teacher&rsquo;s
+              own planning spreadsheet.
+            </p>
+            <p>It is part of a Curriculate subscription.</p>
+            <p className="lockedlinks">
+              <a href="/pricing">See plans</a>
+              <a href="/">About Curriculate</a>
+            </p>
+            <p className="lockedfoot">Teachers: open the board with your own access link.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (!data) {
     return (
