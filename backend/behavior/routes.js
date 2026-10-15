@@ -609,7 +609,7 @@ async function logHomeroomFollowup({ schoolId, student, teacherId = null, byName
       consequenceText: "", points: 0,
     });
   }
-  const note = `Homeroom follow-up${byName ? ` by ${byName}` : ""} — homeroom teacher discussed the situation with the student to steer them in the right direction.`;
+  const note = `Homeroom follow-up${byName ? ` by ${byName}` : ""} — the homeroom teacher discussed the student's overall trend (the pattern across classes, not a single incident) to steer them in the right direction.`;
   return BehaviorIncident.create({
     schoolId, studentId: student._id, teacherId,
     behaviorId: beh._id,

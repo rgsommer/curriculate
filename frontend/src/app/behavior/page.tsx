@@ -660,14 +660,14 @@ function HrButton({ studentId, done }: { studentId: string; done?: boolean }) {
   return (
     <button type="button" disabled={state === "busy" || isDone}
       onClick={(e) => { e.preventDefault(); e.stopPropagation(); click(); }}
-      aria-label={isDone ? "Homeroom follow-up already logged this week" : "Log a homeroom follow-up (supportive check-in)"}
+      aria-label={isDone ? "Trend already discussed by the homeroom teacher this week" : "Homeroom teacher: discuss this student's overall trend"}
       title={isDone
-        ? "Homeroom follow-up already logged this week. It resets each week."
-        : "Homeroom follow-up: flag that the homeroom teacher will talk with this student to steer them in the right direction. Logged as a supportive check-in — not a strike, nothing sent home."}
-      className={`shrink-0 rounded-md px-2.5 py-1.5 text-xs font-semibold ${isDone
+        ? "The homeroom teacher discussed this student's overall trend this week. Resets each week."
+        : "Homeroom teacher talks with the student about their WHOLE situation — the pattern across classes, not one incident (that's what ✓ Mark completed is for). Logged as a supportive check-in — not a strike, nothing sent home."}
+      className={`shrink-0 whitespace-nowrap rounded-md px-2.5 py-1.5 text-xs font-semibold ${isDone
         ? "border border-green-300 bg-green-50 text-green-700"
         : "bg-slate-700 text-white hover:bg-slate-800"}`}>
-      {isDone ? "HR ✓" : state === "busy" ? "…" : "HR"}
+      {isDone ? "Trend discussed ✓" : state === "busy" ? "…" : "HR: discuss trend"}
     </button>
   );
 }
