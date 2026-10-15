@@ -27,6 +27,18 @@ export const START_ACTIONS: StartAction[] = [
 ];
 
 
+// A soft colour per tile so the grid reads as a menu of distinct things, not a form.
+const TILE_TONES: Record<string, string> = {
+  card: "from-rose-50 to-pink-100 border-rose-200",
+  contest: "from-amber-50 to-yellow-100 border-amber-200",
+  poll: "from-sky-50 to-blue-100 border-sky-200",
+  awards: "from-violet-50 to-purple-100 border-violet-200",
+  game: "from-emerald-50 to-green-100 border-emerald-200",
+  signup: "from-teal-50 to-cyan-100 border-teal-200",
+  care: "from-orange-50 to-amber-100 border-orange-200",
+  raffle: "from-fuchsia-50 to-pink-100 border-fuchsia-200",
+};
+
 type PanelGroup = { id: string; name: string; avatar_emoji: string; creator_id: string };
 
 export default function StartPanel({
@@ -104,7 +116,9 @@ export default function StartPanel({
                 onClick={() => pick(seasonAction)}
                 className="mb-2 flex w-full items-center gap-3 rounded-2xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-3 text-left text-white shadow-sm transition hover:-translate-y-0.5 hover:opacity-95"
               >
-                <span className="text-3xl">{seasonAction.emoji}</span>
+                <span className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-white/25 text-[30px] leading-none">
+                  {seasonAction.emoji}
+                </span>
                 <span className="min-w-0">
                   <span className="block text-sm font-extrabold leading-snug">{seasonAction.title}</span>
                   <span className="block text-xs text-white/90">{seasonAction.sub}</span>
@@ -118,11 +132,15 @@ export default function StartPanel({
                   type="button"
                   {...(a.androidHidden ? { "data-hide-on-android": true } : {})}
                   onClick={() => pick(a)}
-                  className="flex flex-col items-start rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-orange-300"
+                  className={`group flex flex-col items-center rounded-2xl border bg-gradient-to-br p-3 text-center shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${
+                    TILE_TONES[a.key] ?? "from-white to-slate-50 border-slate-200"
+                  }`}
                 >
-                  <span className="text-2xl leading-none">{a.emoji}</span>
-                  <span className="mt-1.5 text-[13px] font-bold leading-snug text-slate-900">{a.title}</span>
-                  <span className="mt-0.5 text-[11px] leading-snug text-slate-500">{a.sub}</span>
+                  <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white text-[32px] leading-none shadow-sm ring-1 ring-black/5 transition group-hover:scale-110">
+                    {a.emoji}
+                  </span>
+                  <span className="mt-2 text-[13px] font-extrabold leading-snug text-slate-900">{a.title}</span>
+                  <span className="mt-0.5 text-[11px] leading-snug text-slate-600">{a.sub}</span>
                 </button>
               ))}
             </div>
