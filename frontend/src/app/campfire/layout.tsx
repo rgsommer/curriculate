@@ -4,7 +4,7 @@ import type { Metadata } from "next";
 // prototype lives at /campfire/demo with its own "demo" banner — never here, so the
 // privacy/terms pages the app stores link to don't read as sample data.
 export const metadata: Metadata = {
-  title: "Campfire — sign a card together, ask your group anything",
+  title: { absolute: "Campfire — sign a card together, ask your group anything" },
   description:
     "Campfire is a free app for families, churches, classes and teams: everyone signs one surprise card from a single link, or answers a poll, photo contest or check-in that opens for everyone at once. Signers need no account.",
   openGraph: {

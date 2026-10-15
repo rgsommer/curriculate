@@ -20,14 +20,31 @@ function FooterCol({
   );
 }
 
+// Every Campfire surface: the app, its public pages, card short links and the
+// group-gift / raffle / pledge / prize landing pages.
+export function isCampfirePath(pathname: string | null | undefined): boolean {
+  if (!pathname) return false;
+  return [
+    "/campfire", // also /campfirelive, /campfirehub
+    "/aboutcampfire",
+    "/c/",
+    "/groupcards",
+    "/raffle",
+    "/pledge",
+    "/play",
+    "/give",
+  ].some((p) => pathname === p.replace(/\/$/, "") || pathname.startsWith(p));
+}
+
 export default function SiteFooter() {
   const pathname = usePathname();
   // Student-facing House board and the Compass app have their own chrome — no
   // marketing footer (students were scrolling into "Free Trial / Pricing").
   if (pathname?.startsWith("/houses") || pathname?.startsWith("/behavior")) return null;
-  // The Campfire landing page has its own footer (a classroom-quiz footer there confuses
-  // church and family visitors about what they've landed on).
-  if (pathname === "/campfire") return null;
+  // Campfire pages never show Curriculate chrome — a classroom-quiz footer confuses
+  // church and family visitors about what they've landed on (and Campfire has its own
+  // footer: operator line + privacy/terms/support).
+  if (isCampfirePath(pathname)) return null;
   return (
     <footer className="site-footer border-t bg-white/60">
       <div className="mx-auto max-w-6xl px-6 py-12">

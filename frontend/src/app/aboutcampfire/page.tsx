@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "How Campfire Works — Group Engagement Reimagined",
+  title: { absolute: "How Campfire works" },
   description:
     "New to Campfire? Here's how it works: join a group, answer the question, and nobody sees the results until everyone responds. Then it all opens at once. A friendly walkthrough plus the full feature tour — sealed reveals, celebration cards, group gifts, party sign-ups, streaks, and template packs for families, friends, churches, classes, and communities.",
   keywords: [

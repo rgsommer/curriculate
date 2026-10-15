@@ -6,9 +6,10 @@ import CampfireFeedback from "./CampfireFeedback";
 import { DialogHost } from "@/lib/campfire/dialogs";
 
 export const metadata: Metadata = {
+  // absolute: no "| Curriculate.net" from the site-wide title template.
   title: {
     template: "%s | Campfire",
-    default: "Campfire — Group Engagement App",
+    absolute: "Campfire",
   },
   description:
     "Campfire is a real-time group engagement app where results stay sealed until everyone responds. Create polls, challenges, games, and accountability check-ins for your family, friends, church, or community.",
