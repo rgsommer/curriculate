@@ -621,6 +621,7 @@ export default function NewEngagementPage() {
       setRaffleOn(true);
       setVoteContest(true);
     }
+    if (t.contest) setVoteContest(true);
     if (t.reveal) setReveal(t.reveal);
     setStep("details");
   };

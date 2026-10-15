@@ -9,6 +9,7 @@ import { supabase } from "@/lib/campfire/supabase";
 import { seasonalCardPrompt, QUICK_STARTS, quickStartDate } from "@/lib/campfire/templates";
 import { QUALIFYING_RESPONSES, freeGroupAllowance } from "@/lib/campfire/premium";
 import PushPrompt from "./PushPrompt";
+import StartPanel, { type StartAction } from "./StartPanel";
 import {
   ENGAGEMENT_TYPES,
   engagementIcon,
@@ -40,6 +41,12 @@ const START_TEMPLATE_LABELS: Record<string, string> = {
   "wedding-card": "wedding card 💒",
   "birthday-card": "birthday card 🎂",
   "type:poll": "quick poll 📊",
+  "type:birthday": "group card 💌",
+  "photo-contest": "photo contest 🏆",
+  "hall-of-fame": "group awards vote 🏅",
+  "two-truths": "game of Two Truths & a Lie 🎲",
+  "party-potluck": "sign-up list 📝",
+  "care-checkin": "check-in 🤝",
 };
 
 export default function DashboardPage() {
@@ -49,8 +56,8 @@ export default function DashboardPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
   const [groupBlocked, setGroupBlocked] = useState(false);
-  // Shortcut waiting for a group choice ("?template=…" / "?type=…"), when in several.
-  const [startPath, setStartPath] = useState<string | null>(null);
+  // "Start something": the action picked, waiting for "which group?".
+  const [pickAction, setPickAction] = useState<StartAction | null>(null);
   // Free plan: one hosted group, plus earned groups — a 2nd after 5 activities with 3+
   // responses, a 3rd after 15 (see premium.ts). More needs a trial or Campfire Plus.
   // Members and guests are never gated on joining.
@@ -758,6 +765,77 @@ export default function DashboardPage() {
     );
   }
 
+  // ── "Start something": what first, then which group ──
+  const scrollToForm = () =>
+    setTimeout(
+      () =>
+        (document.getElementById("quick-start") || document.getElementById("create-group"))
+          ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+      120
+    );
+  // In a new group of its own (the create-group form, or the one-tap quick form).
+  const startInNewGroup = (a: StartAction) => {
+    setPickAction(null);
+    if (!canCreateGroup && !QUICK_STARTS[a.start]) {
+      setGroupBlocked(true);
+      return;
+    }
+    setStartTemplate(a.start);
+    setStartGroup(null);
+    setQuickGroupId(null);
+    setQuickOff(false);
+    setShowJoin(false);
+    setError("");
+    setShowCreate(true);
+    scrollToForm();
+  };
+  const startInGroup = (a: StartAction, gid: string) => {
+    setPickAction(null);
+    if (QUICK_STARTS[a.start]) {
+      // One-tap card: the short form, already pointed at this group.
+      setStartTemplate(a.start);
+      setStartGroup(gid);
+      setQuickGroupId(null);
+      setQuickOff(false);
+      setShowJoin(false);
+      setShowCreate(true);
+      scrollToForm();
+      return;
+    }
+    router.push(`/campfirelive/group/${gid}/engagement/new${a.path}`);
+  };
+  const season = seasonalCardPrompt();
+  const seasonAction: StartAction | null = season
+    ? {
+        key: "season",
+        emoji: season.emoji,
+        title: season.headline.split(" — ")[0],
+        sub: QUICK_STARTS[season.templateId]
+          ? "Two names and it's ready to share"
+          : "Everyone signs it from one link",
+        start: season.templateId,
+        path: `?template=${season.templateId}`,
+        hot: true,
+      }
+    : null;
+  const renderStartPanel = () => (
+    <StartPanel
+      groups={groups}
+      userId={user?.id}
+      pickAction={pickAction}
+      setPickAction={setPickAction}
+      seasonAction={seasonAction}
+      trendingLabel={trendingMeta ? `${trendingMeta.icon} ${trendingMeta.label}` : null}
+      onNewGroup={startInNewGroup}
+      onGroup={startInGroup}
+      onJoin={() => {
+        setShowJoin(true);
+        setShowCreate(false);
+        setError("");
+      }}
+    />
+  );
+
   return (
     <div>
       {/* Welcome */}
@@ -816,6 +894,8 @@ export default function DashboardPage() {
         )}
       </div>
 
+      <div className="lg:grid lg:grid-cols-3 lg:gap-8">
+      <div className="min-w-0 lg:col-span-2">
       {/* Native app only: the single, polite ask for notification permission. */}
       <PushPrompt inAGroup={groups.length > 0} />
 
@@ -938,173 +1018,9 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* First run (no groups yet): one-tap starts instead of an empty page. Each one
-          makes the group for you — a quick card asks for two names and goes live. */}
-      {groups.length === 0 && !showCreate && !showJoin && (() => {
-        const season = seasonalCardPrompt();
-        const start = (id: string) => {
-          setStartTemplate(id);
-          setQuickOff(false);
-          setShowCreate(true);
-          setShowJoin(false);
-          setError("");
-        };
-        const tiles: { emoji: string; title: string; sub: string; onClick: () => void; hot?: boolean }[] = [
-          ...(season
-            ? [{
-                emoji: season.emoji,
-                title: season.headline.split(" — ")[0],
-                sub: QUICK_STARTS[season.templateId]
-                  ? "Two names and it's ready to share"
-                  : "Everyone signs it from one link",
-                onClick: () => start(season.templateId),
-                hot: true,
-              }]
-            : []),
-          { emoji: "🎂", title: "A birthday card", sub: "Everyone signs; it opens on the day", onClick: () => start("birthday-card") },
-          { emoji: "📊", title: "A quick poll", sub: "Answers open once everyone's in", onClick: () => start("type:poll") },
-          {
-            emoji: "🔑",
-            title: "I have an invite code",
-            sub: "Join a group someone made",
-            onClick: () => {
-              setShowJoin(true);
-              setShowCreate(false);
-              setError("");
-            },
-          },
-        ];
-        return (
-          <div className="mb-8">
-            <div className="mb-3 text-sm font-bold text-slate-800">Start something in one tap</div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {tiles.map((t) => (
-                <button
-                  key={t.title}
-                  type="button"
-                  onClick={t.onClick}
-                  className={`flex items-center gap-3 rounded-2xl border-2 p-4 text-left shadow-sm transition hover:-translate-y-0.5 ${
-                    t.hot
-                      ? "border-rose-200 bg-gradient-to-br from-rose-50 to-orange-50 hover:border-rose-300"
-                      : "border-slate-200 bg-white hover:border-orange-200"
-                  }`}
-                >
-                  <span className="text-3xl">{t.emoji}</span>
-                  <span className="min-w-0">
-                    <span className="block font-bold text-slate-900">{t.title}</span>
-                    <span className="block text-xs text-slate-600">{t.sub}</span>
-                  </span>
-                  <span className="ml-auto text-orange-500">→</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* Seasonal card nudge — surfaces the right card around Dec / May–June */}
-      {(() => {
-        const season = seasonalCardPrompt();
-        if (!season || groups.length === 0) return null;
-        return (
-          <Link
-            href={`/campfirelive/group/${groups[0].id}/engagement/new?template=${season.templateId}`}
-            onClick={(e) => {
-              if (groups.length > 1) {
-                e.preventDefault();
-                setStartPath(`?template=${season.templateId}`);
-              }
-            }}
-            className="group mb-6 flex items-center justify-between gap-3 rounded-2xl border-2 border-rose-200 bg-gradient-to-br from-rose-50 to-orange-50 px-5 py-4 shadow-sm transition hover:border-rose-300"
-          >
-            <div className="flex items-center gap-3 min-w-0">
-              <span className="text-3xl flex-shrink-0">{season.emoji}</span>
-              <div className="min-w-0">
-                <div className="text-sm font-extrabold text-slate-900">
-                  {season.headline}
-                </div>
-                <div className="text-xs text-slate-600">
-                  Everyone signs the card
-                  <span data-hide-on-android> — add a group gift to chip in together</span>.
-                </div>
-              </div>
-            </div>
-            <span className="flex-shrink-0 rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2 text-sm font-bold text-white group-hover:opacity-90">
-              Start →
-            </span>
-          </Link>
-        );
-      })()}
-
-      {/* Trending across all of Campfire — click to start one in a group */}
-      {trendingMeta && trending && groups.length > 0 && (
-        groups.length > 0 ? (
-          <Link
-            href={`/campfirelive/group/${groups[0].id}/engagement/new?type=${trending.type}`}
-            onClick={(e) => {
-              if (groups.length > 1) {
-                e.preventDefault();
-                setStartPath(`?type=${trending.type}`);
-              }
-            }}
-            className="group mb-6 inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50/70 px-3.5 py-1.5 text-xs font-medium text-orange-800 hover:bg-orange-100"
-            title={`Start a ${trendingMeta.label} — the most-created type across Campfire right now`}
-          >
-            <span className="font-semibold">🔥 Trending now</span>
-            <span className="text-orange-300">·</span>
-            <span>
-              {trendingMeta.icon} {trendingMeta.label}
-            </span>
-            <span className="text-orange-400 group-hover:translate-x-0.5 transition-transform">
-              → Try it
-            </span>
-          </Link>
-        ) : (
-          <div
-            className="mb-6 inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50/70 px-3.5 py-1.5 text-xs font-medium text-orange-800"
-            title="The most-created activity type across Campfire right now"
-          >
-            <span className="font-semibold">🔥 Trending now</span>
-            <span className="text-orange-300">·</span>
-            <span>
-              {trendingMeta.icon} {trendingMeta.label}
-            </span>
-          </div>
-        )
-      )}
-
-      {/* "Start it in which group?" — for the shortcuts above when you're in several. */}
-      {startPath && (
-        <div className="mb-6 rounded-2xl border border-orange-200 bg-white p-4 shadow-sm">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <span className="text-sm font-semibold text-slate-900">Start it in which group?</span>
-            <button
-              type="button"
-              onClick={() => setStartPath(null)}
-              aria-label="Close"
-              className="h-10 w-10 rounded-full text-slate-500 hover:bg-slate-100"
-            >
-              ✕
-            </button>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {[...groups]
-              .sort(
-                (a, b) =>
-                  Number(b.creator_id === user?.id) - Number(a.creator_id === user?.id)
-              )
-              .map((g) => (
-                <Link
-                  key={g.id}
-                  href={`/campfirelive/group/${g.id}/engagement/new${startPath}`}
-                  className={CF_SECONDARY_SM}
-                >
-                  {g.avatar_emoji} {g.name}
-                </Link>
-              ))}
-          </div>
-        </div>
-      )}
+      {/* "Start something" — on phones it sits here, under what needs you; on wide
+          screens it's the right-hand column instead. */}
+      <div className="mb-8 lg:hidden">{renderStartPanel()}</div>
 
       {/* Actions */}
       <div className="flex gap-3 mb-8">
@@ -1318,7 +1234,7 @@ export default function DashboardPage() {
 
       {/* Create Group Modal */}
       {showCreate && !quick && (
-        <div className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div id="create-group" className="mb-8 scroll-mt-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           {startTemplate && (
             <div className="mb-4 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900">
               ✨{" "}
@@ -1518,6 +1434,12 @@ export default function DashboardPage() {
           })}
         </div>
       )}
+      </div>
+      {/* Wide screens: the "Start something" panel as a sticky right-hand column. */}
+      <aside className="hidden lg:block">
+        <div className="sticky top-20">{renderStartPanel()}</div>
+      </aside>
+      </div>
     </div>
   );
 }

@@ -37,6 +37,9 @@ export interface EngagementTemplate {
   giftExchange?: { byGender?: boolean; assign?: "self" | "person" | "gender" };
   // Pre-enable a Raffle Challenge: the chip-in pool goes to the voted winner.
   raffle?: boolean;
+  // A vote contest with no money: entries close, the group votes, the winner's
+  // celebrated (the host can name a prize they'll deliver).
+  contest?: boolean;
 }
 
 export interface TemplatePack {
@@ -879,6 +882,15 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
     name: "Prize & Fundraisers",
     emoji: "🏆",
     templates: [
+      {
+        id: "photo-contest",
+        name: "Photo Contest",
+        type: "challenge",
+        title: "Best photo of the season 📸",
+        description:
+          "Post your best photo. When entries close, everyone votes — the winner is announced to the whole group. 🏆",
+        contest: true,
+      },
       {
         id: "raffle-challenge",
         name: "Raffle Challenge",
