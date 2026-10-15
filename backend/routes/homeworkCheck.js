@@ -692,7 +692,8 @@ router.post("/subset", (req, res) => {
 router.post("/coverage", async (req, res) => {
   try {
     const teacherEmail = String(req.body?.teacherEmail || "").trim().toLowerCase();
-    const lessonCode = String(req.body?.lessonCode || "").trim().toUpperCase();
+    const lessonCodes = parseLessonCodes(req.body?.lessonCode);
+    const lessonCode = lessonCodes.join(", ");
     const bookName = String(req.body?.bookName || "").trim();
     const assigned = (Array.isArray(req.body?.assignedQuestions) ? req.body.assignedQuestions : [])
       .map((q) => String(q || "").trim()).filter(Boolean);
@@ -711,19 +712,15 @@ router.post("/coverage", async (req, res) => {
         coveredQuestions: [], uncovered: assigned,
         correctnessAvailable: false,
         reason: "No answer key on file for this lesson — this batch will report completeness only.",
+        missingKeys: lessonCodes,
         workTypeOk: fit.ok, workTypeReason: fit.reason,
       });
     }
 
-    let doc = null;
-    if (answerKeyId) {
-      doc = await HomeworkAnswerKey.findOne({ _id: answerKeyId, teacherEmail }).lean().catch(() => null);
-    } else {
-      const q = { teacherEmail, lessonCode };
-      if (bookName) q.bookName = bookName;
-      doc = await HomeworkAnswerKey.findOne(q).lean();
-    }
-    const keyQs = doc?.questions || [];
+    const loaded = await loadKeysFor({ teacherEmail, lessonCodes, bookName, answerKeyId });
+    const doc = loaded.docs[0] || null;
+    const keyQs = loaded.questions;
+    // A question is covered when ANY of the named lessons answers it.
     const keySet = new Set(keyQs.map((k) => String(k.q).trim().toLowerCase()));
 
     const coveredQuestions = assigned.filter((a) => keySet.has(a.toLowerCase()));
@@ -736,6 +733,11 @@ router.post("/coverage", async (req, res) => {
       ok: true,
       hasAnswerKey,
       bookName: doc?.bookName || bookName,
+      // Which of the lessons they named actually have a key on file, so the
+      // teacher learns it before they walk the room rather than from a page
+      // of "no key" afterwards.
+      foundKeys: loaded.found,
+      missingKeys: loaded.missing,
       covered: coveredQuestions.length,
       total: assigned.length,
       coveredQuestions,
@@ -743,7 +745,9 @@ router.post("/coverage", async (req, res) => {
       correctnessAvailable: fit2.ok && coveredQuestions.length > 0,
       reason: fit2.ok
         ? (coveredQuestions.length
-            ? `Key covers ${coveredQuestions.length} of your ${assigned.length} questions. The other ${uncovered.length} will be marked "no key" and left out of the correctness score.`
+            ? `Key covers ${coveredQuestions.length} of your ${assigned.length} questions.`
+              + (uncovered.length ? ` The other ${uncovered.length} will be marked "no key" and left out of the correctness score.` : "")
+              + (loaded.missing.length ? ` No key on file for ${loaded.missing.join(", ")}.` : "")
             : "The key on file doesn't cover any of your assigned questions — this batch will report completeness only.")
         : fit2.reason,
       workTypeOk: fit2.ok,
@@ -754,6 +758,68 @@ router.post("/coverage", async (req, res) => {
     return res.status(500).json({ ok: false, error: "Could not work out key coverage." });
   }
 });
+
+// A homework set often spans several lessons — "NS7-18, NS7-19, NS7-21" —
+// and the field took one code, so the other two lessons were graded with no
+// key at all and reported as "no key" on every question.
+//
+// Separators are whatever a teacher types between codes: commas, semicolons,
+// slashes, "and", or just spaces. A code itself may contain a hyphen, so the
+// hyphen is never a separator.
+export function parseLessonCodes(raw) {
+  return [...new Set(
+    String(raw || "")
+      .split(/[,;/|\n]+|\s+and\s+|\s+/i)
+      .map((x) => x.trim().toUpperCase())
+      .filter(Boolean)
+  )];
+}
+
+// Every key the teacher holds for those lessons, in the order they named them.
+//
+// Each question keeps the lesson it came from, because question 1 exists in
+// all three and the answers differ. What the grader is shown is grouped under
+// its lesson heading, which is also how the page itself is laid out.
+export async function loadKeysFor({ teacherEmail, lessonCodes, bookName, answerKeyId }) {
+  if (answerKeyId) {
+    const doc = await HomeworkAnswerKey.findOne({ _id: answerKeyId, teacherEmail }).lean().catch(() => null);
+    return {
+      docs: doc ? [doc] : [],
+      questions: (doc?.questions || []).map((q) => ({ ...q, lessonCode: doc.lessonCode || "" })),
+      keyIdea: doc?.keyIdea || "",
+      found: doc ? [doc.lessonCode] : [],
+      missing: [],
+    };
+  }
+  const codes = Array.isArray(lessonCodes) ? lessonCodes.filter(Boolean) : [];
+  if (!teacherEmail || !codes.length) {
+    return { docs: [], questions: [], keyIdea: "", found: [], missing: codes };
+  }
+  const q = { teacherEmail, lessonCode: { $in: codes } };
+  if (bookName) q.bookName = bookName;
+  const docs = await HomeworkAnswerKey.find(q).lean();
+  // The teacher's own order, not Mongo's.
+  const byCode = new Map(docs.map((d) => [String(d.lessonCode || "").toUpperCase(), d]));
+  const ordered = codes.map((c) => byCode.get(c)).filter(Boolean);
+  return {
+    docs: ordered,
+    questions: ordered.flatMap((d) => (d.questions || []).map((x) => ({ ...x, lessonCode: d.lessonCode || "" }))),
+    keyIdea: ordered.map((d) => d.keyIdea).filter(Boolean).join(" "),
+    found: ordered.map((d) => String(d.lessonCode || "").toUpperCase()),
+    missing: codes.filter((c) => !byCode.has(c)),
+  };
+}
+
+// The key as the grader sees it: one block per lesson when there is more than
+// one, so "1" under NS7-19 is not matched against NS7-18's "1".
+export function keyLinesFor(questions) {
+  const codes = [...new Set(questions.map((k) => k.lessonCode || "").filter(Boolean))];
+  if (codes.length < 2) return questions.map((k) => `${k.q} = ${k.answer}`);
+  return codes.flatMap((c) => [
+    `${c}:`,
+    ...questions.filter((k) => (k.lessonCode || "") === c).map((k) => `  ${k.q} = ${k.answer}`),
+  ]);
+}
 
 // Correctness needs discrete checkable answers AND something to compare to.
 // Anything else gets completeness-only, with the reason said plainly.
@@ -1083,11 +1149,22 @@ const DEFAULT_SCOPE_RULE =
   "Everything printed on the page except questions the book marks as bonus, "
   + "extension, investigation or challenge.";
 function buildCheckPrompt({ assigned, keyLines, pageCount, studentLabel, workSurface, assignmentQuestions, keyIdea, scopeRule }) {
+  // Several lessons in one set arrive grouped under their lesson codes,
+  // because question 1 exists in every lesson and the answers differ.
+  const grouped = keyLines.some((l) => /^[A-Z][\w.-]*:$/.test(l));
   const keyBlock = keyLines.length
     ? `
 ANSWER KEY — AUTHORITATIVE. DO NOT DO THE MATHEMATICS YOURSELF.
 ${keyLines.map((l) => `  ${l}`).join("\n")}
-
+${grouped ? `
+This set covers more than one lesson, so the key is grouped by lesson code
+and the SAME question number appears under more than one of them. The page
+shows which lesson each block of work belongs to — a heading, a code written
+beside it, or the order the lessons were set. Match a question against the
+key for ITS lesson. Where the page does not say which lesson a question
+belongs to, set "correct" to "no_key" rather than guessing between them, and
+say so in "note".
+` : ""}
 For every question you marked "attempted", set "correct" to:
   correct    the student's written answer matches the key above
   incorrect  it does not match the key above
@@ -1613,7 +1690,11 @@ router.post("/check", async (req, res) => {
     const b = req.body || {};
     const teacherEmail = String(b.teacherEmail || "").trim().toLowerCase();
     const className = String(b.className || "").trim();
-    const lessonCode = String(b.lessonCode || "").trim().toUpperCase();
+    // One homework set, several lessons: "NS7-18, NS7-19, NS7-21". The string
+    // stays joined for the batch's own label and its CSV; the list is what the
+    // keys are looked up by.
+    const lessonCodes = parseLessonCodes(b.lessonCode);
+    const lessonCode = lessonCodes.join(", ");
     const bookName = String(b.bookName || "").trim();
     const groupsIn = Array.isArray(b.groups) ? b.groups : [];
     const workSurface = b.workSurface === "loose" ? "loose" : "workbook";
@@ -1688,21 +1769,17 @@ router.post("/check", async (req, res) => {
     // page — and with the assignment page optional, and a teacher holding keys
     // for several subjects, picking one from the list is the plain way to say
     // which answers this check should be marked against.
-    let keyQuestions = [];
     let keyIdea = String(b.keyIdea || "").trim();
     const answerKeyId = String(b.answerKeyId || "").trim();
-    let keyDoc = null;
-    if (answerKeyId) {
-      // Scoped to the teacher: an id alone must not reach another teacher's key.
-      keyDoc = await HomeworkAnswerKey.findOne({ _id: answerKeyId, teacherEmail }).lean().catch(() => null);
-    } else if (lessonCode) {
-      const kq = { teacherEmail, lessonCode };
-      if (bookName) kq.bookName = bookName;
-      keyDoc = await HomeworkAnswerKey.findOne(kq).lean();
-    }
-    if (keyDoc) {
-      keyQuestions = keyDoc.questions || [];
-      if (!keyIdea) keyIdea = keyDoc.keyIdea || "";
+    // Scoped to the teacher inside loadKeysFor: an id alone must not reach
+    // another teacher's key.
+    const loadedKeys = await loadKeysFor({ teacherEmail, lessonCodes, bookName, answerKeyId });
+    const keyQuestions = loadedKeys.questions;
+    const keyDoc = loadedKeys.docs[0] || null;
+    if (!keyIdea) keyIdea = loadedKeys.keyIdea || "";
+    if (loadedKeys.missing.length) {
+      console.warn(`[homework/check] no key on file for ${loadedKeys.missing.join(", ")}`
+        + ` — those questions will be reported as "no key"`);
     }
 
     // Key coverage: most textbooks print odd answers only, so this is usually
@@ -1786,7 +1863,7 @@ async function runCheckJob(ctx) {
   const keyed = keyQuestions.filter((k) => assigned.includes(k.q));
   // If label filtering leaves nothing, send the whole lesson key rather than
   // silently grading with no key at all.
-  const effectiveKeyLines = (keyed.length ? keyed : keyQuestions).map((k) => `${k.q} = ${k.answer}`);
+  const effectiveKeyLines = keyLinesFor(keyed.length ? keyed : keyQuestions);
 
   const gradable = groups.filter((g) => !g.superseded);
   const results = new Array(groups.length).fill(null);
