@@ -350,6 +350,15 @@ function VideoTile({ url, big, setBig }) {
   const yt = youtubeId(url);
   const drive = driveId(url);
 
+  // The caller passes a fresh arrow on every render, and this effect used to
+  // list it among its dependencies — so every render of the board tore the
+  // player down and built a new one, which starts at the beginning. The board
+  // renders on its own clock (5 s) and on every poll of the sheet (10 s), so a
+  // video played in class looped its first seven to ten seconds for ever. The
+  // callback goes on a ref instead: always current, never a reason to remount.
+  const setBigRef = useRef(setBig);
+  setBigRef.current = setBig;
+
   // YouTube: use the IFrame API so the tile shrinks when playback ends.
   useEffect(() => {
     if (!big || !yt || !hostRef.current) return undefined;
@@ -363,7 +372,7 @@ function VideoTile({ url, big, setBig }) {
         videoId: yt,
         host: "https://www.youtube-nocookie.com",
         playerVars: { autoplay: 1, rel: 0, modestbranding: 1 },
-        events: { onStateChange: (e) => { if (e.data === window.YT.PlayerState.ENDED) setBig(false); } },
+        events: { onStateChange: (e) => { if (e.data === window.YT.PlayerState.ENDED) setBigRef.current(false); } },
       });
     };
     if (window.YT && window.YT.Player) mount();
@@ -378,7 +387,9 @@ function VideoTile({ url, big, setBig }) {
       }
     }
     return () => { cancelled = true; try { player && player.destroy(); } catch { /* noop */ } };
-  }, [big, yt, setBig]);
+    // Deliberately not `setBig`: see the ref above. The player is rebuilt only
+    // when the tile is opened or the video itself changes.
+  }, [big, yt]);
 
   if (!url) return null;
   const label = yt ? "Video" : drive ? "Video (Drive)" : "Video";
@@ -398,7 +409,7 @@ function VideoTile({ url, big, setBig }) {
         <iframe title="Video" src={`https://drive.google.com/file/d/${drive}/preview`} allow="autoplay" />
       )}
       {big && !yt && !drive && (
-        <video src={url} autoPlay controls onEnded={() => setBig(false)} />
+        <video src={url} autoPlay controls onEnded={() => setBigRef.current(false)} />
       )}
       <button type="button" className="close" onClick={(e) => { e.stopPropagation(); setBig(false); }}>Close</button>
     </div>
