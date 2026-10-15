@@ -185,7 +185,9 @@ export default function StudentPage() {
   }, [params?.id, load]);
 
   if (!getToken()) return <p>Please <Link className="underline" href={loginHref("/behavior")}>sign in</Link>.</p>;
-  if (error) return <p className="text-red-600">{error}</p>;
+  // Only a failed first load replaces the page; an action's error shows as a
+  // banner so the record (and anything being typed) stays put.
+  if (error && !data) return <p className="text-red-600">{error}</p>;
   if (!data) return <p className="text-slate-500">Loading…</p>;
 
   const s = data.student;
@@ -551,6 +553,12 @@ export default function StudentPage() {
 
   return (
     <div className="space-y-4">
+      {error && (
+        <div role="alert" className="no-print sticky top-16 z-10 flex items-start justify-between gap-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+          <span>{error}</span>
+          <button onClick={() => setError("")} className="shrink-0 text-xs underline">dismiss</button>
+        </div>
+      )}
       {/* Hide controls + chrome when printing this record. */}
       <style>{`@media print {
         .no-print { display: none !important; }

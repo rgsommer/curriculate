@@ -83,20 +83,31 @@ export async function api<T = any>(path: string, opts: ApiOptions = {}): Promise
     timer = setTimeout(() => ctrl.abort(), opts.timeoutMs);
   }
 
-  let res: Response;
+  // A bare network failure ("Failed to fetch") is usually the server restarting
+  // for an update — a few seconds. Safe-to-repeat requests (GET/PUT/DELETE) retry
+  // quietly for ~10s; POSTs don't (a log could be created twice) and get a clear
+  // message instead.
+  const method = opts.method || (opts.body !== undefined ? "POST" : "GET");
+  const retryable = method !== "POST" && !(opts.body instanceof FormData);
+  const waits = retryable ? [1500, 3000, 5000] : [];
+  let res: Response | undefined;
   try {
-    res = await fetch(`${API_BASE}/api/behavior${path}`, {
-      method: opts.method || (opts.body !== undefined ? "POST" : "GET"),
-      headers,
-      body,
-      signal,
-    });
-  } catch (e: any) {
-    if (e?.name === "AbortError") throw new ApiError("Timed out — please try again.", 0, null);
-    throw e;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        res = await fetch(`${API_BASE}/api/behavior${path}`, { method, headers, body, signal });
+        break;
+      } catch (e: any) {
+        if (e?.name === "AbortError") throw new ApiError("Timed out — please try again.", 0, null);
+        if (attempt >= waits.length) {
+          throw new ApiError("Couldn't reach Compass — it may be updating. Wait a few seconds and try again.", 0, null);
+        }
+        await new Promise((r) => setTimeout(r, waits[attempt]));
+      }
+    }
   } finally {
     if (timer) clearTimeout(timer);
   }
+  if (!res) throw new ApiError("Couldn't reach Compass — please try again.", 0, null);
 
   let data: any = null;
   try {
