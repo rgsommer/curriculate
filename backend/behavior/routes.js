@@ -4668,6 +4668,34 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
 // SAFETY: this is parent-facing, so the prompt forbids naming any OTHER student
 // and forbids quoting slurs/profanity (describe sensitively instead). Private
 // teacher notes are NOT fed in verbatim. The teacher reviews before posting.
+// The teacher confirms the whole-picture summary actually went to the family
+// (they paste it into Edsby themselves). Logged as a documentation-only parent
+// contact, so the record shows it went home and later summaries count it.
+const PARENT_SUMMARY_SENT_PREFIX = "Whole-picture summary sent to the family";
+router.post("/students/:id/parent-summary/sent", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const student = await BehaviorStudent.findOne({ _id: req.params.id, schoolId: req.schoolId }).select("_id").lean();
+    if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
+    let beh = await Behavior.findOne({ schoolId: req.schoolId, name: PARENT_CONTACT_NAME });
+    if (!beh) {
+      beh = await Behavior.create({
+        schoolId: req.schoolId, name: PARENT_CONTACT_NAME, keyword: "parent", kind: "negative", triggerMode: "INTERACTION",
+        description: "A meeting, call or message with the family. Documentation only — not a strike.", consequenceText: "", points: 0,
+      });
+    }
+    const scope = req.body?.scope === "all" ? "full history" : "since last reset";
+    const inc = await BehaviorIncident.create({
+      schoolId: req.schoolId, studentId: student._id, teacherId: req.membership._id, behaviorId: beh._id,
+      behaviorSnapshot: { name: beh.name, description: beh.description, triggerMode: "INTERACTION", kind: "negative", consequenceText: "", points: 0 },
+      detailText: `${PARENT_SUMMARY_SENT_PREFIX} by ${actorName(req)} (${scope}).`, immediateFlag: false, timestamp: new Date(),
+    });
+    await audit(req.schoolId, "parent_summary.sent", req, { studentId: String(student._id), incidentId: String(inc._id) });
+    res.json({ ok: true, at: inc.timestamp });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post("/students/:id/parent-summary", authAny, loadMembership, async (req, res, next) => {
   try {
     const scope = req.body?.scope === "all" ? "all" : "period";

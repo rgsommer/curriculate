@@ -114,6 +114,10 @@ export default function StudentPage() {
 
   // Parent-facing "whole picture" summary (warm narrative + factual record)
   const [parentSummary, setParentSummary] = useState<string>("");
+  // After generating, ask "Did you send this to the family?" until answered —
+  // teachers often paste it into Edsby without coming back to say so.
+  const [summaryAsk, setSummaryAsk] = useState<"period" | "all" | null>(null);
+  const [summarySentBusy, setSummarySentBusy] = useState(false);
   const [parentHistory, setParentHistory] = useState<{ date: string; offense: string; teacher: string; consequence: string; kind?: string }[]>([]);
   const [parentHistoryText, setParentHistoryText] = useState<string>("");
   const [parentMsg, setParentMsg] = useState<string>("");
@@ -241,6 +245,7 @@ export default function StudentPage() {
       const r = await api<{ summary: string; history: { date: string; offense: string; teacher: string; consequence: string; kind?: string }[]; historyText: string; aiUsed: boolean; concernCount: number; teacherGroups: number }>(
         `/students/${params.id}/parent-summary`, { body: { scope }, timeoutMs: 45000 });
       setParentSummary(r.summary);
+      setSummaryAsk(scope);
       setParentHistory(r.history || []);
       setParentHistoryText(r.historyText || "");
       navigator.clipboard?.writeText(parentFullText(r.summary, r.historyText || "")).then(
@@ -251,6 +256,20 @@ export default function StudentPage() {
       setParentMsg(e.message);
     } finally {
       setParentBusy("");
+    }
+  }
+  async function markSummarySent() {
+    if (!summaryAsk) return;
+    setSummarySentBusy(true);
+    try {
+      await api(`/students/${params.id}/parent-summary/sent`, { body: { scope: summaryAsk } });
+      setSummaryAsk(null);
+      toast("Recorded: summary sent to the family ✓");
+      load();
+    } catch (e: any) {
+      setParentMsg(e.message);
+    } finally {
+      setSummarySentBusy(false);
     }
   }
   async function copyParentSummary() {
@@ -670,7 +689,19 @@ export default function StudentPage() {
               {parentBusy === "all" ? "Writing…" : "Full history"}
             </Button>
           </div>
+          {(() => {
+            const last = (data.incidents || []).find((i: any) => i.behaviorSnapshot?.name === "Parent meeting / contact" && /^Whole-picture summary sent/.test(i.detailText || ""));
+            return last ? <p className="mt-2 text-xs text-slate-500">Last sent to the family: {fmtDT(last.timestamp)}</p> : null;
+          })()}
           {parentMsg && <p className="mt-2 text-sm text-green-700">{parentMsg}</p>}
+          {summaryAsk && (
+            <div role="status" className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
+              <span className="text-sm font-medium text-amber-900">Did you send this to the family?</span>
+              <Button size="xs" variant="success" onClick={markSummarySent} disabled={summarySentBusy}>{summarySentBusy ? "…" : "✓ Sent"}</Button>
+              <Button size="xs" variant="secondary" onClick={() => setSummaryAsk(null)} disabled={summarySentBusy}>Not sent</Button>
+              <span className="text-xs text-amber-800">“Sent” records it on the student&apos;s record as a parent contact.</span>
+            </div>
+          )}
 
           <div className="mt-3 border-t border-slate-100 pt-3">
             <p className="text-xs text-slate-500">Or send it straight to the student&apos;s <span className="font-medium text-slate-600">homeroom teacher</span> to post — the VP is copied, and it&apos;s logged as an intervention. Nothing reaches parents automatically.</p>
