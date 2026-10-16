@@ -42,6 +42,7 @@ import crypto from "crypto";
 import OpenAI from "openai";
 import HomeworkAnswerKey from "../models/HomeworkAnswerKey.js";
 import HomeworkCheckBatch from "../models/HomeworkCheckBatch.js";
+import HomeworkModelCompare from "../models/HomeworkModelCompare.js";
 import ClassRoster from "../models/ClassRoster.js";
 import PublishedResult from "../models/PublishedResult.js";
 import { genAA123 } from "../utils/refCode.js";
@@ -51,6 +52,31 @@ import { notifyNewGrade } from "../email/gradeNotification.js";
 const router = express.Router();
 
 const MODEL = process.env.HOMEWORK_OPENAI_MODEL || process.env.AI_MODEL_FULL || "gpt-4.1";
+
+// ── Side-by-side model test (shadow) ─────────────────────────────────────────
+// Each student's marking request is re-run on a cheaper candidate in the
+// background; ONLY the live model's result is used. Both are recorded in
+// HomeworkModelCompare for a question-by-question comparison before switching.
+// On until SHADOW_UNTIL (set HOMEWORK_SHADOW_MODEL=off to stop sooner).
+const SHADOW_MODEL = process.env.HOMEWORK_SHADOW_MODEL || "gpt-4.1-mini";
+const SHADOW_UNTIL = new Date(process.env.HOMEWORK_SHADOW_UNTIL || "2026-11-01T00:00:00Z");
+const shadowOn = () => SHADOW_MODEL !== "off" && SHADOW_MODEL !== MODEL && Date.now() < SHADOW_UNTIL.getTime();
+function runShadow(reqBody, ctx) {
+  if (!shadowOn()) return;
+  // Fire-and-forget: never delays or affects the teacher's results.
+  (async () => {
+    let shadow = null, shadowError = "", usageShadow = null;
+    try {
+      const r = await openai().responses.create({ ...reqBody, model: SHADOW_MODEL });
+      usageShadow = r.usage || null;
+      shadow = safeJsonParse(r.output_text);
+      if (!shadow) shadowError = "unparseable JSON";
+    } catch (e) { shadowError = String(e?.message || e).slice(0, 300); }
+    try {
+      await HomeworkModelCompare.create({ ...ctx, primaryModel: MODEL, shadowModel: SHADOW_MODEL, shadow, shadowError, usageShadow });
+    } catch (e) { console.warn("[homework/shadow] save failed:", e?.message || e); }
+  })().catch(() => {});
+}
 // Students graded at once. Each student is its own vision call.
 const CONCURRENCY = Math.max(1, Math.min(6, parseInt(process.env.HOMEWORK_CONCURRENCY || "3", 10)));
 // Photos per name-detection call. Detection only needs the top of each page, so
@@ -1889,7 +1915,7 @@ async function runCheckJob(ctx) {
     const label = g.studentName || g.nameAsWritten || "";
 
     try {
-      const resp = await openai().responses.create({
+      const reqBody = {
         model: MODEL,
         input: [{
           role: "user",
@@ -1912,10 +1938,15 @@ async function runCheckJob(ctx) {
         }],
         text: { format: { type: "json_schema", name: "homework_check", strict: true, schema: CHECK_SCHEMA } },
         max_output_tokens: 3000,
-      });
+      };
+      const resp = await openai().responses.create(reqBody);
 
       const parsed = safeJsonParse(resp.output_text);
       if (!parsed) throw new Error("Model returned unparseable JSON");
+      runShadow(reqBody, {
+        teacherEmail, className, lessonCode, student: label, pages: groupImages.length, hasAnswerKey: !!hasAnswerKey,
+        primary: parsed, usagePrimary: resp.usage || null,
+      });
 
       const byQ = new Map(
         (Array.isArray(parsed.questions) ? parsed.questions : [])
