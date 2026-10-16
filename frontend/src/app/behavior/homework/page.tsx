@@ -399,7 +399,7 @@ function DiscussionTool({ assignment, students, initial, onClose }: { assignment
   const init: Record<string, St> = {};
   for (const s of students) {
     const got = initial.find((x) => x.studentId === s._id)?.discussion;
-    init[s._id] = { plus: got?.plus || 0, minus: got?.minus || 0, absent: got?.absent || false, turns: (got?.plus || 0) + (got?.minus || 0) > 0 ? 1 : 0 };
+    init[s._id] = { plus: got?.plus || 0, minus: got?.minus || 0, absent: got?.absent || false, turns: (got?.plus || 0) > 0 ? 1 : 0 };
   }
   const [state, setState] = useState<Record<string, St>>(init);
   const [current, setCurrent] = useState<string | null>(null);
@@ -412,10 +412,18 @@ function DiscussionTool({ assignment, students, initial, onClose }: { assignment
   const present = students.filter((s) => !state[s._id].absent);
   const spokenCount = present.filter((s) => state[s._id].turns > 0).length;
   const nudgeQuiet = present.length > 0 && spokenCount >= present.length / 2;
+  // Spoken twice while someone present hasn't spoken yet → not eligible (red).
+  const everyoneSpoke = present.every((s) => state[s._id].turns > 0);
   const scores = students.map((s) => scoreOf(state[s._id]));
   const top = Math.max(0, ...scores.filter((x): x is number => x != null));
 
   function tick(studentId: string, delta: 1 | -1) {
+    // A − (e.g. for being disruptive while someone else speaks) is NOT a speaking
+    // turn: it neither counts toward the tally nor takes the floor from the speaker.
+    if (delta === -1) {
+      setState((prev) => (prev[studentId].absent ? prev : { ...prev, [studentId]: { ...prev[studentId], minus: prev[studentId].minus + 1 } }));
+      return;
+    }
     setState((prev) => {
       const st = { ...prev[studentId] };
       if (st.absent) return prev;
@@ -457,16 +465,19 @@ function DiscussionTool({ assignment, students, initial, onClose }: { assignment
         </div>
         <button onClick={onClose} className="text-sm text-slate-500 underline">close</button>
       </div>
-      <p className="mt-1 text-xs text-slate-500">Tap + / − as a student speaks (everyone present starts at 5 — never speaking keeps 5; the first + makes it 6, the first − makes it 4). Mark <span className="font-medium">A</span> for absent. The 3rd turn is blocked until everyone has spoken. Green = leading. Once half have spoken, <span className="font-medium text-orange-700">orange</span> = hasn&apos;t spoken yet.</p>
+      <p className="mt-1 text-xs text-slate-500">Tap + / − as a student speaks (everyone present starts at 5 — never speaking keeps 5; the first + makes it 6, the first − makes it 4). Mark <span className="font-medium">A</span> for absent. A − doesn&apos;t count as a speaking turn. <span className="font-medium text-red-700">Red</span> = spoken twice, not eligible until everyone has spoken (a 3rd turn asks first). Green = leading. Once half have spoken, <span className="font-medium text-orange-700">orange</span> = hasn&apos;t spoken yet.</p>
       <ul className="mt-3 space-y-1.5">
         {students.map((s) => {
           const st = state[s._id];
           const sc = scoreOf(st);
           const leading = sc != null && sc === top && top > 5; // nobody "leads" at the starting 5
           const quiet = nudgeQuiet && !st.absent && st.turns === 0;
+          const locked = !st.absent && st.turns >= 2 && !everyoneSpoke;
           return (
-            <li key={s._id} className={`flex items-center justify-between gap-2 rounded-lg border p-2 ${leading ? "border-green-400 bg-green-50" : st.absent ? "border-slate-200 bg-slate-50 opacity-60" : current === s._id ? "border-indigo-300 bg-indigo-50" : quiet ? "border-orange-300 bg-orange-50" : "border-slate-200"}`}>
-              <span className={`min-w-0 flex-1 truncate text-sm font-medium ${quiet ? "text-orange-800" : ""}`}>{s.lastName}, {s.firstName}{st.turns ? <span className="ml-1 text-[10px] text-slate-500">· {st.turns} turn{st.turns === 1 ? "" : "s"}</span> : null}</span>
+            <li key={s._id} title={locked ? "Has spoken twice — not eligible until everyone has spoken" : undefined}
+              className={`flex items-center justify-between gap-2 rounded-lg border p-2 ${st.absent ? "border-slate-200 bg-slate-50 opacity-60" : locked ? "border-red-400 bg-red-50" : current === s._id ? "border-indigo-300 bg-indigo-50" : leading ? "border-green-400 bg-green-50" : quiet ? "border-orange-300 bg-orange-50" : "border-slate-200"}`}>
+              <span className={`min-w-0 flex-1 truncate text-sm font-medium ${locked ? "text-red-800" : quiet ? "text-orange-800" : ""}`}>
+                {locked && <span className="mr-1 rounded bg-red-600 px-1 py-0.5 text-[10px] font-bold uppercase text-white">wait</span>}{s.lastName}, {s.firstName}{st.turns ? <span className="ml-1 text-[10px] text-slate-500">· {st.turns} turn{st.turns === 1 ? "" : "s"}</span> : null}</span>
               <span className="w-12 text-center text-sm font-bold tabular-nums" title={st.absent ? "Absent — no score (blank in the export)" : undefined}>{st.absent || sc == null ? "—" : sc}</span>
               <div className="flex shrink-0 gap-1">
                 <button onClick={() => tick(s._id, -1)} disabled={st.absent} className="h-8 w-8 rounded-lg bg-red-100 font-bold text-red-700 disabled:opacity-30">−</button>
