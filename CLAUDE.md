@@ -13,6 +13,8 @@
 - `backend/index.js` — main backend; grading endpoints (`POST /grading`, `/grading/batch`, `/grading/check-rotation`), classification prompt, AI scoring logic
 - `backend/models/GradingUsage.js` — usage tracking per teacher
 
+**Performance uploads are on disk, not in the process** (`performanceStore`, `claimUpload`, `dropUpload` in `backend/index.js`): video and audio grading buffered the whole upload into memory — 500 MB and 200 MB ceilings — in front of a process whose heap is capped at 512 MB and which its supervisor restarts at 512 MB RSS (`ecosystem.config.cjs`). The video was then written to a temp file and handed to ffmpeg anyway, so the buffer bought nothing. Multer now writes to `os.tmpdir()/curriculate-uploads`, `claimUpload` renames the file into the job's own temp directory (one removal covers both), and every route drops its temp file on every exit — the freemium gate, the too-small guard, the missing-ffmpeg branch, the job's `finally`. Whisper and S3 read the file as a stream (`toFile(fs.createReadStream(...))`, `Body` + `ContentLength`). A stream cannot be replayed, so the SDK cannot retry the S3 put; the video's upload is therefore wrapped the way the audio one already was, since the grade matters more than the stored source. Ceilings are now 250 MB video, 60 MB audio, 25 MB docx (matching the JSON body cap).
+
 **Features:**
 - 5 input modes: photo, paste, batch PDF, video, audio
 - 13 feedback voices + per-question audit toggle + rigorous review modifier
