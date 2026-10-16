@@ -44,7 +44,7 @@ import HomeworkScore from "./models/HomeworkScore.js";
 import BehaviorCompetition from "./models/BehaviorCompetition.js";
 
 import { evaluateIncident, activeThresholdIncidents, evaluatePositive } from "./lib/triggerLogic.js";
-import { nextSchoolDay } from "./lib/schoolCalendar.js";
+import { nextSchoolDay, isNonSchoolDay } from "./lib/schoolCalendar.js";
 import { encrypt, decrypt } from "./lib/secretBox.js";
 import { EdsbyProvider } from "./lib/providers/EdsbyProvider.js";
 import { seedBehaviorDocs, recommendedHousePoints } from "./lib/seedBehaviors.js";
@@ -5383,6 +5383,98 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
 });
 
 // Aggregated stats for the in-app reports/charts (Phase 4).
+// ── Trend indicator ─────────────────────────────────────────────────────────
+// "Is behaviour improving?" at a glance: the last 4 weeks vs the 4 before, per
+// SCHOOL DAY (weekends, Ontario holidays and the admin's non-school days don't
+// count, so a short week or a break can't fake an improvement). Offences =
+// strikes + immediate offences only (not documentation-only interactions, not
+// unconfirmed "note home, no strike" reports). ±10% = steady.
+const TREND_DAYS = 28, TREND_STEADY = 0.10, TREND_MIN_OFFENCES = 6;
+router.get("/trend", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    const manual = new Set(config?.manualNonSchoolDays || []);
+    const today = new Date(); today.setHours(23, 59, 59, 999);
+    const aStart = new Date(today); aStart.setDate(aStart.getDate() - TREND_DAYS + 1); aStart.setHours(0, 0, 0, 0);
+    const bStart = new Date(aStart); bStart.setDate(bStart.getDate() - TREND_DAYS);
+    // First day of school this year: the Term 1 start if set, else the Tuesday
+    // after Labour Day (first Monday of September). Summer weekdays before it
+    // must not count as school days (they made September look calmer).
+    const syYear = today.getMonth() >= 7 ? today.getFullYear() : today.getFullYear() - 1;
+    const labourDay = new Date(syYear, 8, 1); while (labourDay.getDay() !== 1) labourDay.setDate(labourDay.getDate() + 1);
+    const t1 = (config?.homework?.termStarts || []).map((d) => new Date(d)).filter((d) => !isNaN(d) && d.getFullYear() === syYear).sort((a, b) => a - b)[0];
+    const firstDay = t1 || new Date(syYear, 8, labourDay.getDate() + 1);
+    firstDay.setHours(0, 0, 0, 0);
+    const schoolDays = (from, to) => {
+      let n = 0; const d = new Date(Math.max(from.getTime(), firstDay.getTime()));
+      while (d <= to) { if (!isNonSchoolDay(d, manual)) n += 1; d.setDate(d.getDate() + 1); }
+      return n;
+    };
+    const aDays = schoolDays(aStart, today);
+    const bEnd = new Date(aStart); bEnd.setMilliseconds(-1);
+    const bDays = schoolDays(bStart, bEnd);
+
+    const incs = await BehaviorIncident.find({ schoolId: req.schoolId, timestamp: { $gte: bStart, $lte: today } })
+      .select("studentId timestamp behaviorSnapshot.kind behaviorSnapshot.points behaviorSnapshot.triggerMode").lean();
+    const isPos = (i) => i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0;
+    const isOff = (i) => !isPos(i) && ["THRESHOLD", "IMMEDIATE"].includes(i.behaviorSnapshot?.triggerMode || "THRESHOLD");
+    const win = (i) => (new Date(i.timestamp) >= aStart ? "a" : "b");
+    const t = { a: { off: 0, pos: 0, students: new Set() }, b: { off: 0, pos: 0, students: new Set() } };
+    for (const i of incs) {
+      const w = t[win(i)];
+      if (isOff(i)) { w.off += 1; w.students.add(String(i.studentId)); }
+      else if (isPos(i)) w.pos += 1;
+    }
+    const rate = (n, d) => (d > 0 ? Math.round((n / d) * 10) / 10 : 0);
+    const pct = (a, b) => (b > 0 ? Math.round(((a - b) / b) * 100) : null);
+    const offA = rate(t.a.off, aDays), offB = rate(t.b.off, bDays);
+    const posA = rate(t.a.pos, aDays), posB = rate(t.b.pos, bDays);
+    const offPct = pct(offA, offB), posPct = pct(posA, posB);
+
+    // Students at or one away from the strike trigger right now.
+    const trigger = config?.triggerCount ?? 3;
+    const fadeDays = config?.fadeWindowDays ?? 30;
+    const recent = await BehaviorIncident.find({ schoolId: req.schoolId, timestamp: { $gt: new Date(Date.now() - fadeDays * DAY_MS) } })
+      .select("studentId timestamp behaviorSnapshot immediateFlag whiteSlip countedInNoticeId").lean();
+    const studs = await BehaviorStudent.find({ schoolId: req.schoolId, active: true }).select("_id thresholdResetAt").lean();
+    const byStu = {};
+    for (const i of recent) (byStu[String(i.studentId)] ||= []).push(i);
+    let nearLimit = 0;
+    for (const st of studs) {
+      const n = activeThresholdIncidents(byStu[String(st._id)] || [], { fadeWindowDays: fadeDays, thresholdResetAt: st.thresholdResetAt }).length;
+      if (n >= trigger - 1) nearLimit += 1;
+    }
+
+    let verdict = "steady", headline;
+    if (t.b.off + t.a.off < TREND_MIN_OFFENCES || bDays < 5) {
+      verdict = "insufficient";
+      headline = "Not enough data yet for a trend";
+    } else if (offPct !== null && offPct <= -TREND_STEADY * 100) {
+      verdict = "improving"; headline = "Behaviour is improving";
+    } else if (offPct !== null && offPct >= TREND_STEADY * 100) {
+      verdict = "worsening"; headline = "Behaviour is getting worse";
+    } else {
+      headline = "Behaviour is steady";
+    }
+    const offPart = offPct === null ? `${offA} offences per school day` : `offences are ${offPct < 0 ? "down" : offPct > 0 ? "up" : "unchanged"}${offPct ? ` ${Math.abs(offPct)}%` : ""} (${offB} → ${offA} per school day)`;
+    const posPart = posPct === null ? (posA ? `${posA} encouragements per school day` : "") : `encouragements are ${posPct < 0 ? "down" : posPct > 0 ? "up" : "unchanged"}${posPct ? ` ${Math.abs(posPct)}%` : ""}`;
+    const sentence = verdict === "insufficient"
+      ? `Fewer than ${TREND_MIN_OFFENCES} offences across the last 8 weeks — check back as more is logged.`
+      : `Over the last 4 weeks compared with the 4 before, ${offPart}${posPart ? `, and ${posPart}` : ""}.`;
+    res.json({
+      ok: true, verdict, headline, sentence,
+      windows: { days: TREND_DAYS, schoolDaysRecent: aDays, schoolDaysPrior: bDays },
+      offences: { recent: t.a.off, prior: t.b.off, perDayRecent: offA, perDayPrior: offB, changePct: offPct },
+      encouragements: { recent: t.a.pos, prior: t.b.pos, perDayRecent: posA, perDayPrior: posB, changePct: posPct },
+      ratio: { recent: t.a.off ? Math.round((t.a.pos / t.a.off) * 10) / 10 : null, prior: t.b.off ? Math.round((t.b.pos / t.b.off) * 10) / 10 : null },
+      studentsInvolved: { recent: t.a.students.size, prior: t.b.students.size },
+      nearLimit, triggerCount: trigger,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/stats", authAny, loadMembership, async (req, res, next) => {
   try {
     // Default to the CURRENT SCHOOL YEAR (since Sept 1) rather than a rolling

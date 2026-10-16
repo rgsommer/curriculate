@@ -8,6 +8,7 @@ import SendNoticeModal from "./_components/SendNoticeModal";
 import { Card, Button } from "./_components/ui";
 import { toast } from "./_components/toast";
 import AddToHomeScreen from "./_components/AddToHomeScreen";
+import TrendCard from "./_components/TrendCard";
 import { useOccurrences, StudentNameTap, OccurrenceList } from "./_components/Occurrences";
 
 export default function BehaviorDashboard() {
@@ -82,6 +83,8 @@ export default function BehaviorDashboard() {
       </Card>
 
       <AddToHomeScreen />
+
+      {isAdmin && <TrendCard compact />}
 
       {(!membership.name?.trim() || !membership.courtesyName?.trim()) && (
         <SetMyName

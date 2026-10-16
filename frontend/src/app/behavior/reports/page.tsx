@@ -8,6 +8,7 @@ import {
 } from "recharts";
 import { api, getToken, loginHref } from "../_lib/api";
 import { cardCls } from "../_components/ui";
+import TrendCard from "../_components/TrendCard";
 
 type Stats = {
   months: number | string;
@@ -92,6 +93,8 @@ export default function ReportsPage() {
         <Stat label="Active students" value={t.students} />
         <Stat label={`At / near ${data.triggerCount}-strike`} value={t.atOrNearThreshold} accent={t.atOrNearThreshold > 0} />
       </div>
+
+      <TrendCard />
 
       <ChartCard title={`Activity over time (incidents, encouragements, consequences, notices)${useWeekly ? " — by week" : ""}`}>
         <ResponsiveContainer width="100%" height={240}>
