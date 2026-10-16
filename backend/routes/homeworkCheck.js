@@ -1200,10 +1200,7 @@ judge correctness at all.`;
   const surfaceBlock = workSurface === "loose"
     ? `
 WHAT THESE IMAGES ARE
-${pageCount === 1
-      ? "This image is ONE student's handwritten work on loose paper or in a notebook."
-      : `These ${pageCount} images are ONE student's handwritten work on loose paper or in a notebook, in order.`}
-${studentLabel ? `The teacher has confirmed this work belongs to: ${studentLabel}\n` : ""}
+The image(s) are ONE student's handwritten work on loose paper or in a notebook, in order.
 The questions are NOT on the page. The student has written answers with a
 question number beside each one. Everything on the page is the student's
 handwriting.
@@ -1225,10 +1222,8 @@ ${assignmentQuestions.slice(0, 60).map((q) => `  ${q.number}. ${String(q.text ||
   - There is no "sample" on loose paper — the book pre-fills nothing here.`
     : `
 WHAT THESE IMAGES ARE
-${pageCount === 1
-      ? "This image is one page of ONE student's printed workbook."
-      : `These ${pageCount} images are consecutive pages of ONE student's printed workbook, in order.`}
-${studentLabel ? `The teacher has confirmed these pages belong to: ${studentLabel}\n` : ""}The questions are PRINTED in the book. Only the answers are HANDWRITTEN.
+The image(s) are consecutive pages of ONE student's printed workbook, in order.
+The questions are PRINTED in the book. Only the answers are HANDWRITTEN.
 
 THE MOST IMPORTANT DISTINCTION — printed ink is the book, handwriting is the student.
   - Printed question text and printed question numbers are NOT student work.
@@ -1405,7 +1400,13 @@ null. Every student's copy is the same page, so their answers are compared
 with one another — a guess from one of them would corrupt that agreement, and
 null from all of them is a perfectly good answer.
 
-Return JSON only.`;
+Return JSON only.
+${/* Per-student details LAST: everything above is identical for every student
+     in a run, so OpenAI's automatic prompt caching bills it at the cached rate
+     (~75% off) instead of full price on each student's call. */ ""}
+THIS SUBMISSION
+${pageCount === 1 ? "1 image" : `${pageCount} images, in order`}.${studentLabel ? `
+The teacher has confirmed this work belongs to: ${studentLabel}` : ""}`;
 }
 
 const CHECK_SCHEMA = {
