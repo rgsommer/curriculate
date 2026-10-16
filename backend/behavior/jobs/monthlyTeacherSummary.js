@@ -1,8 +1,9 @@
 // backend/behavior/jobs/monthlyTeacherSummary.js
 //
 // Monthly "your month in Compass" encouragement email to each teacher (see
-// sendMonthlyTeacherSummaries in routes.js). Runs on the 1st of each month;
-// each school's send is guarded once-per-month by monthlyTeacherSummary.lastRunMonth.
+// sendMonthlyTeacherSummaries in routes.js). Runs each school day from the 1st to
+// the 10th, sending that day's share (spread + shared Resend budget); each
+// teacher gets it once a month (BehaviorTeacher.monthlySummaryMonth).
 
 import cron from "node-cron";
 import BehaviorConfig from "../models/BehaviorConfig.js";
@@ -23,10 +24,10 @@ export async function runMonthlyTeacherSummaries() {
   return sent;
 }
 
-/** Register the monthly send (1st of the month, 12:00 UTC); guarded per school. */
+/** Register the spread send (days 1–10, 08:00 school-local; weekends skipped in the sender). */
 export function startMonthlyTeacherSummary() {
-  cron.schedule("0 12 1 * *", () => {
+  cron.schedule("0 8 1-10 * *", () => {
     runMonthlyTeacherSummaries().catch((err) => console.error("[behavior/monthly-summary] tick failed:", err?.message || err));
-  });
+  }, { timezone: process.env.SCHOOL_TZ || "America/Toronto" });
   console.log("[behavior] monthly-teacher-summary scheduler started");
 }

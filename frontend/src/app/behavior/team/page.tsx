@@ -17,6 +17,7 @@ type TeamRow = {
   courtesyName?: string;
   monthlySummary?: boolean;
   positiveNudge?: boolean;
+  starsReported28?: number;
   status: "pending" | "accepted";
   joinedAt: string | null;
   incidents: number;
@@ -239,6 +240,11 @@ export default function TeamPage() {
                         disabled={!isAdmin} onChange={(e) => setPositiveNudge(t.userId, e.target.checked)} />
                       Encouragement nudge
                     </label>
+                  )}
+                  {!!t.starsReported28 && (
+                    <span className="text-xs text-amber-700" title="Physical stars this teacher reported handing out (from the nudge email), last 4 weeks">
+                      ⭐ {t.starsReported28} stars reported (4 wks)
+                    </span>
                   )}
                 </div>
               )}

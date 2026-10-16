@@ -60,6 +60,20 @@ const BehaviorTeacherSchema = new mongoose.Schema(
     monthlySummary: { type: Boolean, default: true },
     // Weekly encouragement nudge (fewer than 3 positives logged in a week).
     positiveNudge: { type: Boolean, default: true },
+    // When this teacher last got each nudge — so nudges are spread across days
+    // (a few teachers per day, within the shared email budget) and nobody gets
+    // the same nudge twice in a period.
+    positiveNudgeWeek: { type: String, default: "" },
+    // Weekly self-reports of physical ⭐ stars handed out (Compass can't see
+    // them): reported from the nudge email; they count toward the week's
+    // encouragements and are visible to admins on the Team page. Never an
+    // opt-out — next week the nudge comes again unless they log or report.
+    starReports: {
+      type: [{ week: String, count: Number, at: Date, _id: false }],
+      default: [],
+    },
+    teacherNudgeAt: { type: Date, default: null },
+    monthlySummaryMonth: { type: String, default: "" },
 
     // Per-teacher parent-message templates (encouraging / proactive notes home the
     // teacher copies and sends themselves). Each has a name and a body with

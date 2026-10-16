@@ -34,6 +34,18 @@ import BehaviorHouse from "./models/BehaviorHouse.js";
 import HousePointEvent from "./models/HousePointEvent.js";
 import TallyEvent from "./models/TallyEvent.js";
 import { applyWhiteSlipPenalty } from "./lib/whiteSlipPenalty.js";
+import { bulkBudget, schoolWeekday, emailsSentToday, lightestWeekday } from "./lib/emailBudget.js";
+
+// Bulk nudges are SPREAD across school days and kept inside the shared email
+// budget: today's share = the due teachers split over the school days left in
+// the window, capped by what the budget allows today (the rest wait).
+async function bulkShareToday(dueCount, schoolDaysLeft, { force = false } = {}) {
+  if (force) return dueCount;
+  const b = await bulkBudget(0);
+  const avail = b.available == null ? (b.ok ? Infinity : 0) : b.available;
+  return Math.max(0, Math.min(avail, Math.ceil(dueCount / Math.max(1, schoolDaysLeft))));
+}
+const stableOrder = (id) => [...String(id)].reduce((a, c) => (a * 31 + c.charCodeAt(0)) % 100003, 7);
 import HousesVisit from "./models/HousesVisit.js";
 import MerchRedemption from "./models/MerchRedemption.js";
 import { awardGuddAndReset } from "./lib/guddAward.js";
@@ -554,6 +566,28 @@ function hrFollowupToken(schoolId, studentId, wk = mondayKey()) {
   const sig = crypto.createHmac("sha256", secret).update(`hr-fu:${schoolId}:${studentId}:${wk}`).digest("hex").slice(0, 32);
   return `${wk}.${sig}`;
 }
+// Signed "I gave stars this week" link in the encouragement nudge: the teacher
+// reports how many physical stars they handed out (Compass can't see them). Not
+// an opt-out. Bound to school + teacher + week; valid ~4 weeks.
+function starsOptOutToken(schoolId, teacherId, wk = mondayKey()) {
+  const secret = guddResetSecret();
+  if (!secret) return "";
+  const sig = crypto.createHmac("sha256", secret).update(`stars-optout:${schoolId}:${teacherId}:${wk}`).digest("hex").slice(0, 32);
+  return `${wk}.${sig}`;
+}
+function verifyStarsOptOutToken(schoolId, teacherId, token) {
+  const secret = guddResetSecret();
+  if (!secret || !token) return false;
+  const [wk, sig] = String(token).split(".");
+  if (!wk || !sig) return false;
+  const expected = crypto.createHmac("sha256", secret).update(`stars-optout:${schoolId}:${teacherId}:${wk}`).digest("hex").slice(0, 32);
+  let ok = false;
+  try { ok = sig.length === expected.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected)); } catch { ok = false; }
+  if (!ok) return false;
+  const wkTime = Date.parse(wk + "T00:00:00Z");
+  return !isNaN(wkTime) && Date.now() - wkTime <= 28 * DAY_MS;
+}
+
 function verifyHrFollowupToken(schoolId, studentId, token) {
   const secret = guddResetSecret();
   if (!secret || !token) return false;
@@ -2008,7 +2042,7 @@ router.get("/team", authAny, loadMembership, async (req, res, next) => {
       return res.status(403).json({ ok: false, error: "Admins and principals only" });
     }
     const teachers = await BehaviorTeacher.find({ schoolId: req.schoolId })
-      .select("name email role status createdAt userId housesCommittee homeroom courtesyName monthlySummary positiveNudge")
+      .select("name email role status createdAt userId housesCommittee homeroom courtesyName monthlySummary positiveNudge starReports")
       .lean();
 
     const incAgg = await BehaviorIncident.aggregate([
@@ -2065,6 +2099,7 @@ router.get("/team", authAny, loadMembership, async (req, res, next) => {
           courtesyName: t.courtesyName || "",
           monthlySummary: t.monthlySummary !== false,
           positiveNudge: t.positiveNudge !== false,
+          starsReported28: (t.starReports || []).filter((r) => r.at && Date.now() - new Date(r.at).getTime() <= 28 * DAY_MS).reduce((a, r) => a + (r.count || 0), 0),
           joinedAt: t.createdAt,
           // History-inclusive: itemised incidents + standalone legacy offences.
           incidents: (inc?.n || 0) + legOff,
@@ -6813,7 +6848,7 @@ async function positiveNudgePlan(schoolId) {
   const cfg = await BehaviorConfig.findOne({ schoolId }).select("vp.email").lean();
   const vpEmail = String(cfg?.vp?.email || "").trim().toLowerCase();
   const teachers = (await BehaviorTeacher.find({ schoolId, status: "accepted", role: { $ne: "principal" } })
-    .select("name courtesyName email role homeroom positiveNudge").lean())
+    .select("name courtesyName email role homeroom positiveNudge positiveNudgeWeek starReports").lean())
     .filter((t) => !vpEmail || String(t.email || "").trim().toLowerCase() !== vpEmail);
   const recent = await BehaviorIncident.find({ schoolId, timestamp: { $gt: since30 } })
     .select("teacherId studentId timestamp behaviorSnapshot.kind behaviorSnapshot.points behaviorSnapshot.triggerMode").lean();
@@ -6825,8 +6860,10 @@ async function positiveNudgePlan(schoolId) {
   for (const t of teachers) {
     const mine = recent.filter((i) => String(i.teacherId) === String(t._id));
     if (!mine.length) continue; // not actively using Compass — the quiet-teacher nudge covers that
+    const starsReported7 = (t.starReports || []).filter((r) => r.at && new Date(r.at) > since7).reduce((a, r) => a + (r.count || 0), 0);
     const pos7 = mine.filter((i) => isPos(i) && new Date(i.timestamp) > since7).length
-      + encNotes.filter((c) => String(c.byTeacherId) === String(t._id)).length;
+      + encNotes.filter((c) => String(c.byTeacherId) === String(t._id)).length
+      + starsReported7; // self-reported physical stars count too
     const tier = pos7 >= POSITIVE_GOAL ? "great" : pos7 >= POSITIVE_OK ? "ok" : pos7 >= 1 ? "weak" : "none";
     // Students this teacher corrected in 30 days with no encouragement since.
     const corrected = [...new Set(mine.filter((i) => !isPos(i) && i.behaviorSnapshot?.triggerMode !== "INTERACTION").map((i) => String(i.studentId)))]
@@ -6841,7 +6878,8 @@ export async function sendPositiveNudges(schoolId, { force = false } = {}) {
   if (!config) return { ok: false, error: "no config" };
   if (!force && config.positiveNudge?.enabled === false) return { ok: false, skipped: "disabled" };
   const weekKey = mondayKey();
-  if (!force && config.positiveNudge?.lastRunWeek === weekKey) return { ok: false, skipped: "already ran this week" };
+  const wd = schoolWeekday();
+  if (!force && (wd < 1 || wd > 5)) return { ok: false, skipped: "weekend" };
 
   const plan = await positiveNudgePlan(schoolId);
   const school = await BehaviorSchool.findById(schoolId).select("name").lean();
@@ -6878,10 +6916,15 @@ export async function sendPositiveNudges(schoolId, { force = false } = {}) {
   const sName = Object.fromEntries(sDocs.map((s) => [String(s._id), `${s.preferredName || s.firstName} ${s.lastName}${s.classGroup ? ` (${s.classGroup})` : ""}`]));
 
   let sent = 0;
-  for (const p of plan) {
-    if (p.optedOut || (p.tier !== "none" && p.tier !== "weak")) continue;
+  // Due this week = below the goal, not opted out, not yet nudged this week.
+  // Spread across the school days left (a few teachers a day, within budget).
+  const due = plan
+    .filter((p) => !p.optedOut && (p.tier === "none" || p.tier === "weak") && (p.teacher.email || "").trim() && (force || p.teacher.positiveNudgeWeek !== weekKey))
+    .sort((a, b) => stableOrder(a.teacher._id) - stableOrder(b.teacher._id));
+  const share = await bulkShareToday(due.length, 5 - wd + 1, { force });
+  for (const p of due.slice(0, share)) {
     const email = (p.teacher.email || "").trim();
-    if (!email) continue;
+    const starsUrl = `${appBase()}/behavior/gives-stars?s=${encodeURIComponent(String(schoolId))}&t=${encodeURIComponent(String(p.teacher._id))}&k=${encodeURIComponent(starsOptOutToken(String(schoolId), String(p.teacher._id)))}`;
     const first = (p.teacher.courtesyName || p.teacher.name || "there").trim().split(/\s+/)[0] || "there";
     const names = p.suggestIds.map((id) => sName[id]).filter(Boolean);
     const salt = [...String(p.teacher._id)].reduce((a, c) => a + c.charCodeAt(0), 0);
@@ -6902,20 +6945,56 @@ export async function sendPositiveNudges(schoolId, { force = false } = {}) {
           `<ul style="margin:0 0 10px;padding-left:18px;color:#334155;line-height:1.7">${names.map((n) => `<li>${escapeHtml(n)}</li>`).join("")}</ul>`
         : "") +
       emailButton("Log an encouragement", `${appBase()}/behavior/log`, "#16a34a") +
-      `<p style="margin:12px 0 0;font-size:12px;color:#94a3b8">Sent on Thursdays when fewer than ${POSITIVE_OK} encouragements were logged in the past 7 days. An admin can switch it off for you on the Team page.</p>`;
+      `<p style="margin:14px 0 0;font-size:13px;color:#334155">Handing out ⭐ stars instead? Compass can't see those — <a href="${starsUrl}" style="color:#2563eb">tap here: I gave stars this week</a> and tell us how many; they count toward your week.</p>` +
+      `<p style="margin:10px 0 0;font-size:12px;color:#94a3b8">Sent once a week when fewer than ${POSITIVE_OK} encouragements were logged in the past 7 days. An admin can switch it back on or off on the Team page.</p>`;
     const text = `Hi ${first},\n\n${lead} ${goal}\n\n` +
       (ideas.length ? `This week, keep an eye out for:\n${ideas.map((n) => `- ${n}`).join("\n")}\n\n` : "") +
       (names.length ? `Students you've corrected lately who haven't had an encouragement yet:\n${names.map((n) => `- ${n}`).join("\n")}\n\n` : "") +
-      `Log an encouragement: ${appBase()}/behavior/log`;
+      `Log an encouragement: ${appBase()}/behavior/log\n\nHanding out stars instead? Report how many you gave this week: ${starsUrl}`;
     try {
       await sendEmail({ from, to: email, subject: p.tier === "none" ? "Catch someone being good this week? 🌱" : "Nice start — aim for 5 encouragements this week 🌱", text,
         html: emailShell({ title: "Catch them being good", schoolName: schoolName || "Compass", preheader: lead, accent: "#16a34a", contentHtml }) });
+      await BehaviorTeacher.updateOne({ _id: p.teacher._id }, { $set: { positiveNudgeWeek: weekKey } });
       sent += 1;
     } catch (e) { console.warn("[behavior/positive-nudge] send failed for", email, e?.message || e); }
   }
   await BehaviorConfig.updateOne({ schoolId }, { $set: { "positiveNudge.lastRunWeek": weekKey } });
-  return { ok: true, sent };
+  return { ok: true, sent, waiting: Math.max(0, due.length - sent) };
 }
+
+// "I gave stars this week" from the nudge email (no login): the teacher reports
+// how many physical stars they handed out. Counts toward this week's
+// encouragements; NOT an opt-out (the nudge returns next week unless they log or
+// report again). One report per week (a later one replaces it).
+router.post("/public/stars-report", async (req, res) => {
+  try {
+    const schoolId = String(req.body?.s || "").trim(), teacherId = String(req.body?.t || "").trim();
+    if (!mongoose.Types.ObjectId.isValid(schoolId) || !mongoose.Types.ObjectId.isValid(teacherId) || !verifyStarsOptOutToken(schoolId, teacherId, req.body?.k)) {
+      return res.status(403).json({ ok: false, error: "This link is invalid or has expired." });
+    }
+    const count = Math.round(Number(req.body?.count));
+    if (!Number.isFinite(count) || count < 1 || count > 200) return res.status(400).json({ ok: false, error: "How many stars? (1–200)" });
+    const t = await BehaviorTeacher.findOne({ _id: teacherId, schoolId }).select("name courtesyName").lean();
+    if (!t) return res.status(404).json({ ok: false, error: "Not found." });
+    const week = mondayKey();
+    await BehaviorTeacher.updateOne({ _id: teacherId, schoolId }, { $pull: { starReports: { week } } });
+    await BehaviorTeacher.updateOne({ _id: teacherId, schoolId }, { $push: { starReports: { $each: [{ week, count, at: new Date() }], $slice: -26 } } });
+    await BehaviorAuditLog.create({ schoolId, type: "team.stars_reported", meta: { teacherId, count, week } });
+    res.json({ ok: true, name: (t.courtesyName || t.name || "").trim(), count });
+  } catch {
+    res.status(500).json({ ok: false, error: "Something went wrong — please try again." });
+  }
+});
+
+// Admin: today's shared email usage, the bulk budget left, and the lightest day.
+router.get("/email-budget", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const b = await bulkBudget(0);
+    let light = null; try { light = await lightestWeekday(); } catch { /* ignore */ }
+    res.json({ ok: true, sentToday: b.sent, bulkAvailable: b.available, limit: b.limit, reserve: b.reserve,
+      lightestWeekday: light ? ["", "Mon", "Tue", "Wed", "Thu", "Fri"][light] : null });
+  } catch (err) { next(err); }
+});
 
 // Admin preview: who would get this week's encouragement nudge (no emails sent).
 router.get("/positive-nudge/preview", authAny, loadMembership, requireAdmin, async (req, res, next) => {
@@ -6934,7 +7013,15 @@ export async function sendMonthlyTeacherSummaries(schoolId, { force = false } = 
   if (!config) return { ok: false, error: "no config" };
   if (!force && config.monthlyTeacherSummary?.enabled === false) return { ok: false, skipped: "disabled" };
   const monthKey = new Date().toISOString().slice(0, 7);
-  if (!force && config.monthlyTeacherSummary?.lastRunMonth === monthKey) return { ok: false, skipped: "already ran this month" };
+  // Spread over the first school days of the month (to the 10th), a few
+  // teachers a day within the shared email budget.
+  const dom = new Date().getDate();
+  const wdNow = schoolWeekday();
+  if (!force && (dom > 10 || wdNow < 1 || wdNow > 5)) return { ok: false, skipped: "outside the send window" };
+  let schoolDaysLeft = 0;
+  for (let d = new Date(); d.getDate() <= 10 && d.getMonth() === new Date().getMonth(); d.setDate(d.getDate() + 1)) {
+    const w = d.getDay(); if (w >= 1 && w <= 5) schoolDaysLeft += 1;
+  }
 
   const now = new Date();
   const startYear = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1; // Sept = month 8
@@ -6944,11 +7031,13 @@ export async function sendMonthlyTeacherSummaries(schoolId, { force = false } = 
   const schoolName = config.branding?.schoolName || school?.name || "";
   const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
   const from = fromAddr ? { name: "Compass", address: fromAddr } : undefined;
-  const teachers = await BehaviorTeacher.find({ schoolId, status: "accepted" }).select("name courtesyName email monthlySummary").lean();
+  const teachers = await BehaviorTeacher.find({ schoolId, status: "accepted" }).select("name courtesyName email monthlySummary monthlySummaryMonth").lean();
 
   let sent = 0;
+  const outbox = [];
   for (const t of teachers) {
     if (t.monthlySummary === false) continue;
+    if (!force && t.monthlySummaryMonth === monthKey) continue; // already had this month's
     const email = (t.email || "").trim();
     if (!email) continue;
 
@@ -6998,14 +7087,20 @@ export async function sendMonthlyTeacherSummaries(schoolId, { force = false } = 
       `Positives recognised: ${pos}\nConcerns logged: ${off}${topTypes ? ` (${topTypes})` : ""}\nDocumented interactions: ${intx}\nNotices home: ${notices.length} (${noticesSent} sent)\n` +
       (fuTotal ? `Consequence follow-through: ${fuPct}% of ${fuTotal}\n` : "") +
       `Students supported: ${studs.size}\n\nThank you for keeping the shared picture up to date.\n${appBase()}/behavior`;
+    outbox.push({ teacherId: t._id, email, text, headline, contentHtml });
+  }
+  outbox.sort((a, b) => stableOrder(a.teacherId) - stableOrder(b.teacherId));
+  const share = await bulkShareToday(outbox.length, schoolDaysLeft, { force });
+  for (const m of outbox.slice(0, share)) {
     try {
-      await sendEmail({ from, to: email, subject: `Your month in Compass${schoolName ? ` — ${schoolName}` : ""}`, text,
-        html: emailShell({ title: "Your month in Compass", schoolName: schoolName || "Compass", preheader: headline, accent: "#16a34a", contentHtml }) });
+      await sendEmail({ from, to: m.email, subject: `Your month in Compass${schoolName ? ` — ${schoolName}` : ""}`, text: m.text,
+        html: emailShell({ title: "Your month in Compass", schoolName: schoolName || "Compass", preheader: m.headline, accent: "#16a34a", contentHtml: m.contentHtml }) });
+      await BehaviorTeacher.updateOne({ _id: m.teacherId }, { $set: { monthlySummaryMonth: monthKey } });
       sent += 1;
-    } catch (e) { console.warn("[behavior/monthly-summary] send failed for", email, e?.message || e); }
+    } catch (e) { console.warn("[behavior/monthly-summary] send failed for", m.email, e?.message || e); }
   }
   await BehaviorConfig.updateOne({ schoolId }, { $set: { "monthlyTeacherSummary.lastRunMonth": monthKey } });
-  return { ok: true, sent };
+  return { ok: true, sent, waiting: Math.max(0, outbox.length - sent) };
 }
 
 // Event-driven homeroom check-in: email the student's homeroom teacher a
@@ -7065,9 +7160,8 @@ export async function sendTeacherNudgesForSchool(schoolId, { force = false } = {
   if (!config) return { ok: false, error: "no config" };
   if (!force && config.teacherNudge?.enabled === false) return { ok: false, skipped: "disabled" };
   const intervalDays = config.teacherNudge?.intervalDays ?? 14;
-  if (!force && config.teacherNudge?.lastRunAt && Date.now() - new Date(config.teacherNudge.lastRunAt).getTime() < (intervalDays - 1) * DAY_MS) {
-    return { ok: false, skipped: "too soon" };
-  }
+  const wd = schoolWeekday();
+  if (!force && (wd < 1 || wd > 5)) return { ok: false, skipped: "weekend" };
   const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
   const from = fromAddr ? { name: "Compass", address: fromAddr } : undefined;
   const schoolName = config.branding?.schoolName || (await BehaviorSchool.findById(schoolId).select("name").lean())?.name || "";
@@ -7093,9 +7187,12 @@ export async function sendTeacherNudgesForSchool(schoolId, { force = false } = {
   const fuSet = new Set(recentFu.map((f) => String(f.studentId)));
 
   let sent = 0;
+  const outbox = []; // built first, then today's share is sent (spread + budget)
   for (const t of teachers) {
     const email = (t.email || "").trim();
     if (!email) continue;
+    // Each teacher at most once per interval (their own clock → naturally staggered).
+    if (!force && t.teacherNudgeAt && Date.now() - new Date(t.teacherNudgeAt).getTime() < (intervalDays - 1) * DAY_MS) continue;
 
     // Homeroom students who are accumulating offences and haven't been checked in with.
     const rooms = String(t.homeroom || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
@@ -7179,16 +7276,25 @@ export async function sendTeacherNudgesForSchool(schoolId, { force = false } = {
       continue; // active teacher, nothing flagged → no email
     }
 
+    outbox.push({ teacherId: t._id, email, subject, text, contentHtml, proactive: !inactive });
+  }
+
+  // Homeroom check-ins (actionable) first, then "how's it going?" notes; stable
+  // order so each teacher's turn is consistent. Spread over the rest of the week.
+  outbox.sort((a, b) => (b.proactive ? 1 : 0) - (a.proactive ? 1 : 0) || stableOrder(a.teacherId) - stableOrder(b.teacherId));
+  const share = await bulkShareToday(outbox.length, 5 - wd + 1, { force });
+  for (const m of outbox.slice(0, share)) {
     try {
-      await sendEmail({ from, to: email, subject, text, html: emailShell({ title: subject, schoolName, contentHtml, preheader: subject }) });
+      await sendEmail({ from, to: m.email, subject: m.subject, text: m.text, html: emailShell({ title: m.subject, schoolName, contentHtml: m.contentHtml, preheader: m.subject }) });
+      await BehaviorTeacher.updateOne({ _id: m.teacherId }, { $set: { teacherNudgeAt: new Date() } });
       sent += 1;
     } catch (e) {
-      console.warn("[behavior/nudge] send failed for", email, e?.message || e);
+      console.warn("[behavior/nudge] send failed for", m.email, e?.message || e);
     }
   }
 
   await BehaviorConfig.updateOne({ schoolId }, { $set: { "teacherNudge.lastRunAt": new Date() } });
-  return { ok: true, sent };
+  return { ok: true, sent, waiting: Math.max(0, outbox.length - sent) };
 }
 
 // Send teacher nudges now (admin) — manual trigger / preview.

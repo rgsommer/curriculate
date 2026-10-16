@@ -1,8 +1,9 @@
 // backend/behavior/jobs/positiveNudge.js
 //
-// Weekly "catch them being good" nudge (see sendPositiveNudges in routes.js):
-// Thursday 15:30 school-local, so teachers still have Friday. Each school's send
-// is guarded once per week by positiveNudge.lastRunWeek.
+// Weekly "catch them being good" nudge (see sendPositiveNudges in routes.js).
+// Runs every school day at 15:30 school-local and sends that day's SHARE of the
+// teachers due this week — spread over the week and kept inside the shared
+// Resend budget; each teacher is nudged at most once a week.
 
 import cron from "node-cron";
 import BehaviorConfig from "../models/BehaviorConfig.js";
@@ -25,10 +26,10 @@ export async function runPositiveNudges() {
   return sent;
 }
 
-/** Register the weekly send (Thursday 15:30 school-local); guarded per school. */
+/** Register the daily (Mon–Fri 15:30 school-local) spread send. */
 export function startPositiveNudges() {
   cron.schedule(
-    "30 15 * * 4",
+    "30 15 * * 1-5",
     () => { runPositiveNudges().catch((err) => console.error("[behavior/positive-nudge] tick failed:", err?.message || err)); },
     { timezone: SCHOOL_TZ }
   );
