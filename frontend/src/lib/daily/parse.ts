@@ -893,6 +893,106 @@ export function headphonesOn(status: string, material: string): boolean {
 }
 
 /**
+ * "Note to teacher: …" — a line in the lesson cell addressed to the teacher and
+ * not to the room. It reaches the board because it is written among the
+ * activities, and on a projector it reads as an instruction to the class:
+ * "bring the laminated cards from the cupboard" is not something thirty
+ * students can do. It is not dropped — the teacher wants it on the screen,
+ * which is why it was written there — but it is set in grey, so the room can
+ * see at a glance that this line is not theirs.
+ *
+ * The teacher writes it several ways, and the bullet or emoji may still be on
+ * the front of the line when it gets here. Everything up to the first letter is
+ * therefore skipped: the `u` flag is not available at this build target, so a
+ * code-point range over the emoji blocks is not an option.
+ */
+const TEACHER_NOTE =
+  /^[^A-Za-z]*(?:(?:a\s+)?notes?\s+(?:to|for)\s+(?:the\s+|my\s+)?(?:teacher|self|staff)|teachers?['’]?s?\s+notes?|teacher)\s*[:\-–]/i;
+
+/** Whether this line is addressed to the teacher rather than to the class. */
+export function teacherNote(text: string): boolean {
+  return TEACHER_NOTE.test(String(text || ""));
+}
+
+/**
+ * The two rules of a quiet work period, for the board to show as a ✅ and a ❌.
+ *
+ * The class's own material says them — "whisper on topic only", "no loud
+ * talking or fooling around" — but it says them inside a sentence, halfway down
+ * a list, where a room that is already working will not read them. A quiet work
+ * period is the one period whose rules have to stay on the screen, so they are
+ * lifted out and shown as what may and what may not happen.
+ *
+ * The sheet's own wording is kept wherever it gives any: these are the
+ * teacher's rules in the teacher's words, and the defaults are only for a
+ * period that announces quiet work and then says nothing about how it runs.
+ */
+const RULE_SPLIT = /[;\n]+|(?:\.\s+)/;
+const RULE_YES =
+  /\bwhisper|\bon topic\b|\bwork quietly\b|\bstay seated\b|\bhands? up\b|\bheadphones?\b|\bask (?:for help|quietly)\b/i;
+const RULE_NO = /^(?:no|not|never|avoid|don'?t|do not)\b\s*/i;
+const RULE_TAIL =
+  /\s+(?:only|if needed|if necessary|when needed|when necessary|as needed|at all times|please|at any time)\b.*$/i;
+// "Quiet Work Time (graded)" announces the period; it is a heading, not a rule.
+const RULE_HEAD = /^[^A-Za-z]*quiet work(?:\s+(?:time|period))?\b[^a-z]*$/i;
+
+export type QuietRules = { yes: string[]; no: string[] };
+
+export function quietWorkRules(material: string): QuietRules {
+  const yes: string[] = [];
+  const no: string[] = [];
+  const seen = new Set<string>();
+  const add = (into: string[], raw: string) => {
+    const text = tidyRule(raw);
+    if (!text) return;
+    // The same rule is often written twice — once among the activities and
+    // again in the reminders — with a different tail each time ("whisper on
+    // topic only", "whisper on topic if needed"). Two lines saying one thing is
+    // one line of the screen wasted, so they are compared by their substance
+    // and the first wording is the one kept.
+    const key = ruleKey(text);
+    if (seen.has(key)) return;
+    seen.add(key);
+    if (into.length < 3) into.push(text);
+  };
+  for (const line of String(material || "").split(RULE_SPLIT)) {
+    // "Reminders: whisper on topic" — the label is not part of the rule.
+    const clause = line
+      .replace(/^[\s\-*•–—▪]*(?:reminders?|rules?|expectations?)\s*:\s*/i, "")
+      .trim();
+    if (!clause || RULE_HEAD.test(clause)) continue;
+    if (RULE_NO.test(clause)) add(no, clause.replace(RULE_NO, ""));
+    else if (RULE_YES.test(clause)) add(yes, clause);
+  }
+  if (!yes.length) yes.push("Whisper on topic");
+  if (!no.length) no.push("Loud talking or fooling around");
+  return { yes, no };
+}
+
+/**
+ * What a rule is *about*, for telling two wordings of it apart: no decoration,
+ * no leading "no", no trailing "only" or "if needed". The reminders cell says
+ * the same things the rules block has lifted out of it, so the block's own
+ * lines are dropped from "Due and coming up" by this key rather than by
+ * matching the text, which never matches.
+ */
+export function ruleKey(text: string): string {
+  return tidyRule(text).toLowerCase().replace(RULE_NO, "").replace(RULE_TAIL, "").trim();
+}
+
+/** One rule, tidied: no bullet, no emoji, no full stop, a capital at the front. */
+function tidyRule(raw: string): string {
+  // Everything before the first letter, digit or opening quote is decoration:
+  // the bullet, the raised hand, the tick the teacher typed.
+  const text = String(raw || "")
+    .replace(/^[^A-Za-z0-9"'(]+/, "")
+    .replace(/[.\s]+$/, "")
+    .trim();
+  if (!text || text.length > 80) return "";
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/**
  * "Plans for Thursday, Sep 10, 2026...   -660--871--220--820--290-" → title
  * and one point value per class.
  *

@@ -197,6 +197,22 @@ a.subj.deck:hover { text-decoration-color: currentColor; }
 .daily-root ul { list-style: disc; }
 .plan { margin: 0; padding-left: 1.3em; font-size: calc(clamp(18px, 3.5vh, 40px) * var(--fit)); line-height: 1.35; }
 .plan li { margin: 1.2vh 0; }
+
+/* A line addressed to the teacher, not to the room: kept on the screen, since
+   that is why it was written there, but plainly not the class's to do. */
+.tnote, .plan li.tnote { color: var(--muted); opacity: 0.66; font-style: italic; }
+.plan li.tnote::marker { color: var(--muted); }
+
+/* The rules of a quiet work period, under the activities: what may happen and
+   what may not, in the teacher's own words. */
+.qwt { margin: 1.6vh 0 0; display: flex; flex-direction: column; gap: .5vh; }
+.qwt p {
+  margin: 0; display: flex; align-items: baseline; gap: .6em;
+  font-size: calc(clamp(16px, 2.9vh, 32px) * var(--fit)); line-height: 1.3;
+}
+.qwt p i { font-style: normal; flex: 0 0 auto; font-size: .9em; }
+.qwt p.yes { color: #15803d; }
+.qwt p.no { color: #b91c1c; }
 .panel { min-width: 0; border-left: 2px solid color-mix(in srgb, var(--subj) 28%, transparent); padding-left: 3vw; display: flex; flex-direction: column; gap: 2vh; min-height: 0; }
 .pic-left .panel { border-left: 0; border-right: 1px solid var(--line); padding-left: 0; padding-right: 3vw; }
 /* The panel is a flex column, so without this its blocks compress and clip
