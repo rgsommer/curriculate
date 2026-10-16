@@ -18759,7 +18759,9 @@ const execFileAsync = promisify(execFile);
 //    - html: rendered HTML with MathML (for frontend preview/thumbnails)
 //  Pandoc correctly converts OMML equations to LaTeX, unlike LibreOffice.
 // ====================================================================
-const docxUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+// Still in memory — it is parsed there — but brought in line with the 25 MB
+// JSON body cap above. A rubric document is a page or two.
+const docxUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 app.post("/grading/convert-docx", gradingLimiter, docxUpload.single("file"), async (req, res) => {
   const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "docx-convert-"));
   try {
@@ -18829,8 +18831,36 @@ app.post("/grading/convert-docx", gradingLimiter, docxUpload.single("file"), asy
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
   }
 });
-const audioUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 200 * 1024 * 1024 } });
-const videoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
+// Performance uploads go to disk, not into the process.
+//
+// A video is written to a temp file and handed to ffmpeg either way, so
+// buffering it in memory first bought nothing — and it put a half-gigabyte
+// allocation in front of a process whose heap is capped at 512 MB and whose
+// supervisor restarts it at 512 MB RSS (ecosystem.config.cjs). The ceilings
+// come down with it: these are a phone recording of a classroom performance,
+// not a feature film.
+const UPLOAD_TMP = path.join(os.tmpdir(), "curriculate-uploads");
+try { fs.mkdirSync(UPLOAD_TMP, { recursive: true }); } catch { /* exists, or read-only tmp */ }
+const performanceStore = multer.diskStorage({ destination: UPLOAD_TMP });
+const audioUpload = multer({ storage: performanceStore, limits: { fileSize: 60 * 1024 * 1024 } });
+const videoUpload = multer({ storage: performanceStore, limits: { fileSize: 250 * 1024 * 1024 } });
+
+// Multer's temp file is nobody's otherwise: every route that takes one drops it
+// when it is finished, whether the work succeeded or not.
+async function dropUpload(file) {
+  if (!file || !file.path) return;
+  try { await fs.promises.unlink(file.path); } catch { /* already moved, or gone */ }
+}
+// Move the upload into the job's own temp directory so one removal covers both.
+// Same filesystem, so this is a rename; a cross-device mount falls back to a copy.
+async function claimUpload(file, dest) {
+  try {
+    await fs.promises.rename(file.path, dest);
+  } catch {
+    await fs.promises.copyFile(file.path, dest);
+    await dropUpload(file);
+  }
+}
 
 // ====================================================================
 //  Video Grading: Transcription + Frame Extraction + AI Grading
@@ -19081,9 +19111,10 @@ app.post("/grading/video", gradingLimiter, videoUpload.single("video"), async (r
   let tmpDir = null;
   try {
     // ── Freemium gate ──  (meta comes as form fields, not JSON body)
-    if (!(await checkFreemiumGateGlobal(req, res))) return;
+    if (!(await checkFreemiumGateGlobal(req, res))) { await dropUpload(req.file); return; }
 
-    if (!req.file || !req.file.buffer || req.file.buffer.length < 1000) {
+    if (!req.file || !req.file.path || req.file.size < 1000) {
+      await dropUpload(req.file);
       return res.status(400).json({ ok: false, error: "No video data or file too small." });
     }
 
@@ -19091,6 +19122,7 @@ app.post("/grading/video", gradingLimiter, videoUpload.single("video"), async (r
     try {
       await execFileAsync("ffmpeg", ["-version"], { timeout: 5000 });
     } catch {
+      await dropUpload(req.file);
       return res.status(500).json({ ok: false, error: "Video grading requires ffmpeg, which is not installed on this server." });
     }
 
@@ -19165,9 +19197,9 @@ app.post("/grading/video", gradingLimiter, videoUpload.single("video"), async (r
       : (req.file.mimetype || "").includes("webm") ? "webm"
       : "mp4";
     const videoPath = path.join(tmpDir, `input.${ext}`);
-    await fs.promises.writeFile(videoPath, req.file.buffer);
+    await claimUpload(req.file, videoPath);
 
-    console.log(`[video-grade] Received ${(req.file.buffer.length / 1024 / 1024).toFixed(1)}MB ${ext} video, type=${performanceType}${instrumentFamily ? ` family=${instrumentFamily}` : ""}${instrument ? ` inst=${instrument}` : ""}`);
+    console.log(`[video-grade] Received ${(req.file.size / 1024 / 1024).toFixed(1)}MB ${ext} video, type=${performanceType}${instrumentFamily ? ` family=${instrumentFamily}` : ""}${instrument ? ` inst=${instrument}` : ""}`);
 
     // ------------------------------------------------
     // Step 1: Extract audio and transcribe with Whisper
@@ -19517,17 +19549,26 @@ app.post("/grading/video", gradingLimiter, videoUpload.single("video"), async (r
     let videoUrl = null;
 
     if (s3) {
-      const videoKey = `grading/${submissionId}/video.${ext}`;
-      await s3.send(new PutObjectCommand({
-        Bucket: S3_BUCKET,
-        Key: videoKey,
-        Body: req.file.buffer,
-        ContentType: req.file.mimetype || "video/mp4",
-        CacheControl: "private, max-age=0, no-store",
-        Metadata: { submissionid: submissionId, kind: "video-grading" },
-      }));
-      videoUrl = `https://www.curriculate.net/grading/capture/${submissionId}/video.${ext}`;
-      await GradingCapture.create({ submissionId, keys: [videoKey], createdAt: new Date() });
+      // Streamed from the temp file rather than held in memory. A stream cannot
+      // be replayed, so the SDK cannot retry this one — and the grade is the
+      // part that matters, so a failed upload of the source no longer throws
+      // the finished grading away. (The audio route already worked this way.)
+      try {
+        const videoKey = `grading/${submissionId}/video.${ext}`;
+        await s3.send(new PutObjectCommand({
+          Bucket: S3_BUCKET,
+          Key: videoKey,
+          Body: fs.createReadStream(videoPath),
+          ContentLength: req.file.size,
+          ContentType: req.file.mimetype || "video/mp4",
+          CacheControl: "private, max-age=0, no-store",
+          Metadata: { submissionid: submissionId, kind: "video-grading" },
+        }));
+        videoUrl = `https://www.curriculate.net/grading/capture/${submissionId}/video.${ext}`;
+        await GradingCapture.create({ submissionId, keys: [videoKey], createdAt: new Date() });
+      } catch (e) {
+        console.warn("[video-grade] S3 source upload failed (non-fatal):", e?.message);
+      }
     }
 
     const responseTimeMs = Date.now() - startTime;
@@ -19586,6 +19627,9 @@ app.post("/grading/video", gradingLimiter, videoUpload.single("video"), async (r
         if (tmpDir) {
           try { await fs.promises.rm(tmpDir, { recursive: true, force: true }); } catch {}
         }
+        // A no-op once the upload has been claimed into tmpDir; the safety net
+        // is for a job that threw before it got that far.
+        await dropUpload(req.file);
       }
     })();
     return; // pre-job code path ends here; IIFE owns the rest
@@ -19608,9 +19652,10 @@ app.post("/grading/audio", gradingLimiter, audioUpload.single("audio"), async (r
   const startTime = Date.now();
   try {
     // ── Freemium gate ──  (parity with /grading and /grading/video)
-    if (!(await checkFreemiumGateGlobal(req, res))) return;
+    if (!(await checkFreemiumGateGlobal(req, res))) { await dropUpload(req.file); return; }
 
-    if (!req.file || !req.file.buffer || req.file.buffer.length < 500) {
+    if (!req.file || !req.file.path || req.file.size < 500) {
+      await dropUpload(req.file);
       return res.status(400).json({ error: "No audio file or file too small." });
     }
 
@@ -19655,7 +19700,7 @@ app.post("/grading/audio", gradingLimiter, audioUpload.single("audio"), async (r
     }
     const isMultiStudent = students.length >= 2;
 
-    console.log(`[audio-grade] type=${performanceType} family=${instrumentFamily} instrument=${instrument} band=${gradeBand} performers=${students.length} size=${(req.file.buffer.length / 1024 / 1024).toFixed(1)}MB`);
+    console.log(`[audio-grade] type=${performanceType} family=${instrumentFamily} instrument=${instrument} band=${gradeBand} performers=${students.length} size=${(req.file.size / 1024 / 1024).toFixed(1)}MB`);
 
     // Step 1: Determine audio format
     const origName = (req.file.originalname || "").toLowerCase();
@@ -19697,7 +19742,7 @@ app.post("/grading/audio", gradingLimiter, audioUpload.single("audio"), async (r
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "audio-grade-"));
     _audioTmpDir = tmpDir;
     const audioPath = path.join(tmpDir, `input.${ext}`);
-    await fs.promises.writeFile(audioPath, req.file.buffer);
+    await claimUpload(req.file, audioPath);
 
     try {
       const { stdout } = await execFileAsync("ffprobe", [
@@ -19710,7 +19755,8 @@ app.post("/grading/audio", gradingLimiter, audioUpload.single("audio"), async (r
     // Step 3: Transcribe with Whisper
     let transcript = "";
     try {
-      const audioFile = await toFile(req.file.buffer, `audio.${ext}`, { type: mimeType });
+      // Read off the temp file rather than out of the heap.
+      const audioFile = await toFile(fs.createReadStream(audioPath), `audio.${ext}`, { type: mimeType });
       const whisperResp = await oai.audio.transcriptions.create({
         model: "whisper-1",
         file: audioFile,
@@ -19916,7 +19962,8 @@ app.post("/grading/audio", gradingLimiter, audioUpload.single("audio"), async (r
         await s3.send(new PutObjectCommand({
           Bucket: S3_BUCKET,
           Key: audioKey,
-          Body: req.file.buffer,
+          Body: fs.createReadStream(audioPath),
+          ContentLength: req.file.size,
           ContentType: mimeType,
           CacheControl: "private, max-age=0, no-store",
           Metadata: { submissionid: submissionId, kind: "audio-grading" },
@@ -19980,6 +20027,8 @@ app.post("/grading/audio", gradingLimiter, audioUpload.single("audio"), async (r
         if (_audioTmpDir) {
           try { await fs.promises.rm(_audioTmpDir, { recursive: true, force: true }); } catch {}
         }
+        // A no-op once the upload has been claimed into tmpDir.
+        await dropUpload(req.file);
       }
     })();
     return;
@@ -20519,7 +20568,8 @@ function getInstrumentSpecificCriteria(family, instrument) {
 
 app.post("/api/audio/transcribe", audioUpload.single("audio"), async (req, res) => {
   try {
-    if (!req.file || !req.file.buffer || req.file.buffer.length < 500) {
+    if (!req.file || !req.file.path || req.file.size < 500) {
+      await dropUpload(req.file);
       return res.status(400).json({ ok: false, error: "No audio data or file too small." });
     }
 
@@ -20529,7 +20579,7 @@ app.post("/api/audio/transcribe", audioUpload.single("audio"), async (req, res) 
               : "webm";
     const mimeType = ext === "mp3" ? "audio/mpeg" : ext === "wav" ? "audio/wav" : "audio/webm";
 
-    const audioFile = await toFile(req.file.buffer, `recording.${ext}`, { type: mimeType });
+    const audioFile = await toFile(fs.createReadStream(req.file.path), `recording.${ext}`, { type: mimeType });
 
     // 1) Whisper transcription
     const whisperResp = await oai.audio.transcriptions.create({
@@ -20579,6 +20629,10 @@ Give brief, constructive feedback. Start with what was good, then suggest one im
   } catch (err) {
     console.error("[/api/audio/transcribe] error:", err?.message || err);
     return res.status(500).json({ ok: false, error: "Transcription failed." });
+  } finally {
+    // However this ended — the empty-transcript return, the success, the
+    // error — multer's temp file is this handler's to remove.
+    await dropUpload(req.file);
   }
 });
 
