@@ -58,6 +58,8 @@ const BehaviorTeacherSchema = new mongoose.Schema(
     // own This-school-year / my-interactions recap). On by default; admins can
     // toggle it per member on the Team tab.
     monthlySummary: { type: Boolean, default: true },
+    // Weekly encouragement nudge (fewer than 3 positives logged in a week).
+    positiveNudge: { type: Boolean, default: true },
 
     // Per-teacher parent-message templates (encouraging / proactive notes home the
     // teacher copies and sends themselves). Each has a name and a body with

@@ -317,6 +317,14 @@ const BehaviorConfigSchema = new mongoose.Schema(
       lastRunMonth: { type: String, default: "" },
     },
 
+    // Weekly "catch them being good" nudge (Thursday afternoon): teachers who
+    // logged fewer than 3 encouragements in the last 7 days get a gentle email
+    // (goal 5/week; 3 is OK). Guarded once per week via lastRunWeek.
+    positiveNudge: {
+      enabled: { type: Boolean, default: true },
+      lastRunWeek: { type: String, default: "" },
+    },
+
     teacherNudge: {
       enabled: { type: Boolean, default: true },
       intervalDays: { type: Number, default: 14 },

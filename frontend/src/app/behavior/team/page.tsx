@@ -16,6 +16,7 @@ type TeamRow = {
   homeroom?: string;
   courtesyName?: string;
   monthlySummary?: boolean;
+  positiveNudge?: boolean;
   status: "pending" | "accepted";
   joinedAt: string | null;
   incidents: number;
@@ -98,6 +99,12 @@ export default function TeamPage() {
     setData((d) => d && { ...d, teachers: d.teachers.map((t) => (t.userId === userId ? { ...t, courtesyName: v } : t)) });
     try { await api("/team/courtesy", { method: "PUT", body: { userId, courtesyName: v } }); toast(); }
     catch (e: any) { setErr(e.message); toast(e.message, "error"); }
+  }
+
+  async function setPositiveNudge(userId: string, on: boolean) {
+    setData((d) => d && { ...d, teachers: d.teachers.map((t) => (t.userId === userId ? { ...t, positiveNudge: on } : t)) });
+    try { await api("/team/positive-nudge", { method: "PUT", body: { userId, on } }); toast(); }
+    catch (e: any) { setErr(e.message); toast(e.message, "error"); setData((d) => d && { ...d, teachers: d.teachers.map((t) => (t.userId === userId ? { ...t, positiveNudge: !on } : t)) }); }
   }
 
   async function setMonthlySummary(userId: string, on: boolean) {
@@ -226,6 +233,13 @@ export default function TeamPage() {
                       disabled={!isAdmin} onChange={(e) => setMonthlySummary(t.userId, e.target.checked)} />
                     Monthly email
                   </label>
+                  {t.role !== "principal" && (
+                    <label className="flex items-center gap-2" title="Thursday email when fewer than 3 encouragements were logged in the past week (goal: 5)">
+                      <input type="checkbox" className="h-4 w-4 accent-slate-900 disabled:opacity-40" checked={t.positiveNudge !== false}
+                        disabled={!isAdmin} onChange={(e) => setPositiveNudge(t.userId, e.target.checked)} />
+                      Encouragement nudge
+                    </label>
+                  )}
                 </div>
               )}
             </div>

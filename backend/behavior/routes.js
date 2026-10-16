@@ -2017,7 +2017,7 @@ router.get("/team", authAny, loadMembership, async (req, res, next) => {
       return res.status(403).json({ ok: false, error: "Admins and principals only" });
     }
     const teachers = await BehaviorTeacher.find({ schoolId: req.schoolId })
-      .select("name email role status createdAt userId housesCommittee homeroom courtesyName monthlySummary")
+      .select("name email role status createdAt userId housesCommittee homeroom courtesyName monthlySummary positiveNudge")
       .lean();
 
     const incAgg = await BehaviorIncident.aggregate([
@@ -2073,6 +2073,7 @@ router.get("/team", authAny, loadMembership, async (req, res, next) => {
           homeroom: t.homeroom || "",
           courtesyName: t.courtesyName || "",
           monthlySummary: t.monthlySummary !== false,
+          positiveNudge: t.positiveNudge !== false,
           joinedAt: t.createdAt,
           // History-inclusive: itemised incidents + standalone legacy offences.
           incidents: (inc?.n || 0) + legOff,
@@ -6657,6 +6658,112 @@ export async function sendConsequenceDigestForSchool(schoolId, { force = false }
 // Monthly "your month in Compass" encouragement email to each teacher — their
 // own This-school-year recap (positives, concerns, interactions, notices,
 // follow-through) with the red/green monthly chart. Positive reinforcement to
+// Toggle a member's weekly encouragement nudge (admin).
+router.put("/team/positive-nudge", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const userId = String(req.body?.userId || "").trim();
+    const on = !!req.body?.on;
+    if (!userId) return res.status(400).json({ ok: false, error: "Missing userId." });
+    const target = await BehaviorTeacher.findOne({ schoolId: req.schoolId, userId });
+    if (!target) return res.status(404).json({ ok: false, error: "Member not found in this school." });
+    await BehaviorTeacher.updateOne({ _id: target._id }, { $set: { positiveNudge: on } });
+    await audit(req.schoolId, "team.positive_nudge_changed", req, { meta: { target: target.email, on } });
+    res.json({ ok: true, userId, positiveNudge: on });
+  } catch (err) { next(err); }
+});
+
+// ── Weekly encouragement nudge ──────────────────────────────────────────────
+// Goal: 5 encouragements a week per teacher (3 is OK; 1 is weak). Teachers
+// actively using Compass (logged anything in the last 30 days) who logged FEWER
+// THAN 3 positives in the last 7 days get a gentle email, with a few students
+// they've corrected lately who haven't had an encouragement (to balance it).
+// Encouraging notes home count too. Per-teacher opt-out: positiveNudge.
+const POSITIVE_GOAL = 5, POSITIVE_OK = 3;
+async function positiveNudgePlan(schoolId) {
+  const since7 = new Date(Date.now() - 7 * DAY_MS), since30 = new Date(Date.now() - 30 * DAY_MS);
+  const teachers = await BehaviorTeacher.find({ schoolId, status: "accepted", role: { $ne: "principal" } })
+    .select("name courtesyName email role homeroom positiveNudge").lean();
+  const recent = await BehaviorIncident.find({ schoolId, timestamp: { $gt: since30 } })
+    .select("teacherId studentId timestamp behaviorSnapshot.kind behaviorSnapshot.points behaviorSnapshot.triggerMode").lean();
+  const encNotes = await BehaviorConsequence.find({ schoolId, kind: "encouraging", at: { $gt: since7 } }).select("byTeacherId").lean();
+  const isPos = (i) => i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0;
+  // Students who've had ANY encouragement (from anyone) in 30 days.
+  const encouraged = new Set(recent.filter(isPos).map((i) => String(i.studentId)));
+  const plan = [];
+  for (const t of teachers) {
+    const mine = recent.filter((i) => String(i.teacherId) === String(t._id));
+    if (!mine.length) continue; // not actively using Compass — the quiet-teacher nudge covers that
+    const pos7 = mine.filter((i) => isPos(i) && new Date(i.timestamp) > since7).length
+      + encNotes.filter((c) => String(c.byTeacherId) === String(t._id)).length;
+    const tier = pos7 >= POSITIVE_GOAL ? "great" : pos7 >= POSITIVE_OK ? "ok" : pos7 >= 1 ? "weak" : "none";
+    // Students this teacher corrected in 30 days with no encouragement since.
+    const corrected = [...new Set(mine.filter((i) => !isPos(i) && i.behaviorSnapshot?.triggerMode !== "INTERACTION").map((i) => String(i.studentId)))]
+      .filter((sid) => !encouraged.has(sid)).slice(0, 5);
+    plan.push({ teacher: t, pos7, tier, suggestIds: corrected, optedOut: t.positiveNudge === false });
+  }
+  return plan;
+}
+
+export async function sendPositiveNudges(schoolId, { force = false } = {}) {
+  const config = await BehaviorConfig.findOne({ schoolId }).lean();
+  if (!config) return { ok: false, error: "no config" };
+  if (!force && config.positiveNudge?.enabled === false) return { ok: false, skipped: "disabled" };
+  const weekKey = mondayKey();
+  if (!force && config.positiveNudge?.lastRunWeek === weekKey) return { ok: false, skipped: "already ran this week" };
+
+  const plan = await positiveNudgePlan(schoolId);
+  const school = await BehaviorSchool.findById(schoolId).select("name").lean();
+  const schoolName = config.branding?.schoolName || school?.name || "";
+  const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+  const from = fromAddr ? { name: "Compass", address: fromAddr } : undefined;
+  const allSuggest = [...new Set(plan.flatMap((p) => p.suggestIds))];
+  const sDocs = await BehaviorStudent.find({ _id: { $in: allSuggest } }).select("firstName preferredName lastName classGroup").lean();
+  const sName = Object.fromEntries(sDocs.map((s) => [String(s._id), `${s.preferredName || s.firstName} ${s.lastName}${s.classGroup ? ` (${s.classGroup})` : ""}`]));
+
+  let sent = 0;
+  for (const p of plan) {
+    if (p.optedOut || (p.tier !== "none" && p.tier !== "weak")) continue;
+    const email = (p.teacher.email || "").trim();
+    if (!email) continue;
+    const first = (p.teacher.courtesyName || p.teacher.name || "there").trim().split(/\s+/)[0] || "there";
+    const names = p.suggestIds.map((id) => sName[id]).filter(Boolean);
+    const lead = p.tier === "none"
+      ? `You haven't logged any encouragements in Compass this week.`
+      : `You've logged ${p.pos7} encouragement${p.pos7 === 1 ? "" : "s"} in Compass this week — a good start.`;
+    const goal = `The goal is ${POSITIVE_GOAL} a week (${POSITIVE_OK} is OK) — a quick “caught being good” keeps the record balanced and means a lot to a student (and their house).`;
+    const contentHtml =
+      `<p style="margin:0 0 10px">Hi ${escapeHtml(first)},</p>` +
+      `<p style="margin:0 0 10px;color:#334155">${escapeHtml(lead)} ${escapeHtml(goal)}</p>` +
+      (names.length
+        ? `<p style="margin:12px 0 4px;color:#0f172a;font-weight:600">Students you've corrected lately who haven't had an encouragement yet:</p>` +
+          `<ul style="margin:0 0 10px;padding-left:18px;color:#334155;line-height:1.7">${names.map((n) => `<li>${escapeHtml(n)}</li>`).join("")}</ul>`
+        : "") +
+      emailButton("Log an encouragement", `${appBase()}/behavior/log`, "#16a34a") +
+      `<p style="margin:12px 0 0;font-size:12px;color:#94a3b8">Sent on Thursdays when fewer than ${POSITIVE_OK} encouragements were logged in the past 7 days. An admin can switch it off for you on the Team page.</p>`;
+    const text = `Hi ${first},\n\n${lead} ${goal}\n\n` +
+      (names.length ? `Students you've corrected lately who haven't had an encouragement yet:\n${names.map((n) => `- ${n}`).join("\n")}\n\n` : "") +
+      `Log an encouragement: ${appBase()}/behavior/log`;
+    try {
+      await sendEmail({ from, to: email, subject: p.tier === "none" ? "Catch someone being good this week? 🌱" : "Nice start — aim for 5 encouragements this week 🌱", text,
+        html: emailShell({ title: "Catch them being good", schoolName: schoolName || "Compass", preheader: lead, accent: "#16a34a", contentHtml }) });
+      sent += 1;
+    } catch (e) { console.warn("[behavior/positive-nudge] send failed for", email, e?.message || e); }
+  }
+  await BehaviorConfig.updateOne({ schoolId }, { $set: { "positiveNudge.lastRunWeek": weekKey } });
+  return { ok: true, sent };
+}
+
+// Admin preview: who would get this week's encouragement nudge (no emails sent).
+router.get("/positive-nudge/preview", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const plan = await positiveNudgePlan(req.schoolId);
+    res.json({ ok: true, goal: POSITIVE_GOAL, ok3: POSITIVE_OK, teachers: plan.map((p) => ({
+      name: (p.teacher.courtesyName || p.teacher.name || p.teacher.email || "").trim(), positives7: p.pos7, tier: p.tier,
+      wouldEmail: !p.optedOut && (p.tier === "none" || p.tier === "weak"), optedOut: p.optedOut,
+    })) });
+  } catch (err) { next(err); }
+});
+
 // keep staff using Compass. Per-teacher opt-out: BehaviorTeacher.monthlySummary.
 export async function sendMonthlyTeacherSummaries(schoolId, { force = false } = {}) {
   const config = await BehaviorConfig.findOne({ schoolId }).lean();
