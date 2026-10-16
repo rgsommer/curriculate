@@ -379,17 +379,24 @@ function heroImage(_filenameUnused, altText) {
 // Plain, low-branding email shell. Per anti-spam recommendations: no giant
 // header bar, no big images, no excessive logos. Looks like a real email
 // from a real person, not a marketing template.
-function wrap(bodyHtml, brand = { line: "Classroom teacher · Curriculate (Ontario)", url: "https://www.curriculate.net", label: "curriculate.net" }) {
+// `brand` lets a product sign as someone else; `team: true` switches the
+// sign-off and opt-out lines from "I" to "we".
+function wrap(bodyHtml, brand = {}) {
+  const b = { signer: "Richard Sommer", line: "Classroom teacher · Curriculate (Ontario)", url: "https://www.curriculate.net", label: "curriculate.net", team: false, ...brand };
+  const optOut = b.team
+    ? `If this isn't relevant to your school, please feel free to ignore it — we won't follow up further.
+    Prefer not to hear from us again? Just reply with "no thanks" and we'll remove you.`
+    : `If this isn't relevant to your school, please feel free to ignore — I won't follow up further.
+    Prefer not to hear from me again? Just reply with "no thanks" and I'll remove you.`;
   return `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:0 auto;padding:18px;color:#1e293b;font-size:15px;line-height:1.6;">
   ${bodyHtml}
   <p style="margin:24px 0 6px;color:#475569;font-size:14px;line-height:1.5;">
-    Richard Sommer<br/>
-    ${brand.line}<br/>
-    <a href="${brand.url}" style="color:#2563eb;text-decoration:none;">${brand.label}</a>
+    ${b.signer}<br/>
+    ${b.line ? `${b.line}<br/>` : ""}
+    <a href="${b.url}" style="color:#2563eb;text-decoration:none;">${b.label}</a>
   </p>
   <p style="margin:18px 0 0;color:#94a3b8;font-size:12px;line-height:1.5;">
-    If this isn't relevant to your school, please feel free to ignore — I won't follow up further.
-    Prefer not to hear from me again? Just reply with "no thanks" and I'll remove you.
+    ${optOut}
     &nbsp;·&nbsp; <a href="https://www.curriculate.net/unsubscribe?email={{email}}" style="color:#94a3b8;">Unsubscribe</a>
   </p>
 </div>`;
@@ -554,8 +561,8 @@ const DEFAULT_TEMPLATES = {
       subject: "A class game that runs itself — free for a year",
       body: wrap(`
         <p>{{salutation}}</p>
-        <p>It's Richard Sommer, an Ontario classroom teacher. I'll keep this short.</p>
-        <p><strong>Qrewzi</strong> turns a one-line lesson description into a room-wide team game. Students move between printed QR stations on any device — no accounts — while I run it from the projector. When it ends I have real grades, curriculum coverage and a parent-ready report. No marking pile.</p>
+        <p>We'll keep this short.</p>
+        <p><strong>Qrewzi</strong> turns a one-line lesson description into a room-wide team game. Students move between printed QR stations on any device — no accounts — while the teacher runs it from the projector. When it ends, the teacher has real grades, curriculum coverage and a parent-ready report. No marking pile.</p>
         <p>Five minutes of prep, 30+ task types, K–12, aligned to the Ontario curriculum.</p>
         <p style="margin:14px 0;padding:10px 14px;background:#eef2ff;border-left:3px solid #818cf8;border-radius:4px;color:#3730a3;font-size:13.5px;">
           <strong>Beta offer:</strong> the complete Qrewzi product free for a full year, for teachers who run a game at least once a month and send feedback.
@@ -566,7 +573,7 @@ const DEFAULT_TEMPLATES = {
           <a href="https://qrewzi.com/beta" style="display:inline-block;padding:10px 16px;border:1px solid #4f46e5;color:#4f46e5;border-radius:8px;text-decoration:none;font-weight:600;">Get a year free</a>
         </p>
         <p style="margin:14px 0 0;font-size:14px;color:#475569;">If one or two of your teachers might enjoy it, please feel free to pass this along.</p>
-      `, { line: "Classroom teacher · Qrewzi (Ontario)", url: "https://qrewzi.com", label: "qrewzi.com" }),
+      `, { signer: "The Qrewzi Team", line: "Ontario, Canada", url: "https://qrewzi.com", label: "qrewzi.com", team: true }),
     },
   },
 };
