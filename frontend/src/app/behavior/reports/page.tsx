@@ -17,7 +17,7 @@ type Stats = {
   monthly: Array<{ month: string; incidents: number; positives: number; notices: number; consequences: number }>;
   weekly?: Array<{ week: string; incidents: number; positives: number; notices: number; consequences: number }>;
   topTypes: Array<{ type: string; count: number }>;
-  classCounts: Array<{ class: string; count: number }>;
+  classCounts: Array<{ class: string; count: number; positives?: number }>;
   modePie: Array<{ name: string; value: number }>;
   topKeywords?: Array<{ type: string; count: number; shared?: number }>;
   posTopTypes?: Array<{ type: string; count: number }>;
@@ -142,9 +142,10 @@ export default function ReportsPage() {
               <XAxis dataKey="class" tick={{ fontSize: 11 }} />
               <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
               <Tooltip />
-              <Bar dataKey="count" radius={[3, 3, 0, 0]}>
-                {data.classCounts.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
-              </Bar>
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              {/* Two bars per class: incidents (offences) beside encouragements. */}
+              <Bar dataKey="count" name="Incidents" fill="#e34948" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="positives" name="Encouragements" fill="#15803d" radius={[3, 3, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>

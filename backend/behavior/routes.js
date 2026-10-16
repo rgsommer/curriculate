@@ -5516,7 +5516,7 @@ router.get("/stats", authAny, loadMembership, async (req, res, next) => {
     const incByMonth = {};
     const posByMonth = {};
     const byType = {};
-    const byClass = {};
+    const byClass = {}, posByClass = {}; // offences vs encouragements per class
     const byMode = { THRESHOLD: 0, IMMEDIATE: 0, INTERACTION: 0 };
     let posCount = 0;
     for (const i of incidents) {
@@ -5545,7 +5545,9 @@ router.get("/stats", authAny, loadMembership, async (req, res, next) => {
         }
       }
       const cls = classById[String(i.studentId)] || "—";
-      byClass[cls] = (byClass[cls] || 0) + 1;
+      const isPosInc = i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0;
+      if (isPosInc) posByClass[cls] = (posByClass[cls] || 0) + 1;
+      else if (i.behaviorSnapshot?.triggerMode !== "INTERACTION") byClass[cls] = (byClass[cls] || 0) + 1; // documentation-only isn't an incident
       const mode = i.behaviorSnapshot?.triggerMode || "THRESHOLD";
       byMode[mode] = (byMode[mode] || 0) + 1;
     }
@@ -5638,7 +5640,8 @@ router.get("/stats", authAny, loadMembership, async (req, res, next) => {
       topKeywords: Object.entries(byKeyword).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([type, count]) => ({ type, count, shared: sharedKw[type] || 0 })),
       posTopTypes: Object.entries(posByType).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([type, count]) => ({ type, count })),
       posTopKeywords: Object.entries(posByKeyword).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([type, count]) => ({ type, count, shared: posSharedKw[type] || 0 })),
-      classCounts: Object.entries(byClass).sort((a, b) => a[0].localeCompare(b[0])).map(([cls, count]) => ({ class: cls, count })),
+      classCounts: [...new Set([...Object.keys(byClass), ...Object.keys(posByClass)])].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+        .map((cls) => ({ class: cls, count: byClass[cls] || 0, positives: posByClass[cls] || 0 })),
       modePie: [
         { name: "Threshold", value: byMode.THRESHOLD },
         { name: "Immediate", value: byMode.IMMEDIATE },
