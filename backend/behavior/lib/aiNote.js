@@ -383,7 +383,9 @@ export function makeDefaultAiClient(config = {}) {
   const provider = (config.aiProvider || process.env.BEHAVIOR_AI_PROVIDER || "openai").toLowerCase();
 
   if (provider === "openai") {
-    const key = process.env.OPENAI_API_KEY;
+    // Compass's own key (so its spend shows separately on OpenAI's Usage page);
+    // falls back to the shared key until COMPASS_OPENAI_API_KEY is set.
+    const key = (process.env.COMPASS_OPENAI_API_KEY || process.env.OPENAI_API_KEY || "").trim();
     if (!key) return null;
     const model = config.aiModel || process.env.BEHAVIOR_AI_MODEL || "gpt-4o-mini";
     return {

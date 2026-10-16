@@ -47,9 +47,10 @@ async function filesToImageDataUrls(files) {
 export async function readFoodDriveSheets(files) {
   const images = await filesToImageDataUrls(files);
   if (!images.length) return { rows: [], images: 0 };
-  if (!process.env.OPENAI_API_KEY) throw new Error("Vision isn't configured (OPENAI_API_KEY missing).");
+  const key = (process.env.COMPASS_OPENAI_API_KEY || process.env.OPENAI_API_KEY || "").trim(); // Compass's own key first
+  if (!key) throw new Error("Vision isn't configured (OPENAI_API_KEY missing).");
   const { default: OpenAI } = await import("openai");
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY.trim() });
+  const client = new OpenAI({ apiKey: key });
   const model = process.env.AI_MODEL || process.env.BEHAVIOR_AI_MODEL || "gpt-4o";
 
   const schema = {
