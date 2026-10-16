@@ -5,7 +5,7 @@ import { pushToUsers } from "@/lib/campfire/push";
 import {
   authorizeGroupRequester,
   getGroupMemberEmails,
-  getPendingInviteeEmails,
+  claimPendingInviteReminders,
   getCardRecipients,
   revealEmail,
   cardRevealEmail,
@@ -91,7 +91,8 @@ export async function POST(req: Request) {
     // recipient SHOULD get their card (the forRecipient version below). It's the
     // PRE-reveal nudges, not this, that must skip them.
     const memberEmails = await getGroupMemberEmails(admin, eng.group_id);
-    const pendingEmails = await getPendingInviteeEmails(admin, eng.group_id);
+    // A recipient-only re-send emails nobody else, so don't use up invitees' reminders.
+    const pendingEmails = recipientOnly ? [] : await claimPendingInviteReminders(admin, eng.group_id);
     const recipientByEmail = ((eng.excluded_emails as string[] | null) ?? []).map(
       (e) => e.toLowerCase()
     );

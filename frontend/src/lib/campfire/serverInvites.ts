@@ -342,23 +342,56 @@ export async function getGroupMemberEmails(
   return filterOptedOut(admin, emails);
 }
 
-// Emails invited to the group but not yet joined (status 'pending') — used to nudge
-// them at reveal too ("you missed it") since they're already in the loop.
-export async function getPendingInviteeEmails(
+// Automatic emails to people who were invited but never joined (deadline
+// reminders, "you missed it" reveal emails) are capped per invitee: at most one
+// a week and AUTO_INVITE_NUDGE_MAX in total, however many engagements the group
+// runs. Without this, one group's ~45 never-joined invitees got an email per
+// engagement — most of the 100/day Resend quota that every app shares. A host's
+// manual nudge also counts toward the total (same nudge_count column).
+export const AUTO_INVITE_NUDGE_MAX = 2;
+export const AUTO_INVITE_NUDGE_GAP_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Picks the pending invitees who are due an automatic email, records the
+// nudge on each invitation right away (so a retry or a parallel run can't
+// email them twice), and returns their addresses. Only call it when you are
+// about to send. `groupInvitesOnly` skips engagement-scoped guest invites.
+export async function claimPendingInviteReminders(
   admin: SupabaseClient,
-  groupId: string
+  groupId: string,
+  { groupInvitesOnly = false }: { groupInvitesOnly?: boolean } = {}
 ): Promise<string[]> {
-  const { data } = await admin
+  let q = admin
     .from("campfire_invitations")
-    .select("email")
+    .select("id, email, nudge_count, last_nudged_at")
     .eq("group_id", groupId)
-    .eq("status", "pending");
-  const set = new Set<string>();
-  for (const r of data ?? []) {
-    const em = (r.email as string | null)?.trim();
-    if (em) set.add(em);
+    .eq("status", "pending")
+    .lt("nudge_count", AUTO_INVITE_NUDGE_MAX);
+  if (groupInvitesOnly) q = q.is("engagement_id", null);
+  const { data } = await q;
+  const now = Date.now();
+  const due = (data ?? []).filter((r) => {
+    const last = r.last_nudged_at ? new Date(r.last_nudged_at as string).getTime() : 0;
+    return !!(r.email as string | null)?.trim() && now - last >= AUTO_INVITE_NUDGE_GAP_MS;
+  });
+  if (!due.length) return [];
+  const allowed = new Set(
+    (await filterOptedOut(admin, due.map((r) => (r.email as string).trim()))).map((e) => e.toLowerCase())
+  );
+  const nowIso = new Date(now).toISOString();
+  const out = new Set<string>();
+  for (const r of due) {
+    const em = (r.email as string).trim();
+    if (!allowed.has(em.toLowerCase())) continue;
+    // Conditional on the count we read, so two overlapping runs can't both claim it.
+    const { data: claimed } = await admin
+      .from("campfire_invitations")
+      .update({ last_nudged_at: nowIso, nudge_count: ((r.nudge_count as number) ?? 0) + 1 })
+      .eq("id", r.id)
+      .eq("nudge_count", (r.nudge_count as number) ?? 0)
+      .select("id");
+    if (claimed?.length) out.add(em);
   }
-  return filterOptedOut(admin, Array.from(set));
+  return Array.from(out);
 }
 
 // Resolve a card's recipient(s) from the excluded surprise user ids: a display

@@ -18,7 +18,7 @@ import {
   mailDefaults,
   campfireFrom,
   campfireSiteUrl,
-  getPendingInviteeEmails,
+  claimPendingInviteReminders,
   escapeHtml,
   notifyHostOfAward,
 } from "@/lib/campfire/serverInvites";
@@ -144,14 +144,10 @@ export async function GET(req: Request) {
         .select("*", { count: "exact", head: true })
         .eq("engagement_id", e.id);
       const memberEmails = await getNonResponderEmails(admin, e.id as string, e.group_id as string);
-      const { data: pend } = await admin
-        .from("campfire_invitations")
-        .select("email")
-        .eq("group_id", e.group_id)
-        .eq("status", "pending")
-        // Whole-group invites only — engagement-scoped guests get a card-specific
-        // flow, not the group join nudge.
-        .is("engagement_id", null);
+      // Whole-group invites only — engagement-scoped guests get a card-specific
+      // flow, not the group join nudge. Capped per invitee (see claimPendingInviteReminders).
+      const pend = (await claimPendingInviteReminders(admin, e.group_id as string, { groupInvitesOnly: true }))
+        .map((email) => ({ email }));
       const { data: group } = await admin
         .from("groups")
         .select("name, invite_code, avatar_emoji")
@@ -875,7 +871,7 @@ export async function GET(req: Request) {
     // Members + invited-but-not-joined (a reveal nudge) AND the surprise recipient(s)
     // by email — at reveal the recipient SHOULD get their card.
     const memberEmails = await getGroupMemberEmails(admin, e.group_id);
-    const pendingEmails = await getPendingInviteeEmails(admin, e.group_id);
+    const pendingEmails = await claimPendingInviteReminders(admin, e.group_id);
     const recipientByEmail = ((e.excluded_emails as string[] | null) ?? []).map(
       (x) => x.toLowerCase()
     );
