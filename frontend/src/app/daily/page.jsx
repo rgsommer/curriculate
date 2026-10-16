@@ -521,6 +521,14 @@ export default function DailyPage() {
   const fdPending = useRef("");
   const scrubTouched = useRef(0);
   const debugRef = useRef(null);
+  // The small player beside the clock belongs to the period, not to the copy of
+  // the sheet that happens to be in hand. A video written into the lesson's own
+  // description is often a link *attached* to the words ("Play Video"), which
+  // only the grid half of a refresh can see — and a cold instance serves the
+  // quick half first, so every so often a poll comes back with the video
+  // missing and the tile vanished mid-class. Once a period has shown a video it
+  // keeps it to the bell: a later copy may replace it, never empty it.
+  const heldVideo = useRef({ key: null, url: "" });
   // When what is on screen was read from the sheet — not when it was fetched.
   const lastGood = useRef(0);
   const seenVersion = useRef(null);
@@ -1148,6 +1156,17 @@ export default function DailyPage() {
     setup.dismissalAt != null ? setup.dismissalAt + 45 : -Infinity,
   ]));
 
+  // Which video the clock's tile is showing. Keyed by the period's start, so a
+  // new class starts afresh; within one class an empty payload is ignored.
+  const videoOfPeriod = (p) => {
+    if (!p || p.duty) return "";
+    const url = p.video || (p.videos && p.videos[0]) || "";
+    const held = heldVideo.current;
+    if (held.key !== p.start) { heldVideo.current = { key: p.start, url }; return url; }
+    if (url && url !== held.url) { heldVideo.current = { key: p.start, url }; return url; }
+    return held.url;
+  };
+
   const header = ({ title, chips, when, leftHtml, pct, red, period }) => (
     <>
       <div className="top">
@@ -1182,7 +1201,12 @@ export default function DailyPage() {
             <div className="peek">Next: <b>{peekNext.subj}</b> · {peekNext.room} · {fmt(peekNext.start)}</div>
           ) : null}
         </div>
-        {period && !period.duty ? (() => { if (period.video) headerVideo = period.video; return <VideoTile url={period.video} big={false} setBig={(on) => setVidBig(on ? period.video : "")} />; })() : <span />}
+        {(() => {
+          const url = videoOfPeriod(period);
+          if (!url) return <span />;
+          headerVideo = url;
+          return <VideoTile url={url} big={false} setBig={(on) => setVidBig(on ? url : "")} />;
+        })()}
         <div className={`clockbox${red ? " red" : ""}`}>
           <div className="clock">{fmt(t)}</div>
           <div className="left">{leftHtml}</div>
