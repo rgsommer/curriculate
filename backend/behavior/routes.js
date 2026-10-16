@@ -5406,8 +5406,12 @@ router.get("/stats", authAny, loadMembership, async (req, res, next) => {
     const pad = (n) => String(n).padStart(2, "0");
 
     const incidents = await BehaviorIncident.find({ schoolId: req.schoolId, timestamp: { $gt: cutoff } })
-      .select("behaviorSnapshot.name behaviorSnapshot.triggerMode behaviorSnapshot.kind behaviorSnapshot.points timestamp studentId")
+      .select("behaviorId behaviorSnapshot.name behaviorSnapshot.triggerMode behaviorSnapshot.kind behaviorSnapshot.points timestamp studentId")
       .lean();
+    // Keyword per behaviour, for the "by keyword" chart (one bar per keyword).
+    const kwByBehavior = Object.fromEntries((await Behavior.find({ schoolId: req.schoolId }).select("keyword").lean())
+      .map((b) => [String(b._id), String(b.keyword || "").trim()]));
+    const byKeyword = {};
     const studentsAll = await BehaviorStudent.find({ schoolId: req.schoolId }).select("classGroup").lean();
     const classById = Object.fromEntries(studentsAll.map((s) => [String(s._id), s.classGroup || "—"]));
 
@@ -5426,6 +5430,9 @@ router.get("/stats", authAny, loadMembership, async (req, res, next) => {
       }
       const nm = i.behaviorSnapshot?.name || "Other";
       byType[nm] = (byType[nm] || 0) + 1;
+      const kw = kwByBehavior[String(i.behaviorId)] || "";
+      const kLabel = kw ? kw.charAt(0).toUpperCase() + kw.slice(1) : nm;
+      byKeyword[kLabel] = (byKeyword[kLabel] || 0) + 1;
       const cls = classById[String(i.studentId)] || "—";
       byClass[cls] = (byClass[cls] || 0) + 1;
       const mode = i.behaviorSnapshot?.triggerMode || "THRESHOLD";
@@ -5517,6 +5524,7 @@ router.get("/stats", authAny, loadMembership, async (req, res, next) => {
       monthly,
       weekly,
       topTypes: Object.entries(byType).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([type, count]) => ({ type, count })),
+      topKeywords: Object.entries(byKeyword).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([type, count]) => ({ type, count })),
       classCounts: Object.entries(byClass).sort((a, b) => a[0].localeCompare(b[0])).map(([cls, count]) => ({ class: cls, count })),
       modePie: [
         { name: "Threshold", value: byMode.THRESHOLD },

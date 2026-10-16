@@ -18,6 +18,7 @@ type Stats = {
   topTypes: Array<{ type: string; count: number }>;
   classCounts: Array<{ class: string; count: number }>;
   modePie: Array<{ name: string; value: number }>;
+  topKeywords?: Array<{ type: string; count: number }>;
   strikeBuckets: Array<{ strikes: string; students: number }>;
 };
 
@@ -41,6 +42,8 @@ function BehaviourTick({ x, y, payload }: any) {
 export default function ReportsPage() {
   const [months, setMonths] = useState<number | "year">("year");
   const [data, setData] = useState<Stats | null>(null);
+  // Incidents chart: one bar per keyword (default — fewer, broader bars) or per behaviour.
+  const [groupBy, setGroupBy] = useState<"keyword" | "behaviour">("keyword");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -104,18 +107,33 @@ export default function ReportsPage() {
         </ResponsiveContainer>
       </ChartCard>
 
-      <ChartCard title="Incidents by behaviour">
-        <ResponsiveContainer width="100%" height={Math.max(160, data.topTypes.length * 30)}>
-          <BarChart data={data.topTypes} layout="vertical" margin={{ left: 40, right: 16 }}>
-            <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
-            <YAxis type="category" dataKey="type" tick={<BehaviourTick />} width={170} tickLine={false} />
-            <Tooltip />
-            <Bar dataKey="count" radius={[0, 3, 3, 0]}>
-              {data.topTypes.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      </ChartCard>
+      {(() => {
+        const byKw = groupBy === "keyword" && !!data.topKeywords?.length;
+        const rows = byKw ? data.topKeywords! : data.topTypes;
+        return (
+          <ChartCard title={byKw ? "Incidents by keyword" : "Incidents by behaviour"}>
+            <div className="-mt-1 mb-2 inline-flex overflow-hidden rounded-lg border border-slate-300 text-xs">
+              {(["keyword", "behaviour"] as const).map((g) => (
+                <button key={g} type="button" onClick={() => setGroupBy(g)} aria-pressed={groupBy === g}
+                  className={`px-3 py-1 font-medium ${groupBy === g ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>
+                  By {g}
+                </button>
+              ))}
+            </div>
+            <ResponsiveContainer width="100%" height={Math.max(160, rows.length * 30)}>
+              <BarChart data={rows} layout="vertical" margin={{ left: 40, right: 16 }}>
+                <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
+                {/* interval={0}: label EVERY bar (it was skipping every other one). */}
+                <YAxis type="category" dataKey="type" tick={<BehaviourTick />} width={170} tickLine={false} interval={0} />
+                <Tooltip />
+                <Bar dataKey="count" radius={[0, 3, 3, 0]}>
+                  {rows.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </ChartCard>
+        );
+      })()}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <ChartCard title="By class">
