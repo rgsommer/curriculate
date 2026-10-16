@@ -6845,6 +6845,31 @@ export async function sendPositiveNudges(schoolId, { force = false } = {}) {
   const schoolName = config.branding?.schoolName || school?.name || "";
   const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
   const from = fromAddr ? { name: "Compass", address: fromAddr } : undefined;
+  // "Look out for" ideas: two encouraging behaviours per teacher, from different
+  // keywords, favouring ones that teacher has logged least in ~2 months; the
+  // pick rotates by week and by teacher so it's fresh each time.
+  const posBehs = (await Behavior.find({ schoolId, active: { $ne: false }, isCustom: { $ne: true }, scope: "standard",
+    $or: [{ kind: "positive" }, { points: { $gt: 0 } }] }).select("name keyword").lean())
+    // Roles (e.g. "Member of Student Council") aren't something to catch a student doing.
+    .filter((b) => !/^member of\b/i.test(b.name));
+  const since60 = new Date(Date.now() - 60 * DAY_MS);
+  const usage = await BehaviorIncident.aggregate([
+    { $match: { schoolId: new mongoose.Types.ObjectId(String(schoolId)), timestamp: { $gt: since60 }, behaviorId: { $in: posBehs.map((b) => b._id) } } },
+    { $group: { _id: { t: "$teacherId", b: "$behaviorId" }, n: { $sum: 1 } } },
+  ]);
+  const used = {}; for (const u of usage) used[`${u._id.t}|${u._id.b}`] = u.n;
+  const weekNo = Math.floor(Date.now() / (7 * DAY_MS));
+  const lookOutFor = (teacherId, salt) => {
+    if (!posBehs.length) return [];
+    const ranked = posBehs
+      .map((b, i) => ({ b, n: used[`${teacherId}|${b._id}`] || 0, r: (i * 7919 + weekNo * 104729 + salt * 31) % 9973 }))
+      .sort((a, z) => a.n - z.n || a.r - z.r);
+    const first = ranked[0]?.b;
+    const k1 = keywordsOf(first?.keyword);
+    // The second idea shares NO keyword with the first, so the pair spans categories.
+    const second = ranked.slice(1).find((x) => !keywordsOf(x.b.keyword).some((k) => k1.includes(k)))?.b || ranked[1]?.b;
+    return [first, second].filter(Boolean).map((b) => b.name);
+  };
   const allSuggest = [...new Set(plan.flatMap((p) => p.suggestIds))];
   const sDocs = await BehaviorStudent.find({ _id: { $in: allSuggest } }).select("firstName preferredName lastName classGroup").lean();
   const sName = Object.fromEntries(sDocs.map((s) => [String(s._id), `${s.preferredName || s.firstName} ${s.lastName}${s.classGroup ? ` (${s.classGroup})` : ""}`]));
@@ -6856,6 +6881,8 @@ export async function sendPositiveNudges(schoolId, { force = false } = {}) {
     if (!email) continue;
     const first = (p.teacher.courtesyName || p.teacher.name || "there").trim().split(/\s+/)[0] || "there";
     const names = p.suggestIds.map((id) => sName[id]).filter(Boolean);
+    const salt = [...String(p.teacher._id)].reduce((a, c) => a + c.charCodeAt(0), 0);
+    const ideas = lookOutFor(String(p.teacher._id), salt);
     const lead = p.tier === "none"
       ? `You haven't logged any encouragements in Compass this week.`
       : `You've logged ${p.pos7} encouragement${p.pos7 === 1 ? "" : "s"} in Compass this week — a good start.`;
@@ -6863,6 +6890,10 @@ export async function sendPositiveNudges(schoolId, { force = false } = {}) {
     const contentHtml =
       `<p style="margin:0 0 10px">Hi ${escapeHtml(first)},</p>` +
       `<p style="margin:0 0 10px;color:#334155">${escapeHtml(lead)} ${escapeHtml(goal)}</p>` +
+      (ideas.length
+        ? `<p style="margin:12px 0 4px;color:#0f172a;font-weight:600">This week, keep an eye out for:</p>` +
+          `<ul style="margin:0 0 10px;padding-left:18px;color:#334155;line-height:1.7">${ideas.map((n) => `<li>${escapeHtml(n)}</li>`).join("")}</ul>`
+        : "") +
       (names.length
         ? `<p style="margin:12px 0 4px;color:#0f172a;font-weight:600">Students you've corrected lately who haven't had an encouragement yet:</p>` +
           `<ul style="margin:0 0 10px;padding-left:18px;color:#334155;line-height:1.7">${names.map((n) => `<li>${escapeHtml(n)}</li>`).join("")}</ul>`
@@ -6870,6 +6901,7 @@ export async function sendPositiveNudges(schoolId, { force = false } = {}) {
       emailButton("Log an encouragement", `${appBase()}/behavior/log`, "#16a34a") +
       `<p style="margin:12px 0 0;font-size:12px;color:#94a3b8">Sent on Thursdays when fewer than ${POSITIVE_OK} encouragements were logged in the past 7 days. An admin can switch it off for you on the Team page.</p>`;
     const text = `Hi ${first},\n\n${lead} ${goal}\n\n` +
+      (ideas.length ? `This week, keep an eye out for:\n${ideas.map((n) => `- ${n}`).join("\n")}\n\n` : "") +
       (names.length ? `Students you've corrected lately who haven't had an encouragement yet:\n${names.map((n) => `- ${n}`).join("\n")}\n\n` : "") +
       `Log an encouragement: ${appBase()}/behavior/log`;
     try {
