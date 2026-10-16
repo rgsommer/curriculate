@@ -5424,14 +5424,12 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
 // count, so a short week or a break can't fake an improvement). Offences =
 // strikes + immediate offences only (not documentation-only interactions, not
 // unconfirmed "note home, no strike" reports). ±10% = steady.
-const TREND_DAYS = 28, TREND_STEADY = 0.10, TREND_MIN_OFFENCES = 6;
+const TREND_SCHOOL_DAYS = 20, TREND_STEADY = 0.10, TREND_MIN_OFFENCES = 6;
 router.get("/trend", authAny, loadMembership, async (req, res, next) => {
   try {
     const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
     const manual = new Set(config?.manualNonSchoolDays || []);
     const today = new Date(); today.setHours(23, 59, 59, 999);
-    const aStart = new Date(today); aStart.setDate(aStart.getDate() - TREND_DAYS + 1); aStart.setHours(0, 0, 0, 0);
-    const bStart = new Date(aStart); bStart.setDate(bStart.getDate() - TREND_DAYS);
     // First day of school this year: the Term 1 start if set, else the Tuesday
     // after Labour Day (first Monday of September). Summer weekdays before it
     // must not count as school days (they made September look calmer).
@@ -5440,14 +5438,17 @@ router.get("/trend", authAny, loadMembership, async (req, res, next) => {
     const t1 = (config?.homework?.termStarts || []).map((d) => new Date(d)).filter((d) => !isNaN(d) && d.getFullYear() === syYear).sort((a, b) => a - b)[0];
     const firstDay = t1 || new Date(syYear, 8, labourDay.getDate() + 1);
     firstDay.setHours(0, 0, 0, 0);
-    const schoolDays = (from, to) => {
-      let n = 0; const d = new Date(Math.max(from.getTime(), firstDay.getTime()));
-      while (d <= to) { if (!isNonSchoolDay(d, manual)) n += 1; d.setDate(d.getDate() + 1); }
-      return n;
-    };
-    const aDays = schoolDays(aStart, today);
-    const bEnd = new Date(aStart); bEnd.setMilliseconds(-1);
-    const bDays = schoolDays(bStart, bEnd);
+    // Equal windows measured in SCHOOL days: the last N vs the N before, with
+    // N = 20 (about 4 weeks) or half the school days so far early in the year.
+    // Unequal windows made raw counts (students involved) incomparable.
+    const days = [];
+    for (const d = new Date(today); d >= firstDay && days.length < TREND_SCHOOL_DAYS * 2; d.setDate(d.getDate() - 1)) {
+      if (!isNonSchoolDay(d, manual)) { const x = new Date(d); x.setHours(0, 0, 0, 0); days.push(x); }
+    }
+    const aDays = Math.min(TREND_SCHOOL_DAYS, Math.floor(days.length / 2));
+    const bDays = aDays;
+    const aStart = days[Math.max(aDays - 1, 0)] || new Date(today);
+    const bStart = days[Math.max(aDays * 2 - 1, 0)] || aStart;
 
     const incs = await BehaviorIncident.find({ schoolId: req.schoolId, timestamp: { $gte: bStart, $lte: today } })
       .select("studentId timestamp behaviorSnapshot.kind behaviorSnapshot.points behaviorSnapshot.triggerMode").lean();
@@ -5480,12 +5481,22 @@ router.get("/trend", authAny, loadMembership, async (req, res, next) => {
       if (n >= trigger - 1) nearLimit += 1;
     }
 
-    let verdict = "steady", headline;
+    // Offences falling only counts as "improving" when the other signals agree.
+    // If encouragements fell sharply too, or more students are involved, the
+    // likelier story is that less is being logged — call that out as mixed.
+    const posFell = posPct !== null && posPct <= -25;
+    const moreStudents = t.a.students.size > t.b.students.size * (1 + TREND_STEADY) && t.a.students.size - t.b.students.size >= 3;
+    let verdict = "steady", headline, caveat = "";
     if (t.b.off + t.a.off < TREND_MIN_OFFENCES || bDays < 5) {
       verdict = "insufficient";
       headline = "Not enough data yet for a trend";
     } else if (offPct !== null && offPct <= -TREND_STEADY * 100) {
-      verdict = "improving"; headline = "Behaviour is improving";
+      if (posFell || moreStudents) {
+        verdict = "mixed"; headline = "Fewer offences — but a mixed picture";
+        caveat = posFell
+          ? " Encouragements fell even faster, so this may be less logging rather than better behaviour."
+          : " More students are involved, even though there are fewer offences overall.";
+      } else { verdict = "improving"; headline = "Behaviour is improving"; }
     } else if (offPct !== null && offPct >= TREND_STEADY * 100) {
       verdict = "worsening"; headline = "Behaviour is getting worse";
     } else {
@@ -5494,11 +5505,11 @@ router.get("/trend", authAny, loadMembership, async (req, res, next) => {
     const offPart = offPct === null ? `${offA} offences per school day` : `offences are ${offPct < 0 ? "down" : offPct > 0 ? "up" : "unchanged"}${offPct ? ` ${Math.abs(offPct)}%` : ""} (${offB} → ${offA} per school day)`;
     const posPart = posPct === null ? (posA ? `${posA} encouragements per school day` : "") : `encouragements are ${posPct < 0 ? "down" : posPct > 0 ? "up" : "unchanged"}${posPct ? ` ${Math.abs(posPct)}%` : ""}`;
     const sentence = verdict === "insufficient"
-      ? `Fewer than ${TREND_MIN_OFFENCES} offences across the last 8 weeks — check back as more is logged.`
-      : `Over the last 4 weeks compared with the 4 before, ${offPart}${posPart ? `, and ${posPart}` : ""}.`;
+      ? `Fewer than ${TREND_MIN_OFFENCES} offences logged so far — check back as more is logged.`
+      : `Over the last ${aDays} school days compared with the ${bDays} before, ${offPart}${posPart ? `, and ${posPart}` : ""}.${caveat}`;
     res.json({
       ok: true, verdict, headline, sentence,
-      windows: { days: TREND_DAYS, schoolDaysRecent: aDays, schoolDaysPrior: bDays },
+      windows: { schoolDaysRecent: aDays, schoolDaysPrior: bDays },
       offences: { recent: t.a.off, prior: t.b.off, perDayRecent: offA, perDayPrior: offB, changePct: offPct },
       encouragements: { recent: t.a.pos, prior: t.b.pos, perDayRecent: posA, perDayPrior: posB, changePct: posPct },
       ratio: { recent: t.a.off ? Math.round((t.a.pos / t.a.off) * 10) / 10 : null, prior: t.b.off ? Math.round((t.b.pos / t.b.off) * 10) / 10 : null },

@@ -1,12 +1,13 @@
 "use client";
 
-// "Is behaviour improving?" at a glance — last 4 weeks vs the 4 before, per
-// school day (see GET /trend). Shown on Reports and, for admins, the dashboard.
+// "Is behaviour improving?" at a glance — last 20 school days vs the 20 before, per
+// school day (see GET /trend). Icons say good/bad, not direction: a falling
+// line read as "getting worse" next to "improving". Shown on Reports and, for admins, the dashboard.
 import { useEffect, useState } from "react";
 import { api } from "../_lib/api";
 
 type Trend = {
-  verdict: "improving" | "steady" | "worsening" | "insufficient";
+  verdict: "improving" | "steady" | "mixed" | "worsening" | "insufficient";
   headline: string;
   sentence: string;
   offences: { recent: number; prior: number; perDayRecent: number; perDayPrior: number; changePct: number | null };
@@ -19,9 +20,10 @@ type Trend = {
 };
 
 const STYLE: Record<Trend["verdict"], { box: string; arrow: string; head: string }> = {
-  improving: { box: "border-green-300 bg-green-50", arrow: "↘", head: "text-green-800" },
-  steady: { box: "border-slate-200 bg-slate-50", arrow: "→", head: "text-slate-800" },
-  worsening: { box: "border-red-300 bg-red-50", arrow: "↗", head: "text-red-800" },
+  improving: { box: "border-green-300 bg-green-50", arrow: "✓", head: "text-green-800" },
+  steady: { box: "border-slate-200 bg-slate-50", arrow: "=", head: "text-slate-800" },
+  mixed: { box: "border-amber-300 bg-amber-50", arrow: "≈", head: "text-amber-800" },
+  worsening: { box: "border-red-300 bg-red-50", arrow: "⚠", head: "text-red-800" },
   insufficient: { box: "border-slate-200 bg-white", arrow: "·", head: "text-slate-600" },
 };
 
@@ -47,7 +49,7 @@ export default function TrendCard({ compact = false }: { compact?: boolean }) {
         </dl>
       )}
       <p className="mt-2 text-[11px] text-slate-500">
-        Last 4 weeks ({t.windows.schoolDaysRecent} school days) vs the 4 before ({t.windows.schoolDaysPrior}); weekends and holidays don&apos;t count.
+        Last {t.windows.schoolDaysRecent} school days vs the {t.windows.schoolDaysPrior} before; weekends and holidays don&apos;t count.
         {" "}{t.nearLimit} student{t.nearLimit === 1 ? "" : "s"} at or one away from the {t.triggerCount}-strike limit now.
       </p>
     </section>
