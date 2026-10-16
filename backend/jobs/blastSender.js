@@ -744,11 +744,15 @@ export async function blastWorkerTick() {
           : undefined;
 
         try {
+          // Campaign's own sender, but only on our verified domain.
+          const ownDomain = /@curriculate\.net$/i.test(c.fromAddress || "");
           const sendResult = await sendSystemEmail({
             to: r.email,
             subject: renderedSubject,
             html,
             attachments,
+            from: ownDomain ? { name: c.fromName || undefined, address: c.fromAddress } : undefined,
+            replyTo: c.replyTo || undefined,
           });
           const sentAt = new Date();
           await BlastRecipient.findByIdAndUpdate(r._id, {

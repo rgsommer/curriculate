@@ -16,7 +16,7 @@ function required(name) {
 // Much more reliable than SMTP from cloud hosts that throttle port 587/465.
 // Free tier: 100 emails/day at resend.com
 
-async function sendViaResend({ to, cc, subject, html, attachments, fromAddress, fromName }) {
+async function sendViaResend({ to, cc, subject, html, attachments, fromAddress, fromName, replyTo }) {
   const apiKey = process.env.RESEND_API_KEY;
   const payload = {
     from: `${fromName} <${fromAddress}>`,
@@ -25,6 +25,7 @@ async function sendViaResend({ to, cc, subject, html, attachments, fromAddress, 
     html,
   };
   if (cc) payload.cc = Array.isArray(cc) ? cc : [cc];
+  if (replyTo) payload.reply_to = replyTo;
   if (attachments?.length) {
     // Resend supports two extra fields per attachment:
     //   content_id  → references the attachment from HTML as src="cid:<content_id>"
@@ -109,13 +110,15 @@ function resetTransport() {
 
 // ── Public API ───────────────────────────────────────────────────────
 
-export async function sendSystemEmail({ to, cc, subject, html, attachments }) {
-  const fromAddress = process.env.EMAIL_FROM_ADDRESS || process.env.RESEND_FROM_ADDRESS || "noreply@curriculate.net";
-  const fromName = process.env.EMAIL_FROM_NAME || "Curriculate";
+// `from`/`replyTo` are optional per-send overrides (blast campaigns carry
+// their own sender); everything else uses the env default sender.
+export async function sendSystemEmail({ to, cc, subject, html, attachments, from, replyTo }) {
+  const fromAddress = from?.address || process.env.EMAIL_FROM_ADDRESS || process.env.RESEND_FROM_ADDRESS || "noreply@curriculate.net";
+  const fromName = from?.name || process.env.EMAIL_FROM_NAME || "Curriculate";
 
   // Prefer Resend (HTTP) if configured — much faster and more reliable
   if (process.env.RESEND_API_KEY) {
-    return sendViaResend({ to, cc, subject, html, attachments, fromAddress, fromName });
+    return sendViaResend({ to, cc, subject, html, attachments, fromAddress, fromName, replyTo });
   }
 
   // Fall back to SMTP with pooled transport + dead-socket recovery
@@ -125,6 +128,7 @@ export async function sendSystemEmail({ to, cc, subject, html, attachments }) {
       from: `${fromName} <${fromAddress}>`,
       to,
       cc: cc || undefined,
+      replyTo: replyTo || undefined,
       subject,
       html,
       attachments: attachments || undefined,
