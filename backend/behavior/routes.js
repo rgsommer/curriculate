@@ -4695,10 +4695,14 @@ router.post("/students/:id/parent-summary/sent", authAny, loadMembership, canLog
       });
     }
     const scope = req.body?.scope === "all" ? "full history" : "since last reset";
+    const via = String(req.body?.via || "").trim().slice(0, 80); // e.g. homeroom teacher's name
     const inc = await BehaviorIncident.create({
       schoolId: req.schoolId, studentId: student._id, teacherId: req.membership._id, behaviorId: beh._id,
       behaviorSnapshot: { name: beh.name, description: beh.description, triggerMode: "INTERACTION", kind: "negative", consequenceText: "", points: 0 },
-      detailText: `${PARENT_SUMMARY_SENT_PREFIX} by ${actorName(req)} (${scope}).`, immediateFlag: false, timestamp: new Date(),
+      detailText: via
+        ? `${PARENT_SUMMARY_SENT_PREFIX} via the homeroom teacher (${via}) to post — sent by ${actorName(req)} (${scope}).`
+        : `${PARENT_SUMMARY_SENT_PREFIX} by ${actorName(req)} (${scope}).`,
+      immediateFlag: false, timestamp: new Date(),
     });
     await audit(req.schoolId, "parent_summary.sent", req, { studentId: String(student._id), incidentId: String(inc._id) });
     res.json({ ok: true, at: inc.timestamp });
@@ -4756,21 +4760,35 @@ router.post("/students/:id/parent-summary", authAny, loadMembership, async (req,
       const fd = prepareFamilyDetail(famScrub, (i.detailText || "").trim(), i.behaviorSnapshot?.evidence || "");
       const detail = fd.detail;
       const line = `${d} — ${what}${detail ? `: ${detail}` : ""}${fd.reported ? " [reported to the teacher, not witnessed — word tentatively, say 'at school' rather than 'in class' unless stated, never mention the source]" : ""}`;
+      // Parent-facing wording for the no-AI fallback: never the AI markers above,
+      // and a reported concern is tentative with no report details.
+      const famLine = fd.reported
+        ? `${d} — I am concerned that ${studentFirst} may have been involved in ${what.charAt(0).toLowerCase()}${what.slice(1)}.`
+        : `${d} — ${what}${detail ? `: ${detail}` : ""}`;
       if (isPositive) { positives.push(`${d} — ${what}${detail ? `: ${detail}` : ""} (noted by ${who})`); continue; }
       if (isInteraction) {
         // A teacher↔student conversation is often the very concern to convey —
         // include it (marked "conversation") so the note acknowledges it. Parent
         // contacts and internal support/meta records stay out.
         if (isConcernConversation(i)) {
-          (byTeacher[tid] ||= { name: who, isWriter: tid === writerId, lines: [] }).lines.push(`${d} — conversation: ${detail || what}`);
+          const g = (byTeacher[tid] ||= { name: who, isWriter: tid === writerId, lines: [], famLines: [] });
+          g.lines.push(`${d} — conversation: ${detail || what}`);
+          g.famLines.push(`${d} — conversation: ${detail || what}`);
         }
         continue;
       }
-      (byTeacher[tid] ||= { name: who, isWriter: tid === writerId, lines: [] }).lines.push(line);
+      const g = (byTeacher[tid] ||= { name: who, isWriter: tid === writerId, lines: [], famLines: [] });
+      g.lines.push(line);
+      g.famLines.push(famLine);
     }
     const writerLoggedCount = (byTeacher[writerId]?.lines || []).length;
     const concernGroups = Object.values(byTeacher)
       .map((g) => `From ${g.name}${g.isWriter ? " (THIS IS YOU, the writer — your own class)" : ""}:\n${g.lines.map((l) => `  - ${l}`).join("\n")}`)
+      .join("\n\n");
+    // The same groups as the family reads them (fallback letter): the writer's
+    // own section is "From me (…)", and no instructions meant for the AI.
+    const famConcernGroups = Object.values(byTeacher)
+      .map((g) => `${g.isWriter ? `From me (${g.name})` : `From ${g.name}`}:\n${(g.famLines || []).map((l) => `  - ${l}`).join("\n")}`)
       .join("\n\n");
 
     // Partnership / staff-response context — shows parents the school has been
@@ -4873,7 +4891,7 @@ router.post("/students/:id/parent-summary", authAny, loadMembership, async (req,
     let summary =
       `Dear ${studentFirst} and parents,\n\n` +
       `${fallbackOpen}\n\n` +
-      (concernGroups ? `${concernGroups}\n\n` : `There have been a few things we've been working through.\n\n`) +
+      (famConcernGroups ? `${famConcernGroups}\n\n` : `There have been a few things we've been working through.\n\n`) +
       (positives.length ? `We've also seen encouraging moments:\n${positives.map((p) => `  - ${p}`).join("\n")}\n\n` : "") +
       (partnershipBits.length ? `The school has stayed engaged: ${partnershipBits.join("; ")}.\n\n` : "") +
       `We'd welcome the chance to talk this through with you and partner on next steps. We believe in ${studentFirst} and are confident we can help ${studentFirst} thrive.\n\n` +
@@ -4891,6 +4909,10 @@ router.post("/students/:id/parent-summary", authAny, loadMembership, async (req,
     } catch {
       /* fall back to the deterministic note */
     }
+    // Never let prompt-only markers reach a family, whoever wrote the text.
+    summary = summary
+      .replace(/\s*\(THIS IS YOU[^)]*\)/gi, "")
+      .replace(/\s*\[(?:reported|REPORTED) to the teacher[^\]]*\]/g, "");
     summary = famScrub(summary); // last line of defence: no other student's name
 
     await audit(req.schoolId, "parent_summary.generated", req, { studentId: student._id, meta: { scope, aiUsed, concerns: concernCount } });
@@ -4919,6 +4941,8 @@ router.post("/students/:id/hr-note", authAny, loadMembership, async (req, res, n
       return res.status(400).json({ ok: false, error: `No homeroom teacher with an email is set for ${cls || "this class"}. Set the homeroom on the Team page first.` });
     }
     const hrName = (hr.courtesyName || hr.name || "").trim() || "the homeroom teacher";
+    // The draft is for the family: other students named in teachers' notes are hidden.
+    const famScrub = await familyNameScrubber(req.schoolId, student._id);
 
     // Whole picture by default (parents may only know part of it); grouped by teacher.
     const scope = req.body?.scope === "period" ? "period" : "all";
@@ -4939,12 +4963,12 @@ router.post("/students/:id/hr-note", authAny, loadMembership, async (req, res, n
         // Include a teacher↔student conversation (often the very concern to raise);
         // skip parent-contact logs and internal support/meta records.
         if (isConcernConversation(i)) {
-          (byTeacher[who] ||= []).push(`${d} — conversation: ${(i.detailText || "").trim() || i.behaviorSnapshot?.name || ""}`);
+          (byTeacher[who] ||= []).push(`${d} — conversation: ${famScrub((i.detailText || "").trim()) || i.behaviorSnapshot?.name || ""}`);
           history.push({ date: d, kind: "conversation", offense: "Conversation", teacher: who });
         }
         continue;
       }
-      (byTeacher[who] ||= []).push(`${d} — ${i.behaviorSnapshot?.name || ""}${i.detailText ? `: ${i.detailText}` : ""}`);
+      (byTeacher[who] ||= []).push(`${d} — ${i.behaviorSnapshot?.name || ""}${i.detailText ? `: ${famScrub(i.detailText)}` : ""}`);
       history.push({ date: d, kind: "offense", offense: i.behaviorSnapshot?.name || "—", teacher: who });
     }
     const concernCount = Object.values(byTeacher).reduce((a, l) => a + l.length, 0);
@@ -4972,6 +4996,7 @@ router.post("/students/:id/hr-note", authAny, loadMembership, async (req, res, n
           new Promise((_, r) => setTimeout(() => r(new Error("AI timeout")), 30000)),
         ]);
         if (out && String(out).trim()) { note = stripMarkdown(String(out).trim()); aiUsed = true; }
+        note = famScrub(note);
       }
     } catch { /* keep deterministic */ }
 
@@ -8121,6 +8146,14 @@ async function rosterNameScrubber(schoolId, { exceptStudentId = null, replacemen
   ]);
   const words = (v) => String(v || "").toLowerCase().split(/[^\p{L}'’-]+/u).filter(Boolean);
   const keep = new Set();
+  // The school's name and staff names are never student names to hide
+  // ("Brampton Christian School" must not become "Brampton another student").
+  const [schoolDoc, cfgDoc, staff] = await Promise.all([
+    BehaviorSchool.findById(sid).select("name").lean(),
+    BehaviorConfig.findOne({ schoolId: sid }).select("branding.schoolName").lean(),
+    BehaviorTeacher.find({ schoolId: sid }).select("name courtesyName").lean(),
+  ]);
+  for (const w of [schoolDoc?.name, cfgDoc?.branding?.schoolName, ...staff.flatMap((t) => [t.name, t.courtesyName])]) words(w).forEach((x) => keep.add(x));
   for (const b of behaviours) { words(b.name).forEach((w) => keep.add(w)); words(b.keyword).forEach((w) => keep.add(w)); }
   for (const h of houses) words(h.name).forEach((w) => keep.add(w));
   for (const c of comps) words(c.name).forEach((w) => keep.add(w));
@@ -8147,8 +8180,8 @@ async function rosterNameScrubber(schoolId, { exceptStudentId = null, replacemen
   return fn;
 }
 
-// Did the teacher LEARN of this second-hand (vs. witness it)? A note that names
-// another student or uses reporting language. Such incidents are written
+// Did the teacher LEARN of this second-hand (vs. witness it)? The behaviour's
+// "How you know" setting decides; otherwise reporting language in the note. Such incidents are written
 // tentatively to the family ("I am concerned that … may have", "Unless my information is
 // inaccurate, … is required to …") and never say who reported it.
 // The behaviour's own "How you know" setting (witnessed / reported) wins; the
@@ -8158,7 +8191,9 @@ const REPORTED_RX = /\b(report(?:ed|s|ing)?|told me|informed|said that|according
 function prepareFamilyDetail(scrub, detail, evidence = "") {
   const raw = String(detail || "");
   const mentionedOther = !!scrub?.mentions?.(raw);
-  const reported = evidence === "reported" ? true : evidence === "witnessed" ? false : (mentionedOther || REPORTED_RX.test(raw));
+  // Naming another student does NOT make it second-hand (the teacher may have
+  // seen it and named who was involved) — only reporting language does.
+  const reported = evidence === "reported" ? true : evidence === "witnessed" ? false : REPORTED_RX.test(raw);
   return { detail: scrub ? scrub(raw) : raw, mentionedOther, reported };
 }
 

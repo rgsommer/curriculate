@@ -283,6 +283,10 @@ export default function StudentPage() {
     try {
       const r = await api<{ sentTo: string; hrName: string; cc: string | null }>(`/students/${params.id}/hr-note`, { body: {}, timeoutMs: 45000 });
       setHrNoteMsg(`Sent to ${r.hrName}${r.cc ? ` (cc ${r.cc})` : ""} on ${new Date().toLocaleString()} — logged as an intervention.`);
+      // Handing it to the homeroom teacher to post counts as "sent" — record it
+      // and clear the "Did you send this?" prompt (no second click needed).
+      try { await api(`/students/${params.id}/parent-summary/sent`, { body: { scope: summaryAsk || "period", via: r.hrName } }); } catch { /* the HR note itself is logged */ }
+      setSummaryAsk(null);
       load();
     } catch (e: any) { setHrNoteMsg(e.message); }
     finally { setHrNoteBusy(false); }
