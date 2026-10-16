@@ -5413,6 +5413,8 @@ router.get("/stats", authAny, loadMembership, async (req, res, next) => {
     const kwByBehavior = Object.fromEntries((await Behavior.find({ schoolId: req.schoolId }).select("keyword").lean())
       .map((b) => [String(b._id), String(b.keyword || "").trim()]));
     const byKeyword = {};
+    // Encouragements counted separately (their own chart on Reports).
+    const posByType = {}, posByKeyword = {};
     const studentsAll = await BehaviorStudent.find({ schoolId: req.schoolId }).select("classGroup").lean();
     const classById = Object.fromEntries(studentsAll.map((s) => [String(s._id), s.classGroup || "—"]));
 
@@ -5430,10 +5432,15 @@ router.get("/stats", authAny, loadMembership, async (req, res, next) => {
         posCount += 1;
       }
       const nm = i.behaviorSnapshot?.name || "Other";
-      byType[nm] = (byType[nm] || 0) + 1;
       const kw = kwByBehavior[String(i.behaviorId)] || "";
-      const kLabel = kw ? kw.charAt(0).toUpperCase() + kw.slice(1) : nm;
-      byKeyword[kLabel] = (byKeyword[kLabel] || 0) + 1;
+      const kLabel = kw ? (kw === kw.toUpperCase() ? kw : kw.charAt(0).toUpperCase() + kw.slice(1)) : nm;
+      if (i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0) {
+        posByType[nm] = (posByType[nm] || 0) + 1;
+        posByKeyword[kLabel] = (posByKeyword[kLabel] || 0) + 1;
+      } else {
+        byType[nm] = (byType[nm] || 0) + 1;
+        byKeyword[kLabel] = (byKeyword[kLabel] || 0) + 1;
+      }
       const cls = classById[String(i.studentId)] || "—";
       byClass[cls] = (byClass[cls] || 0) + 1;
       const mode = i.behaviorSnapshot?.triggerMode || "THRESHOLD";
@@ -5526,6 +5533,8 @@ router.get("/stats", authAny, loadMembership, async (req, res, next) => {
       weekly,
       topTypes: Object.entries(byType).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([type, count]) => ({ type, count })),
       topKeywords: Object.entries(byKeyword).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([type, count]) => ({ type, count })),
+      posTopTypes: Object.entries(posByType).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([type, count]) => ({ type, count })),
+      posTopKeywords: Object.entries(posByKeyword).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([type, count]) => ({ type, count })),
       classCounts: Object.entries(byClass).sort((a, b) => a[0].localeCompare(b[0])).map(([cls, count]) => ({ class: cls, count })),
       modePie: [
         { name: "Threshold", value: byMode.THRESHOLD },

@@ -19,6 +19,8 @@ type Stats = {
   classCounts: Array<{ class: string; count: number }>;
   modePie: Array<{ name: string; value: number }>;
   topKeywords?: Array<{ type: string; count: number }>;
+  posTopTypes?: Array<{ type: string; count: number }>;
+  posTopKeywords?: Array<{ type: string; count: number }>;
   strikeBuckets: Array<{ strikes: string; students: number }>;
 };
 
@@ -26,6 +28,8 @@ type Stats = {
 // orange, aqua, yellow, magenta, green, violet, red — safe adjacent contrast.
 const PALETTE = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
 const PIE_COLORS = ["#2a78d6", "#eb6834", "#008300"];
+// Encouragements chart: greens (light → dark alternate so adjacent bars separate).
+const GREENS = ["#15803d", "#22c55e", "#166534", "#4ade80", "#14532d", "#86efac"];
 
 // Long behaviour names overflow and collide on the y-axis. Render each tick on a
 // single line, truncated with an ellipsis; the full name still shows in the tooltip.
@@ -107,33 +111,25 @@ export default function ReportsPage() {
         </ResponsiveContainer>
       </ChartCard>
 
-      {(() => {
-        const byKw = groupBy === "keyword" && !!data.topKeywords?.length;
-        const rows = byKw ? data.topKeywords! : data.topTypes;
-        return (
-          <ChartCard title={byKw ? "Incidents by keyword" : "Incidents by behaviour"}>
-            <div className="-mt-1 mb-2 inline-flex overflow-hidden rounded-lg border border-slate-300 text-xs">
-              {(["keyword", "behaviour"] as const).map((g) => (
-                <button key={g} type="button" onClick={() => setGroupBy(g)} aria-pressed={groupBy === g}
-                  className={`px-3 py-1 font-medium ${groupBy === g ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>
-                  By {g}
-                </button>
-              ))}
-            </div>
-            <ResponsiveContainer width="100%" height={Math.max(160, rows.length * 30)}>
-              <BarChart data={rows} layout="vertical" margin={{ left: 40, right: 16 }}>
-                <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
-                {/* interval={0}: label EVERY bar (it was skipping every other one). */}
-                <YAxis type="category" dataKey="type" tick={<BehaviourTick />} width={170} tickLine={false} interval={0} />
-                <Tooltip />
-                <Bar dataKey="count" radius={[0, 3, 3, 0]}>
-                  {rows.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </ChartCard>
-        );
-      })()}
+      {/* One switch drives both charts: a bar per keyword (default) or per behaviour. */}
+      <div className="inline-flex overflow-hidden rounded-lg border border-slate-300 text-xs">
+        {(["keyword", "behaviour"] as const).map((g) => (
+          <button key={g} type="button" onClick={() => setGroupBy(g)} aria-pressed={groupBy === g}
+            className={`px-3 py-1 font-medium ${groupBy === g ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>
+            By {g}
+          </button>
+        ))}
+      </div>
+      <RankedBars
+        title={groupBy === "keyword" && data.topKeywords?.length ? "Incidents by keyword" : "Incidents by behaviour"}
+        rows={groupBy === "keyword" && data.topKeywords?.length ? data.topKeywords : data.topTypes}
+        colors={PALETTE} />
+      {(data.posTopTypes?.length || 0) > 0 && (
+        <RankedBars
+          title={groupBy === "keyword" ? "Encouragements by keyword" : "Encouragements by behaviour"}
+          rows={(groupBy === "keyword" ? data.posTopKeywords : data.posTopTypes) || []}
+          colors={GREENS} />
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <ChartCard title="By class">
@@ -193,5 +189,26 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
       <h2 className="mb-2 text-sm font-semibold">{title}</h2>
       {children}
     </section>
+  );
+}
+
+// A ranked horizontal bar chart with EVERY bar labelled (interval={0}; long names
+// truncate, the full name is in the tooltip).
+function RankedBars({ title, rows, colors }: { title: string; rows: Array<{ type: string; count: number }>; colors: string[] }) {
+  return (
+    <ChartCard title={title}>
+      {rows.length === 0 ? <p className="text-sm text-slate-500">None in this period.</p> : (
+        <ResponsiveContainer width="100%" height={Math.max(120, rows.length * 30)}>
+          <BarChart data={rows} layout="vertical" margin={{ left: 40, right: 16 }}>
+            <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
+            <YAxis type="category" dataKey="type" tick={<BehaviourTick />} width={170} tickLine={false} interval={0} />
+            <Tooltip />
+            <Bar dataKey="count" radius={[0, 3, 3, 0]}>
+              {rows.map((_, i) => <Cell key={i} fill={colors[i % colors.length]} />)}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      )}
+    </ChartCard>
   );
 }
