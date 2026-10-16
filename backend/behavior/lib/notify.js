@@ -13,6 +13,7 @@ import { getEvidenceBytes, signEvidenceKey } from "./evidenceStore.js";
 import BehaviorConfig from "../models/BehaviorConfig.js";
 import BehaviorAuditLog from "../models/BehaviorAuditLog.js";
 import BehaviorTeacher from "../models/BehaviorTeacher.js";
+import BehaviorConsequence from "../models/BehaviorConsequence.js";
 import { EmailProvider } from "./providers/EmailProvider.js";
 import { emailShell, noteToHtml } from "./emailTemplate.js";
 import { EdsbyProvider } from "./providers/EdsbyProvider.js";
@@ -277,6 +278,7 @@ export async function dispatchNotice(noticeId, { providers, force = false } = {}
   notice.status = anyOk ? "sent" : "failed";
   notice.sentAt = anyOk ? new Date() : null;
   await notice.save();
+  if (anyOk) await settleConsequencesForSentNotice(notice);
 
   // Consume the strikes this DISCIPLINARY notice covered — but only now that it
   // has actually gone home. Marking the contributing incidents counted (which
@@ -322,12 +324,39 @@ export async function dispatchNotice(noticeId, { providers, force = false } = {}
 }
 
 /**
+ * Once a disciplinary notice has gone home, the consequences for the offences it
+ * covered are settled on the record: each is marked "family notified", and a
+ * pending (recommended) white slip is confirmed as issued — sending the family
+ * the note about it IS giving it. Without this, the dashboard kept asking to
+ * confirm a white slip the teacher had already sent home.
+ */
+export async function settleConsequencesForSentNotice(notice, byName = "") {
+  try {
+    if (!notice || notice.reason === "positive") return;
+    const ids = notice.triggeringIncidentIds || [];
+    if (!ids.length) return;
+    const now = new Date();
+    const who = byName || "Confirmed with the notice home";
+    await BehaviorConsequence.updateMany(
+      { schoolId: notice.schoolId, relatedIncidentId: { $in: ids }, type: "White slip", status: "recommended" },
+      { $set: { status: "issued", issuedAt: now, issuedByName: who } }
+    );
+    await BehaviorConsequence.updateMany(
+      { schoolId: notice.schoolId, relatedIncidentId: { $in: ids }, notifiedAt: null },
+      { $set: { notifiedAt: now, notifiedByName: who } }
+    );
+  } catch (e) {
+    console.warn("[behavior/notify] settling consequences failed:", e?.message || e);
+  }
+}
+
+/**
  * Record a notice as sent WITHOUT any provider delivery. For schools with no
  * automatic parent channel, the teacher sends the note themselves (from the copy
  * they receive) and confirms it here. Same side effects as a successful dispatch:
  * consume the strikes, advance the notice counter, reset the threshold window.
  */
-export async function recordNoticeAsSent(noticeId) {
+export async function recordNoticeAsSent(noticeId, byName = "") {
   const notice = await BehaviorNotice.findById(noticeId);
   if (!notice) return { ok: false, error: "notice not found" };
   if (notice.status === "cancelled") return { ok: false, error: "cancelled" };
@@ -361,6 +390,7 @@ export async function recordNoticeAsSent(noticeId) {
     noticeId: notice._id,
     meta: { recorded: true, sequenceNo: notice.sequenceNo, ccVp: notice.ccVp },
   });
+  await settleConsequencesForSentNotice(notice, byName);
   return { ok: true, status: "sent", recorded: true };
 }
 

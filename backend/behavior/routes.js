@@ -3905,7 +3905,7 @@ router.post("/notices/:id/send", authAny, loadMembership, canLog, async (req, re
     const autoSend = !!cfg?.edsby?.enabled || !!cfg?.channels?.emailToParents;
     let result;
     if (req.body?.recordOnly === true || !autoSend) {
-      result = await recordNoticeAsSent(notice._id);
+      result = await recordNoticeAsSent(notice._id, actorName(req));
       await audit(req.schoolId, "notice.recorded_sent", req, { studentId: notice.studentId, noticeId: notice._id });
     } else {
       result = await dispatchNotice(notice._id, { force: true }); // explicit send — bypass the edit-defer window
