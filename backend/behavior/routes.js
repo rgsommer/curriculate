@@ -2617,8 +2617,10 @@ router.post("/similar-incidents", authAny, loadMembership, async (req, res, next
       ? await Behavior.findOne({ _id: req.body.behaviorId, schoolId: req.schoolId }).select("name keyword").lean() : null;
     if (!ids.length || !beh) return res.json({ ok: true, similar: {} });
     const days = Math.min(365, Math.max(1, Number(req.body?.days) || 30));
-    const kw = String(beh.keyword || "").trim();
-    const related = kw ? await Behavior.find({ schoolId: req.schoolId, keyword: kw }).select("_id").lean() : [];
+    const kws = keywordsOf(beh.keyword);
+    const related = kws.length
+      ? (await Behavior.find({ schoolId: req.schoolId }).select("_id keyword").lean()).filter((b) => keywordsOf(b.keyword).some((k) => kws.includes(k)))
+      : [];
     const behIds = [beh._id, ...related.map((b) => b._id)];
     const incs = await BehaviorIncident.find({
       schoolId: req.schoolId,
@@ -2997,7 +2999,7 @@ router.post("/behaviors", authAny, loadMembership, canLog, async (req, res, next
       schoolId: req.schoolId,
       name: String(req.body?.name || "").trim(),
       description: String(req.body?.description || ""),
-      keyword: String(req.body?.keyword || "").trim(),
+      keyword: normalizeKeywords(req.body?.keyword),
       kind,
       triggerMode,
       consequenceText: kind === "positive" ? "" : String(req.body?.consequenceText || ""),
@@ -3042,7 +3044,7 @@ router.put("/behaviors/:id", authAny, loadMembership, canLog, async (req, res, n
     const b = req.body || {};
     if ("name" in b) beh.name = String(b.name || "").trim();
     if ("description" in b) beh.description = String(b.description || "");
-    if ("keyword" in b) beh.keyword = String(b.keyword || "").trim();
+    if ("keyword" in b) beh.keyword = normalizeKeywords(b.keyword);
     if (b.kind === "positive" || b.kind === "negative") beh.kind = b.kind;
     if ("consequenceText" in b) beh.consequenceText = String(b.consequenceText || "");
     if (["first", "after_first"].includes(b.consequenceTiming)) beh.consequenceTiming = b.consequenceTiming;
@@ -3089,6 +3091,13 @@ router.delete("/behaviors/:id", authAny, loadMembership, canLog, async (req, res
 });
 
 // ── Incident logging + trigger (§6, §7) ──────────────────────────────────────
+
+// Keywords are comma-separated ("character, RAK"): a behaviour then shows under
+// each keyword chip and counts toward each keyword in Reports. Stored tidy.
+function keywordsOf(v) {
+  return [...new Set(String(v || "").split(",").map((k) => k.trim()).filter(Boolean))];
+}
+function normalizeKeywords(v) { return keywordsOf(v).join(", "); }
 
 // The school's built-in Custom behaviour for a kind, created on first use.
 // Correcting: counts toward strikes, no consequence. Encouraging: 0 points.
@@ -5402,10 +5411,13 @@ router.get("/stats", authAny, loadMembership, async (req, res, next) => {
       .lean();
     // Keyword per behaviour, for the "by keyword" chart (one bar per keyword).
     const kwByBehavior = Object.fromEntries((await Behavior.find({ schoolId: req.schoolId }).select("keyword").lean())
-      .map((b) => [String(b._id), String(b.keyword || "").trim()]));
+      .map((b) => [String(b._id), keywordsOf(b.keyword)]));
     const byKeyword = {};
     // Encouragements counted separately (their own chart on Reports).
     const posByType = {}, posByKeyword = {};
+    // How many of each keyword's incidents ALSO count under another keyword
+    // (behaviours with several keywords) — shown in the bar's tooltip.
+    const sharedKw = {}, posSharedKw = {};
     const studentsAll = await BehaviorStudent.find({ schoolId: req.schoolId }).select("classGroup").lean();
     const classById = Object.fromEntries(studentsAll.map((s) => [String(s._id), s.classGroup || "—"]));
 
@@ -5423,14 +5435,22 @@ router.get("/stats", authAny, loadMembership, async (req, res, next) => {
         posCount += 1;
       }
       const nm = i.behaviorSnapshot?.name || "Other";
-      const kw = kwByBehavior[String(i.behaviorId)] || "";
-      const kLabel = kw ? (kw === kw.toUpperCase() ? kw : kw.charAt(0).toUpperCase() + kw.slice(1)) : nm;
+      const kwList = kwByBehavior[String(i.behaviorId)] || [];
+      const label = (kw) => (kw === kw.toUpperCase() ? kw : kw.charAt(0).toUpperCase() + kw.slice(1));
+      // A behaviour with several keywords counts toward each keyword's bar.
+      const kLabels = kwList.length ? kwList.map(label) : [nm];
       if (i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0) {
         posByType[nm] = (posByType[nm] || 0) + 1;
-        posByKeyword[kLabel] = (posByKeyword[kLabel] || 0) + 1;
+        for (const k of kLabels) {
+          posByKeyword[k] = (posByKeyword[k] || 0) + 1;
+          if (kLabels.length > 1) posSharedKw[k] = (posSharedKw[k] || 0) + 1;
+        }
       } else {
         byType[nm] = (byType[nm] || 0) + 1;
-        byKeyword[kLabel] = (byKeyword[kLabel] || 0) + 1;
+        for (const k of kLabels) {
+          byKeyword[k] = (byKeyword[k] || 0) + 1;
+          if (kLabels.length > 1) sharedKw[k] = (sharedKw[k] || 0) + 1;
+        }
       }
       const cls = classById[String(i.studentId)] || "—";
       byClass[cls] = (byClass[cls] || 0) + 1;
@@ -5523,9 +5543,9 @@ router.get("/stats", authAny, loadMembership, async (req, res, next) => {
       monthly,
       weekly,
       topTypes: Object.entries(byType).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([type, count]) => ({ type, count })),
-      topKeywords: Object.entries(byKeyword).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([type, count]) => ({ type, count })),
+      topKeywords: Object.entries(byKeyword).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([type, count]) => ({ type, count, shared: sharedKw[type] || 0 })),
       posTopTypes: Object.entries(posByType).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([type, count]) => ({ type, count })),
-      posTopKeywords: Object.entries(posByKeyword).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([type, count]) => ({ type, count })),
+      posTopKeywords: Object.entries(posByKeyword).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([type, count]) => ({ type, count, shared: posSharedKw[type] || 0 })),
       classCounts: Object.entries(byClass).sort((a, b) => a[0].localeCompare(b[0])).map(([cls, count]) => ({ class: cls, count })),
       modePie: [
         { name: "Threshold", value: byMode.THRESHOLD },

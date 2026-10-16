@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, getToken, loginHref, type Me } from "../_lib/api";
+import { api, getToken, loginHref, keywordsOf, type Me } from "../_lib/api";
 import { inputCls, Button } from "../_components/ui";
 
 const FOLLOWUPS = [
@@ -154,7 +154,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
           <span className="font-medium">
             <span className={(b.kind === "positive" || (b.points ?? 0) > 0) ? "text-green-600" : "text-red-600"}>{(b.kind === "positive" || (b.points ?? 0) > 0) ? "✓" : "✕"}</span>{" "}
             {b.name}
-            {b.keyword ? <span className="ml-2 text-xs text-slate-500">#{b.keyword}</span> : null}
+            {keywordsOf(b).map((k) => <span key={k} className="ml-2 text-xs text-slate-500">#{k}</span>)}
             {b.points ? <PointsBadge points={b.points} /> : null}
             {(b.categories || (b.uniform ? ["uniform"] : [])).map((c: string) => (
               <span key={c} className={`ml-2 rounded px-1.5 py-0.5 text-[10px] font-semibold ${c === "uniform" ? "bg-indigo-100 text-indigo-700" : c === "behaviour" ? "bg-rose-100 text-rose-700" : "bg-sky-100 text-sky-700"}`}>
@@ -179,7 +179,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
           <span className="min-w-0 font-medium">
             <span className={(b.kind === "positive" || (b.points ?? 0) > 0) ? "text-green-600" : "text-red-600"}>{(b.kind === "positive" || (b.points ?? 0) > 0) ? "✓" : "✕"}</span>{" "}
             {b.name}
-            {b.keyword ? <span className="ml-2 text-xs text-slate-500">#{b.keyword}</span> : null}
+            {keywordsOf(b).map((k) => <span key={k} className="ml-2 text-xs text-slate-500">#{k}</span>)}
             {b.points ? <PointsBadge points={b.points} /> : null}
             {(b.categories || (b.uniform ? ["uniform"] : [])).map((c: string) => (
               <span key={c} className={`ml-2 rounded px-1.5 py-0.5 text-[10px] font-semibold ${c === "uniform" ? "bg-indigo-100 text-indigo-700" : c === "behaviour" ? "bg-rose-100 text-rose-700" : "bg-sky-100 text-sky-700"}`}>
@@ -260,7 +260,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
       </div>
       <div className="grid grid-cols-2 gap-2">
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder={add ? (positive ? "New positive behaviour…" : "New behaviour name…") : "Name"} className={`${inputCls} bg-slate-100 font-medium text-slate-900`} />
-        <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="Keyword (e.g. kindness)" className={inputCls} />
+        <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="Keywords, comma-separated (e.g. character, RAK)" className={inputCls} />
         {!positive && (
           <select value={triggerMode} onChange={(e) => setTriggerMode(e.target.value)} className={`${inputCls} col-span-2`}>
             {MODES.map((m) => <option key={m.v} value={m.v}>{m.label}</option>)}

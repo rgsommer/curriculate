@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { api, getToken, loginHref, type Behavior, type StudentSummary, type GuddStatus } from "../_lib/api";
+import { api, getToken, loginHref, keywordsOf, type Behavior, type StudentSummary, type GuddStatus } from "../_lib/api";
 import SendNoticeModal from "../_components/SendNoticeModal";
 import GuddChip from "../_components/GuddChip";
 import { Button } from "../_components/ui";
@@ -22,8 +22,8 @@ type Similar = { date: string; name: string; teacher?: string; noStrike?: boolea
 
 function similarFromIncidents(incidents: any[], beh: Behavior | undefined, all: Behavior[]): Similar[] {
   if (!beh || kindOf(beh) === "positive" || beh.triggerMode === "INTERACTION") return [];
-  const kw = (beh.keyword || "").trim();
-  const ids = new Set([beh._id, ...(kw ? all.filter((b) => (b.keyword || "").trim() === kw).map((b) => b._id) : [])]);
+  const kws = keywordsOf(beh);
+  const ids = new Set([beh._id, ...(kws.length ? all.filter((b) => keywordsOf(b).some((k) => kws.includes(k))).map((b) => b._id) : [])]);
   const since = Date.now() - SIMILAR_DAYS * 864e5;
   return (incidents || [])
     .filter((i) => new Date(i.timestamp).getTime() > since)
@@ -107,12 +107,13 @@ function keywordCategoryMap(list: Behavior[]): Record<string, string> {
   const interaction: Record<string, number> = {};
   const positive: Record<string, number> = {};
   for (const b of list) {
-    if (!b.keyword) continue;
-    total[b.keyword] = (total[b.keyword] || 0) + 1;
-    if (kindOf(b) === "positive") positive[b.keyword] = (positive[b.keyword] || 0) + 1;
-    if (b.triggerMode === "INTERACTION") interaction[b.keyword] = (interaction[b.keyword] || 0) + 1;
     const cats: string[] = (b as any).categories?.length ? (b as any).categories : ((b as any).uniform ? ["uniform"] : []);
-    for (const c of cats) { (cat[b.keyword] ||= {}); cat[b.keyword][c] = (cat[b.keyword][c] || 0) + 1; }
+    for (const kw of keywordsOf(b)) {
+      total[kw] = (total[kw] || 0) + 1;
+      if (kindOf(b) === "positive") positive[kw] = (positive[kw] || 0) + 1;
+      if (b.triggerMode === "INTERACTION") interaction[kw] = (interaction[kw] || 0) + 1;
+      for (const c of cats) { (cat[kw] ||= {}); cat[kw][c] = (cat[kw][c] || 0) + 1; }
+    }
   }
   const m: Record<string, string> = {};
   for (const k of Object.keys(total)) {
@@ -285,14 +286,15 @@ export default function LogIncidentPage() {
   // Keyword chips: those used most recently on this device first (ranked by the
   // most-recent behaviour carrying that keyword), then the rest alphabetically.
   const keywords = useMemo(() => {
-    const kws = Array.from(new Set(inKind.map((b) => b.keyword).filter((k): k is string => !!k)));
+    const kws = Array.from(new Set(inKind.flatMap((b) => keywordsOf(b))));
     const kwRank = new Map<string, number>();
     for (const b of inKind) {
-      if (!b.keyword) continue;
       const r = recentRank.get(b._id);
       if (r === undefined) continue;
-      const prev = kwRank.get(b.keyword);
-      if (prev === undefined || r < prev) kwRank.set(b.keyword, r);
+      for (const kw of keywordsOf(b)) {
+        const prev = kwRank.get(kw);
+        if (prev === undefined || r < prev) kwRank.set(kw, r);
+      }
     }
     return kws.sort((a, b) => {
       const ra = kwRank.get(a), rb = kwRank.get(b);
@@ -309,7 +311,7 @@ export default function LogIncidentPage() {
   const offenseOptions = useMemo(
     () =>
       [...inKind]
-        .filter((b) => !keywordFilter || b.keyword === keywordFilter)
+        .filter((b) => !keywordFilter || keywordsOf(b).includes(keywordFilter))
         .sort((a, b) => {
           const ra = recentRank.get(a._id), rb = recentRank.get(b._id);
           if (ra !== undefined && rb !== undefined) return ra - rb;
@@ -933,14 +935,15 @@ function BatchLog({
   const { rank: recentRank, record: recordRecent } = useRecentBehaviors();
 
   const keywords = useMemo(() => {
-    const kws = Array.from(new Set(behaviors.map((b) => b.keyword).filter((k): k is string => !!k)));
+    const kws = Array.from(new Set(behaviors.flatMap((b) => keywordsOf(b))));
     const kwRank = new Map<string, number>();
     for (const b of behaviors) {
-      if (!b.keyword) continue;
       const r = recentRank.get(b._id);
       if (r === undefined) continue;
-      const prev = kwRank.get(b.keyword);
-      if (prev === undefined || r < prev) kwRank.set(b.keyword, r);
+      for (const kw of keywordsOf(b)) {
+        const prev = kwRank.get(kw);
+        if (prev === undefined || r < prev) kwRank.set(kw, r);
+      }
     }
     return kws.sort((a, b) => {
       const ra = kwRank.get(a), rb = kwRank.get(b);
@@ -955,7 +958,7 @@ function BatchLog({
   const offenseOptions = useMemo(
     () =>
       [...behaviors]
-        .filter((b) => !keywordFilter || b.keyword === keywordFilter)
+        .filter((b) => !keywordFilter || keywordsOf(b).includes(keywordFilter))
         .sort((a, b) => {
           const ra = recentRank.get(a._id), rb = recentRank.get(b._id);
           if (ra !== undefined && rb !== undefined) return ra - rb;

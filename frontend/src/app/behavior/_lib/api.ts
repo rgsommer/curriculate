@@ -274,3 +274,9 @@ export type Behavior = {
   kind?: "negative" | "positive";
   isCustom?: boolean;
 };
+
+// A behaviour can carry several keywords, comma-separated ("character, RAK"):
+// it then appears under each keyword chip and counts toward each keyword's bar.
+export function keywordsOf(b: { keyword?: string | null } | null | undefined): string[] {
+  return Array.from(new Set(String(b?.keyword || "").split(",").map((k) => k.trim()).filter(Boolean)));
+}

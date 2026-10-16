@@ -18,9 +18,9 @@ type Stats = {
   topTypes: Array<{ type: string; count: number }>;
   classCounts: Array<{ class: string; count: number }>;
   modePie: Array<{ name: string; value: number }>;
-  topKeywords?: Array<{ type: string; count: number }>;
+  topKeywords?: Array<{ type: string; count: number; shared?: number }>;
   posTopTypes?: Array<{ type: string; count: number }>;
-  posTopKeywords?: Array<{ type: string; count: number }>;
+  posTopKeywords?: Array<{ type: string; count: number; shared?: number }>;
   strikeBuckets: Array<{ strikes: string; students: number }>;
 };
 
@@ -123,12 +123,12 @@ export default function ReportsPage() {
       <RankedBars
         title={groupBy === "keyword" && data.topKeywords?.length ? "Incidents by keyword" : "Incidents by behaviour"}
         rows={groupBy === "keyword" && data.topKeywords?.length ? data.topKeywords : data.topTypes}
-        colors={PALETTE} />
+        colors={PALETTE} unit="incident" />
       {(data.posTopTypes?.length || 0) > 0 && (
         <RankedBars
           title={groupBy === "keyword" ? "Encouragements by keyword" : "Encouragements by behaviour"}
           rows={(groupBy === "keyword" ? data.posTopKeywords : data.posTopTypes) || []}
-          colors={GREENS} />
+          colors={GREENS} unit="encouragement" />
       )}
 
       <div className="grid gap-4 sm:grid-cols-2">
@@ -194,7 +194,7 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
 
 // A ranked horizontal bar chart with EVERY bar labelled (interval={0}; long names
 // truncate, the full name is in the tooltip).
-function RankedBars({ title, rows, colors }: { title: string; rows: Array<{ type: string; count: number }>; colors: string[] }) {
+function RankedBars({ title, rows, colors, unit }: { title: string; rows: Array<{ type: string; count: number; shared?: number }>; colors: string[]; unit: string }) {
   return (
     <ChartCard title={title}>
       {rows.length === 0 ? <p className="text-sm text-slate-500">None in this period.</p> : (
@@ -202,7 +202,7 @@ function RankedBars({ title, rows, colors }: { title: string; rows: Array<{ type
           <BarChart data={rows} layout="vertical" margin={{ left: 40, right: 16 }}>
             <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
             <YAxis type="category" dataKey="type" tick={<BehaviourTick />} width={170} tickLine={false} interval={0} />
-            <Tooltip />
+            <Tooltip content={<BarTip unit={unit} />} />
             <Bar dataKey="count" radius={[0, 3, 3, 0]}>
               {rows.map((_, i) => <Cell key={i} fill={colors[i % colors.length]} />)}
             </Bar>
@@ -210,5 +210,21 @@ function RankedBars({ title, rows, colors }: { title: string; rows: Array<{ type
         </ResponsiveContainer>
       )}
     </ChartCard>
+  );
+}
+
+// Bar tooltip: the full name, the count, and — for a keyword shared by
+// behaviours with several keywords — how many also count under other keywords
+// (so the bars can add up to more than the total).
+function BarTip({ active, payload, unit }: any) {
+  if (!active || !payload?.length) return null;
+  const row = payload[0].payload as { type: string; count: number; shared?: number };
+  const plural = (n: number) => `${n} ${unit}${n === 1 ? "" : "s"}`;
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-sm">
+      <p className="font-semibold text-slate-900">{row.type}</p>
+      <p className="text-slate-700">{plural(row.count)}</p>
+      {!!row.shared && <p className="mt-0.5 text-slate-500">{row.shared} also counted under other keywords</p>}
+    </div>
   );
 }
