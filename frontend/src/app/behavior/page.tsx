@@ -9,6 +9,7 @@ import { Card, Button } from "./_components/ui";
 import { toast } from "./_components/toast";
 import AddToHomeScreen from "./_components/AddToHomeScreen";
 import TrendCard from "./_components/TrendCard";
+import StarCount from "./_components/StarCount";
 import { useOccurrences, StudentNameTap, OccurrenceList } from "./_components/Occurrences";
 
 export default function BehaviorDashboard() {
@@ -440,6 +441,7 @@ function HousesCard({ canLog, isAdmin, portalCode, events = [] }: { canLog: bool
   const [msg, setMsg] = useState("");
   // Tap a house → composite breakdown (staff view: full, incl. conduct), same as /houses.
   const [openHouse, setOpenHouse] = useState<string | null>(null);
+  const [starOpen, setStarOpen] = useState(false);
   const [detailById, setDetailById] = useState<Record<string, any>>({});
   const [detailBusy, setDetailBusy] = useState(false);
 
@@ -518,12 +520,18 @@ function HousesCard({ canLog, isAdmin, portalCode, events = [] }: { canLog: bool
               title="Print class sheets for a counted event (food drive, cleanup, read-a-thon…), then upload them to award points">
               🥫 Food drive / tally import
             </Link>
-            <Button onClick={() => { setOpen((o) => !o); setHouseId(houses[0]?._id || ""); }} variant="secondary" size="sm">
+            <Button onClick={() => { setStarOpen((o) => !o); setOpen(false); }} variant="secondary" size="sm"
+              title="Count each house's bottle of stars and award them all at once">
+              ⭐ Star count
+            </Button>
+            <Button onClick={() => { setOpen((o) => !o); setStarOpen(false); setHouseId(houses[0]?._id || ""); }} variant="secondary" size="sm">
               {open ? "Cancel" : "Give points"}
             </Button>
           </span>
         )}
       </div>
+
+      {starOpen && <StarCount houses={houses} onAwarded={load} onClose={() => setStarOpen(false)} />}
 
       {open && (
         <div className="mt-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">

@@ -345,6 +345,9 @@ const BehaviorConfigSchema = new mongoose.Schema(
     // House points awarded to a student's house when a teacher sends them an
     // encouraging parent message (positive reinforcement). 0 = award none.
     encouragingMessagePoints: { type: Number, default: 5 },
+    // ⭐ Star count: physical stars/chips handed out for star-worthy behaviour,
+    // dropped in each house's bottle, counted periodically → points per star.
+    starPoints: { type: Number, default: 5 },
 
     // Per-student caps on how much any ONE student can move their house total
     // (0 = unlimited). Positive and negative contributions are capped separately;

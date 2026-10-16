@@ -27,6 +27,9 @@ const HousePointEventSchema = new mongoose.Schema(
     // Set on a white-slip deduction: the white slip it was for (applied only once
     // the slip is confirmed issued; one per slip).
     consequenceId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorConsequence", default: null, index: true },
+    // Set on a ⭐ Star count award: how many stars this house counted (points =
+    // stars × config.starPoints). One count shares one `at` across houses.
+    stars: { type: Number, default: null },
     awardedByTeacherId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorTeacher", default: null },
     at: { type: Date, default: () => new Date(), index: true },
   },

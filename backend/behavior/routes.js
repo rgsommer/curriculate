@@ -7352,6 +7352,7 @@ router.put("/houses/config", authAny, loadMembership, canManageHouses, async (re
     if (Array.isArray(b.houseRewards)) $set.houseRewards = b.houseRewards.map((r) => ({ points: Number(r.points) || 0, reward: String(r.reward || "").trim() })).filter((r) => r.reward && r.points);
     if (b.houseReport) $set.houseReport = { enabled: !!b.houseReport.enabled, recipientEmail: String(b.houseReport.recipientEmail || "").trim().toLowerCase() };
     if ("encouragingMessagePoints" in b) $set.encouragingMessagePoints = Math.max(0, Number(b.encouragingMessagePoints) || 0);
+    if ("starPoints" in b) $set.starPoints = Math.max(0, Number(b.starPoints) || 0);
     if ("housesPublicShowPositives" in b) $set.housesPublicShowPositives = !!b.housesPublicShowPositives;
     if ("housesPublicShowNegatives" in b) $set.housesPublicShowNegatives = !!b.housesPublicShowNegatives;
     if ("houseNegativeResetAt" in b) $set.houseNegativeResetAt = b.houseNegativeResetAt ? new Date(b.houseNegativeResetAt) : null;
@@ -7480,6 +7481,73 @@ router.delete("/houses/:id", authAny, loadMembership, canManageHouses, async (re
   } catch (err) {
     next(err);
   }
+});
+
+// ── ⭐ Star count ───────────────────────────────────────────────────────────
+// Teachers hand out physical stars for star-worthy behaviour; students drop them
+// in their house's bottle; periodically someone counts each bottle and records
+// it here: each house gets stars × starPoints (default 5). Complements logged
+// encouragements (both count). One count = one shared timestamp across houses.
+router.get("/house/stars", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("starPoints").lean();
+    const evs = await HousePointEvent.find({ schoolId: req.schoolId, stars: { $ne: null } }).sort({ at: -1 }).limit(80)
+      .select("houseId stars points at awardedByTeacherId").lean();
+    const houses = await BehaviorHouse.find({ schoolId: req.schoolId }).select("name color").lean();
+    const hById = Object.fromEntries(houses.map((h) => [String(h._id), h]));
+    const tIds = [...new Set(evs.map((e) => String(e.awardedByTeacherId)).filter((x) => x && x !== "null"))];
+    const tn = Object.fromEntries((await BehaviorTeacher.find({ _id: { $in: tIds } }).select("name courtesyName").lean()).map((t) => [String(t._id), (t.courtesyName || t.name || "").trim()]));
+    const byAt = new Map();
+    for (const e of evs) {
+      const k = new Date(e.at).toISOString();
+      const g = byAt.get(k) || { at: k, by: tn[String(e.awardedByTeacherId)] || "", houses: [], totalStars: 0, totalPoints: 0 };
+      g.houses.push({ house: hById[String(e.houseId)]?.name || "—", color: hById[String(e.houseId)]?.color || "#0f172a", stars: e.stars, points: e.points });
+      g.totalStars += e.stars || 0; g.totalPoints += e.points || 0;
+      byAt.set(k, g);
+    }
+    res.json({ ok: true, starPoints: config?.starPoints ?? 5, counts: [...byAt.values()].slice(0, 10) });
+  } catch (err) { next(err); }
+});
+
+router.post("/house/stars", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("starPoints").lean();
+    const per = Number(config?.starPoints ?? 5) || 0;
+    if (per <= 0) return res.status(400).json({ ok: false, error: "Points per star is 0 — set it in Setup → Houses." });
+    const houses = await BehaviorHouse.find({ schoolId: req.schoolId, active: true }).select("_id name").lean();
+    const valid = new Set(houses.map((h) => String(h._id)));
+    const rows = (Array.isArray(req.body?.counts) ? req.body.counts : [])
+      .map((r) => ({ houseId: String(r?.houseId || ""), stars: Math.max(0, Math.round(Number(r?.stars) || 0)) }))
+      .filter((r) => valid.has(r.houseId) && r.stars > 0);
+    if (!rows.length) return res.status(400).json({ ok: false, error: "Enter at least one house's star count." });
+    const at = new Date();
+    for (const r of rows) {
+      await HousePointEvent.create({
+        schoolId: req.schoolId, houseId: new mongoose.Types.ObjectId(r.houseId), studentId: null,
+        points: r.stars * per, stars: r.stars, reason: `⭐ Star count — ${r.stars} star${r.stars === 1 ? "" : "s"}`,
+        awardedByTeacherId: req.membership._id, at,
+      });
+    }
+    await audit(req.schoolId, "house.star_count", req, { meta: { houses: rows.length, stars: rows.reduce((a, r) => a + r.stars, 0), per } });
+    res.json({ ok: true, at, starPoints: per, awarded: rows.map((r) => ({ ...r, points: r.stars * per })) });
+  } catch (err) { next(err); }
+});
+
+// Undo a star count (a miscount): the teacher who recorded it, or an admin.
+router.delete("/house/stars", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const at = new Date(String(req.query.at || req.body?.at || ""));
+    if (isNaN(at.getTime())) return res.status(400).json({ ok: false, error: "Which count?" });
+    const evs = await HousePointEvent.find({ schoolId: req.schoolId, stars: { $ne: null }, at }).select("awardedByTeacherId").lean();
+    if (!evs.length) return res.status(404).json({ ok: false, error: "Count not found." });
+    const isAdmin = ["originator", "admin"].includes(req.membership.role);
+    if (!isAdmin && evs.some((e) => String(e.awardedByTeacherId) !== String(req.membership._id))) {
+      return res.status(403).json({ ok: false, error: "Only the teacher who recorded it (or an admin) can undo it." });
+    }
+    await HousePointEvent.deleteMany({ schoolId: req.schoolId, stars: { $ne: null }, at });
+    await audit(req.schoolId, "house.star_count_undone", req, { meta: { at } });
+    res.json({ ok: true });
+  } catch (err) { next(err); }
 });
 
 // Award (or deduct) house points — to a whole house, or to a student (whose
@@ -8508,7 +8576,8 @@ async function computeHouseDetail(sid, houseId, cfg, { includeNegatives = true, 
   let indPos = 0, indNeg = 0, teamTotal = 0;
   const scrub = scrubNames ? await publicNameScrubber(sid) : (x) => x;
   for (const r of rows) {
-    const reason = scrub((r._id.reason || "").trim()) || "Other";
+    let reason = scrub((r._id.reason || "").trim()) || "Other";
+    if (/^⭐ Star count/.test(reason)) reason = "⭐ Star count (stars from the bottle)"; // one line, not one per count
     if (r._id.team) {
       teamMap[reason] = (teamMap[reason] || { reason, points: 0, count: 0 });
       teamMap[reason].points += r.points; teamMap[reason].count += r.count;
