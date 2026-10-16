@@ -13,7 +13,7 @@ const blastCampaignSchema = new mongoose.Schema(
     name: { type: String, required: true },
     product: {
       type: String,
-      enum: ["curriculate", "pulse", "fieldday"],
+      enum: ["curriculate", "pulse", "fieldday", "qrewzi"],
       required: true,
     },
 

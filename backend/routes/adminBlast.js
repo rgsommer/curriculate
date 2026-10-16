@@ -33,7 +33,7 @@ const router = express.Router();
  * Helpers
  * ────────────────────────────────────────────────────────────────────── */
 
-const VALID_PRODUCTS = ["curriculate", "pulse", "fieldday"];
+const VALID_PRODUCTS = ["curriculate", "pulse", "fieldday", "qrewzi"];
 
 // Christian-school detection: board or school name explicitly says "Christian"
 // or matches a known Protestant/Evangelical network (OACS, ACSI, Mennonite,
