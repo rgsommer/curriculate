@@ -19,7 +19,7 @@ export default function FoodDrivePage() {
   const [msg, setMsg] = useState("");
   const [label, setLabel] = useState("Food Drive");
   const [ind, setInd] = useState("30,20,10");
-  const [hs, setHs] = useState("100,60,30");
+  const [hs, setHs] = useState("100,60,30,10");
   const [result, setResult] = useState<any>(null);
 
   const [copied, setCopied] = useState(false);
@@ -37,7 +37,7 @@ export default function FoodDrivePage() {
     "5. In Compass → Tally import, type what it's for, upload the sheets, and click “Read sheets.”",
     "6. Check the read-back: fix any unmatched name (dropdown) or wrong count, set the points, then “Award points.”",
     "   • Top contributors overall get bonus points (default 30 / 20 / 10).",
-    "   • The houses with the highest total place 1st/2nd/3rd (default 100 / 60 / 30).",
+    "   • The houses with the highest total place 1st/2nd/3rd/4th (default 100 / 60 / 30 / 10).",
     "7. Late items? In Compass → Tally import → “Correct a past event”, add them to the student's count and save — placements and points are recalculated.",
     "",
     "Tip: decide the scale and keep a consistent event name for a clean record.",

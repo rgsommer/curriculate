@@ -60,7 +60,7 @@ export default function CompetitionsPage() {
         <h1 className="mt-1 text-xl font-semibold">House competitions</h1>
         <p className="text-sm text-slate-500">
           A Sept–June calendar. Scoring an event awards capped placement points
-          ({(comps[0]?.placementPoints || [500, 300, 200, 100]).join(" / ")}) on top of everyday behaviour points — so one
+          ({(comps[0]?.placementPoints || [100, 60, 30, 10]).join(" / ")}) on top of everyday behaviour points — so one
           event can&apos;t run away with the year.
         </p>
       </div>

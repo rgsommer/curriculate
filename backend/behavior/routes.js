@@ -6681,8 +6681,12 @@ router.put("/team/positive-nudge", authAny, loadMembership, requireAdmin, async 
 const POSITIVE_GOAL = 5, POSITIVE_OK = 3;
 async function positiveNudgePlan(schoolId) {
   const since7 = new Date(Date.now() - 7 * DAY_MS), since30 = new Date(Date.now() - 30 * DAY_MS);
-  const teachers = await BehaviorTeacher.find({ schoolId, status: "accepted", role: { $ne: "principal" } })
-    .select("name courtesyName email role homeroom positiveNudge").lean();
+  // Classroom teachers only — never the principal or the VP.
+  const cfg = await BehaviorConfig.findOne({ schoolId }).select("vp.email").lean();
+  const vpEmail = String(cfg?.vp?.email || "").trim().toLowerCase();
+  const teachers = (await BehaviorTeacher.find({ schoolId, status: "accepted", role: { $ne: "principal" } })
+    .select("name courtesyName email role homeroom positiveNudge").lean())
+    .filter((t) => !vpEmail || String(t.email || "").trim().toLowerCase() !== vpEmail);
   const recent = await BehaviorIncident.find({ schoolId, timestamp: { $gt: since30 } })
     .select("teacherId studentId timestamp behaviorSnapshot.kind behaviorSnapshot.points behaviorSnapshot.triggerMode").lean();
   const encNotes = await BehaviorConsequence.find({ schoolId, kind: "encouraging", at: { $gt: since7 } }).select("byTeacherId").lean();
@@ -7478,7 +7482,7 @@ router.post("/house/food-drive/apply", authAny, loadMembership, canLog, async (r
       label: String(req.body?.label || "Food Drive").trim() || "Food Drive",
       at: new Date(),
       individual: Array.isArray(req.body?.individual) ? req.body.individual.map(Number) : [30, 20, 10],
-      house: Array.isArray(req.body?.house) ? req.body.house.map(Number) : [100, 60, 30],
+      house: Array.isArray(req.body?.house) ? req.body.house.map(Number) : [100, 60, 30, 10],
       rows,
       createdByTeacherId: req.membership._id,
     });
@@ -7974,7 +7978,7 @@ router.post("/competitions/seed", authAny, loadMembership, requireAdmin, async (
     for (const d of DEFAULTS) {
       const exists = await BehaviorCompetition.findOne({ schoolId: req.schoolId, name: d.name, active: true });
       if (!exists) {
-        await BehaviorCompetition.create({ schoolId: req.schoolId, ...d, placementPoints: [500, 300, 200, 100] });
+        await BehaviorCompetition.create({ schoolId: req.schoolId, ...d, placementPoints: [100, 60, 30, 10] });
         created += 1;
       }
     }
@@ -7994,7 +7998,7 @@ router.post("/competitions", authAny, loadMembership, requireAdmin, async (req, 
     if (!name) return res.status(400).json({ ok: false, error: "name required" });
     const placementPoints = Array.isArray(b.placementPoints) && b.placementPoints.length
       ? b.placementPoints.map((n) => Number(n) || 0)
-      : [500, 300, 200, 100];
+      : [100, 60, 30, 10]; // school decision: 1st–4th = 100 / 60 / 30 / 10
     if (b._id) {
       const comp = await BehaviorCompetition.findOne({ _id: b._id, schoolId: req.schoolId });
       if (!comp) return res.status(404).json({ ok: false, error: "Competition not found" });

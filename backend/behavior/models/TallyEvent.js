@@ -22,7 +22,7 @@ const TallyEventSchema = new mongoose.Schema(
     label: { type: String, default: "Food Drive" },
     at: { type: Date, default: () => new Date() }, // award date (kept on recalculation)
     individual: { type: [Number], default: [30, 20, 10] }, // top-donor points
-    house: { type: [Number], default: [100, 60, 30] }, // house placement points
+    house: { type: [Number], default: [100, 60, 30, 10] }, // house placement points
     rows: { type: [TallyRowSchema], default: [] },
     // Last computed outcome (for the list + "what changed" on an edit).
     results: { type: mongoose.Schema.Types.Mixed, default: null },

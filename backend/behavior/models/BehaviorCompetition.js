@@ -26,7 +26,7 @@ const BehaviorCompetitionSchema = new mongoose.Schema(
     monthOrder: { type: Number, default: 0, index: true },
     monthLabel: { type: String, default: "" }, // e.g. "September"
     // Points for 1st, 2nd, 3rd, 4th… place. Capped so one event can't dominate.
-    placementPoints: { type: [Number], default: [500, 300, 200, 100] },
+    placementPoints: { type: [Number], default: [100, 60, 30, 10] }, // 1st–4th
     // Set once scored: which house took which place.
     results: { type: [ResultSchema], default: [] },
     scoredAt: { type: Date, default: null },
