@@ -3,7 +3,7 @@
 // Periodic worker that sends scheduled "blast" emails. Runs every 60s
 // (started from index.js). Honors:
 //   • per-campaign daily cap (default 50)
-//   • global daily cap   (BLAST_GLOBAL_DAILY_CAP env, default 50)
+//   • global daily cap   (BLAST_GLOBAL_DAILY_CAP env, default 20)
 //   • Resend hard cap    (BLAST_RESEND_CEILING env, default 90, leaving headroom on the 100/day free tier)
 //   • only sends inside the campaign's send window (default Tue/Wed/Thu 7:30–8:30 ET)
 
@@ -561,7 +561,7 @@ export function defaultTemplateForProduct(product) {
  * The worker
  * ────────────────────────────────────────────────────────────────────── */
 
-const GLOBAL_DAILY_CAP = parseInt(process.env.BLAST_GLOBAL_DAILY_CAP || "50", 10);
+const GLOBAL_DAILY_CAP = parseInt(process.env.BLAST_GLOBAL_DAILY_CAP || "20", 10); // was 50 — the shared Resend quota is 100/day across all apps
 const RESEND_CEILING   = parseInt(process.env.BLAST_RESEND_CEILING   || "90", 10);
 
 let running = false;

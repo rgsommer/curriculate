@@ -630,7 +630,7 @@ app.use("/admin", adminFeedbackRouter);
 app.use("/admin", adminTeacherOutreachRouter);
 app.use("/admin", adminBlastRouter);
 // Start the trickle-send worker once the DB + Express are wired up.
-// Honours BLAST_GLOBAL_DAILY_CAP (default 50) and BLAST_RESEND_CEILING (default 90).
+// Honours BLAST_GLOBAL_DAILY_CAP (default 20) and BLAST_RESEND_CEILING (default 90).
 startBlastWorker(60_000);
 // (A) On boot, scan the workspace folder for *-school-admins.xlsx / *-schools.xlsx
 // and upsert every row into BlastContact. Self-maintains as the user drops
