@@ -626,14 +626,27 @@ export async function blastWorkerTick() {
       // unsubscribed since they were queued. Mark them as such so the
       // status surfaces in the Campaigns view.
       if (due.length) {
-        const suppressedEmails = await BlastContact.distinct("email", {
+        // Unsubscribed OR bounced: a hard bounce means the address doesn't
+        // exist, and repeated bounces endanger the whole Resend account
+        // (which also sends Compass notices and logins).
+        const unsubEmails = await BlastContact.distinct("email", {
           email: { $in: due.map(r => r.email) },
           unsubscribedAt: { $ne: null },
         });
+        const bouncedEmails = await BlastContact.distinct("email", {
+          email: { $in: due.map(r => r.email) },
+          bouncedAt: { $ne: null },
+          unsubscribedAt: null,
+        });
+        const suppressedEmails = [...unsubEmails, ...bouncedEmails];
         if (suppressedEmails.length) {
-          await BlastRecipient.updateMany(
-            { _id: { $in: due.filter(r => suppressedEmails.includes(r.email)).map(r => r._id) } },
+          if (unsubEmails.length) await BlastRecipient.updateMany(
+            { _id: { $in: due.filter(r => unsubEmails.includes(r.email)).map(r => r._id) } },
             { status: "unsubscribed", errorMessage: "recipient unsubscribed" }
+          );
+          if (bouncedEmails.length) await BlastRecipient.updateMany(
+            { _id: { $in: due.filter(r => bouncedEmails.includes(r.email)).map(r => r._id) } },
+            { status: "skipped", errorMessage: "address bounced — suppressed" }
           );
           // Remove them from the due list so we don't try to send
           for (let i = due.length - 1; i >= 0; i--) {
