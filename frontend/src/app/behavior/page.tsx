@@ -647,13 +647,18 @@ function UrgentNote({ s }: { s: StudentSummary }) {
 }
 // Urgent first within each homeroom group, then the list's own order.
 const urgentFirst = (a: StudentSummary, b: StudentSummary) => (isUrgent(b) ? 1 : 0) - (isUrgent(a) ? 1 : 0);
+// The homeroom teacher already talked through the trend this week (and nothing
+// new since). Falls back to "followed up this week" until the server sends it.
+const trendDone = (s: StudentSummary) => !!(s.trendDiscussed ?? s.hrFollowedUpThisWeek);
+// Needs a decision: dimmed + listed after the rest — but never an urgent student.
+const dimmed = (s: StudentSummary) => trendDone(s) && !isUrgent(s);
 
-function HrButton({ studentId, done }: { studentId: string; done?: boolean }) {
+function HrButton({ studentId, done, onDone }: { studentId: string; done?: boolean; onDone?: () => void }) {
   const [state, setState] = useState<"idle" | "busy" | "done">(done ? "done" : "idle");
   async function click() {
     if (state === "busy") return;
     setState("busy");
-    try { await homeroomFollowup(studentId); setState("done"); }
+    try { await homeroomFollowup(studentId); setState("done"); onDone?.(); }
     catch { setState(done ? "done" : "idle"); }
   }
   const isDone = state === "done";
@@ -689,7 +694,7 @@ function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number
         const watch = (d.students || [])
           .filter((s) => isUrgent(s) || s.pendingWhiteSlipId || (s.pendingConsequences && s.pendingConsequences.length > 0) || ((s.noticesHomeCount || 0) >= 1 && (s.activeCount || 0) >= t - 1))
           // Grouped by homeroom (classGroup), then most-urgent first within a homeroom.
-          .sort((a, b) => (a.classGroup || "").localeCompare(b.classGroup || "") || urgentFirst(a, b) || (b.pendingWhiteSlipId ? 1 : 0) - (a.pendingWhiteSlipId ? 1 : 0) || (b.noticesHomeCount || 0) - (a.noticesHomeCount || 0) || (b.activeCount || 0) - (a.activeCount || 0));
+          .sort((a, b) => (a.classGroup || "").localeCompare(b.classGroup || "") || urgentFirst(a, b) || (dimmed(a) ? 1 : 0) - (dimmed(b) ? 1 : 0) || (b.pendingWhiteSlipId ? 1 : 0) - (a.pendingWhiteSlipId ? 1 : 0) || (b.noticesHomeCount || 0) - (a.noticesHomeCount || 0) || (b.activeCount || 0) - (a.activeCount || 0));
         setRows(watch);
       })
       .catch(() => setRows([]));
@@ -745,7 +750,8 @@ function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number
         {showHeader && (
           <li className="!border-t-0 pt-2 pb-0.5 text-xs font-semibold uppercase tracking-wide text-slate-500">{s.classGroup || "No homeroom"}</li>
         )}
-        <li className={`py-2 ${isUrgent(s) ? "-mx-2 border-l-4 border-l-red-500 bg-red-50/70 px-2" : ""}`}>
+        <li className={`py-2 ${isUrgent(s) ? "-mx-2 border-l-4 border-l-red-500 bg-red-50/70 px-2" : dimmed(s) ? "opacity-60" : ""}`}
+          title={dimmed(s) ? "Trend discussed by the homeroom teacher this week — kept here because a decision is still open" : undefined}>
           <div className="flex items-center justify-between gap-2 text-sm">
             <span className="flex min-w-0 items-center gap-2">
               <StudentNameTap studentId={s._id} open={occ.openId === s._id} onToggle={() => occ.toggle(s._id)}>
@@ -754,7 +760,8 @@ function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number
                   ? <span className="mt-0.5 block pl-4 text-xs text-red-700">Next: White slip recommended</span>
                   : action && <span className="mt-0.5 block pl-4 text-xs text-red-700">Next: {action}</span>}
               </StudentNameTap>
-              <HrButton studentId={s._id} done={s.hrFollowedUpThisWeek} />
+              <HrButton studentId={s._id} done={s.hrFollowedUpThisWeek}
+                onDone={() => setRows((list) => (list || []).map((x) => (x._id === s._id ? { ...x, hrFollowedUpThisWeek: true, trendDiscussed: true } : x)))} />
             </span>
             <span className="flex shrink-0 items-center gap-3">
               <span className="text-xs text-slate-500">{s.noticesHomeCount} notice{(s.noticesHomeCount || 0) === 1 ? "" : "s"}</span>
@@ -839,6 +846,9 @@ function StudentsToWatch({ fadeDays, myHomeroom }: { fadeDays?: number; myHomero
         setTrigger(t);
         const watch = (d.students || [])
           .filter((s) => (s.activeCount || 0) >= t - 1)
+          // Trend already discussed this week (no new offence since) → off the
+          // list until Monday or the next offence.
+          .filter((s) => !trendDone(s))
           // Grouped by homeroom (classGroup), then most strikes first within a homeroom.
           .sort((a, b) => (a.classGroup || "").localeCompare(b.classGroup || "") || urgentFirst(a, b) || (b.activeCount || 0) - (a.activeCount || 0));
         setRows(watch);
@@ -863,7 +873,8 @@ function StudentsToWatch({ fadeDays, myHomeroom }: { fadeDays?: number; myHomero
           <StudentNameTap studentId={s._id} open={occ.openId === s._id} onToggle={() => occ.toggle(s._id)}>
             <span className="font-medium">{s.lastName}, {s.firstName}</span> <span className="text-slate-500">{s.classGroup}</span>
           </StudentNameTap>
-          <HrButton studentId={s._id} done={s.hrFollowedUpThisWeek} />
+          <HrButton studentId={s._id} done={s.hrFollowedUpThisWeek}
+            onDone={() => setTimeout(() => setRows((list) => (list || []).filter((x) => x._id !== s._id)), 1200)} />
         </span>
         <Link href={`/behavior/student/${s._id}`} aria-label={`Open ${s.firstName} ${s.lastName}'s history`}
           className={`shrink-0 font-semibold tabular-nums hover:underline ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
@@ -883,6 +894,7 @@ function StudentsToWatch({ fadeDays, myHomeroom }: { fadeDays?: number; myHomero
       <p className="mt-0.5 text-xs text-slate-500">
         At or one away from the {trigger}-strike trigger — a good moment for a positive word or a check-in before the next incident.
         {fadeDays ? ` Strikes fade after ${fadeDays} days, so the trend can still turn around.` : ""}
+        {" "}Once the homeroom teacher has discussed the trend, a student drops off until Monday (or their next offence).
       </p>
       <ul className="mt-2 divide-y divide-slate-100">
         {myHomeroom && mine.length > 0 && (

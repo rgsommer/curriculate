@@ -2527,9 +2527,18 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
     const weekStart = new Date(mondayKey() + "T00:00:00Z");
     const hrAgg = await BehaviorIncident.aggregate([
       { $match: { schoolId: req.schoolId, studentId: { $in: students.map((s) => s._id) }, "behaviorSnapshot.name": "Homeroom follow-up", timestamp: { $gte: weekStart } } },
-      { $group: { _id: "$studentId", n: { $sum: 1 } } },
+      { $group: { _id: "$studentId", n: { $sum: 1 }, at: { $max: "$timestamp" } } },
     ]);
     const hrWeek = new Set(hrAgg.map((a) => String(a._id)));
+    const hrAt = Object.fromEntries(hrAgg.map((a) => [String(a._id), a.at]));
+    // Latest real offence (strike / immediate) — a new one after this week's
+    // trend talk brings the student back to full prominence on the dashboard.
+    const lastOffAgg = await BehaviorIncident.aggregate([
+      { $match: { schoolId: req.schoolId, studentId: { $in: students.map((s) => s._id) }, timestamp: { $gte: weekStart },
+        "behaviorSnapshot.triggerMode": { $in: ["THRESHOLD", "IMMEDIATE"] }, "behaviorSnapshot.kind": { $ne: "positive" } } },
+      { $group: { _id: "$studentId", at: { $max: "$timestamp" } } },
+    ]);
+    const lastOffAt = Object.fromEntries(lastOffAgg.map((a) => [String(a._id), a.at]));
 
     // Notices home THIS PERIOD per student (prior-year notices don't count).
     const noticesPeriod = await periodNoticesByStudent(req.schoolId, students.map((s) => s._id), config);
@@ -2587,6 +2596,8 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
         pendingWhiteSlipId: pend[String(s._id)] || null,
         pendingConsequences: (consByStudent[String(s._id)] || []).slice(0, 6),
         hrFollowedUpThisWeek: hrWeek.has(String(s._id)),
+        // Trend discussed this week AND no new offence since → dim / hide.
+        trendDiscussed: hrWeek.has(String(s._id)) && (!lastOffAt[String(s._id)] || new Date(hrAt[String(s._id)]) > new Date(lastOffAt[String(s._id)])),
         whiteSlipCount: periodWhiteSlips,
         // Handbook-consistent recommendation (null → client falls back to the ladder).
         recommendedConsequence: whiteSlipLadderRecommendation(config, { periodNotices, periodWhiteSlips }),
