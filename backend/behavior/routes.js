@@ -34,7 +34,7 @@ import BehaviorHouse from "./models/BehaviorHouse.js";
 import HousePointEvent from "./models/HousePointEvent.js";
 import TallyEvent from "./models/TallyEvent.js";
 import { applyWhiteSlipPenalty } from "./lib/whiteSlipPenalty.js";
-import { bulkBudget, schoolWeekday, emailsSentToday, lightestWeekday } from "./lib/emailBudget.js";
+import { bulkBudget, schoolWeekday, emailsSentToday, lightestWeekday, emailBreakdown } from "./lib/emailBudget.js";
 
 // Bulk nudges are SPREAD across school days and kept inside the shared email
 // budget: today's share = the due teachers split over the school days left in
@@ -6984,6 +6984,17 @@ router.post("/public/stars-report", async (req, res) => {
   } catch {
     res.status(500).json({ ok: false, error: "Something went wrong — please try again." });
   }
+});
+
+// Admin: who's using the shared email quota — last N hours by sender / subject
+// shape / hour (no recipient addresses).
+router.get("/email-budget/breakdown", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const hours = Math.min(168, Math.max(1, Number(req.query.hours) || 24));
+    const b = await emailBreakdown(hours);
+    if (!b) return res.json({ ok: false, error: "Not using Resend (no RESEND_API_KEY on the server)." });
+    res.json({ ok: true, ...b });
+  } catch (err) { next(err); }
 });
 
 // Admin: today's shared email usage, the bulk budget left, and the lightest day.

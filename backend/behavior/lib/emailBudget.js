@@ -94,3 +94,42 @@ export function schoolWeekday(d = new Date()) {
   const s = new Intl.DateTimeFormat("en-CA", { timeZone: SCHOOL_TZ, weekday: "short" }).format(d);
   return { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[s];
 }
+
+/**
+ * Who used the shared quota: the account's sends over the last `hours`, grouped
+ * by sender and by subject "shape" (digits/names collapsed so per-person subjects
+ * group together). Recipient addresses are never returned.
+ */
+export async function emailBreakdown(hours = 24) {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) return null;
+  const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+  const rows = [];
+  let after = "";
+  for (let page = 0; page < 30; page++) {
+    const res = await fetch(`${API}?limit=100${after ? `&after=${encodeURIComponent(after)}` : ""}`, { headers: { Authorization: `Bearer ${key}` } });
+    if (!res.ok) throw new Error(`Resend list failed (${res.status})`);
+    const body = await res.json();
+    const data = Array.isArray(body?.data) ? body.data : [];
+    let older = false;
+    for (const e of data) {
+      const t = new Date(String(e.created_at || "").replace(" ", "T").replace(/\+00$/, "Z"));
+      if (isNaN(t.getTime())) continue;
+      if (t < since) { older = true; continue; }
+      rows.push({ at: t, from: String(e.from || ""), subject: String(e.subject || "") });
+    }
+    if (older || !body?.has_more || !data.length) break;
+    after = data[data.length - 1].id;
+  }
+  const shape = (s) => s.replace(/\d+/g, "#").replace(/—\s*[^—]+$/, "— …").slice(0, 70);
+  const bySender = {}, bySubject = {}, byHour = {};
+  for (const r of rows) {
+    bySender[r.from] = (bySender[r.from] || 0) + 1;
+    const k = `${r.from.replace(/.*<|>.*/g, "")} | ${shape(r.subject)}`;
+    bySubject[k] = (bySubject[k] || 0) + 1;
+    const h = new Intl.DateTimeFormat("en-CA", { timeZone: SCHOOL_TZ, hour: "2-digit", hour12: false }).format(r.at);
+    byHour[h] = (byHour[h] || 0) + 1;
+  }
+  const top = (o, n) => Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, n).map(([k, v]) => ({ key: k, count: v }));
+  return { hours, total: rows.length, bySender: top(bySender, 15), bySubject: top(bySubject, 30), byHour: Object.fromEntries(Object.entries(byHour).sort()) };
+}
