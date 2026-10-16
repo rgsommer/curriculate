@@ -1620,6 +1620,57 @@ check("headphones: not in an ordinary lesson", !P.headphonesOn("AB2", "Discuss t
 check("headphones: not at recess", !P.headphonesOn("REC", "Work on it outside"));
 check("headphones: no code, no headphones", !P.headphonesOn("", "Quiet Work Time"));
 
+// A line addressed to the teacher, among the activities the room is reading.
+for (const note of [
+  "Note to teacher: bring the laminated cards from the cupboard",
+  "note to teacher - print 24 copies",
+  "Note to the teacher: the video needs the HDMI lead",
+  "Teacher note: collect last week's sheets",
+  "Teacher's note: swap groups 2 and 4",
+  "Teachers note - start the timer at 10 past",
+  "Note to self: email the parents",
+  "Teacher: set the projector to the deck",
+  "\u2022 Note to teacher: hand back the quizzes",
+  "\ud83d\udcdd Note to teacher: hand back the quizzes",
+]) check(`teacher note: "${note.slice(0, 34)}"`, P.teacherNote(note), note);
+for (const room of [
+  "Complete the Ch1 Review Handout",
+  "Note the three causes in your margin",
+  "Take notes on the video",
+  "Ask your teacher if you are stuck",
+  "Notes: Chapter 1 is on page 14",
+  "Teachers of the early church — who were they?",
+]) check(`teacher note: not "${room.slice(0, 34)}"`, !P.teacherNote(room), room);
+
+// The quiet-work rules, off the teacher's own Geography 8B period.
+const qwt = P.quietWorkRules([
+  "\u270bQuiet Work Time (graded); whisper on topic only.",
+  "Complete XWord/Matching and Ch1 Review Handout.",
+  "Work on Study Guide and Practice Test.",
+  "Reminders: Whisper on topic if needed; no loud talking or fooling around.",
+].join("\n"));
+check("quiet rules: the sheet's own permission", qwt.yes[0] === "Whisper on topic only", qwt.yes);
+check("quiet rules: and its own prohibition",
+  qwt.no[0] === "Loud talking or fooling around", qwt.no);
+check("quiet rules: the heading is not a rule",
+  !qwt.yes.concat(qwt.no).some((r) => /^quiet work/i.test(r)), qwt);
+check("quiet rules: the tasks are not rules",
+  !qwt.yes.concat(qwt.no).some((r) => /handout|study guide/i.test(r)), qwt);
+check("quiet rules: one rule said twice is one line",
+  qwt.yes.length === 1 && qwt.yes[0] === "Whisper on topic only", qwt.yes);
+check("quiet rules: a genuinely different permission is kept",
+  P.quietWorkRules("Whisper on topic only; headphones are fine").yes.length === 2,
+  P.quietWorkRules("Whisper on topic only; headphones are fine").yes);
+
+const bare = P.quietWorkRules("Quiet Work Time");
+check("quiet rules: a period that says nothing gets the standing pair",
+  bare.yes[0] === "Whisper on topic" && bare.no[0] === "Loud talking or fooling around", bare);
+const other = P.quietWorkRules("Silent reading; no phones; hands up if you need help.");
+check("quiet rules: hands up is a permission", other.yes.includes("Hands up if you need help"), other);
+check("quiet rules: phones are a prohibition", other.no.includes("Phones"), other);
+check("quiet rules: at most three of each",
+  P.quietWorkRules("no a; no b; no c; no d".replace(/([a-d])/g, "whisper $1")).no.length <= 3);
+
 check("setup: the free-seat window defaults to five minutes", P.parseSetup([]).seatMin === 5);
 check("setup: a row can change the free-seat window", P.parseSetup([["", "Free seat for", "7", "minutes"]]).seatMin === 7);
 

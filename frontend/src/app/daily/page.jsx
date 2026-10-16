@@ -16,7 +16,7 @@
 // picture and any image the sheet puts in the feature cell E1).
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { EMPTY_SOURCES, churchSeason, dueAndComingUp, headphonesOn, prayerForClass, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, evaluateNotice, firstClassStart, formalDiscussion, testWeekday, birthdaysToday, joinNames, specialDays, calendarEvents, columnName, firstVerse, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
+import { EMPTY_SOURCES, churchSeason, dueAndComingUp, headphonesOn, quietWork, quietWorkRules, ruleKey, teacherNote, prayerForClass, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, evaluateNotice, firstClassStart, formalDiscussion, testWeekday, birthdaysToday, joinNames, specialDays, calendarEvents, columnName, firstVerse, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
 
 const CLASS_LABELS = ["7A", "7B", "7C", "8A", "8B", "8C"];
 // The Setup slot table's own columns, for ?debug=1.
@@ -944,9 +944,11 @@ export default function DailyPage() {
     "--dur": `${Math.min(34, Math.round(verseOver / 45) + 12)}s`,
   };
 
-  // Shrink the video when the period changes.
-  const curKey = view && view.cur ? view.cur.start : -1;
-  useEffect(() => { setVidBig(false); }, [curKey]);
+  // A video that is playing keeps playing through the bell. It used to be shut
+  // at the change of class, which is the one moment it must not be: a clip
+  // started at the end of a period is being watched by a room that is still in
+  // its seats, and the board took it off the screen mid-sentence. It closes
+  // when it ends, or when it is pressed.
 
   if (locked) {
     return (
@@ -1393,7 +1395,16 @@ export default function DailyPage() {
       />
     </>
   );
-  const list = (items, cls) => <ul className={cls || ""}>{items.map((x, i) => <li key={i}>{x}</li>)}</ul>;
+  // A line addressed to the teacher is kept — it was written to be on the
+  // screen — but set in grey, so the room can see it is not theirs to do.
+  const list = (items, cls) => (
+    <ul className={cls || ""}>
+      {items.map((x, i) => <li key={i} className={teacherNote(x) ? "tnote" : ""}>{x}</li>)}
+    </ul>
+  );
+  const para = (text, cls) => (
+    <p className={`${cls || ""}${teacherNote(text) ? " tnote" : ""}`.trim()}>{text}</p>
+  );
   const linkChips = (links, label) => (links.length ? (
     <div className="handouts">
       {label ? <span className="hlabel">{label}</span> : null}
@@ -1653,7 +1664,7 @@ export default function DailyPage() {
     return (
       <div key="work" className={`block ${urgent ? "alert" : "sun"}`}>
         <h3>{w.head}</h3>
-        {w.items.length > 1 ? list(w.items) : <p>{w.items[0]}</p>}
+        {w.items.length > 1 ? list(w.items) : para(w.items[0])}
       </div>
     );
   };
@@ -2273,6 +2284,15 @@ export default function DailyPage() {
     // leaving that half of the screen empty and the panel overfull.
     const assignOnLeft = !cur.plan.length && cur.assign.length > 0;
     const lessonList = assignOnLeft ? cur.assign : cur.plan;
+    // A quiet work period is the one period whose rules have to stay on the
+    // screen, so what may and may not happen is lifted out of the sentence it
+    // was buried in and shown under the activities. Whether this is such a
+    // period is decided by the lesson's own material, as the headphones are;
+    // the wording may also come from the reminders, which is where the teacher
+    // writes "no loud talking or fooling around".
+    const quietRules = quietWork([cur.q, cur.today, ...(cur.plan || []), ...(cur.assign || [])].join("\n"))
+      ? quietWorkRules([...(cur.plan || []), ...(cur.assign || []), cur.remind || ""].join("\n"))
+      : null;
     // The prayer before class leads the lesson column for its first minutes:
     // the room settles, says it together, and the lesson is underneath when
     // they look up. One of the sheet's own (Poems column Q), picked for this
@@ -2299,8 +2319,14 @@ export default function DailyPage() {
         {/* A lesson written without a question leads with what it is about,
             rather than repeating the class name under the class name. */}
         <p className="question">{cur.q || cur.today || cur.subj}</p>
-        {cur.q && cur.today ? <p className="summary">{cur.today}</p> : null}
+        {cur.q && cur.today ? para(cur.today, "summary") : null}
         {phase === "open" ? null : list(lessonList, "plan")}
+        {quietRules ? (
+          <div className="qwt">
+            {quietRules.yes.map((r) => <p key={`y${r}`} className="yes"><i>✅</i>{r}</p>)}
+            {quietRules.no.map((r) => <p key={`n${r}`} className="no"><i>❌</i>{r}</p>)}
+          </div>
+        ) : null}
         {handouts}
       </div>
     );
@@ -2368,11 +2394,15 @@ export default function DailyPage() {
       // it as "the work": a class with no assignment and no homework used to
       // show the same notes low down in the work slot, under the notices, which
       // is the thing being fixed.
-      const notes = dueAndComingUp(cur.remind);
+      // The reminders cell is where "no loud talking or fooling around" is
+      // written, so on a quiet work period the rules block has already lifted
+      // it out; saying it twice on one screen costs a line the room needs.
+      const said = quietRules ? new Set(quietRules.yes.concat(quietRules.no).map(ruleKey)) : null;
+      const notes = dueAndComingUp(cur.remind).filter((n) => !said || !said.has(ruleKey(n)));
       const dueBlock = notes.length ? (
         <div key="due" className={`block ${notes.some((x) => REMIND_URGENT.test(x)) ? "alert" : "quiet"}`}>
           <h3>Due and coming up</h3>
-          {notes.length > 1 ? list(notes) : <p>{notes[0]}</p>}
+          {notes.length > 1 ? list(notes) : para(notes[0])}
         </div>
       ) : null;
       if (dueBlock) blocks.push(dueBlock);
