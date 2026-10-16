@@ -528,7 +528,12 @@ export default function DailyPage() {
   // quick half first, so every so often a poll comes back with the video
   // missing and the tile vanished mid-class. Once a period has shown a video it
   // keeps it to the bell: a later copy may replace it, never empty it.
-  const heldVideo = useRef({ key: null, url: "" });
+  const heldVideos = useRef({ key: null, urls: [] });
+  // The lesson's own picture is held the same way, and for a sharper reason: it
+  // does not merely vanish when a copy arrives without it — `lessonPic` falls
+  // back to the Setup slot's picture, so the class's own picture is replaced
+  // mid-lesson by the term's cartoon.
+  const heldImage = useRef({ key: null, url: "" });
   // When what is on screen was read from the sheet — not when it was fetched.
   const lastGood = useRef(0);
   const seenVersion = useRef(null);
@@ -1158,12 +1163,26 @@ export default function DailyPage() {
 
   // Which video the clock's tile is showing. Keyed by the period's start, so a
   // new class starts afresh; within one class an empty payload is ignored.
-  const videoOfPeriod = (p) => {
+  // Every video the class carries, and the picture, held against the period's
+  // start: a new class starts afresh, a later copy may replace what is held,
+  // and a copy that carries none is ignored. Both are read twice in a render —
+  // the tile beside the clock and the rail at the foot of the panel — which is
+  // why they are plain lookups rather than anything with a side effect of its
+  // own beyond filling the hold.
+  const videosOfPeriod = (p) => {
+    if (!p || p.duty) return [];
+    const urls = (p.videos && p.videos.length ? p.videos : (p.video ? [p.video] : []))
+      .slice(0, MAX_LESSON_VIDEOS);
+    const held = heldVideos.current;
+    if (held.key !== p.start || urls.length) { heldVideos.current = { key: p.start, urls }; return urls; }
+    return held.urls;
+  };
+  const videoOfPeriod = (p) => videosOfPeriod(p)[0] || "";
+  const imageOfPeriod = (p) => {
     if (!p || p.duty) return "";
-    const url = p.video || (p.videos && p.videos[0]) || "";
-    const held = heldVideo.current;
-    if (held.key !== p.start) { heldVideo.current = { key: p.start, url }; return url; }
-    if (url && url !== held.url) { heldVideo.current = { key: p.start, url }; return url; }
+    const url = p.image || "";
+    const held = heldImage.current;
+    if (held.key !== p.start || url) { heldImage.current = { key: p.start, url }; return url; }
     return held.url;
   };
 
@@ -2246,10 +2265,9 @@ export default function DailyPage() {
     const nx = nextClass(cur.end);
     // The picture for this lesson comes from its Lessons row when there is one;
     // the Setup slot picture is the fallback.
-    const lessonPic = cur.image ? { url: cur.image, seconds: setup.picSeconds } : data.picture;
+    const lessonImage = imageOfPeriod(cur);
+    const lessonPic = lessonImage ? { url: lessonImage, seconds: setup.picSeconds } : data.picture;
     const hasLessonPic = opts.pic !== "off" && !!lessonPic && usable(lessonPic.url);
-    const hasLessonVideo = !!(cur.video || (cur.videos || []).length);
-
     // The right-hand half in order: the memory work where there is any, then the
     // verse of the day, then the lesson's own picture and video, then the work.
     // The verse leads because it is the same few lines every day and the room
@@ -2270,8 +2288,7 @@ export default function DailyPage() {
     // a video written into the lesson's own description in column D never
     // reaches the daily post, so the board is the only place it can be started
     // from without going hunting for it mid-class.
-    const lessonVideos = (cur.videos && cur.videos.length ? cur.videos : (cur.video ? [cur.video] : []))
-      .slice(0, MAX_LESSON_VIDEOS);
+    const lessonVideos = videosOfPeriod(cur);
     const mediaRail = () => {
       if (!hasLessonPic && !lessonVideos.length) return null;
       const pic = hasLessonPic
