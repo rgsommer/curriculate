@@ -703,12 +703,15 @@ function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number
   // Confirm / resolve a recommended white slip. Once the action is taken the
   // student drops off this list; on failure the row is restored. Any teacher can
   // do it — the first click registers it server-side.
-  async function resolveSlip(s: StudentSummary, other?: string) {
+  async function resolveSlip(s: StudentSummary, other?: string, notIssued?: boolean) {
     const id = s.pendingWhiteSlipId;
     if (!id) return;
-    setRows((list) => (list || []).filter((x) => x._id !== s._id));
-    try { await issueWhiteSlip(id, other); }
-    catch { setRows((list) => [...(list || []), s]); }
+    // Clear just the white-slip step (the student may still be listed for other reasons).
+    setRows((list) => (list || []).map((x) => (x._id === s._id ? { ...x, pendingWhiteSlipId: null } : x)));
+    try {
+      await issueWhiteSlip(id, other, notIssued);
+      toast(notIssued ? "Recorded: white slip not issued" : other ? "Recorded: other consequence given" : "Recorded: white slip issued");
+    } catch { setRows((list) => (list || []).map((x) => (x._id === s._id ? s : x))); toast("Couldn't save — try again", "error"); }
   }
 
   // Mark a given consequence done. Optimistically drop it from the student's
@@ -775,12 +778,15 @@ function ProbationWatch({ ladder, myHomeroom }: { ladder: { noticeNumber: number
           {occ.openId === s._id && <OccurrenceList studentId={s._id} occ={occ.occById[s._id]} />}
           {s.pendingWhiteSlipId && (
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-              <span className="text-slate-500">Confirm the consequence given:</span>
+              <span className="text-slate-500">White slip — confirm the VP&apos;s decision:</span>
               <Button type="button" onClick={() => resolveSlip(s)}
                 variant="warning" size="sm">Issued</Button>
               <Button type="button"
                 onClick={() => { const t = window.prompt("What consequence was given instead of the white slip? (e.g. Work detention, Call home)"); if (t && t.trim()) resolveSlip(s, t.trim()); }}
                 variant="secondary" size="sm">Other…</Button>
+              <Button type="button" onClick={() => resolveSlip(s, undefined, true)}
+                title="Not given at all (e.g. the VP decided on another chance) — no house points deducted"
+                variant="secondary" size="sm">Not issued</Button>
             </div>
           )}
           {(s.pendingConsequences || []).map((c) => (

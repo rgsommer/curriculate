@@ -325,10 +325,9 @@ export async function dispatchNotice(noticeId, { providers, force = false } = {}
 
 /**
  * Once a disciplinary notice has gone home, the consequences for the offences it
- * covered are settled on the record: each is marked "family notified", and a
- * pending (recommended) white slip is confirmed as issued — sending the family
- * the note about it IS giving it. Without this, the dashboard kept asking to
- * confirm a white slip the teacher had already sent home.
+ * covered are marked "family notified". A recommended white slip is NOT marked
+ * issued here — issuing it is the VP's decision (they may choose another chance),
+ * confirmed with Issued / Other / Not issued.
  */
 export async function settleConsequencesForSentNotice(notice, byName = "") {
   try {
@@ -337,10 +336,6 @@ export async function settleConsequencesForSentNotice(notice, byName = "") {
     if (!ids.length) return;
     const now = new Date();
     const who = byName || "Confirmed with the notice home";
-    await BehaviorConsequence.updateMany(
-      { schoolId: notice.schoolId, relatedIncidentId: { $in: ids }, type: "White slip", status: "recommended" },
-      { $set: { status: "issued", issuedAt: now, issuedByName: who } }
-    );
     await BehaviorConsequence.updateMany(
       { schoolId: notice.schoolId, relatedIncidentId: { $in: ids }, notifiedAt: null },
       { $set: { notifiedAt: now, notifiedByName: who } }

@@ -24,6 +24,9 @@ const HousePointEventSchema = new mongoose.Schema(
     // Set when these points came from a Tally import event (food drive etc.),
     // so correcting a count can delete-then-reaward idempotently.
     tallyEventId: { type: mongoose.Schema.Types.ObjectId, ref: "TallyEvent", default: null, index: true },
+    // Set on a white-slip deduction: the white slip it was for (applied only once
+    // the slip is confirmed issued; one per slip).
+    consequenceId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorConsequence", default: null, index: true },
     awardedByTeacherId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorTeacher", default: null },
     at: { type: Date, default: () => new Date(), index: true },
   },

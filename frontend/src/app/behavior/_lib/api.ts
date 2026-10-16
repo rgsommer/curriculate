@@ -224,10 +224,11 @@ export function bulkParentMessage(name: string, studentIds: string[], force = fa
 }
 
 // Resolve a recommended white slip (any teacher may click). Omit `other` to
-// confirm it was issued; pass `other` to record that a different consequence was
-// given instead (logged as its own consequence).
-export function issueWhiteSlip(consequenceId: string, other?: string) {
-  return api(`/consequences/${consequenceId}/issue`, { method: "POST", body: other ? { other } : {} });
+// confirm it was issued (only then are any house points deducted); pass `other`
+// to record that a different consequence was given instead (logged as its own
+// consequence); `notIssued` = not given at all (e.g. another chance).
+export function issueWhiteSlip(consequenceId: string, other?: string, notIssued?: boolean) {
+  return api(`/consequences/${consequenceId}/issue`, { method: "POST", body: notIssued ? { notIssued: true } : other ? { other } : {} });
 }
 
 // Mark a consequence completed (or undo). Any teacher can confirm follow-through.

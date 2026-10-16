@@ -33,6 +33,7 @@ import { edsbyGetJson, extractZoomStudentsRaw, buildIxlRoster } from "./lib/edsb
 import BehaviorHouse from "./models/BehaviorHouse.js";
 import HousePointEvent from "./models/HousePointEvent.js";
 import TallyEvent from "./models/TallyEvent.js";
+import { applyWhiteSlipPenalty } from "./lib/whiteSlipPenalty.js";
 import HousesVisit from "./models/HousesVisit.js";
 import MerchRedemption from "./models/MerchRedemption.js";
 import { awardGuddAndReset } from "./lib/guddAward.js";
@@ -157,19 +158,9 @@ async function fireWhiteSlip({ req, student, config, behaviorName, detailText, a
     consId = String(cons._id);
   } catch (e) { console.warn("[behavior] white-slip consequence log failed:", e?.message || e); }
 
-  // Optional one-off house-point penalty for a white slip. Meant for schools that
-  // don't deduct per-infraction, so only applied when negative deductions are off
-  // (avoids double-counting the white-slip offence's own points).
-  try {
-    const pen = Number(config?.houseWhiteSlipPoints) || 0;
-    if (config?.houseWhiteSlipDeduct && !config?.houseNegativePoints && pen > 0 && student.houseId) {
-      await HousePointEvent.create({
-        schoolId: req.schoolId, houseId: student.houseId, studentId: student._id,
-        points: -Math.abs(pen), reason: `White slip — ${behaviorName}`, incidentId: relatedIncidentId || null,
-        awardedByTeacherId: req.membership?._id || null, at: when,
-      });
-    }
-  } catch (e) { console.warn("[behavior] white-slip house penalty failed:", e?.message || e); }
+  // The optional white-slip house-point deduction is NOT applied here — only
+  // once the slip is confirmed issued (applyWhiteSlipPenalty), since the VP may
+  // choose another consequence or another chance.
 
   if (!teacherEmail && !vpEmail) return;
 
@@ -5803,6 +5794,7 @@ router.post("/consequence-action/log", async (req, res, next) => {
       if (c.status === "recommended") {
         c.status = "issued"; c.issuedByName = byName || "Confirmed via email"; c.issuedAt = new Date();
         await c.save();
+        await applyWhiteSlipPenalty(c);
         await audit(schoolId, "consequence.issued_via_link", { userId: null, user: { email: "" } }, { studentId: String(c.studentId), meta: { type: c.type } });
       }
     } else {
@@ -5881,9 +5873,20 @@ router.post("/consequences/:id/issue", authAny, loadMembership, canLog, async (r
     const c = await BehaviorConsequence.findOne({ _id: req.params.id, schoolId: req.schoolId });
     if (!c) return res.status(404).json({ ok: false, error: "Not found" });
     const other = String(req.body?.other || "").trim();
+    const notIssued = req.body?.notIssued === true;
     const who = req.membership.name || req.user?.name || "";
     if (c.status === "recommended") {
-      if (other) {
+      if (notIssued) {
+        // Not issued at all (e.g. the VP gave another chance): close it with no
+        // replacement consequence and no house-point deduction.
+        c.status = "other";
+        c.detail = `${c.detail || ""}${c.detail ? " — " : ""}Not issued (given another chance)`;
+        c.issuedByTeacherId = req.membership._id;
+        c.issuedByName = who;
+        c.issuedAt = new Date();
+        await c.save();
+        await audit(req.schoolId, "consequence.not_issued", req, { studentId: String(c.studentId), meta: { type: c.type } });
+      } else if (other) {
         // A DIFFERENT consequence was applied instead of the recommended white
         // slip: close the recommendation as "other" and log the actual one.
         c.status = "other";
@@ -5905,6 +5908,7 @@ router.post("/consequences/:id/issue", authAny, loadMembership, canLog, async (r
         c.issuedByName = who;
         c.issuedAt = new Date();
         await c.save();
+        await applyWhiteSlipPenalty(c, { awardedByTeacherId: req.membership._id });
         await audit(req.schoolId, "consequence.issued", req, { studentId: String(c.studentId), meta: { type: c.type } });
       }
     }
